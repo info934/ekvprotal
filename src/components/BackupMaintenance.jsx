@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Database, Download, Trash2, HardDrive, RefreshCw, AlertTriangle, FileJson } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { format } from 'date-fns';
@@ -29,6 +30,7 @@ const BackupMaintenance = () => {
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [backupToDelete, setBackupToDelete] = useState(null);
 
   useEffect(() => {
     loadBackups();
@@ -98,8 +100,9 @@ const BackupMaintenance = () => {
     }
   };
 
-  const handleDelete = async (filename) => {
-    if (!window.confirm(`Opravdu chcete smazat zálohu ${filename} z historie prohlížeče?`)) return;
+  const handleDelete = async () => {
+    if (!backupToDelete) return;
+    const filename = backupToDelete.filename;
 
     const success = await deleteBackup(filename);
     if (success) {
@@ -115,6 +118,7 @@ const BackupMaintenance = () => {
     } else {
       toast({ title: "Chyba při mazání", variant: "destructive" });
     }
+    setBackupToDelete(null);
   };
 
   const handleDownload = async (filename) => {
@@ -133,7 +137,7 @@ const BackupMaintenance = () => {
   }
 
   return (
-    <div className="space-y-6 container mx-auto p-6 max-w-6xl">
+    <div className="space-y-6">
       <PageHeader
         icon={Database}
         title="Zálohování a údržba"
@@ -152,32 +156,6 @@ const BackupMaintenance = () => {
           </Button>
         }
       />
-      <div className="hidden">
-        <div className="flex items-center gap-3">
-          <Database className="w-8 h-8 text-blue-600" />
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Zálohování a údržba</h1>
-            <p className="text-muted-foreground">Správa databázových záloh a export dat</p>
-          </div>
-        </div>
-        <Button 
-          size="lg" 
-          onClick={handleCreateBackup} 
-          disabled={isExporting}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
-        >
-          {isExporting ? (
-            <>
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Zálohování...
-            </>
-          ) : (
-            <>
-              <HardDrive className="mr-2 h-4 w-4" /> Vytvořit zálohu databáze
-            </>
-          )}
-        </Button>
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="md:col-span-2">
           <CardHeader>
@@ -220,7 +198,7 @@ const BackupMaintenance = () => {
                             <Button variant="ghost" size="sm" onClick={() => handleDownload(backup.filename)}>
                               <Download className="w-4 h-4" />
                             </Button>
-                            <Button variant="ghost" size="sm" onClick={() => handleDelete(backup.filename)} className="text-red-500 hover:text-red-700 hover:bg-red-50">
+                            <Button variant="ghost" size="sm" onClick={() => setBackupToDelete(backup)} className="text-red-500 hover:text-red-700 hover:bg-red-50">
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
@@ -262,6 +240,23 @@ const BackupMaintenance = () => {
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={!!backupToDelete} onOpenChange={(open) => !open && setBackupToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Smazat zálohu z historie?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Záloha <span className="font-semibold">{backupToDelete?.filename}</span> bude odstraněna z historie tohoto prohlížeče. Stažené soubory v počítači tím dotčené nejsou.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Zrušit</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+              Smazat z historie
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
