@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -353,21 +354,20 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] overflow-visible">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {record ? <Clock className="w-5 h-5 text-blue-600" /> : <Clock className="w-5 h-5 text-green-600" />}
-            {record ? 'Upravit záznam' : 'Nový záznam docházky'}
-          </DialogTitle>
-        </DialogHeader>
+      <FormDialogContent size="md">
+        <FormDialogHeader
+          icon={Clock}
+          title={record ? 'Upravit záznam' : 'Nový záznam docházky'}
+        />
 
         {loadingData ? (
-          <div className="py-12 flex flex-col items-center justify-center text-muted-foreground">
+          <FormDialogBody className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <Loader2 className="w-8 h-8 animate-spin mb-2" />
             <p>Načítám seznamy...</p>
-          </div>
+          </FormDialogBody>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-5 py-2">
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+            <FormDialogBody className="space-y-5">
 
             <Tabs value={workType} onValueChange={(val) => {
               setWorkType(val);
@@ -680,7 +680,8 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
               />
             </div>
 
-            <DialogFooter className="pt-4 gap-2 sm:gap-0">
+            </FormDialogBody>
+            <FormDialogFooter className="gap-2 sm:gap-0">
               <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>
                 Zrušit
               </Button>
@@ -688,11 +689,11 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
                 {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {record ? 'Uložit změny' : `Uložit záznamy (${workType === 'project' ? formData.project_ids.length : formData.realizace_ids.length})`}
               </Button>
-            </DialogFooter>
+            </FormDialogFooter>
 
           </form>
         )}
-      </DialogContent>
+      </FormDialogContent>
     </Dialog>
   );
 };

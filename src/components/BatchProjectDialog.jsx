@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -126,12 +127,10 @@ export default function BatchProjectDialog({ open, onOpenChange, onProjectsCreat
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Vytvořit více projektů</DialogTitle>
-        </DialogHeader>
+      <FormDialogContent size="xl">
+        <FormDialogHeader icon={Plus} title="Vytvořit více projektů" />
 
-        <div className="py-4 overflow-x-auto">
+        <FormDialogBody className="overflow-x-auto">
           <table className="w-full text-sm text-left border-collapse">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
@@ -229,9 +228,9 @@ export default function BatchProjectDialog({ open, onOpenChange, onProjectsCreat
               ))}
             </tbody>
           </table>
-        </div>
+        </FormDialogBody>
 
-        <DialogFooter className="flex justify-between items-center sm:justify-between border-t pt-4">
+        <FormDialogFooter className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Button variant="outline" onClick={addRow} type="button" className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
             Přidat řádek
@@ -245,8 +244,8 @@ export default function BatchProjectDialog({ open, onOpenChange, onProjectsCreat
               Vytvořit projekty
             </Button>
           </div>
-        </DialogFooter>
-      </DialogContent>
+        </FormDialogFooter>
+      </FormDialogContent>
     </Dialog>
   );
 }

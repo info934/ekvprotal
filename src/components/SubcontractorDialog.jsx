@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -147,29 +148,17 @@ const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
-                <DialogHeader className="pb-4">
-                    <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-                        {subject ? (
-                            <>
-                                <Edit2 className="h-6 w-6 text-primary" />
-                                Upravit subjekt
-                            </>
-                        ) : (
-                            <>
-                                <Plus className="h-6 w-6 text-primary" />
-                                Nový subjekt
-                            </>
-                        )}
-                    </DialogTitle>
-                    <DialogDescription>
-                        Zadejte informace o subjektu. Pro urychlení můžete načíst data z ARES pomocí IČO.
-                    </DialogDescription>
-                </DialogHeader>
+            <FormDialogContent size="xl">
+                <FormDialogHeader
+                    icon={subject ? Edit2 : Plus}
+                    title={subject ? 'Upravit subjekt' : 'Nový subjekt'}
+                    description="Zadejte informace o subjektu. Pro urychlení můžete načíst data z ARES pomocí IČO."
+                />
                 
                 <form onSubmit={handleSubmit} className="flex-1 overflow-hidden">
                     <Tabs defaultValue="basic" className="h-full flex flex-col">
-                        <TabsList className="grid w-full grid-cols-3 mb-6">
+                        <FormDialogBody className="flex flex-col gap-6">
+                        <TabsList className="grid w-full grid-cols-3">
                             <TabsTrigger value="basic" className="flex items-center gap-2">
                                 <Building className="h-4 w-4" />
                                 Základní
@@ -184,7 +173,7 @@ const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
                             </TabsTrigger>
                         </TabsList>
                         
-                        <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+                        <div className="min-h-0 flex-1 space-y-6">
                             {/* Basic Information Tab */}
                             <TabsContent value="basic" className="space-y-6">
                                 <motion.div 
@@ -392,8 +381,9 @@ const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
                                 </motion.div>
                             </TabsContent>
                         </div>
+                        </FormDialogBody>
                         
-                        <DialogFooter className="pt-6 border-t">
+                        <FormDialogFooter>
                             <Button type="button" variant="outline" onClick={onClose}>
                                 Zrušit
                             </Button>
@@ -407,10 +397,10 @@ const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
                                     'Uložit'
                                 )}
                             </Button>
-                        </DialogFooter>
+                        </FormDialogFooter>
                     </Tabs>
                 </form>
-            </DialogContent>
+            </FormDialogContent>
         </Dialog>
     );
 };

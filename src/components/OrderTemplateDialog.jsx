@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -49,11 +50,12 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-4xl">
-                <DialogHeader>
-                    <DialogTitle>{template ? 'Upravit šablonu objednávky' : 'Nová šablona objednávky'}</DialogTitle>
-                </DialogHeader>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+            <FormDialogContent size="xl">
+                <FormDialogHeader
+                    icon={Clipboard}
+                    title={template ? 'Upravit šablonu objednávky' : 'Nová šablona objednávky'}
+                />
+                <FormDialogBody className="grid grid-cols-1 gap-6 md:grid-cols-3">
                     <div className="md:col-span-2 space-y-4">
                         <div>
                             <Label htmlFor="template-name">Název šablony</Label>
@@ -81,12 +83,12 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
                             ))}
                         </div>
                     </div>
-                </div>
-                <DialogFooter>
+                </FormDialogBody>
+                <FormDialogFooter>
                     <Button variant="outline" onClick={onClose}>Zrušit</Button>
                     <Button onClick={handleSave}>Uložit šablonu</Button>
-                </DialogFooter>
-            </DialogContent>
+                </FormDialogFooter>
+            </FormDialogContent>
         </Dialog>
     );
 };

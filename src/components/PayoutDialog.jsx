@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogHeader } from '@/components/ui/form-dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -434,22 +435,20 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !isSubmitting) { resetForm(); onClose(); } }} modal={false}>
-    <DialogContent className="max-w-4xl w-[96vw] max-h-[92vh] flex flex-col gap-4 bg-white overflow-hidden" onInteractOutside={(e) => { if (isSubmitting) e.preventDefault(); }} onPointerDownOutside={(e) => { if (isSubmitting) e.preventDefault(); }} onEscapeKeyDown={(e) => { if (isSubmitting) e.preventDefault(); }}>
-        <DialogHeader className="space-y-3 border-b pb-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <DialogTitle className="flex items-center gap-2 text-2xl">
-              {isEditMode ? <Edit2 className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
-              {isEditMode ? 'Upravit žádost o výplatu' : 'Nová žádost o výplatu'}
-            </DialogTitle>
-            <div className="flex items-center gap-2">
+    <FormDialogContent size="xl" onInteractOutside={(e) => { if (isSubmitting) e.preventDefault(); }} onPointerDownOutside={(e) => { if (isSubmitting) e.preventDefault(); }} onEscapeKeyDown={(e) => { if (isSubmitting) e.preventDefault(); }}>
+        <FormDialogHeader
+          icon={isEditMode ? Edit2 : Plus}
+          title={isEditMode ? 'Upravit žádost o výplatu' : 'Nová žádost o výplatu'}
+          description={
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className={cn("inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold", isEditMode ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700")}>{isEditMode ? 'Editace' : 'Nová žádost'}</span>
               <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-700">{totalItems} položek</span>
             </div>
-          </div>
-        </DialogHeader>
+          }
+        />
 
-      <div className="grid flex-1 min-h-0 grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-        <form id="payout-form" onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-6">
+      <FormDialogBody className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <form id="payout-form" onSubmit={handleSubmit} className="min-w-0 space-y-6">
             <div className="rounded-xl border bg-slate-50/60 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField label="Projektant" icon={User} required error={validationErrors.member_id}>
@@ -552,7 +551,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
             </FormSection>
           </form>
 
-          <aside className="space-y-4">
+          <aside className="space-y-4 lg:sticky lg:top-0 lg:self-start">
             <div className="rounded-xl border bg-slate-50/60 p-4">
               <div className="text-sm text-muted-foreground">Souhrn</div>
               <div className="mt-2 text-2xl font-bold">{totalAmount.toLocaleString('cs-CZ')} Kč</div>
@@ -582,8 +581,8 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
               </Button>
             </div>
           </aside>
-        </div>
-      </DialogContent>
+        </FormDialogBody>
+      </FormDialogContent>
     </Dialog>
   );
 };
