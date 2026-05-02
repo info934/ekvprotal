@@ -203,7 +203,7 @@ const SettingsProfile = () => {
       </header>
 
       <Tabs defaultValue="personal" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
+        <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
           <TabsTrigger value="personal">Osobní údaje</TabsTrigger>
           <TabsTrigger value="security">Účet a zabezpečení</TabsTrigger>
           <TabsTrigger value="notifications">Notifikace</TabsTrigger>
