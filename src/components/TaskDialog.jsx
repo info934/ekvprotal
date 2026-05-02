@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -175,9 +176,9 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden">
-        <DialogHeader className="pb-4">
-          <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+      <FormDialogContent size="lg">
+        <div className="hidden">
+          <div className="text-2xl font-bold flex items-center gap-2">
             {task ? (
               <>
                 <Edit2 className="h-6 w-6 text-primary" />
@@ -189,11 +190,17 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
                 Nový úkol
               </>
             )}
-          </DialogTitle>
-        </DialogHeader>
+          </div>
+        </div>
+        <FormDialogHeader
+          icon={task ? Edit2 : Plus}
+          title={task ? 'Upravit úkol' : 'Nový úkol'}
+          description="Vyplňte základní údaje, přiřazení a termíny úkolu."
+        />
         
-        <form onSubmit={handleSubmit} className="flex-1 overflow-hidden">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <Tabs defaultValue="basic" className="h-full flex flex-col">
+            <FormDialogBody>
             <TabsList className="grid w-full grid-cols-3 mb-6">
               <TabsTrigger value="basic" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
@@ -209,7 +216,7 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
               </TabsTrigger>
             </TabsList>
             
-            <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+            <div className="space-y-6">
               {/* Basic Information Tab */}
               <TabsContent value="basic" className="space-y-6">
                 <motion.div 
@@ -402,7 +409,8 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
               </TabsContent>
             </div>
             
-            <DialogFooter className="pt-6 border-t flex-col sm:flex-row sm:justify-between sm:items-center">
+            </FormDialogBody>
+            <FormDialogFooter className="flex-col sm:flex-row sm:justify-between sm:items-center">
               {task && isAdmin && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -432,10 +440,10 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
                   {task ? 'Uložit změny' : 'Přidat úkol'}
                 </Button>
               </div>
-            </DialogFooter>
+            </FormDialogFooter>
           </Tabs>
         </form>
-      </DialogContent>
+      </FormDialogContent>
     </Dialog>
   );
 };

@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import SubjectDialog from './SubjectDialog';
 import { calculateFinancials } from './RealizaceFinancialCalculations';
@@ -160,16 +161,18 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle>{costData ? 'Upravit náklad' : 'Přidat nový náklad'}</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
+            <FormDialogContent size="md">
+                <FormDialogHeader
+                    icon={costData ? Edit2 : Plus}
+                    title={costData ? 'Upravit náklad' : 'Přidat nový náklad'}
+                    description="Evidence faktur, dodavatelů a ostatních realizačních výdajů."
+                />
+                <FormDialogBody className="space-y-4">
                     <div className="grid gap-2">
                         <Label>Popis nákladu *</Label>
                         <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Např. nákup materiálu" />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="grid gap-2">
                             <Label>Částka (Kč) *</Label>
                             <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
@@ -208,12 +211,12 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
                             )}
                         </div>
                     </div>
-                </div>
-                <DialogFooter>
+                </FormDialogBody>
+                <FormDialogFooter>
                     <Button variant="outline" onClick={onClose}>Zrušit</Button>
                     <Button onClick={handleSubmit}>Uložit</Button>
-                </DialogFooter>
-            </DialogContent>
+                </FormDialogFooter>
+            </FormDialogContent>
             <SubjectDialog isOpen={isSubjectDialogOpen} onClose={() => setIsSubjectDialogOpen(false)} onSave={handleQuickSubjectSave}/>
         </Dialog>
     );

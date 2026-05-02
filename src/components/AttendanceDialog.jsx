@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -269,20 +270,25 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+      <FormDialogContent size="md">
+        <div className="hidden">
+          <div className="flex items-center gap-2">
             {isEditMode ? <Clock className="w-5 h-5 text-blue-600" /> : <Clock className="w-5 h-5 text-green-600" />}
             {isEditMode ? 'Upravit záznam' : 'Zadat docházku'}
-          </DialogTitle>
-        </DialogHeader>
+          </div>
+        </div>
+        <FormDialogHeader
+          icon={Clock}
+          title={isEditMode ? 'Upravit záznam' : 'Zadat docházku'}
+          description="Zadejte datum, pracovníka a odpracované hodiny."
+        />
 
         {loading ? (
           <div className="py-8 flex justify-center">
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="flex flex-col gap-4 overflow-y-auto pr-2">
+          <FormDialogBody className="flex flex-col gap-4">
             
             {error && (
               <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md font-medium flex items-center gap-2">
@@ -504,10 +510,10 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
               />
             </div>
 
-          </div>
+          </FormDialogBody>
         )}
 
-        <DialogFooter className="pt-2">
+        <FormDialogFooter>
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
             Zrušit
             </Button>
@@ -519,8 +525,8 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
             {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             {isEditMode ? 'Uložit změny' : `Uložit ${batchItems.length > 0 ? `(${batchItems.length})` : ''}`}
             </Button>
-        </DialogFooter>
-      </DialogContent>
+        </FormDialogFooter>
+      </FormDialogContent>
     </Dialog>
   );
 };

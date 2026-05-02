@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,9 +55,9 @@ const ProjectCostDialog = ({ isOpen, onClose, onSave, costData, projectId }) => 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader className="pb-4">
-          <DialogTitle className="text-xl font-bold flex items-center gap-2">
+      <FormDialogContent size="sm">
+        <div className="hidden">
+          <div className="text-xl font-bold flex items-center gap-2">
             {costData ? (
               <>
                 <Edit2 className="h-5 w-5 text-primary" />
@@ -68,13 +69,19 @@ const ProjectCostDialog = ({ isOpen, onClose, onSave, costData, projectId }) => 
                 Přidat náklad
               </>
             )}
-          </DialogTitle>
-        </DialogHeader>
+          </div>
+        </div>
+        <FormDialogHeader
+          icon={costData ? Edit2 : Plus}
+          title={costData ? 'Upravit náklad' : 'Přidat náklad'}
+          description="Zadejte popis a částku projektového nákladu."
+        />
         
+        <FormDialogBody>
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="space-y-6 py-4"
+          className="space-y-6"
         >
           <div className="space-y-2">
             <Label htmlFor="description" className="flex items-center gap-2 text-sm font-medium">
@@ -110,16 +117,17 @@ const ProjectCostDialog = ({ isOpen, onClose, onSave, costData, projectId }) => 
             />
           </div>
         </motion.div>
+        </FormDialogBody>
         
-        <DialogFooter className="pt-4">
+        <FormDialogFooter>
           <Button variant="outline" onClick={onClose}>
             Zrušit
           </Button>
           <Button onClick={handleSave} className="min-w-[100px]">
             {costData ? 'Uložit' : 'Přidat'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </FormDialogFooter>
+      </FormDialogContent>
     </Dialog>
   );
 };
