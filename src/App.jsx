@@ -38,6 +38,7 @@ import RealizaceFinancials from '@/components/RealizaceFinancials';
 import OrderTemplateManager from '@/components/OrderTemplateManager';
 import RealizaceOrderForm from '@/components/RealizaceOrderForm';
 import SettingsProfile from '@/components/SettingsProfile';
+import SettingsPortal from '@/components/SettingsPortal';
 import SettingsDictionaries from '@/components/SettingsDictionaries';
 import ProjectTemplatesSettings from '@/components/ProjectTemplatesSettings';
 import ProjectTemplatesPage from '@/components/ProjectTemplatesPage';
@@ -166,6 +167,7 @@ function AppContent() {
                   <Route path="profile" element={<SettingsProfile />} />
                   <Route path="users" element={<PrivateRoute module="settings" level="can_admin"><UserManagement /></PrivateRoute>} />
                   <Route path="permissions" element={<PrivateRoute module="settings" level="can_admin"><RolePermissions /></PrivateRoute>} />
+                  <Route path="portal" element={<PrivateRoute module="settings" level="can_admin"><SettingsPortal /></PrivateRoute>} />
                   <Route path="order-templates" element={<PrivateRoute module="settings" level="can_admin"><OrderTemplateManager /></PrivateRoute>} />
                   <Route path="dictionaries" element={<PrivateRoute module="settings" level="can_admin"><SettingsDictionaries /></PrivateRoute>} />
                   <Route path="project-templates" element={<PrivateRoute module="settings" level="can_admin"><ProjectTemplatesSettings /></PrivateRoute>} />
