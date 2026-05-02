@@ -154,6 +154,26 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
     setBatchItems(prev => prev.map(item => ({ ...item, hours: globalHoursInput })));
   };
 
+  const getExistingDailyHours = async (targetMemberId, targetDate) => {
+    let query = supabase
+      .from('attendance')
+      .select('id, hours')
+      .eq('member_id', targetMemberId)
+      .eq('date', targetDate);
+
+    if (isEditMode && record?.id) {
+      query = query.neq('id', record.id);
+    }
+
+    const { data, error: attendanceError } = await query;
+    if (attendanceError) throw attendanceError;
+
+    return (data || []).reduce((sum, item) => {
+      const hours = parseFloat(String(item.hours).replace(',', '.'));
+      return sum + (Number.isFinite(hours) ? hours : 0);
+    }, 0);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -197,6 +217,15 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
         }
 
         setSubmitting(true);
+        const targetMemberId = isAdmin ? commonData.member_id : memberId;
+        const existingHours = await getExistingDailyHours(targetMemberId, commonData.date);
+        const dailyTotal = existingHours + totalHours;
+
+        if (dailyTotal > 24) {
+            setError(`Celkový součet hodin za den by byl ${dailyTotal.toLocaleString('cs-CZ')} h. Již uložené záznamy: ${existingHours.toLocaleString('cs-CZ')} h, nově zadáváte: ${totalHours.toLocaleString('cs-CZ')} h. Limit je 24 h.`);
+            return;
+        }
+
         if (isEditMode) {
             const payload = {
                 member_id: isAdmin ? commonData.member_id : memberId,
