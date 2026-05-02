@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -231,15 +232,21 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader className="pb-4">
-          <DialogTitle className="text-xl font-bold flex items-center gap-2">
+      <FormDialogContent size="md">
+        <div className="hidden">
+          <div className="text-xl font-bold flex items-center gap-2">
             {member ? <Edit2 className="h-5 w-5 text-primary" /> : <Plus className="h-5 w-5 text-primary" />}
             {member ? 'Upravit člena týmu' : 'Přiřadit člena týmu'}
-          </DialogTitle>
-        </DialogHeader>
+          </div>
+        </div>
+        <FormDialogHeader
+          icon={member ? Edit2 : Plus}
+          title={member ? 'Upravit člena týmu' : 'Přiřadit člena týmu'}
+          description="Nastavte projektanta, typ odměny a návazné finanční parametry."
+        />
         
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <FormDialogBody className="space-y-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="member" className="flex items-center gap-2 text-sm font-medium">
@@ -330,12 +337,13 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
             </motion.div>
           )}
 
-          <div className="flex justify-end gap-3 pt-4 border-t">
+          </FormDialogBody>
+          <FormDialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Zrušit</Button>
             <Button type="submit" className="min-w-[120px]">{member ? 'Uložit změny' : 'Přiřadit'}</Button>
-          </div>
+          </FormDialogFooter>
         </form>
-      </DialogContent>
+      </FormDialogContent>
     </Dialog>
   );
 };

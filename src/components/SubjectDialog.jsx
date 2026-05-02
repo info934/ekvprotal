@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
-import { Loader2, Search } from 'lucide-react';
+import { Edit2, Loader2, Plus, Search } from 'lucide-react';
 import { fetchJsonWithTimeout } from '@/lib/http';
 
 const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
@@ -124,14 +125,14 @@ const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                    <DialogTitle>{subject ? 'Upravit subjekt' : 'Vytvořit nový subjekt'}</DialogTitle>
-                    <DialogDescription>
-                        Zadejte informace o subjektu. Pro urychlení můžete načíst data z ARES pomocí IČO.
-                    </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto p-1 pr-4">
+            <FormDialogContent size="md">
+                <FormDialogHeader
+                    icon={subject ? Edit2 : Plus}
+                    title={subject ? 'Upravit subjekt' : 'Vytvořit nový subjekt'}
+                    description="Zadejte informace o subjektu. Pro urychlení můžete načíst data z ARES pomocí IČO."
+                />
+                <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <FormDialogBody className="space-y-4">
                     <div className="flex items-end gap-2">
                         <div className="flex-grow">
                             <Label htmlFor="ico">IČO *</Label>
@@ -192,14 +193,15 @@ const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
                         <Input id="phone" type="tel" value={formData.phone} onChange={handleChange} />
                     </div>
                     
-                    <DialogFooter className="pt-4">
+                  </FormDialogBody>
+                    <FormDialogFooter>
                         <Button type="button" variant="outline" onClick={onClose}>Zrušit</Button>
                         <Button type="submit" disabled={isSaving}>
                             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Uložit'}
                         </Button>
-                    </DialogFooter>
+                    </FormDialogFooter>
                 </form>
-            </DialogContent>
+            </FormDialogContent>
         </Dialog>
     );
 };

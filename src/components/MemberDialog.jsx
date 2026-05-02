@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -110,9 +111,9 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-        <DialogHeader className="pb-4">
-          <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+      <FormDialogContent size="lg">
+        <div className="hidden">
+          <div className="text-2xl font-bold flex items-center gap-2">
             {member ? (
               <>
                 <Edit2 className="h-6 w-6 text-primary" />
@@ -124,11 +125,17 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
                 Nový projektant
               </>
             )}
-          </DialogTitle>
-        </DialogHeader>
+          </div>
+        </div>
+        <FormDialogHeader
+          icon={member ? Edit2 : Plus}
+          title={member ? 'Upravit projektanta' : 'Nový projektant'}
+          description="Správa základních údajů, kontaktu a nastavení docházky."
+        />
         
         <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-hidden flex flex-col">
           <Tabs defaultValue="basic" className="h-full flex flex-col">
+            <FormDialogBody>
             <TabsList className="grid w-full grid-cols-3 mb-6">
               <TabsTrigger value="basic" className="flex items-center gap-2">
                 <User className="h-4 w-4" />
@@ -144,7 +151,7 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
               </TabsTrigger>
             </TabsList>
             
-            <div className="flex-1 overflow-y-auto space-y-6 pr-4 -mr-4">
+            <div className="space-y-6">
               {/* Basic Information Tab */}
               <TabsContent value="basic" className="space-y-6 mt-0">
                 <motion.div 
@@ -318,17 +325,18 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
               </TabsContent>
             </div>
             
-            <div className="flex justify-end gap-3 pt-6 border-t mt-auto">
+            </FormDialogBody>
+            <FormDialogFooter>
               <Button type="button" variant="outline" onClick={onClose}>
                 Zrušit
               </Button>
               <Button type="submit" className="min-w-[120px]" disabled={isSubmitting}>
                 {isSubmitting ? 'Ukládání...' : (member ? 'Uložit změny' : 'Vytvořit')}
               </Button>
-            </div>
+            </FormDialogFooter>
           </Tabs>
         </form>
-      </DialogContent>
+      </FormDialogContent>
     </Dialog>
   );
 };
