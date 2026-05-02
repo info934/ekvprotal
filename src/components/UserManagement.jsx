@@ -1,15 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Users, UserPlus, KeyRound, UserCog, Briefcase, CheckCircle2, Edit, Trash2 } from 'lucide-react';
+import { Users, UserPlus, KeyRound, UserCog, Briefcase, CheckCircle2, Edit, Trash2, Search, RefreshCw, Mail, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { supabase } from '@/lib/customSupabaseClient';
 import { logAction } from '@/lib/logger';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PageHeader from '@/components/ui/page-header';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 
 const capitalizeFirstLetter = (string) => {
     if (!string) return '';
@@ -24,6 +30,8 @@ const UserManagement = () => {
     const [roles, setRoles] = useState([]);
     const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [roleFilter, setRoleFilter] = useState('all');
 
     const invokeFunction = async (functionName, payload) => {
         return await supabase.functions.invoke(functionName, {
@@ -128,19 +136,38 @@ const UserManagement = () => {
         }
     };
 
+    const filteredUsers = (users || []).filter((user) => {
+        const role = user.user_metadata?.role || '';
+        const query = searchTerm.trim().toLowerCase();
+        const matchesSearch = !query ||
+            (user.user_metadata?.full_name || '').toLowerCase().includes(query) ||
+            (user.email || '').toLowerCase().includes(query);
+        const matchesRole = roleFilter === 'all' || (roleFilter === 'none' ? !role : role === roleFilter);
+        return matchesSearch && matchesRole;
+    });
+
+    const adminCount = (users || []).filter(user => user.user_metadata?.role === 'admin').length;
+    const memberCount = (users || []).filter(user => user.is_member).length;
+    const usersWithoutRole = (users || []).filter(user => !user.user_metadata?.role).length;
+
     return (
-        <div className="space-y-8">
+        <div className="space-y-6">
             <PageHeader
                 icon={UserCog}
                 title="Správa uživatelů"
                 description="Správa přístupů, rolí a účtů v portálu"
                 actions={
-                    <Button onClick={() => setIsUserDialogOpen(true)} disabled={!isAdmin} className="w-full sm:w-auto">
-                        <UserPlus className="w-4 h-4 mr-2" /> Nový uživatel
-                    </Button>
+                    <>
+                        <Button variant="outline" onClick={fetchUsers} className="w-full sm:w-auto">
+                            <RefreshCw className="w-4 h-4 mr-2" /> Aktualizovat
+                        </Button>
+                        <Button onClick={() => setIsUserDialogOpen(true)} disabled={!isAdmin} className="w-full sm:w-auto">
+                            <UserPlus className="w-4 h-4 mr-2" /> Pozvat uživatele
+                        </Button>
+                    </>
                 }
             />
-            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="hidden">
                 <div className="hidden">
                      <h1 className="text-4xl font-bold gradient-text mb-2 flex items-center gap-3">
                         <UserCog />
@@ -153,45 +180,132 @@ const UserManagement = () => {
                 <p className="text-muted-foreground">Správa přístupů, rolí a účtů v portálu</p>
             </motion.div>
 
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <div className="app-surface p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                            <Users className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-muted-foreground">Uživatelé</p>
+                            <p className="text-2xl font-semibold">{users.length}</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="app-surface p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+                            <Shield className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-muted-foreground">Administrátoři</p>
+                            <p className="text-2xl font-semibold">{adminCount}</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="app-surface p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-50 text-green-600">
+                            <Briefcase className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-muted-foreground">Projektanti</p>
+                            <p className="text-2xl font-semibold">{memberCount}</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="app-surface p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                            <KeyRound className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-muted-foreground">Bez role</p>
+                            <p className="text-2xl font-semibold">{usersWithoutRole}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="glass-effect rounded-xl p-6"
+                className="app-surface overflow-hidden"
             >
-                <div className="space-y-4">
-                    {(users || []).map(user => (
-                        <div key={user.id} className="p-4 bg-white rounded-lg border flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div>
+                <div className="border-b bg-slate-50/60 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h2 className="text-lg font-semibold">Účty v portálu</h2>
+                            <p className="text-sm text-muted-foreground">Vyhledejte uživatele, nastavte auth roli a propojení na projektanta.</p>
+                        </div>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                            <div className="relative w-full sm:w-80">
+                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder="Hledat jméno nebo e-mail..."
+                                    className="pl-8"
+                                />
+                            </div>
+                            <Select value={roleFilter} onValueChange={setRoleFilter}>
+                                <SelectTrigger className="w-full sm:w-48">
+                                    <SelectValue placeholder="Role" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Všechny role</SelectItem>
+                                    {roles.map((role) => (
+                                        <SelectItem key={role} value={role}>{capitalizeFirstLetter(role)}</SelectItem>
+                                    ))}
+                                    <SelectItem value="none">Bez role</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="divide-y">
+                    {filteredUsers.length > 0 ? filteredUsers.map(user => (
+                        <div key={user.id} className="grid gap-4 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                            <div className="min-w-0">
                                 {editingUser === user.id ? (
                                     <Input 
                                         defaultValue={user.user_metadata?.full_name || ''}
                                         onBlur={(e) => handleNameChange(user.id, e.target.value)}
-                                        onKeyPress={(e) => e.key === 'Enter' && handleNameChange(user.id, e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleNameChange(user.id, e.target.value)}
                                         autoFocus
-                                        className="text-lg font-semibold"
+                                        className="mb-2 max-w-md text-lg font-semibold"
                                         disabled={!isAdmin}
                                     />
                                 ) : (
-                                    <p className="font-semibold text-lg flex items-center gap-2">
-                                        {user.user_metadata?.full_name || 'Beze jména'}
-                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingUser(user.id)} disabled={!isAdmin}><Edit className="w-3 h-3"/></Button>
-                                    </p>
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <p className="truncate text-lg font-semibold">{user.user_metadata?.full_name || 'Beze jména'}</p>
+                                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setEditingUser(user.id)} disabled={!isAdmin}>
+                                            <Edit className="w-3.5 h-3.5"/>
+                                        </Button>
+                                    </div>
                                 )}
-                                <p className="text-sm text-muted-foreground">{user.email}</p>
-                                <p className="text-xs text-muted-foreground">Vytvořen: {new Date(user.created_at).toLocaleDateString('cs-CZ')}</p>
-                                <div className="mt-2 flex items-center gap-2">
-                                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${user.user_metadata?.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-700'}`}>
-                                      {user.user_metadata?.role || 'Bez role'}
+                                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                                    <span className="inline-flex items-center gap-1.5">
+                                        <Mail className="h-3.5 w-3.5" />
+                                        {user.email}
                                     </span>
+                                    <span>Vytvořen: {new Date(user.created_at).toLocaleDateString('cs-CZ')}</span>
+                                </div>
+                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                    <Badge variant={user.user_metadata?.role === 'admin' ? 'info' : 'secondary'} className="capitalize">
+                                      {user.user_metadata?.role || 'Bez role'}
+                                    </Badge>
                                     {user.is_member && (
-                                        <span className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">
+                                        <Badge variant="success" className="gap-1">
                                             <CheckCircle2 className="w-3 h-3" />
                                             Projektant
-                                        </span>
+                                        </Badge>
                                     )}
+                                    {user.id === currentUser.id && <Badge variant="outline">Aktuální účet</Badge>}
                                 </div>
                             </div>
-                             <div className="flex flex-col sm:flex-row flex-wrap gap-2 w-full md:w-auto">
+                             <div className="flex w-full flex-col flex-wrap gap-2 sm:flex-row lg:w-auto lg:justify-end">
                                 <Button 
                                     variant="outline" 
                                     size="sm" 
@@ -202,17 +316,20 @@ const UserManagement = () => {
                                     <Briefcase className="w-4 h-4 mr-2"/> 
                                     {user.is_member ? 'Je projektant' : 'Vytvořit projektanta'}
                                 </Button>
-                                <select 
+                                <Select
                                     value={user.user_metadata?.role || ''}
-                                    onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                                    className="px-3 py-1.5 border rounded-md text-sm w-full sm:w-auto"
+                                    onValueChange={(value) => handleRoleChange(user.id, value)}
                                     disabled={!isAdmin || user.id === currentUser.id}
                                 >
-                                    <option value="" disabled>{user.user_metadata?.role ? "Změnit roli" : "Žádná role"}</option>
-                                    {roles.map((role) => (
-                                        <option key={role} value={role}>{capitalizeFirstLetter(role)}</option>
-                                    ))}
-                                </select>
+                                    <SelectTrigger className="w-full sm:w-44">
+                                        <SelectValue placeholder={user.user_metadata?.role ? "Změnit roli" : "Žádná role"} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {roles.map((role) => (
+                                            <SelectItem key={role} value={role}>{capitalizeFirstLetter(role)}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                                 <Button variant="outline" size="sm" onClick={() => handleResetPassword(user.email)} disabled={!isAdmin} className="w-full sm:w-auto">
                                     <KeyRound className="w-4 h-4 mr-2" /> Reset hesla
                                 </Button>
@@ -237,7 +354,13 @@ const UserManagement = () => {
                                 </AlertDialog>
                              </div>
                         </div>
-                    ))}
+                    )) : (
+                        <div className="p-10 text-center">
+                            <Users className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+                            <div className="font-medium">Žádní uživatelé nenalezeni</div>
+                            <div className="text-sm text-muted-foreground">Zkuste upravit hledání nebo filtr role.</div>
+                        </div>
+                    )}
                 </div>
             </motion.div>
             <NewUserDialog isOpen={isUserDialogOpen} onClose={() => setIsUserDialogOpen(false)} onUserCreated={fetchUsers} invokeFunction={invokeFunction} />
@@ -275,30 +398,31 @@ const NewUserDialog = ({ isOpen, onClose, onUserCreated, invokeFunction }) => {
     };
 
     return (
-        <AlertDialog open={isOpen} onOpenChange={onClose}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>Pozvat nového uživatele</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        Uživatel obdrží pozvánku na zadaný e-mail a bude si moci nastavit heslo. Výchozí role je "uživatel".
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-                <form onSubmit={handleCreateUser} className="space-y-4">
-                    <div>
-                        <label htmlFor="fullName" className="block text-sm font-medium mb-1">Celé jméno</label>
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <FormDialogContent size="sm">
+                <FormDialogHeader
+                    icon={UserPlus}
+                    title="Pozvat nového uživatele"
+                    description='Uživatel obdrží pozvánku na zadaný e-mail a bude si moci nastavit heslo. Výchozí role je "uživatel".'
+                />
+                <form onSubmit={handleCreateUser} className="flex min-h-0 flex-1 flex-col">
+                    <FormDialogBody className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="fullName">Celé jméno</Label>
                         <Input id="fullName" type="text" value={fullName} onChange={e => setFullName(e.target.value)} required />
                     </div>
-                    <div>
-                        <label htmlFor="email" className="block text-sm font-medium mb-1">Email</label>
+                    <div className="space-y-2">
+                        <Label htmlFor="email">Email</Label>
                         <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
                     </div>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel type="button">Zrušit</AlertDialogCancel>
+                    </FormDialogBody>
+                    <FormDialogFooter>
+                        <Button type="button" variant="outline" onClick={onClose}>Zrušit</Button>
                         <Button type="submit">Odeslat pozvánku</Button>
-                    </AlertDialogFooter>
+                    </FormDialogFooter>
                 </form>
-            </AlertDialogContent>
-        </AlertDialog>
+            </FormDialogContent>
+        </Dialog>
     );
 };
 
