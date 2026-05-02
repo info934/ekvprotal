@@ -6,12 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { User, Key, Bell, Shield, Camera, Save, Mail } from 'lucide-react';
+import { User, Camera, Save } from 'lucide-react';
 import { format } from 'date-fns';
 import { cs } from 'date-fns/locale';
 
@@ -40,7 +40,7 @@ const PasswordStrengthIndicator = ({ password }) => {
 };
 
 const SettingsProfile = () => {
-  const { user, memberId, permissions, userRole, hasPermission } = useAuth();
+  const { user, memberId, permissions, userRole } = useAuth();
   const { toast } = useToast();
   const [profile, setProfile] = useState(null);
   const [password, setPassword] = useState({ current: '', new: '', confirm: '' });
@@ -48,8 +48,6 @@ const SettingsProfile = () => {
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const fileInputRef = useRef();
-  const [accountingEmail, setAccountingEmail] = useState('');
-  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     const fetchMemberProfile = async () => {
@@ -64,23 +62,6 @@ const SettingsProfile = () => {
     };
     fetchMemberProfile();
   }, [memberId, toast]);
-
-  useEffect(() => {
-    const fetchAccountingEmail = async () => {
-      if (!hasPermission('settings', 'can_admin')) return;
-      const { data, error } = await supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'accounting_email')
-        .maybeSingle();
-      if (error) {
-        toast({ title: 'Chyba při načítání nastavení', description: error.message, variant: 'destructive' });
-      } else if (data?.value) {
-        setAccountingEmail(data.value);
-      }
-    };
-    fetchAccountingEmail();
-  }, [hasPermission, toast]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -157,31 +138,6 @@ const SettingsProfile = () => {
     setAvatarFile(null); // Reset file input after successful upload
   };
 
-  const handleSaveAccountingEmail = async () => {
-    if (!hasPermission('settings', 'can_admin')) {
-      toast({ title: 'Nedostatečná oprávnění', description: 'Nemůžete upravit toto nastavení.', variant: 'destructive' });
-      return;
-    }
-    setSavingSettings(true);
-    const normalized = accountingEmail
-      .split(',')
-      .map((e) => e.trim())
-      .filter(Boolean)
-      .join(', ');
-
-    const { error } = await supabase
-      .from('app_settings')
-      .upsert({ key: 'accounting_email', value: normalized }, { onConflict: 'key' });
-
-    if (error) {
-      toast({ title: 'Chyba při ukládání', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: 'Nastavení uloženo' });
-      setAccountingEmail(normalized);
-    }
-    setSavingSettings(false);
-  };
-
   if (!profile || !user) return <div>Načítání profilu...</div>;
 
   const getInitials = (name) => {
@@ -203,14 +159,11 @@ const SettingsProfile = () => {
       </header>
 
       <Tabs defaultValue="personal" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+        <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-4">
           <TabsTrigger value="personal">Osobní údaje</TabsTrigger>
           <TabsTrigger value="security">Účet a zabezpečení</TabsTrigger>
           <TabsTrigger value="notifications">Notifikace</TabsTrigger>
           <TabsTrigger value="language">Jazyk</TabsTrigger>
-          {hasPermission('settings', 'can_admin') && (
-            <TabsTrigger value="portal">Portál</TabsTrigger>
-          )}
         </TabsList>
         <TabsContent value="personal" className="mt-6">
           <Card>
@@ -340,36 +293,6 @@ const SettingsProfile = () => {
             </CardContent>
           </Card>
         </TabsContent>
-        {hasPermission('settings', 'can_admin') && (
-          <TabsContent value="portal" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Mail className="w-5 h-5" />
-                  E-mail účetní pro docházkové reporty
-                </CardTitle>
-                <CardDescription>
-                  Zadejte jednu nebo více adres oddělených čárkou. Na tyto adresy se odešlou reporty o docházce.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="accountingEmail">E-mailové adresy</Label>
-                  <Input
-                    id="accountingEmail"
-                    placeholder="ucetni@firma.cz, accounting@firma.cz"
-                    value={accountingEmail}
-                    onChange={(e) => setAccountingEmail(e.target.value)}
-                  />
-                </div>
-                <Button onClick={handleSaveAccountingEmail} disabled={savingSettings}>
-                  <Save className="w-4 h-4 mr-2" />
-                  {savingSettings ? 'Ukládám...' : 'Uložit'}
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
       </Tabs>
     </div>
   );

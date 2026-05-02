@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useLocation, Outlet } from 'react-router-dom';
-import { Settings as SettingsIcon, Users, Key, ShoppingCart, User, BookOpen, FileText, Database, ChevronRight } from 'lucide-react';
+import { Settings as SettingsIcon, Users, Key, ShoppingCart, User, BookOpen, FileText, Database, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PageHeader from '@/components/ui/page-header';
 import { cn } from '@/lib/utils';
@@ -30,6 +30,7 @@ const settingsNav = [
   {
     label: 'Systém',
     items: [
+      { name: 'Nastavení portálu', description: 'Globální hodnoty aplikace', href: '/settings/portal', icon: SlidersHorizontal, requiredPermission: 'can_admin' },
       { name: 'Zálohování a údržba', description: 'Servisní operace portálu', href: '/settings/backup-maintenance', icon: Database, requiredPermission: 'can_admin' },
     ],
   },
