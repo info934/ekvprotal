@@ -67,11 +67,13 @@ export const AuthProvider = ({ children }) => {
   const [isPrivateMode, setIsPrivateMode] = useState(false); 
   const currentUserIdRef = useRef(null);
   const authEventRunIdRef = useRef(0);
+  const permissionsLoadedUserIdRef = useRef(null);
 
   const isSuperUser = useMemo(() => userRole === 'admin' || userRole === 'super_manager', [userRole]);
 
   const clearState = useCallback(() => {
     currentUserIdRef.current = null;
+    permissionsLoadedUserIdRef.current = null;
     setUser(null);
     setSession(null);
     setMemberId(null);
@@ -349,7 +351,12 @@ export const AuthProvider = ({ children }) => {
           setUser(currentUser);
           
           if (currentUser) {
-            await fetchPermissions(currentUser);
+            await withTimeout(
+              fetchPermissions(currentUser),
+              20000,
+              'Permission loading'
+            );
+            permissionsLoadedUserIdRef.current = currentUser.id;
           }
         }
       } catch (error) {
@@ -382,19 +389,33 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        if (nextUserId === previousUserId) {
+        if (nextUserId === previousUserId && permissionsLoadedUserIdRef.current === nextUserId) {
           currentUserIdRef.current = nextUserId;
+          setLoading(false);
           return;
         }
 
         currentUserIdRef.current = nextUserId;
+        permissionsLoadedUserIdRef.current = null;
         setLoading(true);
         const runId = authEventRunIdRef.current + 1;
         authEventRunIdRef.current = runId;
 
         setTimeout(async () => {
           try {
-            await fetchPermissions(newCurrentUser);
+            await withTimeout(
+              fetchPermissions(newCurrentUser),
+              20000,
+              'Permission loading'
+            );
+            permissionsLoadedUserIdRef.current = newCurrentUser.id;
+          } catch (error) {
+            console.error("Error loading auth permissions:", error);
+            toast({
+              title: 'Načítání oprávnění selhalo',
+              description: 'Zkuste prosím obnovit stránku nebo se přihlásit znovu.',
+              variant: 'destructive',
+            });
           } finally {
             if (isMounted && authEventRunIdRef.current === runId) {
               setLoading(false);
