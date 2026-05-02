@@ -11,7 +11,8 @@
 
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/components/ui/use-toast';
@@ -166,18 +167,14 @@ const InvoiceUploadDialog = ({ isOpen, onClose, payout, onSuccess }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Upload className="w-5 h-5 text-primary" />
-            Nahrát fakturu
-          </DialogTitle>
-          <DialogDescription>
-            Nahrajte fakturu pro žádost o výplatu ve výši <strong>{payout?.amount?.toLocaleString('cs-CZ')} Kč</strong>
-          </DialogDescription>
-        </DialogHeader>
+      <FormDialogContent size="sm">
+        <FormDialogHeader
+          icon={Upload}
+          title="Nahrát fakturu"
+          description={<>Nahrajte fakturu pro žádost o výplatu ve výši <strong>{payout?.amount?.toLocaleString('cs-CZ')} Kč</strong></>}
+        />
 
-        <div className="space-y-4">
+        <FormDialogBody className="space-y-4">
           {/* File dropzone */}
           <div
             {...getRootProps()}
@@ -253,9 +250,9 @@ const InvoiceUploadDialog = ({ isOpen, onClose, payout, onSuccess }) => {
               <p className="text-sm text-green-600">Faktura byla úspěšně nahrána!</p>
             </div>
           )}
-        </div>
+        </FormDialogBody>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <FormDialogFooter className="gap-2 sm:gap-0">
           <Button
             variant="outline"
             onClick={handleClose}
@@ -279,8 +276,8 @@ const InvoiceUploadDialog = ({ isOpen, onClose, payout, onSuccess }) => {
               </>
             )}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </FormDialogFooter>
+      </FormDialogContent>
     </Dialog>
   );
 };

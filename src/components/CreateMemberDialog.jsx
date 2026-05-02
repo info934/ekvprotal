@@ -4,16 +4,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
   Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -129,40 +125,38 @@ const CreateMemberDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>
-            {entityType === 'subject' ? 'Nový subjekt' : 'Nový člen'}
-          </DialogTitle>
-          <DialogDescription>
-            Vytvořte {entityType === 'subject' ? 'nový subjekt' : 'nového člena'} pro rychlý výběr.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="name">Jméno / Název *</Label>
-            <Input id="name" {...register('name')} className={errors.name && "border-red-500"} />
-            {errors.name && <span className="text-xs text-red-500">{errors.name.message}</span>}
-          </div>
+      <FormDialogContent size="sm">
+        <FormDialogHeader
+          title={entityType === 'subject' ? 'Nový subjekt' : 'Nový člen'}
+          description={`Vytvořte ${entityType === 'subject' ? 'nový subjekt' : 'nového člena'} pro rychlý výběr.`}
+        />
+        <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
+          <FormDialogBody className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">Jméno / Název *</Label>
+              <Input id="name" {...register('name')} className={errors.name && "border-red-500"} />
+              {errors.name && <span className="text-xs text-red-500">{errors.name.message}</span>}
+            </div>
           
-          {entityType === 'subject' && (
-             <div className="grid gap-2">
+            {entityType === 'subject' && (
+              <div className="grid gap-2">
                 <Label htmlFor="ico">IČO *</Label>
                 <Input id="ico" {...register('ico', { required: entityType === 'subject' ? 'IČO je povinné' : false })} />
                 {errors.ico && <span className="text-xs text-red-500">{errors.ico.message}</span>}
-             </div>
-          )}
+              </div>
+            )}
 
-          <div className="grid gap-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" {...register('email')} />
-            {errors.email && <span className="text-xs text-red-500">{errors.email.message}</span>}
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="phone">Telefon</Label>
-            <Input id="phone" {...register('phone')} />
-          </div>
-          <DialogFooter>
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" {...register('email')} />
+              {errors.email && <span className="text-xs text-red-500">{errors.email.message}</span>}
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="phone">Telefon</Label>
+              <Input id="phone" {...register('phone')} />
+            </div>
+          </FormDialogBody>
+          <FormDialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Zrušit
             </Button>
@@ -170,9 +164,9 @@ const CreateMemberDialog = ({
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Vytvořit
             </Button>
-          </DialogFooter>
+          </FormDialogFooter>
         </form>
-      </DialogContent>
+      </FormDialogContent>
     </Dialog>
   );
 };

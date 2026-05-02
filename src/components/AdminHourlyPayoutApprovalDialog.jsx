@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -60,15 +61,13 @@ const AdminHourlyPayoutApprovalDialog = ({ isOpen, onClose, request, onConfirm }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Schválení hodinové výplaty</DialogTitle>
-          <DialogDescription>
-            Schvalujete žádost o výplatu pro: <strong className="text-slate-900">{request.members?.name || 'Neznámý'}</strong>
-          </DialogDescription>
-        </DialogHeader>
+      <FormDialogContent size="md">
+        <FormDialogHeader
+          title="Schválení hodinové výplaty"
+          description={<>Schvalujete žádost o výplatu pro: <strong className="text-slate-900">{request.members?.name || 'Neznámý'}</strong></>}
+        />
 
-        <div className="space-y-6 py-4">
+        <FormDialogBody className="space-y-6">
           
           <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 space-y-2">
             <div className="flex justify-between text-sm">
@@ -150,9 +149,9 @@ const AdminHourlyPayoutApprovalDialog = ({ isOpen, onClose, request, onConfirm }
               {error}
             </div>
           )}
-        </div>
+        </FormDialogBody>
 
-        <DialogFooter>
+        <FormDialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
             Zrušit
           </Button>
@@ -163,8 +162,8 @@ const AdminHourlyPayoutApprovalDialog = ({ isOpen, onClose, request, onConfirm }
           >
             {isSubmitting ? 'Schvaluji...' : 'Schválit výplatu'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </FormDialogFooter>
+      </FormDialogContent>
     </Dialog>
   );
 };

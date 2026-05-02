@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -71,15 +72,13 @@ const AdminPayoutApprovalDialog = ({ isOpen, onClose, payout, onConfirm }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Schválení výplaty</DialogTitle>
-          <DialogDescription>
-            Schvalujete žádost o výplatu pro: <strong className="text-slate-900">{payout.members?.name || 'Neznámý'}</strong>
-          </DialogDescription>
-        </DialogHeader>
+      <FormDialogContent size="md">
+        <FormDialogHeader
+          title="Schválení výplaty"
+          description={<>Schvalujete žádost o výplatu pro: <strong className="text-slate-900">{payout.members?.name || 'Neznámý'}</strong></>}
+        />
 
-        <div className="space-y-6 py-4">
+        <FormDialogBody className="space-y-6">
           {hasInvoice ? (
             <Alert className="bg-emerald-50 text-emerald-800 border-emerald-200">
               <CheckCircle className="h-4 w-4 text-emerald-600" />
@@ -109,13 +108,13 @@ const AdminPayoutApprovalDialog = ({ isOpen, onClose, payout, onConfirm }) => {
           </div>
 
           {error && <div className="text-sm font-medium text-red-600 bg-red-50 p-3 rounded-md border border-red-100">{error}</div>}
-        </div>
+        </FormDialogBody>
 
-        <DialogFooter>
+        <FormDialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isSubmitting}>Zrušit</Button>
           <Button onClick={handleSubmit} disabled={isSubmitting} className="bg-emerald-600 hover:bg-emerald-700">{isSubmitting ? 'Schvaluji...' : 'Schválit výplatu'}</Button>
-        </DialogFooter>
-      </DialogContent>
+        </FormDialogFooter>
+      </FormDialogContent>
     </Dialog>
   );
 };

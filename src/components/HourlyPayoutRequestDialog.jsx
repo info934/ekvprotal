@@ -1,12 +1,8 @@
 import React, { useState } from 'react';
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -27,14 +23,12 @@ const HourlyPayoutRequestDialog = ({ isOpen, onClose, onConfirm, isSubmitting })
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle className="text-red-600">Zamítnout žádost</DialogTitle>
-          <DialogDescription>
-            Prosím uveďte důvod zamítnutí této žádosti. Tento důvod bude odeslán uživateli na e-mail.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
+      <FormDialogContent size="sm">
+        <FormDialogHeader
+          title="Zamítnout žádost"
+          description="Prosím uveďte důvod zamítnutí této žádosti. Tento důvod bude odeslán uživateli na e-mail."
+        />
+        <FormDialogBody className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="reason">Důvod zamítnutí *</Label>
             <Textarea
@@ -45,8 +39,8 @@ const HourlyPayoutRequestDialog = ({ isOpen, onClose, onConfirm, isSubmitting })
               className="min-h-[100px] resize-none"
             />
           </div>
-        </div>
-        <DialogFooter>
+        </FormDialogBody>
+        <FormDialogFooter>
           <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isSubmitting}>
             Zrušit
           </Button>
@@ -57,8 +51,8 @@ const HourlyPayoutRequestDialog = ({ isOpen, onClose, onConfirm, isSubmitting })
           >
             {isSubmitting ? 'Ukládání...' : 'Potvrdit zamítnutí'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </FormDialogFooter>
+      </FormDialogContent>
     </Dialog>
   );
 };

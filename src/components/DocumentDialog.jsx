@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Upload, FileUp, X, Search } from 'lucide-react';
+import { Upload, FileUp, X } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useDropzone } from 'react-dropzone';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -94,14 +95,14 @@ const DocumentDialog = ({ isOpen, onClose, onSave, isMeetingMinutes = false, pay
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Nahrát nový dokument</DialogTitle>
-          <DialogDescription>
-            {isMeetingMinutes ? 'Přidejte nový zápis z kontrolního dne.' : (isForStructure ? 'Nahrát soubor pro položku rozpisky.' : (isForAssignment ? 'Nahrát novou přílohu k zadání.' : 'Přidejte nový projektový dokument.'))}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+      <FormDialogContent size="md">
+        <FormDialogHeader
+          icon={Upload}
+          title="Nahrát nový dokument"
+          description={isMeetingMinutes ? 'Přidejte nový zápis z kontrolního dne.' : (isForStructure ? 'Nahrát soubor pro položku rozpisky.' : (isForAssignment ? 'Nahrát novou přílohu k zadání.' : 'Přidejte nový projektový dokument.'))}
+        />
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <FormDialogBody className="space-y-4">
           
           {isGlobalAdd && (
             <div>
@@ -224,16 +225,17 @@ const DocumentDialog = ({ isOpen, onClose, onSave, isMeetingMinutes = false, pay
           </div>
 
 
-          <div className="flex justify-end gap-3 pt-4">
+          </FormDialogBody>
+          <FormDialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Zrušit
             </Button>
             <Button type="submit" className="bg-gradient-to-r from-purple-600 to-indigo-600">
               Uložit a nahrát
             </Button>
-          </div>
+          </FormDialogFooter>
         </form>
-      </DialogContent>
+      </FormDialogContent>
     </Dialog>
   );
 };
