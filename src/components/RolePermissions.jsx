@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Shield, Save, UserCog } from 'lucide-react';
+import { Shield, Save, UserCog, Eye, Pencil, Crown, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import PageHeader from '@/components/ui/page-header';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 const modules = [
     { key: 'dashboard', name: 'Přehled' },
@@ -21,6 +23,12 @@ const modules = [
     { key: 'reports', name: 'Reporty' },
     { key: 'settings', name: 'Nastavení' },
     { key: 'realizace', name: 'Realizace' }
+];
+
+const permissionLevels = [
+    { key: 'can_read', label: 'Čtení', description: 'Vidí modul a záznamy', icon: Eye },
+    { key: 'can_edit', label: 'Editace', description: 'Může vytvářet a upravovat', icon: Pencil },
+    { key: 'can_admin', label: 'Správa', description: 'Může schvalovat a mazat', icon: Crown },
 ];
 
 const RolePermissions = () => {
@@ -59,21 +67,35 @@ const RolePermissions = () => {
 
     const handlePermissionChange = (roleName, module, permissionType, value) => {
         const existingPermissionIndex = permissions.findIndex(p => p.role === roleName && p.module === module);
+        const checked = Boolean(value);
         
         let newPermissions = [...permissions];
+        const applyDependency = (permission) => {
+            const next = { ...permission, [permissionType]: checked };
+            if (checked && permissionType === 'can_edit') next.can_read = true;
+            if (checked && permissionType === 'can_admin') {
+                next.can_read = true;
+                next.can_edit = true;
+            }
+            if (!checked && permissionType === 'can_read') {
+                next.can_edit = false;
+                next.can_admin = false;
+            }
+            if (!checked && permissionType === 'can_edit') next.can_admin = false;
+            return next;
+        };
 
         if (existingPermissionIndex !== -1) {
-            newPermissions[existingPermissionIndex] = { ...newPermissions[existingPermissionIndex], [permissionType]: value };
+            newPermissions[existingPermissionIndex] = applyDependency(newPermissions[existingPermissionIndex]);
         } else {
-            const newPerm = { 
+            const newPerm = applyDependency({ 
                 id: crypto.randomUUID(),
                 role: roleName, 
                 module, 
                 can_read: false, 
                 can_edit: false, 
                 can_admin: false,
-                [permissionType]: value 
-            };
+            });
             newPermissions.push(newPerm);
         }
         
@@ -117,60 +139,112 @@ const RolePermissions = () => {
                 </div>
             </motion.div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="md:col-span-1 glass-effect rounded-xl p-6">
-                    <h2 className="text-xl font-bold mb-4">Uživatelské role</h2>
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+                <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="app-surface p-4">
+                    <div className="mb-4">
+                        <h2 className="text-lg font-semibold">Uživatelské role</h2>
+                        <p className="text-sm text-muted-foreground">Vyberte roli a nastavte její přístup.</p>
+                    </div>
                     <div className="space-y-2">
                         {roles.map(role => (
-                            <div key={role.id} onClick={() => setSelectedRole(role)} className={`p-3 rounded-lg cursor-pointer transition-colors flex justify-between items-center ${selectedRole?.id === role.id ? 'bg-purple-100' : 'hover:bg-slate-100'}`}>
-                                <span className="font-semibold capitalize">{role.role_name}</span>
-                            </div>
+                            <button
+                                type="button"
+                                key={role.id}
+                                onClick={() => setSelectedRole(role)}
+                                className={cn(
+                                    'flex w-full items-center justify-between rounded-lg border px-3 py-3 text-left transition-colors',
+                                    selectedRole?.id === role.id
+                                        ? 'border-primary bg-primary/5 text-primary'
+                                        : 'border-transparent hover:border-slate-200 hover:bg-slate-50'
+                                )}
+                            >
+                                <span>
+                                    <span className="block font-semibold capitalize">{role.role_name}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                        {role.role_name === 'admin' ? 'Plný přístup' : 'Vlastní oprávnění'}
+                                    </span>
+                                </span>
+                                {selectedRole?.id === role.id && <CheckCircle2 className="h-4 w-4" />}
+                            </button>
                         ))}
                     </div>
                 </motion.div>
 
-                <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="md:col-span-2 glass-effect rounded-xl p-6">
+                <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="app-surface min-w-0 p-4 sm:p-6">
                     {selectedRole ? (
                         <div>
-                            <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-xl font-bold">Oprávnění pro roli: <span className="text-purple-600 capitalize">{selectedRole.role_name}</span></h2>
-                                {selectedRole.role_name !== 'admin' && <Button onClick={handleSaveChanges}><Save className="w-4 h-4 mr-2" /> Uložit změny</Button>}
+                            <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <h2 className="text-xl font-semibold">Oprávnění role</h2>
+                                        <Badge variant={selectedRole.role_name === 'admin' ? 'info' : 'secondary'} className="capitalize">
+                                            {selectedRole.role_name}
+                                        </Badge>
+                                    </div>
+                                    <p className="mt-1 text-sm text-muted-foreground">
+                                        Vyšší úroveň automaticky zahrnuje nižší práva: správa obsahuje editaci i čtení.
+                                    </p>
+                                </div>
+                                {selectedRole.role_name !== 'admin' && (
+                                    <Button onClick={handleSaveChanges} className="shrink-0">
+                                        <Save className="w-4 h-4 mr-2" /> Uložit změny
+                                    </Button>
+                                )}
                             </div>
                             
                             {selectedRole.role_name === 'admin' ? (
-                                <div className="text-center p-8 bg-blue-50 rounded-lg">
+                                <div className="rounded-lg border border-blue-100 bg-blue-50 p-8 text-center">
                                     <Shield className="w-12 h-12 text-blue-500 mx-auto mb-3"/>
                                     <p className="font-semibold">Role administrátora má vždy plný přístup.</p>
                                     <p className="text-sm text-muted-foreground">Oprávnění nelze měnit.</p>
                                 </div>
                             ) : (
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Modul</TableHead>
-                                            <TableHead className="text-center">Čtení</TableHead>
-                                            <TableHead className="text-center">Editace</TableHead>
-                                            <TableHead className="text-center">Administrace</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {modules.map(module => {
-                                            const p = permissions.find(perm => perm.role === selectedRole.role_name && perm.module === module.key) || {};
-                                            return (
-                                                <TableRow key={module.key}>
-                                                    <TableCell className="font-semibold capitalize">{module.name}</TableCell>
-                                                    <TableCell className="text-center"><Checkbox checked={!!p.can_read} onCheckedChange={(c) => handlePermissionChange(selectedRole.role_name, module.key, 'can_read', c)} /></TableCell>
-                                                    <TableCell className="text-center"><Checkbox checked={!!p.can_edit} onCheckedChange={(c) => handlePermissionChange(selectedRole.role_name, module.key, 'can_edit', c)} /></TableCell>
-                                                    <TableCell className="text-center"><Checkbox checked={!!p.can_admin} onCheckedChange={(c) => handlePermissionChange(selectedRole.role_name, module.key, 'can_admin', c)} /></TableCell>
-                                                </TableRow>
-                                            )
-                                        })}
-                                    </TableBody>
-                                </Table>
+                                <div className="overflow-x-auto rounded-lg border">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow className="bg-slate-50">
+                                                <TableHead className="min-w-[180px]">Modul</TableHead>
+                                                {permissionLevels.map(level => (
+                                                    <TableHead key={level.key} className="min-w-[150px] text-center">
+                                                        <div className="flex flex-col items-center gap-1 py-1">
+                                                            <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+                                                                <level.icon className="h-4 w-4" />
+                                                                {level.label}
+                                                            </div>
+                                                            <span className="text-xs font-normal text-muted-foreground">{level.description}</span>
+                                                        </div>
+                                                    </TableHead>
+                                                ))}
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {modules.map(module => {
+                                                const p = permissions.find(perm => perm.role === selectedRole.role_name && perm.module === module.key) || {};
+                                                return (
+                                                    <TableRow key={module.key}>
+                                                        <TableCell>
+                                                            <div className="font-semibold">{module.name}</div>
+                                                            <div className="text-xs text-muted-foreground">{module.key}</div>
+                                                        </TableCell>
+                                                        {permissionLevels.map(level => (
+                                                            <TableCell key={level.key} className="text-center">
+                                                                <Checkbox
+                                                                    checked={!!p[level.key]}
+                                                                    onCheckedChange={(c) => handlePermissionChange(selectedRole.role_name, module.key, level.key, c)}
+                                                                    aria-label={`${level.label}: ${module.name}`}
+                                                                />
+                                                            </TableCell>
+                                                        ))}
+                                                    </TableRow>
+                                                )
+                                            })}
+                                        </TableBody>
+                                    </Table>
+                                </div>
                             )}
                         </div>
                     ) : (
-                        <div className="text-center p-8">
+                        <div className="p-8 text-center">
                             <Shield className="w-12 h-12 text-muted-foreground mx-auto mb-3"/>
                             <p className="text-muted-foreground">Vyberte roli pro zobrazení a úpravu oprávnění.</p>
                         </div>

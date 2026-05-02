@@ -1,23 +1,50 @@
 import React from 'react';
 import { NavLink, useLocation, Outlet } from 'react-router-dom';
-import { Settings as SettingsIcon, Users, Key, ShoppingCart, User, BookOpen, FileText, Database } from 'lucide-react';
+import { Settings as SettingsIcon, Users, Key, ShoppingCart, User, BookOpen, FileText, Database, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PageHeader from '@/components/ui/page-header';
+import { cn } from '@/lib/utils';
 
 const settingsNav = [
-  { name: 'Můj profil', href: '/settings/profile', icon: User, requiredPermission: 'can_read' },
-  { name: 'Uživatelé', href: '/settings/users', icon: Users, requiredPermission: 'can_admin' },
-  { name: 'Oprávnění', href: '/settings/permissions', icon: Key, requiredPermission: 'can_admin' },
-  { name: 'Šablony projektů', href: '/settings/project-templates', icon: FileText, requiredPermission: 'can_admin' },
-  { name: 'Šablony objednávek', href: '/settings/order-templates', icon: ShoppingCart, requiredPermission: 'can_admin' },
-  { name: 'Číselníky', href: '/settings/dictionaries', icon: BookOpen, requiredPermission: 'can_admin' },
-  { name: 'Zálohování a údržba', href: '/settings/backup-maintenance', icon: Database, requiredPermission: 'can_admin' },
+  {
+    label: 'Účet',
+    items: [
+      { name: 'Můj profil', description: 'Osobní údaje a zabezpečení', href: '/settings/profile', icon: User, requiredPermission: 'can_read' },
+    ],
+  },
+  {
+    label: 'Přístupy',
+    items: [
+      { name: 'Uživatelé', description: 'Členové, role a účty', href: '/settings/users', icon: Users, requiredPermission: 'can_admin' },
+      { name: 'Role a oprávnění', description: 'Práva k modulům aplikace', href: '/settings/permissions', icon: Key, requiredPermission: 'can_admin' },
+    ],
+  },
+  {
+    label: 'Konfigurace',
+    items: [
+      { name: 'Číselníky', description: 'Centrální hodnoty pro formuláře', href: '/settings/dictionaries', icon: BookOpen, requiredPermission: 'can_admin' },
+      { name: 'Šablony projektů', description: 'Výchozí struktury projektů', href: '/settings/project-templates', icon: FileText, requiredPermission: 'can_admin' },
+      { name: 'Šablony objednávek', description: 'Texty a proměnné objednávek', href: '/settings/order-templates', icon: ShoppingCart, requiredPermission: 'can_admin' },
+    ],
+  },
+  {
+    label: 'Systém',
+    items: [
+      { name: 'Zálohování a údržba', description: 'Servisní operace portálu', href: '/settings/backup-maintenance', icon: Database, requiredPermission: 'can_admin' },
+    ],
+  },
 ];
 
 const Settings = () => {
   const location = useLocation();
   const { hasPermission } = useAuth();
   const isRootSettings = location.pathname === '/settings';
+  const visibleGroups = settingsNav
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => hasPermission('settings', item.requiredPermission)),
+    }))
+    .filter(group => group.items.length > 0);
 
   return (
     <div className="space-y-6">
@@ -31,32 +58,65 @@ const Settings = () => {
         <h1 className="text-3xl font-bold">Nastavení</h1>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <aside className="lg:col-span-3 xl:col-span-2">
-          <nav className="flex flex-col space-y-1">
-            {settingsNav
-              .filter(item => hasPermission('settings', item.requiredPermission))
-              .map((item) => (
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <aside className="lg:col-span-4 xl:col-span-3">
+          <nav className="app-surface sticky top-4 space-y-5 p-3">
+            {visibleGroups.map((group) => (
+              <div key={group.label} className="space-y-2">
+                <div className="px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {group.label}
+                </div>
+                <div className="space-y-1">
+                  {group.items.map((item) => (
                 <NavLink
                   key={item.name}
                   to={item.href}
                   end={item.href === '/settings'}
                   className={({ isActive }) => {
                     const realIsActive = (isRootSettings && item.href === '/settings/profile') || isActive;
-                    return `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${realIsActive
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted/50'
-                      }`;
+                    return cn(
+                      'group flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors',
+                      realIsActive
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-slate-700 hover:bg-slate-100'
+                    );
                   }}
                 >
-                  <item.icon className="h-5 w-5" />
-                  <span>{item.name}</span>
+                  {({ isActive }) => {
+                    const realIsActive = (isRootSettings && item.href === '/settings/profile') || isActive;
+                    return (
+                      <>
+                        <span className={cn(
+                          'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                          realIsActive ? 'bg-white/15' : 'bg-slate-100 text-slate-600 group-hover:bg-white'
+                        )}>
+                          <item.icon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-semibold leading-5">{item.name}</span>
+                          <span className={cn(
+                            'block truncate text-xs leading-4',
+                            realIsActive ? 'text-primary-foreground/75' : 'text-muted-foreground'
+                          )}>
+                            {item.description}
+                          </span>
+                        </span>
+                        <ChevronRight className={cn(
+                          'h-4 w-4 shrink-0',
+                          realIsActive ? 'text-primary-foreground/80' : 'text-muted-foreground'
+                        )} />
+                      </>
+                    );
+                  }}
                 </NavLink>
-              ))}
+                  ))}
+                </div>
+              </div>
+            ))}
           </nav>
         </aside>
 
-        <main className="lg:col-span-9 xl:col-span-10">
+        <main className="min-w-0 lg:col-span-8 xl:col-span-9">
           <Outlet />
         </main>
       </div>
