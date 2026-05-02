@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -45,6 +45,15 @@ const clearCache = () => {
   cache.timestamp.clear();
 };
 
+const withTimeout = (promise, timeoutMs, label) => {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+};
+
 export const AuthProvider = ({ children }) => {
   const { toast } = useToast();
 
@@ -56,10 +65,13 @@ export const AuthProvider = ({ children }) => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState(null);
   const [isPrivateMode, setIsPrivateMode] = useState(false); 
+  const currentUserIdRef = useRef(null);
+  const authEventRunIdRef = useRef(0);
 
   const isSuperUser = useMemo(() => userRole === 'admin' || userRole === 'super_manager', [userRole]);
 
   const clearState = useCallback(() => {
+    currentUserIdRef.current = null;
     setUser(null);
     setSession(null);
     setMemberId(null);
@@ -324,11 +336,16 @@ export const AuthProvider = ({ children }) => {
     const initializeAuth = async () => {
       setLoading(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await withTimeout(
+          supabase.auth.getSession(),
+          8000,
+          'Auth session initialization'
+        );
         
         if (isMounted) {
           setSession(session);
           const currentUser = session?.user ?? null;
+          currentUserIdRef.current = currentUser?.id ?? null;
           setUser(currentUser);
           
           if (currentUser) {
@@ -350,30 +367,40 @@ export const AuthProvider = ({ children }) => {
     initializeAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      (_event, session) => {
         if (!isMounted) return;
 
-        if (_event === 'TOKEN_REFRESHED' && session === null) {
-          await signOut();
+        const newCurrentUser = session?.user ?? null;
+        const previousUserId = currentUserIdRef.current;
+        const nextUserId = newCurrentUser?.id ?? null;
+
+        setSession(session);
+        setUser(newCurrentUser);
+
+        if (_event === 'SIGNED_OUT' || !newCurrentUser) {
+          clearState();
           return;
         }
 
-        const newCurrentUser = session?.user ?? null;
-        
-        if (newCurrentUser?.id !== user?.id || !session) {
-          setLoading(true);
-          setSession(session);
-          setUser(newCurrentUser);
-        
-          if (_event === 'SIGNED_OUT' || !newCurrentUser) {
-            clearState();
-          } else {
-            await fetchPermissions(newCurrentUser);
-          }
-          setLoading(false);
-        } else {
-          setSession(session);
+        if (nextUserId === previousUserId) {
+          currentUserIdRef.current = nextUserId;
+          return;
         }
+
+        currentUserIdRef.current = nextUserId;
+        setLoading(true);
+        const runId = authEventRunIdRef.current + 1;
+        authEventRunIdRef.current = runId;
+
+        setTimeout(async () => {
+          try {
+            await fetchPermissions(newCurrentUser);
+          } finally {
+            if (isMounted && authEventRunIdRef.current === runId) {
+              setLoading(false);
+            }
+          }
+        }, 0);
       }
     );
 
