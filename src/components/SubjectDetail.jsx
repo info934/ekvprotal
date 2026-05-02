@@ -220,11 +220,11 @@ const SubjectDetail = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
+        <div>
             {/* Header */}
             <div className="bg-white/80 backdrop-blur-xl border-b border-white/20 sticky top-0 z-10">
-                <div className="max-w-6xl mx-auto px-6 py-4">
-                    <div className="flex items-center justify-between">
+                <div className="app-page py-4">
+                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-4">
                             <Link to="/subjects" className="flex items-center gap-2 text-slate-600 hover:text-primary transition-colors">
                                 <ArrowLeft className="w-5 h-5" />
@@ -239,7 +239,7 @@ const SubjectDetail = () => {
             </div>
 
             {/* Main Content */}
-            <div className="max-w-6xl mx-auto px-6 py-8">
+            <div className="app-page">
                 <motion.div 
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}

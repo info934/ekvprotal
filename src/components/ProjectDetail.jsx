@@ -306,10 +306,10 @@ const ProjectDetail = () => {
     const defaultTab = location.hash.substring(1) || "overview";
 
     return (
-        <div className="min-h-screen bg-slate-50">
+        <div>
             <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b">
-                <div className="container mx-auto px-6 py-4">
-                    <div className="flex items-center justify-between">
+                <div className="app-page py-4">
+                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-4">
                             <Button variant="ghost" size="sm" onClick={() => navigate('/projects')}><ChevronLeft className="h-4 w-4 mr-2" />Zpět</Button>
                             <div><h1 className="text-2xl font-bold">{project.name}</h1><p className="text-muted-foreground font-mono text-sm">{project.code}</p></div>
@@ -331,7 +331,7 @@ const ProjectDetail = () => {
                 </div>
             </motion.div>
 
-            <div className="container mx-auto px-6 py-8">
+            <div className="app-page">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     {!isPrivateMode && <StatCard title="Celková cena" value={canViewFinance ? `${(project.price || 0).toLocaleString('cs-CZ')} Kč` : myRewardDisplay} icon={DollarSign} color="success" />}
                     <StatCard title="Pokrok projektu" value={`${progress}%`} icon={Target} color={progress > 80 ? "success" : progress > 50 ? "warning" : "danger"} />

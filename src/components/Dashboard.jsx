@@ -375,7 +375,7 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6 p-6 max-w-[1600px] mx-auto">
+      <div className="app-page-wide">
         <div className="h-12 w-48 bg-slate-100 rounded-lg animate-pulse mb-8" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="h-32 bg-slate-100 rounded-xl animate-pulse" />
@@ -388,7 +388,7 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto animate-in fade-in duration-500">
+    <div className="app-page-wide animate-in fade-in duration-500">
       <PageHeader
         icon={Home}
         title="Přehled"

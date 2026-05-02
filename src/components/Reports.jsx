@@ -148,8 +148,8 @@ const Reports = () => {
 
   if (!hasPermission('reports', 'can_read')) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
+      <div className="app-page">
+        <div className="space-y-6">
           <Card className="p-12 text-center">
             <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-red-600 mb-2">Přístup odepřen</h1>
@@ -161,8 +161,8 @@ const Reports = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="app-page">
+      <div className="space-y-6">
         <PageHeader
           icon={BarChart3}
           title="Reporty"

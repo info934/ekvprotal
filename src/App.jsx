@@ -118,11 +118,11 @@ function AppContent() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
+    <div className="flex min-h-screen min-w-0 bg-background text-foreground">
       {session ? (
         <>
           <Sidebar />
-          <main className="flex-1 lg:ml-56 transition-all duration-300 print:ml-0 print:p-0">
+          <main className="min-w-0 flex-1 overflow-x-hidden lg:ml-56 transition-all duration-300 print:ml-0 print:p-0">
             <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />

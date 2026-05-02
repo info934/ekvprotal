@@ -412,7 +412,7 @@ const MemberDetail = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="app-page">
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div>
           <Link to="/members" className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary mb-4">

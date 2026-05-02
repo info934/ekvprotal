@@ -373,9 +373,9 @@ const Payouts = () => {
   const defaultTab = canAdmin ? 'hourly_admin' : (isHourlyWorker ? 'hourly' : 'fixed');
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-12">
-      <div className="bg-white border-b border-slate-200 py-8 px-6 sm:px-10 mb-8 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto">
+    <div className="pb-12">
+      <div className="sticky top-0 z-10 border-b border-slate-200 bg-background/95 backdrop-blur">
+        <div className="app-page pb-5">
           <PageHeader
             icon={Wallet}
             title="Správa výplat"
@@ -404,7 +404,7 @@ const Payouts = () => {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+      <div className="app-page pt-0">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <StatCard icon={Target} title="Aktivní požadavky" value={stats.activeCount.toString()} subtitle={`V hodnotě: ${stats.totalActiveAmount.toLocaleString('cs-CZ')} Kč`} color="text-amber-600" bg="bg-amber-100/50" />
           <StatCard icon={PiggyBank} title="Očekávaná platba" value={`${stats.totalActiveAmount.toLocaleString('cs-CZ')} Kč`} subtitle="Schválené a čekající částky celkem" color="text-blue-600" bg="bg-blue-100/50" />

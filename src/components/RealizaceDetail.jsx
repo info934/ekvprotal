@@ -322,10 +322,10 @@ const RealizaceDetail = () => {
   if (!realization) return null;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div>
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
+        <div className="app-page py-4">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
               <Button variant="ghost" size="sm" onClick={() => navigate('/realizace')}>
                 <ChevronLeft className="w-4 h-4 mr-2" /> Zpět
@@ -347,7 +347,7 @@ const RealizaceDetail = () => {
         </div>
       </motion.div>
 
-      <div className="container mx-auto px-6 py-8 space-y-6 max-w-[1600px]">
+      <div className="app-page-wide">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-5 mb-4">
             <TabsTrigger value="overview" className="flex items-center gap-2"><LayoutDashboard className="w-4 h-4" /> Přehled</TabsTrigger>

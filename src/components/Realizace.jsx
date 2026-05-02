@@ -202,7 +202,7 @@ const Realizace = () => {
     };
 
     return (
-        <div className="space-y-6 container mx-auto px-4 py-8 max-w-7xl">
+        <div className="app-page">
             <PageHeader
                 icon={HardHat}
                 title="Realizace"
@@ -255,7 +255,7 @@ const Realizace = () => {
                 </Card>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-lg border shadow-sm sticky top-0 z-10">
+            <div className="app-surface sticky top-0 z-10 flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-2 flex-1 w-full md:w-auto">
                     <div className="relative flex-1 md:max-w-sm">
                         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

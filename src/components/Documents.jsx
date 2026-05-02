@@ -168,7 +168,7 @@ const Documents = () => {
 
 
   return (
-    <div className="space-y-6">
+    <div className="app-page">
       <PageHeader
         icon={FileText}
         title="Dokumentace"
