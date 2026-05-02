@@ -1,0 +1,646 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Users, Plus, Edit2, Trash2, LayoutGrid, Rows, Award, AlertTriangle, CheckCircle, Search, Filter, MoreHorizontal, Eye, DollarSign, Clock, Shield, Mail, Phone, Calendar, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/use-toast';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import MemberDialog from '@/components/MemberDialog';
+import { supabase } from '@/lib/customSupabaseClient';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { differenceInDays, parseISO } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import PageHeader from '@/components/ui/page-header';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { calculateProjectMemberRewardFromProject } from '@/domain/financials';
+
+
+const getCertificationStatus = (certifications) => {
+    if (!certifications || certifications.length === 0) {
+        return { icon: null, color: '', tooltip: 'Žádné certifikace' };
+    }
+    let soonToExpire = false;
+    let expired = false;
+
+    for (const cert of certifications) {
+        if (cert.expiry_date) {
+            const daysUntilExpiry = differenceInDays(parseISO(cert.expiry_date), new Date());
+            if (daysUntilExpiry < 0) {
+                expired = true;
+                break;
+            }
+            if (daysUntilExpiry <= 30) {
+                soonToExpire = true;
+            }
+        }
+    }
+    if (expired) {
+        return { icon: AlertTriangle, color: 'text-red-500', tooltip: 'Některé certifikace jsou expirované' };
+    }
+    if (soonToExpire) {
+        return { icon: AlertTriangle, color: 'text-yellow-500', tooltip: 'Některé certifikace brzy expirují' };
+    }
+    return { icon: CheckCircle, color: 'text-green-500', tooltip: 'Všechny certifikace jsou platné' };
+};
+
+
+const Members = () => {
+    const { toast } = useToast();
+    const navigate = useNavigate();
+    const { hasPermission, memberId, isSuperUser } = useAuth();
+    const [members, setMembers] = useState([]);
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [editingMember, setEditingMember] = useState(null);
+    const [rewards, setRewards] = useState({});
+    const [payouts, setPayouts] = useState({});
+    const [view, setView] = useState('grid');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [roleFilter, setRoleFilter] = useState('all');
+    const [certificationFilter, setCertificationFilter] = useState('all');
+
+    const canEdit = hasPermission('members', 'can_edit');
+    const canAdmin = hasPermission('members', 'can_admin');
+    const canViewFinance = hasPermission('projects', 'can_edit');
+
+    const fetchMembersAndRewards = useCallback(async () => {
+        let membersQuery = supabase
+            .from('members')
+            .select('*, member_roles(name), member_certifications(expiry_date)')
+            .order('name');
+
+        if (!isSuperUser && memberId) {
+            membersQuery = membersQuery.eq('id', memberId);
+        }
+
+        const { data: membersData, error: membersError } = await membersQuery;
+
+        if (membersError) {
+            toast({ title: "Chyba při načítání projektantů", variant: "destructive" });
+            return;
+        }
+        setMembers(membersData || []);
+
+        if (!canViewFinance) return;
+
+        let assignmentsQuery = supabase
+            .from('project_members')
+            .select('member_id, reward_percentage, reward_amount, reward_type, project:projects(id, price, budget_percentage, overhead_percentage, project_subcontractors(price))');
+
+        if (!isSuperUser && memberId) {
+            assignmentsQuery = assignmentsQuery.eq('member_id', memberId);
+        }
+
+        const { data: assignmentsData, error: assignmentsError } = await assignmentsQuery;
+
+        if (assignmentsError) {
+            toast({ title: "Chyba při načítání odměn", variant: "destructive", description: assignmentsError.message });
+            return;
+        }
+
+        const totalRewardsByMember = assignmentsData.reduce((acc, assignment) => {
+            if (!assignment.project) return acc;
+
+            const reward = calculateProjectMemberRewardFromProject(assignment);
+
+            acc[assignment.member_id] = (acc[assignment.member_id] || 0) + (reward > 0 ? reward : 0);
+            return acc;
+        }, {});
+
+        setRewards(totalRewardsByMember);
+
+        let payoutsQuery = supabase
+            .from('payouts')
+            .select('member_id, amount')
+            .in('status', ['paid', 'approved', 'invoice_uploaded', 'pending']);
+
+        if (!isSuperUser && memberId) {
+            payoutsQuery = payoutsQuery.eq('member_id', memberId);
+        }
+
+        const { data: payoutsData, error: payoutsError } = await payoutsQuery;
+
+        if (payoutsError) {
+            toast({ title: "Chyba při načítání výplat", variant: "destructive" });
+        } else {
+            const totalPaidByMember = payoutsData.reduce((acc, payout) => {
+                if (payout.member_id) {
+                    acc[payout.member_id] = (acc[payout.member_id] || 0) + (parseFloat(payout.amount) || 0);
+                }
+                return acc;
+            }, {});
+            setPayouts(totalPaidByMember);
+        }
+
+    }, [toast, isSuperUser, memberId, canViewFinance]);
+
+    useEffect(() => {
+        fetchMembersAndRewards();
+    }, [fetchMembersAndRewards]);
+
+    const handleSaveMember = async (memberData) => {
+        const cleanedData = {
+            ...memberData,
+            role_id: memberData.role_id || null,
+            auth_user_id: memberData.auth_user_id || null,
+            hourly_rate: memberData.hourly_rate || null
+        };
+
+        if (memberData.email) {
+            const { data: user, error: userError } = await supabase.rpc('get_user_id_by_email', { p_email: memberData.email });
+            if (userError) {
+                toast({ title: 'Uživatel s tímto emailem neexistuje.', variant: 'destructive' });
+                return;
+            }
+            if (user) {
+                cleanedData.auth_user_id = user;
+            }
+        }
+
+        if (editingMember) {
+            const { error } = await supabase.from('members').update(cleanedData).eq('id', editingMember.id);
+            if (error) {
+                toast({ title: "Chyba při úpravě projektanta", variant: "destructive", description: error.message });
+            } else {
+                toast({ title: "✅ Projektant upraven!" });
+            }
+        } else {
+            const { error } = await supabase.from('members').insert([cleanedData]);
+            if (error) {
+                toast({ title: "Chyba při přidávání projektanta", variant: "destructive", description: error.message });
+            } else {
+                toast({ title: "✅ Projektant přidán!" });
+            }
+        }
+        fetchMembersAndRewards();
+        setIsDialogOpen(false);
+        setEditingMember(null);
+    };
+
+    const handleDeleteMember = async (id) => {
+        if (!canAdmin) return;
+        const { error } = await supabase.from('members').delete().eq('id', id);
+        if (error) {
+            toast({ title: "Chyba při mazání projektanta", variant: "destructive" });
+        } else {
+            toast({ title: "🗑️ Projektant smazán." });
+            fetchMembersAndRewards();
+        }
+    };
+
+    const handleOpenDialog = (member = null) => {
+        setEditingMember(member);
+        setIsDialogOpen(true);
+    };
+
+    const filteredMembers = members.filter(member => {
+        const matchesSearch = searchTerm === '' ||
+            member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (member.email && member.email.toLowerCase().includes(searchTerm.toLowerCase()));
+
+        const matchesRole = roleFilter === 'all' ||
+            (member.member_roles?.name === roleFilter);
+
+        const matchesCertification = (() => {
+            if (certificationFilter === 'all') return true;
+            const certStatus = getCertificationStatus(member.member_certifications);
+            return certificationFilter === 'valid' ? certStatus.icon === CheckCircle :
+                certificationFilter === 'expired' ? certStatus.icon === AlertTriangle :
+                    certificationFilter === 'none' ? !certStatus.icon : true;
+        })();
+
+        return matchesSearch && matchesRole && matchesCertification;
+    });
+
+    const totalMembers = members.length;
+    const totalRewards = Object.values(rewards).reduce((sum, reward) => sum + reward, 0);
+    const totalPayouts = Object.values(payouts).reduce((sum, payout) => sum + payout, 0);
+    const pendingPayouts = totalRewards - totalPayouts;
+    const membersWithExpiredCerts = members.filter(member => {
+        const certStatus = getCertificationStatus(member.member_certifications);
+        return certStatus.icon === AlertTriangle;
+    }).length;
+
+    const renderMemberFinancials = (memberId) => {
+        if (!canViewFinance) return { totalReward: 0, balance: 0 };
+        const totalReward = rewards[memberId] || 0;
+        const totalPaid = payouts[memberId] || 0;
+        const balance = totalReward - totalPaid;
+
+        return { totalReward, balance };
+    };
+
+    const MemberCard = ({ member }) => {
+        const { totalReward, balance } = renderMemberFinancials(member.id);
+        const certStatus = getCertificationStatus(member.member_certifications);
+        const CertIcon = certStatus.icon;
+
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileHover={{ y: -4, scale: 1.02 }}
+                className="group bg-white border rounded-xl p-6 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all duration-200"
+                onClick={() => navigate(`/members/${member.id}`)}
+            >
+                <div className="flex justify-between items-start mb-4">
+                    <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-lg truncate">{member.name}</h3>
+                        <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="secondary" className="text-xs">
+                                {member.member_roles?.name || 'Bez role'}
+                            </Badge>
+                            {CertIcon && (
+                                <CertIcon
+                                    title={certStatus.tooltip}
+                                    className={cn("w-4 h-4", certStatus.color)}
+                                />
+                            )}
+                        </div>
+                    </div>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                                <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => navigate(`/members/${member.id}`)}>
+                                <Eye className="h-4 w-4 mr-2" />
+                                Zobrazit
+                            </DropdownMenuItem>
+                            {canEdit && (
+                                <DropdownMenuItem onClick={() => handleOpenDialog(member)}>
+                                    <Edit2 className="h-4 w-4 mr-2" />
+                                    Upravit
+                                </DropdownMenuItem>
+                            )}
+                            {canAdmin && (
+                                <DropdownMenuItem
+                                    onClick={() => handleDeleteMember(member.id)}
+                                    className="text-red-600"
+                                >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Smazat
+                                </DropdownMenuItem>
+                            )}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Mail className="w-3 h-3" />
+                        <span className="truncate">{member.email || 'Není nastaven'}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Clock className="w-3 h-3" />
+                        <span>{member.hourly_rate ? `${Number(member.hourly_rate).toLocaleString('cs-CZ')} Kč/h` : 'Nenastavena'}</span>
+                    </div>
+
+                    {canViewFinance && (
+                        <div className="pt-3 border-t space-y-2">
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs text-muted-foreground">Celková odměna:</span>
+                                <span className="text-sm font-semibold">{totalReward.toLocaleString('cs-CZ')} Kč</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs text-muted-foreground">Zbývá k vyplacení:</span>
+                                <span className={cn(
+                                    "text-sm font-bold",
+                                    balance > 0 ? "text-green-600" : "text-gray-500"
+                                )}>
+                                    {balance.toLocaleString('cs-CZ')} Kč
+                                </span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </motion.div>
+        );
+    };
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-6">
+            <div className="max-w-7xl mx-auto space-y-6">
+                <PageHeader
+                    icon={Users}
+                    title="Projektanti"
+                    description={isSuperUser ? 'Správa projektantů a jejich odměn' : 'Váš profil a odměny'}
+                    actions={
+                        <>
+                            {canEdit && isSuperUser && (
+                                <Button onClick={() => handleOpenDialog()} className="w-full md:w-auto">
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Nový projektant
+                                </Button>
+                            )}
+                            <Button variant="outline" size="sm" onClick={fetchMembersAndRewards} className="bg-white/80 hidden md:inline-flex">
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Aktualizovat
+                            </Button>
+                        </>
+                    }
+                />
+                <motion.div
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="hidden"
+                >
+                    <div>
+                        <h1 className="text-3xl font-bold text-slate-800 mb-2 flex items-center gap-3">
+                            <Users className="w-8 h-8 text-primary" />
+                            Projektanti
+                        </h1>
+                        <p className="text-muted-foreground">
+                            {isSuperUser ? 'Správa projektantů a jejich odměn' : 'Váš profil a odměny'}
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3 w-full md:w-auto">
+                        {canEdit && isSuperUser && (
+                            <Button
+                                onClick={() => handleOpenDialog()}
+                                className="w-full md:w-auto"
+                            >
+                                <Plus className="w-4 h-4 mr-2" />
+                                Nový projektant
+                            </Button>
+                        )}
+                        <Button variant="outline" size="sm" onClick={fetchMembersAndRewards} className="bg-white/80 hidden md:inline-flex">
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Aktualizovat
+                        </Button>
+                    </div>
+                </motion.div>
+
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card>
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-blue-100 rounded-lg">
+                                    <Users className="h-5 w-5 text-blue-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Celkem projektantů</p>
+                                    <p className="text-2xl font-bold">{totalMembers}</p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-green-100 rounded-lg">
+                                    <DollarSign className="h-5 w-5 text-green-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Celkové odměny</p>
+                                    <p className="text-2xl font-bold">{canViewFinance ? totalRewards.toLocaleString('cs-CZ') + ' Kč' : 'N/A'}</p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-orange-100 rounded-lg">
+                                    <Clock className="h-5 w-5 text-orange-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-muted-foreground">K vyplacení</p>
+                                    <p className={cn("text-2xl font-bold", canViewFinance && "text-orange-600")}>{canViewFinance ? pendingPayouts.toLocaleString('cs-CZ') + ' Kč' : 'N/A'}</p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-red-100 rounded-lg">
+                                    <AlertTriangle className="h-5 w-5 text-red-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Expirované certifikace</p>
+                                    <p className="text-2xl font-bold text-red-600">{membersWithExpiredCerts}</p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* Filters and Search - pouze pro super uživatele */}
+                {isSuperUser && (
+                    <Card>
+                        <CardContent className="p-6">
+                            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
+                                <div className="relative flex-1 w-full max-w-md">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Hledat projektanta..."
+                                        className="pl-10"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="flex flex-wrap gap-2 items-center">
+                                    <div className="flex items-center gap-2">
+                                        <Filter className="h-4 w-4 text-muted-foreground" />
+                                        <Select value={roleFilter} onValueChange={setRoleFilter}>
+                                            <SelectTrigger className="w-[160px]">
+                                                <SelectValue placeholder="Všechny role" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Všechny role</SelectItem>
+                                                {Array.from(new Set(members.map(m => m.member_roles?.name).filter(Boolean))).map(role => (
+                                                    <SelectItem key={role} value={role}>{role}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+
+                                        <Select value={certificationFilter} onValueChange={setCertificationFilter}>
+                                            <SelectTrigger className="w-[180px]">
+                                                <SelectValue placeholder="Všechny certifikace" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Všechny certifikace</SelectItem>
+                                                <SelectItem value="valid">Platné</SelectItem>
+                                                <SelectItem value="expired">Expirované</SelectItem>
+                                                <SelectItem value="none">Bez certifikací</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant={view === 'grid' ? 'default' : 'outline'}
+                                            size="sm"
+                                            onClick={() => setView('grid')}
+                                        >
+                                            <LayoutGrid className="w-4 h-4 mr-2" />
+                                            Karty
+                                        </Button>
+                                        <Button
+                                            variant={view === 'table' ? 'default' : 'outline'}
+                                            size="sm"
+                                            onClick={() => setView('table')}
+                                        >
+                                            <Rows className="w-4 h-4 mr-2" />
+                                            Tabulka
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Content */}
+                {filteredMembers.length > 0 ? (
+                    view === 'grid' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <AnimatePresence>
+                                {filteredMembers.map(member => (
+                                    <MemberCard key={member.id} member={member} />
+                                ))}
+                            </AnimatePresence>
+                        </div>
+                    ) : (
+                        <Card className="overflow-hidden">
+                            <CardContent className="p-0">
+                                <div className="overflow-x-auto">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead className="w-[250px]">Jméno</TableHead>
+                                                <TableHead>Role</TableHead>
+                                                <TableHead>Certifikace</TableHead>
+                                                <TableHead>Hodinová sazba</TableHead>
+                                                {canViewFinance && <TableHead>Celková odměna</TableHead>}
+                                                {canViewFinance && <TableHead>Zbývá k vyplacení</TableHead>}
+                                                <TableHead className="w-[50px]"></TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {filteredMembers.map(member => {
+                                                const { totalReward, balance } = renderMemberFinancials(member.id);
+                                                const certStatus = getCertificationStatus(member.member_certifications);
+                                                const CertIcon = certStatus.icon;
+
+                                                return (
+                                                    <TableRow
+                                                        key={member.id}
+                                                        className="cursor-pointer hover:bg-muted/50 transition-colors group"
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/members/${member.id}`);}}
+                                                    >
+                                                        <TableCell>
+                                                            <div className="font-medium">{member.name}</div>
+                                                            <div className="text-xs text-muted-foreground truncate">{member.email}</div>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Badge variant="secondary" className="text-xs">
+                                                                {member.member_roles?.name || 'Bez role'}
+                                                            </Badge>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {CertIcon && (
+                                                                <CertIcon
+                                                                    title={certStatus.tooltip}
+                                                                    className={cn("w-5 h-5", certStatus.color)}
+                                                                />
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell className="font-semibold">
+                                                            {member.hourly_rate ? `${Number(member.hourly_rate).toLocaleString('cs-CZ')} Kč` : 'Nenastavena'}
+                                                        </TableCell>
+                                                        {canViewFinance && <TableCell>{totalReward.toLocaleString('cs-CZ')} Kč</TableCell>}
+                                                        {canViewFinance && <TableCell className={cn(
+                                                            "font-semibold",
+                                                            balance > 0 ? "text-green-600" : "text-gray-500"
+                                                        )}>
+                                                            {balance.toLocaleString('cs-CZ')} Kč
+                                                        </TableCell>}
+                                                        <TableCell onClick={(e) => e.stopPropagation()}>
+                                                            <DropdownMenu>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                        <MoreHorizontal className="h-4 w-4" />
+                                                                    </Button>
+                                                                </DropdownMenuTrigger>
+                                                                <DropdownMenuContent align="end">
+                                                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/members/${member.id}`); }}>
+                                                                        <Eye className="h-4 w-4 mr-2" />
+                                                                        Zobrazit
+                                                                    </DropdownMenuItem>
+                                                                    {canEdit && (
+                                                                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenDialog(member); }}>
+                                                                            <Edit2 className="h-4 w-4 mr-2" />
+                                                                            Upravit
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                    {canAdmin && (
+                                                                        <DropdownMenuItem
+                                                                            onClick={(e) => { e.stopPropagation(); handleDeleteMember(member.id); }}
+                                                                            className="text-red-600"
+                                                                        >
+                                                                            <Trash2 className="h-4 w-4 mr-2" />
+                                                                            Smazat
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )
+                ) : (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="text-center py-12"
+                    >
+                        <Card className="max-w-md mx-auto">
+                            <CardContent className="p-8">
+                                <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                                <h3 className="text-lg font-semibold mb-2">Žádní projektanti nenalezeni</h3>
+                                <p className="text-muted-foreground mb-4">
+                                    Zkuste změnit filtry nebo vytvořte nového projektanta.
+                                </p>
+                                {canEdit && (
+                                    <Button onClick={() => handleOpenDialog()}>
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        Vytvořit projektanta
+                                    </Button>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </motion.div>
+                )}
+
+                <MemberDialog
+                    isOpen={isDialogOpen}
+                    onClose={() => { setIsDialogOpen(false); setEditingMember(null); }}
+                    onSave={handleSaveMember}
+                    member={editingMember}
+                />
+            </div>
+        </div>
+    );
+};
+
+export default Members;

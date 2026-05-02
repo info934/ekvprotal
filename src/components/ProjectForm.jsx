@@ -1,0 +1,504 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { ProjectSchema } from '@/lib/validationSchemas';
+import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '@/lib/customSupabaseClient';
+import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { format, parseISO } from 'date-fns';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from '@/components/ui/switch';
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Briefcase, Building, DollarSign, FileText, Plus, Save, Trash2, ChevronLeft, AlertCircle, Loader2, Info, Copy } from 'lucide-react';
+import MemberSelect from '@/components/MemberSelect';
+import SubjectSelect from '@/components/SubjectSelect';
+import { parseApiError } from '@/lib/apiValidation';
+import PageHeader from '@/components/ui/page-header';
+
+const ProjectForm = () => {
+    const { projectId } = useParams();
+    const navigate = useNavigate();
+    const { toast } = useToast();
+    const { memberId, user, hasPermission } = useAuth();
+    
+    const isEditing = Boolean(projectId);
+    const canDelete = hasPermission('projects', 'can_admin');
+
+    const { 
+        register, 
+        handleSubmit, 
+        control, 
+        watch, 
+        setValue, 
+        formState: { errors, isSubmitting } 
+    } = useForm({
+        resolver: zodResolver(ProjectSchema),
+        defaultValues: {
+            name: '',
+            code: '',
+            status: 'nabidka',
+            price: 0,
+            budget_percentage: 30,
+            overhead_percentage: 10,
+            type: '',
+            stage_id: null,
+            created_by_member_id: memberId,
+            completion_date: '',
+            start_date: '',
+            investor_id: null,
+            client_id: null,
+            is_priority: false
+        }
+    });
+
+    const [projectTypes, setProjectTypes] = useState([]);
+    const [projectStages, setProjectStages] = useState([]);
+    const [projectCodePattern, setProjectCodePattern] = useState('');
+    const [investorIsClient, setInvestorIsClient] = useState(false);
+    const [loading, setLoading] = useState(true);
+    
+    // Templates
+    const [templates, setTemplates] = useState([]);
+    const [loadingTemplates, setLoadingTemplates] = useState(false);
+    const [selectedTemplateId, setSelectedTemplateId] = useState('');
+
+    const watchInvestorId = watch('investor_id');
+
+    useEffect(() => {
+        if (investorIsClient) {
+            setValue('client_id', watchInvestorId || null);
+        }
+    }, [investorIsClient, watchInvestorId, setValue]);
+
+    const fetchTemplates = useCallback(async () => {
+        if (!user || isEditing) return;
+        setLoadingTemplates(true);
+        try {
+            const { data, error } = await supabase
+                .from('project_templates_custom')
+                .select('*')
+                .eq('user_id', user.id);
+            if (!error && data) setTemplates(data);
+        } catch (err) {
+            console.error('Failed to load templates', err);
+        } finally {
+            setLoadingTemplates(false);
+        }
+    }, [user, isEditing]);
+
+    const fetchData = useCallback(async () => {
+        try {
+            const [typesRes, stagesRes, patternRes] = await Promise.all([
+                supabase.from('project_types').select('id, name').order('name'),
+                supabase.from('project_stages').select('id, name').order('name'),
+                supabase.from('app_settings').select('value').eq('key', 'project_code_pattern').maybeSingle(),
+            ]);
+
+            setProjectTypes(typesRes.data || []);
+            setProjectStages(stagesRes.data || []);
+            setProjectCodePattern(patternRes.data?.value || '');
+            
+            if (isEditing) {
+                // Updated: Ensure we use 'id'
+                const { data, error } = await supabase.from('projects').select('*').eq('id', projectId).single();
+                if (error) throw error;
+                
+                Object.keys(data).forEach(key => {
+                    if ((key === 'completion_date' || key === 'start_date') && data[key]) {
+                        setValue(key, format(parseISO(data[key]), 'yyyy-MM-dd'));
+                    } else if (key !== 'id' && key !== 'created_at') {
+                        setValue(key, data[key]);
+                    }
+                });
+                
+                if (data.investor_id && data.investor_id === data.client_id) {
+                    setInvestorIsClient(true);
+                } else if (!data.client_id && data.investor_id) {
+                     setInvestorIsClient(false);
+                }
+            } else {
+                setValue('status', 'nabidka');
+                setValue('budget_percentage', 30);
+                setValue('overhead_percentage', 10);
+                setValue('created_by_member_id', memberId);
+                setInvestorIsClient(true);
+                fetchTemplates();
+            }
+        } catch (error) {
+            console.error("Fetch data error:", error);
+            toast({ title: 'Chyba při načítání dat', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    }, [projectId, isEditing, setValue, toast, memberId, fetchTemplates]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    const handleTemplateSelect = (templateId) => {
+        setSelectedTemplateId(templateId);
+        if (templateId && templateId !== 'none') {
+            const tpl = templates.find(t => t.id === templateId);
+            if (tpl) {
+                setValue('name', tpl.name);
+                toast({ title: 'Šablona aplikována', description: 'Název a předvolby byly načteny.' });
+            }
+        }
+    };
+
+
+    const onSubmit = async (formData) => {
+        let dataToSave = { ...formData };
+        
+        if (investorIsClient) {
+            dataToSave.client_id = dataToSave.investor_id;
+        }
+
+        ['investor_id', 'client_id', 'stage_id', 'created_by_member_id'].forEach(key => {
+            if (dataToSave[key] === '') dataToSave[key] = null;
+        });
+
+        if (!dataToSave.completion_date) dataToSave.completion_date = null;
+        if (!dataToSave.start_date) dataToSave.start_date = null;
+
+        try {
+            if (isEditing) {
+                // Updated: Ensure we use 'id'
+                const { error } = await supabase.from('projects').update(dataToSave).eq('id', projectId);
+                if (error) throw error;
+                toast({ title: 'Projekt úspěšně aktualizován', variant: 'default' }); 
+                navigate(`/projects/${projectId}`);
+            } else {
+                const { data: newProject, error } = await supabase.from('projects').insert(dataToSave).select().single();
+                if (error) throw error;
+                
+                if (selectedTemplateId && selectedTemplateId !== 'none') {
+                    const tpl = templates.find(t => t.id === selectedTemplateId);
+                    if (tpl && tpl.tasks_data && tpl.tasks_data.length > 0) {
+                         const tasksToInsert = tpl.tasks_data.map(task => ({
+                             ...task,
+                             id: undefined,
+                             project_id: newProject.id
+                         }));
+                         const { error: taskError } = await supabase.from('project_tasks').insert(tasksToInsert);
+                         if (taskError) {
+                             console.error("Failed to insert template tasks", taskError);
+                             toast({ title: 'Projekt vytvořen, ale úkoly z šablony se nepodařilo přidat.', variant: 'warning' });
+                         }
+                    }
+                }
+
+                toast({ title: 'Projekt úspěšně vytvořen', variant: 'default' }); 
+                navigate(`/projects/${newProject.id}`);
+            }
+        } catch (error) {
+            console.error("Submit error:", error);
+            const msg = parseApiError(error);
+            toast({ 
+                title: 'Chyba při ukládání', 
+                variant: 'destructive', 
+                description: msg 
+            });
+        }
+    };
+    
+    const onFormError = (validationErrors) => {
+        const firstErrorKey = Object.keys(validationErrors)[0];
+        const errorMessage = validationErrors[firstErrorKey]?.message || "Zkontrolujte prosím všechna povinná pole.";
+        toast({ title: 'Chyba validace formuláře', description: errorMessage, variant: 'destructive' });
+    };
+
+    const handleDelete = async () => {
+        try {
+            // Updated: Ensure we use 'id'
+            const { error } = await supabase.from('projects').delete().eq('id', projectId);
+            if (error) throw error;
+            toast({ title: 'Projekt byl smazán' });
+            navigate('/projects');
+        } catch (error) {
+             const msg = parseApiError(error);
+             toast({ title: 'Chyba při mazání', description: msg, variant: 'destructive' });
+        }
+    };
+
+    if (loading) return <div className="p-8 text-center text-muted-foreground"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2"/>Načítání projektu...</div>;
+
+    return (
+        <div className="max-w-4xl mx-auto p-4 pb-20">
+            <PageHeader
+                icon={Briefcase}
+                title={isEditing ? 'Upravit projekt' : 'Založit nový projekt'}
+                actions={
+                    <Button variant="ghost" onClick={() => navigate(isEditing ? `/projects/${projectId}` : '/projects')} className="text-slate-500 hover:text-slate-800">
+                        <ChevronLeft className="w-4 h-4 mr-2" /> Zpět
+                    </Button>
+                }
+                className="mb-6"
+            />
+            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="hidden">
+                 <Button variant="ghost" onClick={() => navigate(isEditing ? `/projects/${projectId}` : '/projects')} className="mb-4 text-slate-500 hover:text-slate-800">
+                    <ChevronLeft className="w-4 h-4 mr-2" /> Zpět
+                </Button>
+                <h1 className="text-3xl font-bold mb-6 flex items-center gap-3 text-slate-800">
+                    <div className="p-2.5 bg-primary/10 rounded-xl">
+                        <Briefcase className="w-7 h-7 text-primary" />
+                    </div>
+                    {isEditing ? 'Upravit projekt' : 'Založit nový projekt'}
+                </h1>
+            </motion.div>
+
+            <form onSubmit={handleSubmit(onSubmit, onFormError)} className="space-y-6">
+                
+                {!isEditing && (
+                    <Card className="shadow-sm border-slate-200 bg-blue-50/30">
+                        <CardContent className="pt-6">
+                            <div className="flex items-center gap-4">
+                                <Copy className="w-5 h-5 text-blue-500 shrink-0" />
+                                <div className="flex-1">
+                                    <Label className="text-slate-700 block mb-1.5">Vybrat šablonu (volitelné)</Label>
+                                    <Select value={selectedTemplateId} onValueChange={handleTemplateSelect} disabled={loadingTemplates}>
+                                        <SelectTrigger className="bg-white">
+                                            <SelectValue placeholder={loadingTemplates ? "Načítání šablon..." : "Začít s prázdným projektem"} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">-- Prázdný projekt --</SelectItem>
+                                            {templates.map(t => (
+                                                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
+                <Card className="shadow-sm border-slate-200">
+                    <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+                        <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
+                            <FileText className="w-5 h-5 text-slate-500" />Základní informace
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-5 pt-6">
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="name" className="text-slate-700">Název projektu <span className="text-red-500">*</span></Label>
+                                <Input id="name" {...register('name')} className={errors.name ? 'border-red-500 focus-visible:ring-red-500' : ''} placeholder="Např. Bytový dům Praha" />
+                                {errors.name && <p className="text-red-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.name.message}</p>}
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label htmlFor="code" className="text-slate-700">Kód projektu <span className="text-red-500">*</span></Label>
+                                <Input id="code" {...register('code')} placeholder={projectCodePattern || 'PRJ-2026-001'} className={errors.code ? 'border-red-500 focus-visible:ring-red-500' : ''} />
+                                {errors.code && <p className="text-red-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.code.message}</p>}
+                            </div>
+                         </div>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-1.5">
+                                <Label className="text-slate-700">Druh projektu</Label>
+                                <Controller name="type" control={control} render={({ field }) => (
+                                    <Select onValueChange={field.onChange} defaultValue={field.value || undefined}>
+                                        <SelectTrigger className="bg-white"><SelectValue placeholder="Vyberte druh" /></SelectTrigger>
+                                        <SelectContent>{projectTypes.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}</SelectContent>
+                                    </Select>
+                                )} />
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label className="text-slate-700">Stupeň dokumentace</Label>
+                                 <Controller name="stage_id" control={control} render={({ field }) => (
+                                    <Select onValueChange={field.onChange} value={field.value || ''}>
+                                        <SelectTrigger className="bg-white"><SelectValue placeholder="Vyberte stupeň" /></SelectTrigger>
+                                        <SelectContent>{projectStages.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                                    </Select>
+                                )} />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="start_date" className="text-slate-700">Datum zahájení</Label>
+                                <Input id="start_date" type="date" {...register('start_date')} className="bg-white" />
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label htmlFor="completion_date" className="text-slate-700">Termín dokončení</Label>
+                                <Input id="completion_date" type="date" {...register('completion_date')} className={errors.completion_date ? 'border-red-500' : 'bg-white'}/>
+                                {errors.completion_date && <p className="text-red-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.completion_date.message}</p>}
+                            </div>
+                            <div className="space-y-1.5">
+                                <Controller 
+                                    name="created_by_member_id" 
+                                    control={control} 
+                                    render={({ field }) => (
+                                        <MemberSelect
+                                            label="Hlavní projektant"
+                                            value={field.value}
+                                            onChange={field.onChange}
+                                            placeholder="Vyberte osobu..."
+                                        />
+                                    )} 
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center space-x-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
+                             <Controller name="is_priority" control={control} render={({ field }) => <Switch id="is_priority" checked={field.value} onCheckedChange={field.onChange} />} />
+                             <div className="space-y-0.5">
+                                <Label htmlFor="is_priority" className="font-medium text-slate-800 cursor-pointer">Prioritní projekt</Label>
+                                <p className="text-xs text-slate-500">Označí projekt jako důležitý v přehledech a tabulkách.</p>
+                             </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="shadow-sm border-slate-200">
+                    <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+                        <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
+                            <Building className="w-5 h-5 text-slate-500" />Zúčastněné strany
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-5 pt-6">
+                        <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-lg mb-2">
+                            <p className="text-sm text-blue-800 flex items-start gap-2">
+                                <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                                Zvolte subjekty spojené s tímto projektem. Pokud je zadavatel stejný jako investor, stačí ponechat zaškrtnuté příslušné pole.
+                            </p>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                             <Controller 
+                                name="investor_id" 
+                                control={control} 
+                                render={({ field }) => (
+                                    <SubjectSelect
+                                        label="Konečný Investor"
+                                        value={field.value}
+                                        onChange={field.onChange}
+                                        placeholder="Vyhledat investora..."
+                                    />
+                                )} 
+                             />
+                             {errors.investor_id && <p className="text-red-500 text-xs flex items-center"><AlertCircle className="w-3 h-3 mr-1"/>{errors.investor_id.message}</p>}
+                        </div>
+
+                        <div className="flex items-center space-x-3 py-2">
+                            <Checkbox id="investorIsClient" checked={investorIsClient} onCheckedChange={setInvestorIsClient} />
+                            <Label htmlFor="investorIsClient" className="cursor-pointer text-slate-700">Investor je zároveň přímý zadavatel (klient)</Label>
+                        </div>
+                        
+                        <AnimatePresence>
+                        {!investorIsClient && (
+                            <motion.div 
+                                initial={{ opacity: 0, height: 0, marginTop: 0 }} 
+                                animate={{ opacity: 1, height: 'auto', marginTop: 8 }} 
+                                exit={{ opacity: 0, height: 0, marginTop: 0 }} 
+                                className="overflow-hidden"
+                            >
+                                <div className="flex flex-col gap-1.5 p-4 bg-slate-50 rounded-lg border border-slate-100">
+                                    <Controller 
+                                        name="client_id" 
+                                        control={control} 
+                                        render={({ field }) => (
+                                            <SubjectSelect
+                                                label="Zadavatel (Klient)"
+                                                value={field.value}
+                                                onChange={field.onChange}
+                                                placeholder="Vyhledat zadavatele..."
+                                            />
+                                        )} 
+                                    />
+                                    {errors.client_id && <p className="text-red-500 text-xs flex items-center"><AlertCircle className="w-3 h-3 mr-1"/>{errors.client_id.message}</p>}
+                                </div>
+                            </motion.div>
+                        )}
+                        </AnimatePresence>
+                    </CardContent>
+                </Card>
+
+                <Card className="shadow-sm border-slate-200">
+                     <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+                         <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
+                            <DollarSign className="w-5 h-5 text-slate-500" />Finance a nastavení
+                         </CardTitle>
+                     </CardHeader>
+                     <CardContent className="space-y-6 pt-6">
+                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                             <div className="space-y-1.5">
+                                <Label className="text-slate-700">Prodejní cena (Kč bez DPH)</Label>
+                                <Input type="number" step="0.01" {...register('price')} className={errors.price ? 'border-red-500 font-medium' : 'font-medium bg-white'} />
+                                {errors.price && <p className="text-red-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.price.message}</p>}
+                             </div>
+                             <div className="space-y-1.5">
+                                <Label className="text-slate-700">Celkový budget (%)</Label>
+                                <Input type="number" step="0.1" {...register('budget_percentage')} className={errors.budget_percentage ? 'border-red-500 bg-white' : 'bg-white'} />
+                                {errors.budget_percentage && <p className="text-red-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.budget_percentage.message}</p>}
+                             </div>
+                             <div className="space-y-1.5">
+                                <Label className="text-slate-700">Režie z budgetu (%)</Label>
+                                <Input type="number" step="0.1" {...register('overhead_percentage')} className={errors.overhead_percentage ? 'border-red-500 bg-white' : 'bg-white'} />
+                                {errors.overhead_percentage && <p className="text-red-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.overhead_percentage.message}</p>}
+                             </div>
+                         </div>
+                         <div className="w-full md:w-1/3">
+                             <Label className="text-slate-700 mb-1.5 block">Stav projektu</Label>
+                             <Controller name="status" control={control} render={({ field }) => (
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="nabidka">Nabídka</SelectItem>
+                                        <SelectItem value="active">Aktivní</SelectItem>
+                                        <SelectItem value="ready_for_delivery">Připraveno k dodání</SelectItem>
+                                        <SelectItem value="delivered">Dodáno</SelectItem>
+                                        <SelectItem value="closed">Uzavřeno</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                             )} />
+                         </div>
+                     </CardContent>
+                </Card>
+
+                <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4 pt-4">
+                    <div>
+                    {isEditing && canDelete && (
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button type="button" variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200">
+                                    <Trash2 className="w-4 h-4 mr-2" /> Smazat projekt
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle className="text-red-600">Opravdu chcete smazat tento projekt?</AlertDialogTitle>
+                                    <AlertDialogDescription>Tato akce je nevratná a smaže veškerá související data (úkoly, dokumenty, vazby).</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                                    <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700 text-white">Ano, smazat nenávratně</AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                    )}
+                    </div>
+                    <div className="flex gap-3 w-full sm:w-auto">
+                        <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => navigate(isEditing ? `/projects/${projectId}` : '/projects')}>
+                            Zrušit
+                        </Button>
+                        <Button type="submit" disabled={isSubmitting} className="w-full sm:w-auto min-w-[140px] shadow-sm">
+                            {isSubmitting ? (
+                                <><Loader2 className="w-4 h-4 mr-2 animate-spin"/> Ukládání...</>
+                            ) : (
+                                isEditing ? <><Save className="w-4 h-4 mr-2"/> Uložit změny</> : <><Plus className="w-4 h-4 mr-2"/> Vytvořit projekt</>
+                            )}
+                        </Button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    );
+};
+
+export default ProjectForm;

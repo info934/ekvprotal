@@ -1,0 +1,5 @@
+.branches
+.temp
+seed.sql
+*.dump
+*.backup
