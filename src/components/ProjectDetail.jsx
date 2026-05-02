@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { format, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy } from 'lucide-react';
+import { ChevronLeft, Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle } from 'lucide-react';
 import AssignMemberDialog from '@/components/AssignMemberDialog';
 import AssignSubcontractorDialog from '@/components/AssignSubcontractorDialog';
 import ProjectCostDialog from '@/components/ProjectCostDialog';
@@ -233,6 +233,10 @@ const ProjectDetail = () => {
         setItemToDelete(null);
     };
 
+    const formatCurrency = useCallback((value) => {
+        return `${toAmount(value).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč`;
+    }, []);
+
     const getMemberReward = useCallback((member, teamBudget) => {
         return calculateProjectMemberReward(member, teamBudget);
     }, []);
@@ -296,6 +300,70 @@ const ProjectDetail = () => {
             { key: 'paid-payouts', label: 'Vyplacené peníze', note: payoutDetails.length ? `${payoutDetails.length} položek ve stavu "paid"` : 'Ještě nebyla proplacena žádná položka', amount: financials.paidOutAmount || 0, details: payoutDetails },
         ];
     }, [canViewFinance, subcontractors, paidPayoutItems, financials]);
+
+    const requestDeleteLink = useCallback((link) => {
+        setItemToDelete({
+            table: 'project_links',
+            id: link.id,
+            name: 'odkaz',
+            displayName: link.description || link.url,
+            severity: 'low',
+            summary: 'Smaže se pouze uložený odkaz. Projektová data ani finance se tím nezmění.',
+        });
+    }, []);
+
+    const requestDeleteMember = useCallback((assignment) => {
+        const rewardAmount = canViewFinance ? calculateProjectMemberReward(assignment, financials.teamBudget) : null;
+
+        setItemToDelete({
+            table: 'project_members',
+            id: assignment.id,
+            name: 'člena',
+            displayName: assignment.member?.name || assignment.member?.email || 'Neznámý člen',
+            severity: 'high',
+            amountLabel: canViewFinance ? 'Aktuálně vypočtená odměna' : null,
+            amount: rewardAmount,
+            summary: 'Člen bude odebrán z týmu projektu a přestane se započítávat do plánovaných týmových odměn.',
+            details: [
+                'Historické výplaty a již vytvořené žádosti se tím automaticky nesmažou.',
+                'Pokud má člen navázané úkoly nebo docházku, před smazáním zkontrolujte jejich návaznosti.',
+            ],
+        });
+    }, [canViewFinance, financials.teamBudget]);
+
+    const requestDeleteSubcontractor = useCallback((subcontractor) => {
+        setItemToDelete({
+            table: 'project_subcontractors',
+            id: subcontractor.id,
+            name: 'subdodavatele',
+            displayName: subcontractor.subject?.name || subcontractor.scope_of_work || 'Subdodavatel',
+            severity: 'high',
+            amountLabel: 'Cena subdodavatele',
+            amount: subcontractor.price,
+            summary: 'Smazáním subdodavatele se přepočítá projektový budget a dostupné finance projektu.',
+            details: [
+                'Tato částka se po smazání přestane odečítat z projektových výpočtů.',
+                'Zkontrolujte, že nejde o historicky uzavřený nebo vyfakturovaný náklad.',
+            ],
+        });
+    }, []);
+
+    const requestDeleteCost = useCallback((cost) => {
+        setItemToDelete({
+            table: 'project_costs',
+            id: cost.id,
+            name: 'náklad',
+            displayName: cost.description || 'Projektový náklad',
+            severity: 'high',
+            amountLabel: 'Částka nákladu',
+            amount: cost.amount,
+            summary: 'Smazáním nákladu se okamžitě změní finanční přehled projektu.',
+            details: [
+                'Dostupný budget se po smazání přepočítá.',
+                'Pokud jde o účetní opravu, zvažte raději korekční záznam místo mazání historie.',
+            ],
+        });
+    }, []);
 
     const getProjectProgress = useCallback(() => tasks.length ? Math.round(tasks.filter(t => t.status === 'Hotovo').length / tasks.length * 100) : 0, [tasks]);
 
@@ -371,7 +439,7 @@ const ProjectDetail = () => {
                                             <div><a href={link.url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline">{link.description || link.url}</a><p className="text-xs text-muted-foreground">{link.url}</p></div>
                                             {canEdit && <div className="flex gap-2">
                                                 <Button variant="ghost" size="icon" onClick={() => { setEditingLink(link); setIsLinkDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
-                                                <Button variant="ghost" size="icon" onClick={() => setItemToDelete({ table: 'project_links', id: link.id, name: 'odkaz' })}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                                                <Button variant="ghost" size="icon" onClick={() => requestDeleteLink(link)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                                             </div>}
                                         </div>
                                     ))}
@@ -401,7 +469,7 @@ const ProjectDetail = () => {
                                                 {canEdit && (
                                                     <>
                                                         <Button variant="ghost" size="icon" onClick={() => { setEditingMember(m); setIsMemberDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
-                                                        <Button variant="ghost" size="icon" onClick={() => setItemToDelete({ table: 'project_members', id: m.id, name: 'člena' })}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                                                        <Button variant="ghost" size="icon" onClick={() => requestDeleteMember(m)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                                                     </>
                                                 )}
                                             </TableCell>
@@ -434,7 +502,7 @@ const ProjectDetail = () => {
                                                 {canEdit && (
                                                     <>
                                                         <Button variant="ghost" size="icon" onClick={() => { setEditingSubcontractor(s); setIsSubcontractorDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
-                                                        <Button variant="ghost" size="icon" onClick={() => setItemToDelete({ table: 'project_subcontractors', id: s.id, name: 'subdodavatele' })}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                                                        <Button variant="ghost" size="icon" onClick={() => requestDeleteSubcontractor(s)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                                                     </>
                                                 )}
                                             </TableCell>
@@ -471,7 +539,7 @@ const ProjectDetail = () => {
                                     ) : (
                                         <>
                                             {costs.map(cost => (
-                                                <TableRow key={cost.id}><TableCell>{cost.description}</TableCell><TableCell>{(cost.amount || 0).toLocaleString('cs-CZ')} Kč</TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => { setEditingCost(cost); setIsCostDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => setItemToDelete({ table: 'project_costs', id: cost.id, name: 'náklad' })}><Trash2 className="h-4 w-4 text-red-500" /></Button></TableCell></TableRow>
+                                                <TableRow key={cost.id}><TableCell>{cost.description}</TableCell><TableCell>{(cost.amount || 0).toLocaleString('cs-CZ')} Kč</TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => { setEditingCost(cost); setIsCostDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => requestDeleteCost(cost)}><Trash2 className="h-4 w-4 text-red-500" /></Button></TableCell></TableRow>
                                             ))}
                                             {financeDerivedRows.map((row) => (
                                                 <React.Fragment key={row.key}>
@@ -505,12 +573,51 @@ const ProjectDetail = () => {
             <AlertDialog open={!!itemToDelete} onOpenChange={() => setItemToDelete(null)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Opravdu chcete smazat tohoto {itemToDelete?.name}?</AlertDialogTitle>
-                        <AlertDialogDescription>Tato akce nemůže být vrácena.</AlertDialogDescription>
+                        <AlertDialogTitle className="flex items-start gap-3">
+                            <span className={cn(
+                                "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                                itemToDelete?.severity === 'high' ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
+                            )}>
+                                <AlertTriangle className="h-5 w-5" />
+                            </span>
+                            <span>
+                                Opravdu chcete smazat tohoto {itemToDelete?.name}?
+                                {itemToDelete?.displayName && (
+                                    <span className="mt-1 block text-base font-medium text-muted-foreground">
+                                        {itemToDelete.displayName}
+                                    </span>
+                                )}
+                            </span>
+                        </AlertDialogTitle>
+                        <AlertDialogDescription asChild>
+                            <div className="space-y-3 pt-2 text-sm text-muted-foreground">
+                                <p>{itemToDelete?.summary || 'Tato akce nemůže být vrácena.'}</p>
+                                {itemToDelete?.amountLabel && (
+                                    <div className="rounded-md border bg-slate-50 px-3 py-2 text-slate-800">
+                                        <span className="block text-xs font-medium uppercase text-muted-foreground">
+                                            {itemToDelete.amountLabel}
+                                        </span>
+                                        <span className="text-base font-semibold">
+                                            {formatCurrency(itemToDelete.amount)}
+                                        </span>
+                                    </div>
+                                )}
+                                {itemToDelete?.details?.length > 0 && (
+                                    <ul className="list-disc space-y-1 pl-5">
+                                        {itemToDelete.details.map((detail) => (
+                                            <li key={detail}>{detail}</li>
+                                        ))}
+                                    </ul>
+                                )}
+                                <p className="font-medium text-red-600">Tato akce nemůže být vrácena.</p>
+                            </div>
+                        </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Zrušit</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeleteGeneric}>Smazat</AlertDialogAction>
+                        <AlertDialogAction onClick={handleDeleteGeneric} className="bg-red-600 hover:bg-red-700">
+                            Smazat
+                        </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
