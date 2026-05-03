@@ -122,8 +122,8 @@ const RolePermissions = () => {
         <div className="space-y-8">
             <PageHeader
                 icon={UserCog}
-                title="Role a oprávnění"
-                description="Správa uživatelských rolí a jejich přístupu k modulům"
+                title="Přístupové role a oprávnění"
+                description="Správa přístupových rolí uživatelských účtů a jejich práv k modulům."
             />
             <motion.div
                 initial={{ opacity: 0, y: -20 }}
@@ -133,7 +133,7 @@ const RolePermissions = () => {
                 <div>
                     <h1 className="text-3xl sm:text-4xl font-bold gradient-text mb-2 flex items-center gap-3">
                         <UserCog className="w-8 h-8" />
-                        Role a oprávnění
+                        Přístupové role a oprávnění
                     </h1>
                     <p className="text-muted-foreground">Správa uživatelských rolí a jejich přístupu k modulům</p>
                 </div>
@@ -142,8 +142,8 @@ const RolePermissions = () => {
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
                 <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="app-surface p-4">
                     <div className="mb-4">
-                        <h2 className="text-lg font-semibold">Uživatelské role</h2>
-                        <p className="text-sm text-muted-foreground">Vyberte roli a nastavte její přístup.</p>
+                        <h2 className="text-lg font-semibold">Přístupové role</h2>
+                        <p className="text-sm text-muted-foreground">Vyberte roli účtu a nastavte její přístup.</p>
                     </div>
                     <div className="space-y-2">
                         {roles.map(role => (
@@ -176,7 +176,7 @@ const RolePermissions = () => {
                             <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                 <div>
                                     <div className="flex flex-wrap items-center gap-2">
-                                        <h2 className="text-xl font-semibold">Oprávnění role</h2>
+                                        <h2 className="text-xl font-semibold">Oprávnění přístupové role</h2>
                                         <Badge variant={selectedRole.role_name === 'admin' ? 'info' : 'secondary'} className="capitalize">
                                             {selectedRole.role_name}
                                         </Badge>

@@ -15,8 +15,8 @@ const settingsNav = [
   {
     label: 'Přístupy',
     items: [
-      { name: 'Uživatelé', description: 'Členové, role a účty', href: '/settings/users', icon: Users, requiredPermission: 'can_admin' },
-      { name: 'Role a oprávnění', description: 'Práva k modulům aplikace', href: '/settings/permissions', icon: Key, requiredPermission: 'can_admin' },
+      { name: 'Uživatelé', description: 'Účty a přístupové role', href: '/settings/users', icon: Users, requiredPermission: 'can_admin' },
+      { name: 'Přístupové role', description: 'Práva účtů k modulům aplikace', href: '/settings/permissions', icon: Key, requiredPermission: 'can_admin' },
     ],
   },
   {

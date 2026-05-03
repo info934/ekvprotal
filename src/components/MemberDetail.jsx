@@ -446,7 +446,7 @@ const MemberDetail = () => {
 
         <TabsContent value="overview" className="glass-effect rounded-xl p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <InfoItem label="Role/Pozice" value={member.member_roles ? member.member_roles.name : 'Není nastaveno'} />
+            <InfoItem label="Pracovní role / pozice" value={member.member_roles ? member.member_roles.name : 'Není nastaveno'} />
             <InfoItem label="Email" value={member.email} />
             <InfoItem label="Telefon" value={member.phone} />
             <InfoItem label="Hodinová sazba">

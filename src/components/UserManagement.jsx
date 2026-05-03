@@ -66,9 +66,9 @@ const UserManagement = () => {
         });
 
         if (error || (data && data.error)) {
-            toast({ title: "Chyba při změně role", description: data?.error || error?.message || 'Neznámá chyba', variant: "destructive" });
+            toast({ title: "Chyba při změně přístupové role", description: data?.error || error?.message || 'Neznámá chyba', variant: "destructive" });
         } else {
-            toast({ title: "✅ Role uživatele změněna!" });
+            toast({ title: "✅ Přístupová role uživatele změněna!" });
             fetchUsers();
         }
     };
@@ -155,7 +155,7 @@ const UserManagement = () => {
             <PageHeader
                 icon={UserCog}
                 title="Správa uživatelů"
-                description="Správa přístupů, rolí a účtů v portálu"
+                description="Správa účtů, přístupových rolí a propojení na projektanty."
                 actions={
                     <>
                         <Button variant="outline" onClick={fetchUsers} className="w-full sm:w-auto">
@@ -220,7 +220,7 @@ const UserManagement = () => {
                             <KeyRound className="h-5 w-5" />
                         </div>
                         <div>
-                            <p className="text-sm text-muted-foreground">Bez role</p>
+                            <p className="text-sm text-muted-foreground">Bez přístupové role</p>
                             <p className="text-2xl font-semibold">{usersWithoutRole}</p>
                         </div>
                     </div>
@@ -236,7 +236,7 @@ const UserManagement = () => {
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Účty v portálu</h2>
-                            <p className="text-sm text-muted-foreground">Vyhledejte uživatele, nastavte auth roli a propojení na projektanta.</p>
+                            <p className="text-sm text-muted-foreground">Vyhledejte uživatele, nastavte přístupovou roli a propojení na projektanta.</p>
                         </div>
                         <div className="flex flex-col gap-2 sm:flex-row">
                             <div className="relative w-full sm:w-80">
@@ -253,11 +253,11 @@ const UserManagement = () => {
                                     <SelectValue placeholder="Role" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">Všechny role</SelectItem>
+                                    <SelectItem value="all">Všechny přístupové role</SelectItem>
                                     {roles.map((role) => (
                                         <SelectItem key={role} value={role}>{capitalizeFirstLetter(role)}</SelectItem>
                                     ))}
-                                    <SelectItem value="none">Bez role</SelectItem>
+                                    <SelectItem value="none">Bez přístupové role</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -294,7 +294,7 @@ const UserManagement = () => {
                                 </div>
                                 <div className="mt-3 flex flex-wrap items-center gap-2">
                                     <Badge variant={user.user_metadata?.role === 'admin' ? 'info' : 'secondary'} className="capitalize">
-                                      {user.user_metadata?.role || 'Bez role'}
+                                      {user.user_metadata?.role || 'Bez přístupové role'}
                                     </Badge>
                                     {user.is_member && (
                                         <Badge variant="success" className="gap-1">
@@ -322,7 +322,7 @@ const UserManagement = () => {
                                     disabled={!isAdmin || user.id === currentUser.id}
                                 >
                                     <SelectTrigger className="w-full sm:w-44">
-                                        <SelectValue placeholder={user.user_metadata?.role ? "Změnit roli" : "Žádná role"} />
+                                        <SelectValue placeholder={user.user_metadata?.role ? "Změnit přístupovou roli" : "Žádná přístupová role"} />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {roles.map((role) => (
@@ -403,7 +403,7 @@ const NewUserDialog = ({ isOpen, onClose, onUserCreated, invokeFunction }) => {
                 <FormDialogHeader
                     icon={UserPlus}
                     title="Pozvat nového uživatele"
-                    description='Uživatel obdrží pozvánku na zadaný e-mail a bude si moci nastavit heslo. Výchozí role je "uživatel".'
+                    description='Uživatel obdrží pozvánku na zadaný e-mail a bude si moci nastavit heslo. Výchozí přístupová role je "uživatel".'
                 />
                 <form onSubmit={handleCreateUser} className="flex min-h-0 flex-1 flex-col">
                     <FormDialogBody className="space-y-4">

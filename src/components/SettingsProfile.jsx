@@ -235,7 +235,7 @@ const SettingsProfile = () => {
               <CardTitle>Informace o účtu</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground space-y-2">
-              <p><strong>Role:</strong> <span className="font-medium text-foreground capitalize">{userRole}</span></p>
+              <p><strong>Přístupová role:</strong> <span className="font-medium text-foreground capitalize">{userRole}</span></p>
               <p><strong>Uživatel vytvořen:</strong> {format(new Date(user.created_at), 'd. MMMM yyyy', { locale: cs })}</p>
               <p><strong>Poslední přihlášení:</strong> {user.last_sign_in_at ? format(new Date(user.last_sign_in_at), "d. MMMM yyyy 'v' HH:mm", { locale: cs }) : 'N/A'}</p>
               <p><strong>Oprávnění:</strong></p>

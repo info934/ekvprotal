@@ -457,10 +457,10 @@ const Members = () => {
                                         <Filter className="h-4 w-4 text-muted-foreground" />
                                         <Select value={roleFilter} onValueChange={setRoleFilter}>
                                             <SelectTrigger className="w-[160px]">
-                                                <SelectValue placeholder="Všechny role" />
+                                                <SelectValue placeholder="Všechny pracovní role" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="all">Všechny role</SelectItem>
+                                                <SelectItem value="all">Všechny pracovní role</SelectItem>
                                                 {Array.from(new Set(members.map(m => m.member_roles?.name).filter(Boolean))).map(role => (
                                                     <SelectItem key={role} value={role}>{role}</SelectItem>
                                                 ))}
@@ -522,7 +522,7 @@ const Members = () => {
                                         <TableHeader>
                                             <TableRow>
                                                 <TableHead className="w-[250px]">Jméno</TableHead>
-                                                <TableHead>Role</TableHead>
+                                                <TableHead>Pracovní role</TableHead>
                                                 <TableHead>Certifikace</TableHead>
                                                 <TableHead>Hodinová sazba</TableHead>
                                                 {canViewFinance && <TableHead>Celková odměna</TableHead>}
@@ -548,7 +548,7 @@ const Members = () => {
                                                         </TableCell>
                                                         <TableCell>
                                                             <Badge variant="secondary" className="text-xs">
-                                                                {member.member_roles?.name || 'Bez role'}
+                                                                {member.member_roles?.name || 'Bez pracovní role'}
                                                             </Badge>
                                                         </TableCell>
                                                         <TableCell>
