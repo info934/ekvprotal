@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   Plus, Building, Search, Filter, List, LayoutGrid, AlertTriangle, RefreshCw,
   MoreHorizontal, Edit, Trash2, ChevronLeft, ChevronRight, Factory, Home, User2,
@@ -50,13 +50,24 @@ const SubjectTypeBadge = ({ typeName }) => {
   );
 };
 
-const SubjectSummaryCard = ({ typeKey, count, total }) => {
+const SubjectSummaryCard = ({ typeKey, count, total, active, onClick }) => {
   const config = subjectTypeConfig[typeKey] || subjectTypeConfig.other;
   const Icon = config.icon;
   const share = total > 0 ? Math.round((count / total) * 100) : 0;
 
   return (
-    <Card className="overflow-hidden">
+    <Card
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onClick?.();
+      }}
+      className={cn(
+        "overflow-hidden cursor-pointer transition-all hover:border-primary/30 hover:shadow-md",
+        active && "border-primary/40 bg-primary/[0.03] ring-1 ring-primary/15"
+      )}
+    >
       <CardContent className="flex items-center gap-4 p-4">
         <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-md ring-1", config.surface, config.color)}>
           <Icon className="h-5 w-5" />
@@ -73,7 +84,34 @@ const SubjectSummaryCard = ({ typeKey, count, total }) => {
   );
 };
 
-const SubjectCard = ({ subject, onClick }) => {
+const DirectoryMetricCard = ({ icon: Icon, title, value, description, active, onClick }) => (
+  <Card
+    role={onClick ? "button" : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onClick={onClick}
+    onKeyDown={(event) => {
+      if (onClick && (event.key === 'Enter' || event.key === ' ')) onClick();
+    }}
+    className={cn(
+      "overflow-hidden transition-all",
+      onClick && "cursor-pointer hover:border-primary/30 hover:shadow-md",
+      active && "border-primary/40 bg-primary/[0.03] ring-1 ring-primary/15"
+    )}
+  >
+    <CardContent className="flex items-center gap-4 p-4">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary ring-1 ring-primary/10">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-muted-foreground">{title}</p>
+        <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+        {description && <p className="mt-1 truncate text-xs text-muted-foreground">{description}</p>}
+      </div>
+    </CardContent>
+  </Card>
+);
+
+const SubjectCard = ({ subject }) => {
   const navigate = useNavigate();
   const handleCardClick = () => navigate(`/subjects/${subject.id}`);
   const config = subjectTypeConfig[subject.subject_types?.name] || subjectTypeConfig['other'];
@@ -216,7 +254,29 @@ const SubjectTable = ({ subjects, visibleColumns, sortConfig, requestSort, onSel
                         <SubjectTypeBadge typeName={subject.subject_types?.name} />
                       </TableCell>
                     )}
-                    {visibleColumns.contact_person && <TableCell className="min-w-[160px] text-sm">{subject.contact_person || '-'}</TableCell>}
+                    {visibleColumns.contact_person && (
+                      <TableCell className="min-w-[220px] text-sm">
+                        {subject.contact_person || subject.email || subject.phone ? (
+                          <div className="min-w-0 space-y-1">
+                            <p className="truncate font-medium text-slate-800">{subject.contact_person || 'Bez kontaktní osoby'}</p>
+                            {subject.email && (
+                              <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                                <Mail className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">{subject.email}</span>
+                              </div>
+                            )}
+                            {subject.phone && (
+                              <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                                <Phone className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">{subject.phone}</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                    )}
                     {visibleColumns.email && <TableCell className="min-w-[200px] text-sm">{subject.email || '-'}</TableCell>}
                     {visibleColumns.phone && <TableCell className="min-w-[140px] text-sm">{subject.phone || '-'}</TableCell>}
                     {visibleColumns.address && <TableCell className="min-w-[240px] text-sm">{subject.address || '-'}</TableCell>}
@@ -261,6 +321,7 @@ const Subjects = () => {
   const [editingSubject, setEditingSubject] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [contactFilter, setContactFilter] = useState('all');
   const [view, setView] = useState('table'); // 'kanban' or 'table'
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'ascending' });
   const [selectedSubjects, setSelectedSubjects] = useState(new Set());
@@ -353,19 +414,24 @@ const Subjects = () => {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedSubjects(new Set());
-  }, [searchTerm, typeFilter, sortConfig]);
+  }, [searchTerm, typeFilter, contactFilter, sortConfig]);
 
   const filteredSubjects = subjects.filter(subject => {
     const lowerSearch = searchTerm.toLowerCase();
     const typeMatch = typeFilter === 'all' || subject.subject_types?.name === typeFilter;
+    const hasContact = Boolean(subject.email || subject.phone || subject.contact_person);
+    const contactMatch =
+      contactFilter === 'all' ||
+      (contactFilter === 'with' && hasContact) ||
+      (contactFilter === 'missing' && !hasContact);
     const searchMatch =
       subject.name.toLowerCase().includes(lowerSearch) ||
-      subject.ico.toLowerCase().includes(lowerSearch) ||
+      (subject.ico && subject.ico.toLowerCase().includes(lowerSearch)) ||
       (subject.contact_person && subject.contact_person.toLowerCase().includes(lowerSearch)) ||
       (subject.email && subject.email.toLowerCase().includes(lowerSearch)) ||
       (subject.phone && subject.phone.toLowerCase().includes(lowerSearch)) ||
       (subject.address && subject.address.toLowerCase().includes(lowerSearch));
-    return typeMatch && searchMatch;
+    return typeMatch && contactMatch && searchMatch;
   });
 
   const sortedSubjects = React.useMemo(() => {
@@ -400,7 +466,9 @@ const Subjects = () => {
     return subjects.filter((subject) => subject.email || subject.phone || subject.contact_person).length;
   }, [subjects]);
 
-  const hasActiveFilters = searchTerm.trim() !== '' || typeFilter !== 'all';
+  const subjectsWithoutContact = subjects.length - subjectsWithContact;
+
+  const hasActiveFilters = searchTerm.trim() !== '' || typeFilter !== 'all' || contactFilter !== 'all';
 
   const requestSort = (key) => {
     let direction = 'ascending';
@@ -480,6 +548,12 @@ const Subjects = () => {
           icon={Building}
           title="Subjekty"
           description="Přehled a správa všech subjektů, s nimiž společnost spolupracuje."
+          meta={
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">{sortedSubjects.length} záznamů</Badge>
+              {hasActiveFilters && <Badge variant="outline">Filtrováno</Badge>}
+            </div>
+          }
           actions={
             <>
               {hasPermission('subjects', 'can_create') && (
@@ -496,35 +570,42 @@ const Subjects = () => {
           }
         />
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <Card className="xl:col-span-1">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary ring-1 ring-primary/10">
-                <Users className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-muted-foreground">Celkem</p>
-                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{subjects.length}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="xl:col-span-1">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-700 ring-1 ring-slate-100">
-                <Phone className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-muted-foreground">S kontaktem</p>
-                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{subjectsWithContact}</p>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+          <DirectoryMetricCard
+            icon={Users}
+            title="Celkem"
+            value={subjects.length}
+            description={`${sortedSubjects.length} po filtrech`}
+            active={typeFilter === 'all' && contactFilter === 'all'}
+            onClick={() => {
+              setTypeFilter('all');
+              setContactFilter('all');
+            }}
+          />
+          <DirectoryMetricCard
+            icon={Phone}
+            title="S kontaktem"
+            value={subjectsWithContact}
+            description="email, telefon nebo osoba"
+            active={contactFilter === 'with'}
+            onClick={() => setContactFilter(contactFilter === 'with' ? 'all' : 'with')}
+          />
+          <DirectoryMetricCard
+            icon={AlertTriangle}
+            title="Bez kontaktu"
+            value={subjectsWithoutContact}
+            description="k doplnění"
+            active={contactFilter === 'missing'}
+            onClick={() => setContactFilter(contactFilter === 'missing' ? 'all' : 'missing')}
+          />
           {Object.keys(subjectTypeConfig).map((typeKey) => (
             <SubjectSummaryCard
               key={typeKey}
               typeKey={typeKey}
               count={subjectTypeCounts[typeKey] || 0}
               total={subjects.length}
+              active={typeFilter === typeKey}
+              onClick={() => setTypeFilter(typeFilter === typeKey ? 'all' : typeKey)}
             />
           ))}
         </div>
@@ -553,6 +634,17 @@ const Subjects = () => {
                   </Select>
                 </div>
 
+                <Select value={contactFilter} onValueChange={setContactFilter}>
+                  <SelectTrigger className="w-full bg-white sm:w-48">
+                    <SelectValue placeholder="Kontakt" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Všechny kontakty</SelectItem>
+                    <SelectItem value="with">S kontaktem</SelectItem>
+                    <SelectItem value="missing">Bez kontaktu</SelectItem>
+                  </SelectContent>
+                </Select>
+
                 <div className="flex rounded-lg bg-slate-100 p-1">
                   <Button variant={view === 'table' ? 'secondary' : 'ghost'} onClick={() => setView('table')} size="sm" className="flex-1 sm:flex-none">
                     <List className="w-4 h-4 mr-2" /> Tabulka
@@ -568,6 +660,7 @@ const Subjects = () => {
                     onClick={() => {
                       setSearchTerm('');
                       setTypeFilter('all');
+                      setContactFilter('all');
                     }}
                   >
                     Zrušit filtry
@@ -646,7 +739,7 @@ const Subjects = () => {
             ) : (
               <motion.div key="kanban" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {paginatedSubjects.map(subject => (
-                  <SubjectCard key={subject.id} subject={subject} onClick={() => handleEditSubject(subject)} />
+                  <SubjectCard key={subject.id} subject={subject} />
                 ))}
               </motion.div>
             )
