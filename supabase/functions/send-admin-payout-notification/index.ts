@@ -27,6 +27,19 @@ Deno.serve(async (req) => {
     });
 
     const data = await res.json();
+
+    if (!res.ok) {
+      console.error("Resend admin payout notification error:", data);
+      return new Response(JSON.stringify({
+        success: false,
+        error: data?.message || "Resend API error",
+        data,
+      }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ success: true, data }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -112,13 +112,17 @@ const InvoiceUploadDialog = ({ isOpen, onClose, payout, onSuccess }) => {
 
       setUploadProgress(100);
 
-      // Send notification to admin
-      await sendInvoiceUploadedNotification(
-        payout.members?.name || 'Neznámý pracovník',
-        payout.id,
-        payout.amount
-      );
+      // Send notification to admin. Keep the payout shape expected by the email service.
+      const emailResult = await sendInvoiceUploadedNotification({
+        ...payout,
+        invoice_url: publicUrl,
+        invoice_name: fileName,
+        invoice_uploaded_at: new Date().toISOString()
+      });
 
+      if (!emailResult.success) {
+        console.error('[InvoiceUpload] Admin notification failed:', emailResult.error);
+      }
       console.log('[InvoiceUpload] Upload complete, notifications sent');
 
       toast({

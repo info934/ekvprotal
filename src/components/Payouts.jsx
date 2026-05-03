@@ -230,6 +230,8 @@ const Payouts = () => {
     console.log('handleSavePayout called with:', { payoutData, isEditMode, payoutId });
     
     try {
+      let savedPayout = null;
+
       if (isEditMode) {
         console.log('Updating payout:', payoutId);
         
@@ -316,9 +318,11 @@ const Payouts = () => {
         }
 
         console.log('Payout items inserted successfully');
+        savedPayout = newPayout;
       }
 
       await fetchPayouts();
+      return savedPayout;
       
     } catch (error) {
       console.error('Error in handleSavePayout:', error);
