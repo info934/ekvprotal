@@ -4,12 +4,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Plus, Building, Search, Filter, List, LayoutGrid, AlertTriangle, RefreshCw,
   MoreHorizontal, Edit, Trash2, ChevronLeft, ChevronRight, Factory, Home, User2,
-  Phone, Settings, Download
+  Phone, Settings, Download, Mail, MapPin, Hash, Users
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import SubjectDialog from '@/components/SubjectDialog';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -20,67 +22,12 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuChe
 import * as XLSX from 'xlsx';
 import PageHeader from '@/components/ui/page-header';
 
-// UI components (Card, CardContent, CardHeader, CardTitle, Badge)
-// These are simplified versions to avoid importing entire shadcn/ui components if not necessary for specific styling.
-const Card = ({ children, className, ...props }) => (
-  <div
-    className={cn("rounded-xl border bg-card text-card-foreground shadow-sm hover:shadow-md transition-shadow", className)}
-    {...props}
-  >
-    {children}
-  </div>
-);
-
-const CardContent = ({ children, className, ...props }) => (
-  <div className={cn("p-6", className)} {...props}>
-    {children}
-  </div>
-);
-
-const CardHeader = ({ children, className, ...props }) => (
-  <div className={cn("flex flex-col space-y-1.5 p-6", className)} {...props}>
-    {children}
-  </div>
-);
-
-const CardTitle = ({ children, className, ...props }) => (
-  <h3 className={cn("font-semibold leading-none tracking-tight", className)} {...props}>
-    {children}
-  </h3>
-);
-
-const Badge = ({ children, variant = "default", className, ...props }) => {
-  const variants = {
-    default: "bg-primary text-primary-foreground hover:bg-primary/80",
-    secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-    destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/80",
-    outline: "text-foreground border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-    customer: "bg-green-100 text-green-800 border-green-200",
-    supplier: "bg-blue-100 text-blue-800 border-blue-200",
-    investor: "bg-purple-100 text-purple-800 border-purple-200",
-    authority: "bg-orange-100 text-orange-800 border-orange-200",
-    other: "bg-gray-100 text-gray-800 border-gray-200"
-  };
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border",
-        variants[variant],
-        className
-      )}
-      {...props}
-    >
-      {children}
-    </span>
-  );
-};
-
 const subjectTypeConfig = {
-  customer: { label: 'Zákazník', icon: User2, color: 'text-green-600', variant: 'customer' },
-  supplier: { label: 'Dodavatel', icon: Factory, color: 'text-blue-600', variant: 'supplier' },
-  investor: { label: 'Investor', icon: Home, color: 'text-purple-600', variant: 'investor' },
-  authority: { label: 'Úřad', icon: Building, color: 'text-orange-600', variant: 'authority' },
-  other: { label: 'Ostatní', icon: User2, color: 'text-gray-600', variant: 'other' },
+  customer: { label: 'Zákazník', icon: User2, color: 'text-emerald-700', surface: 'bg-emerald-50 ring-emerald-100', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  supplier: { label: 'Dodavatel', icon: Factory, color: 'text-blue-700', surface: 'bg-blue-50 ring-blue-100', badgeClass: 'bg-blue-50 text-blue-700 border-blue-200' },
+  investor: { label: 'Investor', icon: Home, color: 'text-violet-700', surface: 'bg-violet-50 ring-violet-100', badgeClass: 'bg-violet-50 text-violet-700 border-violet-200' },
+  authority: { label: 'Úřad', icon: Building, color: 'text-amber-700', surface: 'bg-amber-50 ring-amber-100', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' },
+  other: { label: 'Ostatní', icon: User2, color: 'text-slate-700', surface: 'bg-slate-50 ring-slate-100', badgeClass: 'bg-slate-50 text-slate-700 border-slate-200' },
 };
 
 const allColumns = {
@@ -94,6 +41,38 @@ const allColumns = {
   region: { label: 'Region', default: false },
 };
 
+const SubjectTypeBadge = ({ typeName }) => {
+  const config = subjectTypeConfig[typeName] || subjectTypeConfig.other;
+  return (
+    <Badge variant="outline" className={cn("whitespace-nowrap", config.badgeClass)}>
+      {config.label}
+    </Badge>
+  );
+};
+
+const SubjectSummaryCard = ({ typeKey, count, total }) => {
+  const config = subjectTypeConfig[typeKey] || subjectTypeConfig.other;
+  const Icon = config.icon;
+  const share = total > 0 ? Math.round((count / total) * 100) : 0;
+
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="flex items-center gap-4 p-4">
+        <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-md ring-1", config.surface, config.color)}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-muted-foreground">{config.label}</p>
+          <div className="mt-1 flex items-end justify-between gap-3">
+            <p className="text-2xl font-semibold tracking-tight text-slate-950">{count}</p>
+            <span className="text-xs text-muted-foreground">{share} %</span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 const SubjectCard = ({ subject, onClick }) => {
   const navigate = useNavigate();
   const handleCardClick = () => navigate(`/subjects/${subject.id}`);
@@ -105,29 +84,47 @@ const SubjectCard = ({ subject, onClick }) => {
       layout
       layoutId={`card-${subject.id}`}
       onClick={handleCardClick}
-      className="group bg-white border rounded-xl p-4 mb-4 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all duration-200"
+      className="group relative cursor-pointer overflow-hidden rounded-lg border bg-white p-4 shadow-sm transition-all duration-200 hover:border-primary/40 hover:shadow-md"
     >
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <Icon className={cn("w-4 h-4 flex-shrink-0", config.color)} />
-          <h3 className="font-semibold text-sm truncate">{subject.name}</h3>
+      <div className={cn("absolute inset-x-0 top-0 h-1", config.color.replace('text', 'bg'))} />
+      <div className="mb-4 flex items-start justify-between gap-3 pt-1">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <Icon className={cn("h-4 w-4 shrink-0", config.color)} />
+            <h3 className="truncate text-sm font-semibold text-slate-950">{subject.name}</h3>
+          </div>
+          {subject.ico && (
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Hash className="h-3.5 w-3.5" />
+              <span>{subject.ico}</span>
+            </div>
+          )}
         </div>
-        <Badge variant={config.variant} className="text-xs flex-shrink-0">
-          {config.label}
-        </Badge>
+        <SubjectTypeBadge typeName={subject.subject_types?.name} />
       </div>
-      <p className="text-sm text-muted-foreground mt-1">{subject.ico}</p>
-      <div className="space-y-2 text-sm mt-3">
+      <div className="space-y-2.5 text-sm">
         {subject.contact_person && (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <User2 className="w-3 h-3 flex-shrink-0" />
+          <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+            <User2 className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{subject.contact_person}</span>
           </div>
         )}
+        {subject.email && (
+          <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+            <Mail className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{subject.email}</span>
+          </div>
+        )}
         {subject.phone && (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Phone className="w-3 h-3 flex-shrink-0" />
+          <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+            <Phone className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{subject.phone}</span>
+          </div>
+        )}
+        {subject.region && (
+          <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{subject.region}</span>
           </div>
         )}
       </div>
@@ -146,10 +143,20 @@ const SubjectTable = ({ subjects, visibleColumns, sortConfig, requestSort, onSel
   };
 
   return (
-    <Card>
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b bg-slate-50/70 pb-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-base">Adresář subjektů</CardTitle>
+            <CardDescription>{subjects.length} položek v aktuálním zobrazení</CardDescription>
+          </div>
+          {selectedSubjects.size > 0 && (
+            <Badge variant="secondary">{selectedSubjects.size} vybráno</Badge>
+          )}
+        </div>
+      </CardHeader>
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <Table>
+        <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">
@@ -160,9 +167,9 @@ const SubjectTable = ({ subjects, visibleColumns, sortConfig, requestSort, onSel
                 </TableHead>
                 {Object.entries(allColumns).map(([key, { label }]) =>
                   visibleColumns[key] && (
-                    <TableHead key={key} onClick={() => requestSort(key)} className="cursor-pointer hover:bg-slate-100">
+                    <TableHead key={key} onClick={() => requestSort(key)} className="cursor-pointer whitespace-nowrap hover:bg-slate-100">
                       {label}
-                      {sortConfig.key === key ? (sortConfig.direction === 'ascending' ? ' ▲' : ' ▼') : ''}
+                      {sortConfig.key === key ? (sortConfig.direction === 'ascending' ? ' ↑' : ' ↓') : ''}
                     </TableHead>
                   )
                 )}
@@ -179,7 +186,7 @@ const SubjectTable = ({ subjects, visibleColumns, sortConfig, requestSort, onSel
                   <TableRow
                     key={subject.id}
                     className={cn(
-                      "cursor-pointer hover:bg-slate-50",
+                      "cursor-pointer hover:bg-slate-50/80",
                       isSelected && "bg-blue-50"
                     )}
                     onClick={(e) => handleRowClick(subject.id, e)}
@@ -191,24 +198,29 @@ const SubjectTable = ({ subjects, visibleColumns, sortConfig, requestSort, onSel
                       />
                     </TableCell>
                     {visibleColumns.name && (
-                      <TableCell>
-                        <div className="font-semibold text-sm flex items-center gap-1">
-                          <Icon className={cn("w-3 h-3", config.color)} />
-                          {subject.name}
+                      <TableCell className="min-w-[240px]">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md ring-1", config.surface, config.color)}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-950">{subject.name}</p>
+                            {subject.region && <p className="truncate text-xs text-muted-foreground">{subject.region}</p>}
+                          </div>
                         </div>
                       </TableCell>
                     )}
                     {visibleColumns.ico && <TableCell className="text-sm">{subject.ico}</TableCell>}
                     {visibleColumns.type && (
                       <TableCell>
-                        <Badge variant={config.variant}>{config.label}</Badge>
+                        <SubjectTypeBadge typeName={subject.subject_types?.name} />
                       </TableCell>
                     )}
-                    {visibleColumns.contact_person && <TableCell className="text-sm">{subject.contact_person || '-'}</TableCell>}
-                    {visibleColumns.email && <TableCell className="text-sm">{subject.email || '-'}</TableCell>}
-                    {visibleColumns.phone && <TableCell className="text-sm">{subject.phone || '-'}</TableCell>}
-                    {visibleColumns.address && <TableCell className="text-sm">{subject.address || '-'}</TableCell>}
-                    {visibleColumns.region && <TableCell className="text-sm">{subject.region || '-'}</TableCell>}
+                    {visibleColumns.contact_person && <TableCell className="min-w-[160px] text-sm">{subject.contact_person || '-'}</TableCell>}
+                    {visibleColumns.email && <TableCell className="min-w-[200px] text-sm">{subject.email || '-'}</TableCell>}
+                    {visibleColumns.phone && <TableCell className="min-w-[140px] text-sm">{subject.phone || '-'}</TableCell>}
+                    {visibleColumns.address && <TableCell className="min-w-[240px] text-sm">{subject.address || '-'}</TableCell>}
+                    {visibleColumns.region && <TableCell className="min-w-[140px] text-sm">{subject.region || '-'}</TableCell>}
                     <TableCell onClick={(e) => e.stopPropagation()} className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -235,7 +247,6 @@ const SubjectTable = ({ subjects, visibleColumns, sortConfig, requestSort, onSel
               })}
             </TableBody>
           </Table>
-        </div>
       </CardContent>
     </Card>
   );
@@ -377,6 +388,20 @@ const Subjects = () => {
     return sortableItems;
   }, [filteredSubjects, sortConfig]);
 
+  const subjectTypeCounts = React.useMemo(() => {
+    return subjects.reduce((acc, subject) => {
+      const type = subject.subject_types?.name || 'other';
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {});
+  }, [subjects]);
+
+  const subjectsWithContact = React.useMemo(() => {
+    return subjects.filter((subject) => subject.email || subject.phone || subject.contact_person).length;
+  }, [subjects]);
+
+  const hasActiveFilters = searchTerm.trim() !== '' || typeFilter !== 'all';
+
   const requestSort = (key) => {
     let direction = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') direction = 'descending';
@@ -470,51 +495,53 @@ const Subjects = () => {
             </>
           }
         />
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="hidden"
-        >
-          <div>
-            <h1 className="text-3xl font-bold text-slate-800 mb-2 flex items-center gap-3">
-              <Building className="w-8 h-8 text-primary" />
-              Subjekty
-            </h1>
-            <p className="text-muted-foreground">
-              Přehled a správa všech subjektů, s nimiž společnost spolupracuje.
-            </p>
-          </div>
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            {hasPermission('subjects', 'can_create') && (
-              <Button onClick={() => { setEditingSubject(null); setIsDialogOpen(true); }} className="w-full md:w-auto">
-                <Plus className="w-4 h-4 mr-2" />
-                Nový subjekt
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={handleRefresh} className="bg-white/80 hidden md:inline-flex">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Aktualizovat
-            </Button>
-          </div>
-        </motion.div>
 
-        {/* Filters and Controls */}
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-              {/* Search */}
-              <div className="relative flex-1 w-full max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <Card className="xl:col-span-1">
+            <CardContent className="flex items-center gap-4 p-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary ring-1 ring-primary/10">
+                <Users className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-muted-foreground">Celkem</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{subjects.length}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="xl:col-span-1">
+            <CardContent className="flex items-center gap-4 p-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-700 ring-1 ring-slate-100">
+                <Phone className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-muted-foreground">S kontaktem</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{subjectsWithContact}</p>
+              </div>
+            </CardContent>
+          </Card>
+          {Object.keys(subjectTypeConfig).map((typeKey) => (
+            <SubjectSummaryCard
+              key={typeKey}
+              typeKey={typeKey}
+              count={subjectTypeCounts[typeKey] || 0}
+              total={subjects.length}
+            />
+          ))}
+        </div>
+
+        <Card className="overflow-hidden">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="relative w-full xl:max-w-xl">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input placeholder="Hledat subjekt, IČO, kontaktní osobu..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
               </div>
 
-              {/* Filters */}
-              <div className="flex flex-wrap gap-2 items-center">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-muted-foreground" />
+              <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center xl:w-auto xl:justify-end">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Filter className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value)}>
-                    <SelectTrigger className="w-48">
+                    <SelectTrigger className="w-full bg-white sm:w-48">
                       <SelectValue placeholder="Filtrovat dle typu" />
                     </SelectTrigger>
                     <SelectContent>
@@ -526,14 +553,26 @@ const Subjects = () => {
                   </Select>
                 </div>
 
-                <div className="flex gap-2">
-                  <Button variant={view === 'table' ? 'default' : 'outline'} onClick={() => setView('table')} size="sm">
+                <div className="flex rounded-lg bg-slate-100 p-1">
+                  <Button variant={view === 'table' ? 'secondary' : 'ghost'} onClick={() => setView('table')} size="sm" className="flex-1 sm:flex-none">
                     <List className="w-4 h-4 mr-2" /> Tabulka
                   </Button>
-                  <Button variant={view === 'kanban' ? 'default' : 'outline'} onClick={() => setView('kanban')} size="sm">
+                  <Button variant={view === 'kanban' ? 'secondary' : 'ghost'} onClick={() => setView('kanban')} size="sm" className="flex-1 sm:flex-none">
                     <LayoutGrid className="w-4 h-4 mr-2" /> Karty
                   </Button>
                 </div>
+                {hasActiveFilters && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setTypeFilter('all');
+                    }}
+                  >
+                    Zrušit filtry
+                  </Button>
+                )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="icon">
@@ -561,13 +600,13 @@ const Subjects = () => {
 
         {/* Bulk Actions */}
         {selectedSubjects.size > 0 && (
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-            <div className="flex items-center justify-between">
+          <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <Checkbox checked disabled />
                 <span className="font-medium text-blue-800">{selectedSubjects.size} subjektů vybráno</span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {hasPermission('subjects', 'can_admin') && (
                   <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
                     <Trash2 className="w-4 h-4 mr-2" /> Smazat vybrané
@@ -582,10 +621,12 @@ const Subjects = () => {
         {/* Content Area */}
         <AnimatePresence mode="wait">
           {loading ? (
-            <div className="flex justify-center items-center h-64">
-              <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-              <p className="ml-2 text-muted-foreground">Načítání subjektů...</p>
-            </div>
+            <Card>
+              <CardContent className="flex h-64 items-center justify-center">
+                <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+                <p className="ml-2 text-muted-foreground">Načítání subjektů...</p>
+              </CardContent>
+            </Card>
           ) : paginatedSubjects.length > 0 ? (
             view === 'table' ? (
               <motion.div key="table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
@@ -603,7 +644,7 @@ const Subjects = () => {
                 />
               </motion.div>
             ) : (
-              <motion.div key="kanban" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <motion.div key="kanban" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {paginatedSubjects.map(subject => (
                   <SubjectCard key={subject.id} subject={subject} onClick={() => handleEditSubject(subject)} />
                 ))}
@@ -630,8 +671,8 @@ const Subjects = () => {
 
         {/* Pagination */}
         {sortedSubjects.length > itemsPerPage && (
-          <div className="flex items-center justify-between mt-4">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-3 rounded-lg border bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm text-muted-foreground">
                 Zobrazeno {startIndex + 1}-{Math.min(endIndex, sortedSubjects.length)} z {sortedSubjects.length} subjektů
               </span>
@@ -647,11 +688,11 @@ const Subjects = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1}>
                 <ChevronLeft className="w-4 h-4" />
               </Button>
-              <div className="flex items-center gap-1">
+              <div className="flex max-w-full items-center gap-1 overflow-x-auto">
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
                   <Button
                     key={pageNum}
