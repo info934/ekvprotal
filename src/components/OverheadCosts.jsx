@@ -22,6 +22,7 @@ import {
     BarChart,
     List,
     FileText,
+    Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -54,15 +55,101 @@ import PageHeader from '@/components/ui/page-header';
 const formatCurrency = (value = 0) =>
     new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
 
-const StatsCard = ({ title, value, description, icon: Icon }) => (
-    <Card className="border shadow-sm">
-        <CardContent className="flex items-center justify-between py-4">
-            <div>
-                <p className="text-sm text-muted-foreground">{title}</p>
-                <p className="text-2xl font-semibold text-slate-900 mt-1">{formatCurrency(value)}</p>
-                {description && <p className="text-xs text-muted-foreground mt-1">{description}</p>}
+const StatsCard = ({ title, value, description, icon: Icon, tone = 'blue' }) => {
+    const toneClass = {
+        blue: 'text-blue-700 bg-blue-50 ring-blue-100',
+        emerald: 'text-emerald-700 bg-emerald-50 ring-emerald-100',
+        amber: 'text-amber-700 bg-amber-50 ring-amber-100',
+        violet: 'text-violet-700 bg-violet-50 ring-violet-100',
+    }[tone] || 'text-blue-700 bg-blue-50 ring-blue-100';
+
+    return (
+        <Card className="group overflow-hidden">
+            <CardContent className="flex items-center justify-between gap-4 p-4 sm:p-5">
+                <div className="min-w-0">
+                    <p className="text-sm font-medium text-muted-foreground">{title}</p>
+                    <p className="mt-1 truncate text-2xl font-semibold tracking-tight text-slate-950">{formatCurrency(value)}</p>
+                    {description && <p className="mt-1 truncate text-xs text-muted-foreground">{description}</p>}
+                </div>
+                {Icon && (
+                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-md ring-1 ${toneClass}`}>
+                        <Icon className="h-5 w-5" />
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
+
+const CostTypeBadge = ({ type }) => (
+    <Badge
+        variant={type === 'PRAVIDELNY' ? 'info' : 'warning'}
+        className="whitespace-nowrap"
+    >
+        {type === 'PRAVIDELNY' ? 'Pravidelné' : 'Proměnlivé'}
+    </Badge>
+);
+
+const PreviewList = ({ title, description, items, empty, dateFormatter }) => (
+    <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-slate-50/70 pb-4">
+            <CardTitle className="text-base">{title}</CardTitle>
+            <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent className="p-3">
+            {items.length ? (
+                <ul className="space-y-2">
+                    {items.map((item) => (
+                        <li key={item.id} className="rounded-lg border bg-white px-3 py-2.5 text-sm shadow-sm">
+                            <div className="flex min-w-0 items-center justify-between gap-3">
+                                <span className="truncate font-medium text-slate-950">{item.name}</span>
+                                <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(item.amount)}</span>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">{dateFormatter(item)}</p>
+                        </li>
+                    ))}
+                </ul>
+            ) : (
+                <div className="flex min-h-[132px] items-center justify-center rounded-lg border border-dashed bg-white/70 p-4 text-center text-sm text-muted-foreground">
+                    {empty}
+                </div>
+            )}
+        </CardContent>
+    </Card>
+);
+
+const MonthlyCategoryBreakdown = ({ categories, total }) => (
+    <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-slate-50/70 pb-4">
+            <div className="flex items-start justify-between gap-4">
+                <div>
+                    <CardTitle className="text-base">Rozpad aktuálního měsíce</CardTitle>
+                    <CardDescription>Největší kategorie podle částky</CardDescription>
+                </div>
+                <Badge variant="secondary">{categories.length} kategorií</Badge>
             </div>
-            {Icon && <Icon className="w-8 h-8 text-primary/80" />}
+        </CardHeader>
+        <CardContent className="space-y-3 p-4 sm:p-5">
+            {categories.length ? (
+                categories.slice(0, 6).map(({ category, amount }) => {
+                    const percentage = total > 0 ? Math.min(100, (amount / total) * 100) : 0;
+                    return (
+                        <div key={category} className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                                <span className="truncate font-medium text-slate-800">{category}</span>
+                                <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(amount)}</span>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                                <div className="h-full rounded-full bg-primary" style={{ width: `${percentage}%` }} />
+                            </div>
+                        </div>
+                    );
+                })
+            ) : (
+                <div className="flex min-h-[180px] items-center justify-center rounded-lg border border-dashed bg-white/70 p-6 text-center text-sm text-muted-foreground">
+                    V tomto měsíci zatím nejsou zaznamenané žádné režie.
+                </div>
+            )}
         </CardContent>
     </Card>
 );
@@ -226,6 +313,7 @@ const OverheadCostsList = () => {
         });
     }, [costs, searchTerm, filters]);
 
+    const hasActiveFilters = searchTerm.trim() !== '' || filters.type !== 'all' || filters.category !== 'all';
     const paginatedCosts = filteredCosts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
     const totalPages = Math.ceil(filteredCosts.length / itemsPerPage);
 
@@ -238,102 +326,51 @@ const OverheadCostsList = () => {
 
     return (
         <div className="space-y-6">
-            <div className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                    <StatsCard title="Celkové režijní náklady" value={stats.total} description={`${costs.length} položek`} icon={FilePieChart} />
-                    <StatsCard title="Aktuální měsíc" value={stats.monthlyTotal} description={monthLabel} icon={Calendar} />
-                    <StatsCard title="Pravidelné režie" value={stats.regular} description={`${stats.regularCount} aktivních nákladů`} icon={RefreshCw} />
-                    <StatsCard title="Proměnlivé režie" value={stats.variable} description={`${stats.variableCount} položek`} icon={Tag} />
-                </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <StatsCard title="Celkové režie" value={stats.total} description={`${costs.length} položek v evidenci`} icon={FilePieChart} tone="blue" />
+                <StatsCard title="Aktuální měsíc" value={stats.monthlyTotal} description={monthLabel} icon={Calendar} tone="emerald" />
+                <StatsCard title="Pravidelné" value={stats.regular} description={`${stats.regularCount} aktivních nákladů`} icon={RefreshCw} tone="violet" />
+                <StatsCard title="Proměnlivé" value={stats.variable} description={`${stats.variableCount} položek`} icon={Tag} tone="amber" />
+            </div>
 
-                <div className="grid gap-4 lg:grid-cols-2">
-                    <Card className="border shadow-sm">
-                        <CardHeader>
-                            <CardTitle>Přehled měsíčních režií</CardTitle>
-                            <CardDescription>{monthLabel}</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <p className="text-sm text-muted-foreground">Celkem v tomto měsíci</p>
-                                <p className="text-xl font-semibold text-slate-900">{formatCurrency(stats.monthlyTotal)}</p>
-                            </div>
-                            <div className="space-y-2">
-                                {stats.monthlyCategories.length ? (
-                                    stats.monthlyCategories.slice(0, 6).map(({ category, amount }) => (
-                                        <div key={category} className="flex items-center justify-between rounded-md border bg-white/70 px-3 py-2 text-sm">
-                                            <span>{category}</span>
-                                            <span className="font-medium">{formatCurrency(amount)}</span>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <p className="text-sm text-muted-foreground">V tomto měsíci zatím nejsou zaznamenané žádné režie.</p>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
+            <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+                <MonthlyCategoryBreakdown categories={stats.monthlyCategories} total={stats.monthlyTotal} />
 
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <Card className="border shadow-sm">
-                            <CardHeader>
-                                <CardTitle>Pravidelné náklady</CardTitle>
-                                <CardDescription>Posledních {regularPreview.length} záznamů</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {regularPreview.length ? (
-                                    <ul className="space-y-3">
-                                        {regularPreview.map((item) => (
-                                            <li key={item.id} className="flex flex-col rounded-md border bg-white/70 px-3 py-2 text-sm">
-                                                <div className="flex items-center justify-between">
-                                                    <span className="font-medium text-slate-900">{item.name}</span>
-                                                    <span className="font-semibold">{formatCurrency(item.amount)}</span>
-                                                </div>
-                                                <p className="text-xs text-muted-foreground">
-                                                    {item.valid_from && item.valid_to
-                                                        ? `${format(new Date(item.valid_from), 'd.M.yyyy')} – ${format(new Date(item.valid_to), 'd.M.yyyy')}`
-                                                        : 'Bez platnosti'}
-                                                </p>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="text-sm text-muted-foreground">Nemáte žádné pravidelné náklady.</p>
-                                )}
-                            </CardContent>
-                        </Card>
-
-                        <Card className="border shadow-sm">
-                            <CardHeader>
-                                <CardTitle>Proměnlivé náklady</CardTitle>
-                                <CardDescription>Posledních {variablePreview.length} záznamů</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {variablePreview.length ? (
-                                    <ul className="space-y-3">
-                                        {variablePreview.map((item) => (
-                                            <li key={item.id} className="flex flex-col rounded-md border bg-white/70 px-3 py-2 text-sm">
-                                                <div className="flex items-center justify-between">
-                                                    <span className="font-medium text-slate-900">{item.name}</span>
-                                                    <span className="font-semibold">{formatCurrency(item.amount)}</span>
-                                                </div>
-                                                <p className="text-xs text-muted-foreground">
-                                                    {item.date_incurred ? format(new Date(item.date_incurred), 'd.M.yyyy') : 'Bez data'}
-                                                </p>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="text-sm text-muted-foreground">Nemáte žádné proměnlivé náklady.</p>
-                                )}
-                            </CardContent>
-                        </Card>
-                    </div>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+                    <PreviewList
+                        title="Pravidelné náklady"
+                        description={`Posledních ${regularPreview.length} záznamů`}
+                        items={regularPreview}
+                        empty="Nemáte žádné pravidelné náklady."
+                        dateFormatter={(item) =>
+                            item.valid_from && item.valid_to
+                                ? `${format(new Date(item.valid_from), 'd.M.yyyy')} - ${format(new Date(item.valid_to), 'd.M.yyyy')}`
+                                : 'Bez platnosti'
+                        }
+                    />
+                    <PreviewList
+                        title="Proměnlivé náklady"
+                        description={`Posledních ${variablePreview.length} záznamů`}
+                        items={variablePreview}
+                        empty="Nemáte žádné proměnlivé náklady."
+                        dateFormatter={(item) => (item.date_incurred ? format(new Date(item.date_incurred), 'd.M.yyyy') : 'Bez data')}
+                    />
                 </div>
             </div>
 
-            <Card>
-                <CardHeader>
-                    <div className="flex flex-col md:flex-row gap-4 justify-between">
-                        <div className="relative flex-1 max-w-md">
+            <Card className="overflow-hidden">
+                <CardHeader className="border-b bg-slate-50/70">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div>
+                            <CardTitle className="flex items-center gap-2 text-base">
+                                <Wallet className="h-5 w-5 text-primary" />
+                                Evidence režijních nákladů
+                            </CardTitle>
+                            <CardDescription>
+                                {filteredCosts.length} z {costs.length} položek
+                            </CardDescription>
+                        </div>
+                        <div className="relative w-full xl:max-w-md">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
                             <Input
                                 placeholder="Hledat náklad..."
@@ -342,11 +379,13 @@ const OverheadCostsList = () => {
                                 className="pl-10"
                             />
                         </div>
-                        <div className="flex items-center gap-2">
+                    </div>
+                    <div className="flex flex-col gap-3 pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                             <Filter className="w-4 h-4 text-muted-foreground" />
                             <Select value={filters.type} onValueChange={(value) => setFilters((prev) => ({ ...prev, type: value }))}>
-                                <SelectTrigger className="w-40">
-                                    <SelectValue placeholder="Všechny typy" />
+                                <SelectTrigger className="w-full bg-white sm:w-40">
+                                    <SelectValue placeholder="Typ" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">Všechny typy</SelectItem>
@@ -355,8 +394,8 @@ const OverheadCostsList = () => {
                                 </SelectContent>
                             </Select>
                             <Select value={filters.category} onValueChange={(value) => setFilters((prev) => ({ ...prev, category: value }))}>
-                                <SelectTrigger className="w-48">
-                                    <SelectValue placeholder="Všechny kategorie" />
+                                <SelectTrigger className="w-full bg-white sm:w-52">
+                                    <SelectValue placeholder="Kategorie" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {uniqueCategories.map((category) => (
@@ -366,11 +405,27 @@ const OverheadCostsList = () => {
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <Button variant="ghost" size="icon" onClick={fetchCosts}>
-                                <RefreshCw className="w-4 h-4" />
+                            {hasActiveFilters && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        setSearchTerm('');
+                                        setFilters({ type: 'all', category: 'all' });
+                                    }}
+                                >
+                                    Zrušit filtry
+                                </Button>
+                            )}
+                        </div>
+                        <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={fetchCosts} className="bg-white">
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                                Aktualizovat
                             </Button>
                             <Button onClick={handleNewCost}>
-                                <Plus className="mr-2 h-4 w-4" /> Nový náklad
+                                <Plus className="mr-2 h-4 w-4" />
+                                Nový náklad
                             </Button>
                         </div>
                     </div>
@@ -397,17 +452,22 @@ const OverheadCostsList = () => {
                                 </TableRow>
                             ) : paginatedCosts.length > 0 ? (
                                 paginatedCosts.map((cost) => (
-                                    <TableRow key={cost.id}>
-                                        <TableCell className="font-semibold">{cost.name}</TableCell>
+                                    <TableRow key={cost.id} className="hover:bg-slate-50/80">
+                                        <TableCell className="min-w-[240px]">
+                                            <div className="min-w-0">
+                                                <p className="truncate font-semibold text-slate-950">{cost.name}</p>
+                                                {cost.description && <p className="truncate text-xs text-muted-foreground">{cost.description}</p>}
+                                            </div>
+                                        </TableCell>
                                         <TableCell>
                                             <Badge variant="outline">{cost.category || 'N/A'}</Badge>
                                         </TableCell>
-                                        <TableCell>{cost.amount.toLocaleString('cs-CZ')} Kč</TableCell>
-                                        <TableCell>{cost.type === 'PRAVIDELNY' ? 'Pravidelné' : 'Proměnlivé'}</TableCell>
-                                        <TableCell className="text-sm">
+                                        <TableCell className="font-semibold tabular-nums">{formatCurrency(cost.amount)}</TableCell>
+                                        <TableCell><CostTypeBadge type={cost.type} /></TableCell>
+                                        <TableCell className="min-w-[170px] text-sm">
                                             {cost.type === 'PRAVIDELNY'
                                                 ? cost.valid_from && cost.valid_to
-                                                    ? `${format(new Date(cost.valid_from), 'd.M.yyyy')} – ${format(new Date(cost.valid_to), 'd.M.yyyy')}`
+                                                    ? `${format(new Date(cost.valid_from), 'd.M.yyyy')} - ${format(new Date(cost.valid_to), 'd.M.yyyy')}`
                                                     : 'Bez platnosti'
                                                 : cost.date_incurred
                                                     ? format(new Date(cost.date_incurred), 'd.M.yyyy')

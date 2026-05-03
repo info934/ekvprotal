@@ -3,10 +3,10 @@ import { cn } from '@/lib/utils';
 
 const PageHeader = ({ icon: Icon, title, description, actions, meta, className }) => {
   return (
-    <header className={cn("flex min-w-0 flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-start sm:justify-between", className)}>
+    <header className={cn("flex min-w-0 flex-col gap-4 rounded-lg border border-slate-200/80 bg-white/75 p-4 shadow-sm backdrop-blur sm:flex-row sm:items-start sm:justify-between sm:p-5", className)}>
       <div className="flex min-w-0 items-start gap-3">
         {Icon && (
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary ring-1 ring-primary/10">
             <Icon className="h-5 w-5" />
           </div>
         )}
