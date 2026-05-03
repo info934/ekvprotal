@@ -278,7 +278,7 @@ const GlobalAttendanceOptimized = () => {
   const handleExport = () => {
     const dataToExport = filteredRecords.map(r => ({
       Datum: format(parseISO(r.date), 'd.M.yyyy'),
-      Projektant: r.members?.name,
+      Zaměstnanec: r.members?.name,
       Typ: r.project_id ? 'Projekt' : 'Realizace',
       Název: r.projects?.name || r.realizations?.name,
       Kód: r.projects?.code || '-',
@@ -355,10 +355,10 @@ const GlobalAttendanceOptimized = () => {
               <div className="w-[200px]">
                 <Select value={selectedMember} onValueChange={setSelectedMember}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Všichni projektanti" />
+                    <SelectValue placeholder="Všichni zaměstnanci" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Všichni projektanti</SelectItem>
+                    <SelectItem value="all">Všichni zaměstnanci</SelectItem>
                     {members.map(m => (
                       <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                     ))}

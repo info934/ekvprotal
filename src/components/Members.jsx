@@ -80,7 +80,7 @@ const Members = () => {
         const { data: membersData, error: membersError } = await membersQuery;
 
         if (membersError) {
-            toast({ title: "Chyba při načítání projektantů", variant: "destructive" });
+            toast({ title: "Chyba při načítání zaměstnanců", variant: "destructive" });
             return;
         }
         setMembers(membersData || []);
@@ -164,16 +164,16 @@ const Members = () => {
         if (editingMember) {
             const { error } = await supabase.from('members').update(cleanedData).eq('id', editingMember.id);
             if (error) {
-                toast({ title: "Chyba při úpravě projektanta", variant: "destructive", description: error.message });
+                toast({ title: "Chyba při úpravě zaměstnance", variant: "destructive", description: error.message });
             } else {
-                toast({ title: "✅ Projektant upraven!" });
+                toast({ title: "Zaměstnanec upraven" });
             }
         } else {
             const { error } = await supabase.from('members').insert([cleanedData]);
             if (error) {
-                toast({ title: "Chyba při přidávání projektanta", variant: "destructive", description: error.message });
+                toast({ title: "Chyba při přidávání zaměstnance", variant: "destructive", description: error.message });
             } else {
-                toast({ title: "✅ Projektant přidán!" });
+                toast({ title: "Zaměstnanec přidán" });
             }
         }
         fetchMembersAndRewards();
@@ -185,9 +185,9 @@ const Members = () => {
         if (!canAdmin) return;
         const { error } = await supabase.from('members').delete().eq('id', id);
         if (error) {
-            toast({ title: "Chyba při mazání projektanta", variant: "destructive" });
+            toast({ title: "Chyba při mazání zaměstnance", variant: "destructive" });
         } else {
-            toast({ title: "🗑️ Projektant smazán." });
+            toast({ title: "Zaměstnanec smazán" });
             fetchMembersAndRewards();
         }
     };
@@ -202,8 +202,8 @@ const Members = () => {
             member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (member.email && member.email.toLowerCase().includes(searchTerm.toLowerCase()));
 
-        const matchesRole = roleFilter === 'all' ||
-            (member.member_roles?.name === roleFilter);
+        const memberRole = member.member_roles?.name || 'Bez pozice';
+        const matchesRole = roleFilter === 'all' || memberRole === roleFilter;
 
         const matchesCertification = (() => {
             if (certificationFilter === 'all') return true;
@@ -224,6 +224,15 @@ const Members = () => {
         const certStatus = getCertificationStatus(member.member_certifications);
         return certStatus.icon === AlertTriangle;
     }).length;
+    const roleCounts = React.useMemo(() => {
+        return members.reduce((acc, member) => {
+            const role = member.member_roles?.name || 'Bez pozice';
+            acc[role] = (acc[role] || 0) + 1;
+            return acc;
+        }, {});
+    }, [members]);
+    const uniqueRolesCount = Object.keys(roleCounts).filter((role) => role !== 'Bez pozice').length;
+    const membersWithoutRole = roleCounts['Bez pozice'] || 0;
 
     const renderMemberFinancials = (memberId) => {
         if (!canViewFinance) return { totalReward: 0, balance: 0 };
@@ -252,7 +261,7 @@ const Members = () => {
                         <h3 className="font-bold text-lg truncate">{member.name}</h3>
                         <div className="flex items-center gap-2 mt-1">
                             <Badge variant="secondary" className="text-xs">
-                                {member.member_roles?.name || 'Bez role'}
+                                {member.member_roles?.name || 'Bez pozice'}
                             </Badge>
                             {CertIcon && (
                                 <CertIcon
@@ -330,14 +339,14 @@ const Members = () => {
             <div className="space-y-6">
                 <PageHeader
                     icon={Users}
-                    title="Projektanti"
-                    description={isSuperUser ? 'Správa projektantů a jejich odměn' : 'Váš profil a odměny'}
+                    title="Zaměstnanci"
+                    description={isSuperUser ? 'Správa zaměstnanců, jejich pozic, kategorií a odměn' : 'Váš profil, pozice a odměny'}
                     actions={
                         <>
                             {canEdit && isSuperUser && (
                                 <Button onClick={() => handleOpenDialog()} className="w-full md:w-auto">
                                     <Plus className="w-4 h-4 mr-2" />
-                                    Nový projektant
+                                    Nový zaměstnanec
                                 </Button>
                             )}
                             <Button variant="outline" size="sm" onClick={fetchMembersAndRewards} className="bg-white/80 hidden md:inline-flex">
@@ -355,10 +364,10 @@ const Members = () => {
                     <div>
                         <h1 className="text-3xl font-bold text-slate-800 mb-2 flex items-center gap-3">
                             <Users className="w-8 h-8 text-primary" />
-                            Projektanti
+                            Zaměstnanci
                         </h1>
                         <p className="text-muted-foreground">
-                            {isSuperUser ? 'Správa projektantů a jejich odměn' : 'Váš profil a odměny'}
+                            {isSuperUser ? 'Správa zaměstnanců, jejich pozic, kategorií a odměn' : 'Váš profil, pozice a odměny'}
                         </p>
                     </div>
                     <div className="flex items-center gap-3 w-full md:w-auto">
@@ -368,7 +377,7 @@ const Members = () => {
                                 className="w-full md:w-auto"
                             >
                                 <Plus className="w-4 h-4 mr-2" />
-                                Nový projektant
+                                Nový zaměstnanec
                             </Button>
                         )}
                         <Button variant="outline" size="sm" onClick={fetchMembersAndRewards} className="bg-white/80 hidden md:inline-flex">
@@ -387,7 +396,7 @@ const Members = () => {
                                     <Users className="h-5 w-5 text-blue-600" />
                                 </div>
                                 <div>
-                                    <p className="text-sm text-muted-foreground">Celkem projektantů</p>
+                                    <p className="text-sm text-muted-foreground">Celkem zaměstnanců</p>
                                     <p className="text-2xl font-bold">{totalMembers}</p>
                                 </div>
                             </div>
@@ -398,11 +407,11 @@ const Members = () => {
                         <CardContent className="p-4">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-green-100 rounded-lg">
-                                    <DollarSign className="h-5 w-5 text-green-600" />
+                                    <Shield className="h-5 w-5 text-green-600" />
                                 </div>
                                 <div>
-                                    <p className="text-sm text-muted-foreground">Celkové odměny</p>
-                                    <p className="text-2xl font-bold">{canViewFinance ? totalRewards.toLocaleString('cs-CZ') + ' Kč' : 'N/A'}</p>
+                                    <p className="text-sm text-muted-foreground">Pozice / kategorie</p>
+                                    <p className="text-2xl font-bold">{uniqueRolesCount}</p>
                                 </div>
                             </div>
                         </CardContent>
@@ -437,6 +446,50 @@ const Members = () => {
                     </Card>
                 </div>
 
+                {isSuperUser && (
+                    <Card className="overflow-hidden">
+                        <CardHeader className="border-b bg-slate-50/70 pb-4">
+                            <CardTitle className="text-base">Pozice a kategorie zaměstnanců</CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-4">
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    variant={roleFilter === 'all' ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => setRoleFilter('all')}
+                                >
+                                    Všechny pozice
+                                    <Badge variant="secondary" className="ml-2">{totalMembers}</Badge>
+                                </Button>
+                                {Object.entries(roleCounts)
+                                    .filter(([role]) => role !== 'Bez pozice')
+                                    .sort(([a], [b]) => a.localeCompare(b, 'cs-CZ'))
+                                    .map(([role, count]) => (
+                                        <Button
+                                            key={role}
+                                            variant={roleFilter === role ? 'default' : 'outline'}
+                                            size="sm"
+                                            onClick={() => setRoleFilter(roleFilter === role ? 'all' : role)}
+                                        >
+                                            {role}
+                                            <Badge variant="secondary" className="ml-2">{count}</Badge>
+                                        </Button>
+                                    ))}
+                                {membersWithoutRole > 0 && (
+                                    <Button
+                                        variant={roleFilter === 'Bez pozice' ? 'default' : 'outline'}
+                                        size="sm"
+                                        onClick={() => setRoleFilter(roleFilter === 'Bez pozice' ? 'all' : 'Bez pozice')}
+                                    >
+                                        Bez pozice
+                                        <Badge variant="secondary" className="ml-2">{membersWithoutRole}</Badge>
+                                    </Button>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
                 {/* Filters and Search - pouze pro super uživatele */}
                 {isSuperUser && (
                     <Card>
@@ -445,7 +498,7 @@ const Members = () => {
                                 <div className="relative flex-1 w-full max-w-md">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                                     <Input
-                                        placeholder="Hledat projektanta..."
+                                        placeholder="Hledat zaměstnance..."
                                         className="pl-10"
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -457,10 +510,10 @@ const Members = () => {
                                         <Filter className="h-4 w-4 text-muted-foreground" />
                                         <Select value={roleFilter} onValueChange={setRoleFilter}>
                                             <SelectTrigger className="w-[160px]">
-                                                <SelectValue placeholder="Všechny pracovní role" />
+                                                <SelectValue placeholder="Všechny pozice" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="all">Všechny pracovní role</SelectItem>
+                                                <SelectItem value="all">Všechny pozice</SelectItem>
                                                 {Array.from(new Set(members.map(m => m.member_roles?.name).filter(Boolean))).map(role => (
                                                     <SelectItem key={role} value={role}>{role}</SelectItem>
                                                 ))}
@@ -522,7 +575,7 @@ const Members = () => {
                                         <TableHeader>
                                             <TableRow>
                                                 <TableHead className="w-[250px]">Jméno</TableHead>
-                                                <TableHead>Pracovní role</TableHead>
+                                                <TableHead>Pozice / kategorie</TableHead>
                                                 <TableHead>Certifikace</TableHead>
                                                 <TableHead>Hodinová sazba</TableHead>
                                                 {canViewFinance && <TableHead>Celková odměna</TableHead>}
@@ -548,7 +601,7 @@ const Members = () => {
                                                         </TableCell>
                                                         <TableCell>
                                                             <Badge variant="secondary" className="text-xs">
-                                                                {member.member_roles?.name || 'Bez pracovní role'}
+                                                                {member.member_roles?.name || 'Bez pozice'}
                                                             </Badge>
                                                         </TableCell>
                                                         <TableCell>
@@ -617,14 +670,14 @@ const Members = () => {
                         <Card className="max-w-md mx-auto">
                             <CardContent className="p-8">
                                 <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                                <h3 className="text-lg font-semibold mb-2">Žádní projektanti nenalezeni</h3>
+                                <h3 className="text-lg font-semibold mb-2">Žádní zaměstnanci nenalezeni</h3>
                                 <p className="text-muted-foreground mb-4">
-                                    Zkuste změnit filtry nebo vytvořte nového projektanta.
+                                    Zkuste změnit filtry nebo vytvořte nového zaměstnance.
                                 </p>
                                 {canEdit && (
                                     <Button onClick={() => handleOpenDialog()}>
                                         <Plus className="w-4 h-4 mr-2" />
-                                        Vytvořit projektanta
+                                        Vytvořit zaměstnance
                                     </Button>
                                 )}
                             </CardContent>

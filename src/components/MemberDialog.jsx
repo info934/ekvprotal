@@ -117,20 +117,20 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
             {member ? (
               <>
                 <Edit2 className="h-6 w-6 text-primary" />
-                Upravit projektanta
+                Upravit zaměstnance
               </>
             ) : (
               <>
                 <Plus className="h-6 w-6 text-primary" />
-                Nový projektant
+                Nový zaměstnanec
               </>
             )}
           </div>
         </div>
         <FormDialogHeader
           icon={member ? Edit2 : Plus}
-          title={member ? 'Upravit projektanta' : 'Nový projektant'}
-          description="Správa základních údajů, kontaktu, pracovní role a nastavení docházky."
+          title={member ? 'Upravit zaměstnance' : 'Nový zaměstnanec'}
+          description="Správa základních údajů, kontaktu, pozice/kategorie a nastavení docházky."
         />
         
         <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-hidden flex flex-col">
@@ -168,7 +168,7 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
                     <Input
                       id="name"
                       {...register('name')}
-                      placeholder="Zadejte jméno projektanta"
+                      placeholder="Zadejte jméno zaměstnance"
                       className={errors.name ? "border-red-500" : ""}
                     />
                     {errors.name && <p className="text-xs text-red-500 flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.name.message}</p>}
@@ -177,7 +177,7 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
                   <div className="space-y-2">
                     <Label htmlFor="role" className="flex items-center gap-2 text-sm font-medium">
                       <Shield className="h-4 w-4 text-muted-foreground" />
-                      Pracovní role / pozice
+                      Pozice / kategorie
                     </Label>
                     <Controller
                         name="role_id"
@@ -188,7 +188,7 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
                               onValueChange={field.onChange}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="-- Vyberte pracovní roli --" />
+                                <SelectValue placeholder="-- Vyberte pozici nebo kategorii --" />
                               </SelectTrigger>
                               <SelectContent>
                                 {roles.map(role => (
@@ -220,7 +220,7 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
                         id="email"
                         type="email"
                         {...register('email')}
-                        placeholder="projektant@example.com"
+                        placeholder="zamestnanec@example.com"
                         className={errors.email ? "border-red-500" : ""}
                       />
                       {errors.email && <p className="text-xs text-red-500 flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.email.message}</p>}

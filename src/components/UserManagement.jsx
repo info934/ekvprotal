@@ -104,7 +104,7 @@ const UserManagement = () => {
         const fullName = user_metadata?.full_name;
         
         if (!fullName) {
-            toast({ title: "Chyba", description: "Uživatel nemá nastavené celé jméno. Prosím, doplňte jméno před vytvořením projektanta.", variant: "destructive" });
+            toast({ title: "Chyba", description: "Uživatel nemá nastavené celé jméno. Prosím, doplňte jméno před vytvořením zaměstnance.", variant: "destructive" });
             return;
         }
 
@@ -115,7 +115,7 @@ const UserManagement = () => {
         if (error || (data && data.error)) {
             toast({ title: "Chyba", description: data?.error || error.message, variant: "destructive" });
         } else {
-            toast({ title: "✅ Uživatel byl vytvořen jako projektant!" });
+            toast({ title: "Uživatel byl vytvořen jako zaměstnanec" });
             fetchUsers();
             navigate('/members');
         }
@@ -155,7 +155,7 @@ const UserManagement = () => {
             <PageHeader
                 icon={UserCog}
                 title="Správa uživatelů"
-                description="Správa účtů, přístupových rolí a propojení na projektanty."
+                description="Správa účtů, přístupových rolí a propojení na zaměstnance."
                 actions={
                     <>
                         <Button variant="outline" onClick={fetchUsers} className="w-full sm:w-auto">
@@ -209,7 +209,7 @@ const UserManagement = () => {
                             <Briefcase className="h-5 w-5" />
                         </div>
                         <div>
-                            <p className="text-sm text-muted-foreground">Projektanti</p>
+                            <p className="text-sm text-muted-foreground">Zaměstnanci</p>
                             <p className="text-2xl font-semibold">{memberCount}</p>
                         </div>
                     </div>
@@ -236,7 +236,7 @@ const UserManagement = () => {
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Účty v portálu</h2>
-                            <p className="text-sm text-muted-foreground">Vyhledejte uživatele, nastavte přístupovou roli a propojení na projektanta.</p>
+                            <p className="text-sm text-muted-foreground">Vyhledejte uživatele, nastavte přístupovou roli a propojení na zaměstnance.</p>
                         </div>
                         <div className="flex flex-col gap-2 sm:flex-row">
                             <div className="relative w-full sm:w-80">
@@ -299,7 +299,7 @@ const UserManagement = () => {
                                     {user.is_member && (
                                         <Badge variant="success" className="gap-1">
                                             <CheckCircle2 className="w-3 h-3" />
-                                            Projektant
+                                            Zaměstnanec
                                         </Badge>
                                     )}
                                     {user.id === currentUser.id && <Badge variant="outline">Aktuální účet</Badge>}
@@ -314,7 +314,7 @@ const UserManagement = () => {
                                     className="w-full sm:w-auto"
                                 >
                                     <Briefcase className="w-4 h-4 mr-2"/> 
-                                    {user.is_member ? 'Je projektant' : 'Vytvořit projektanta'}
+                                    {user.is_member ? 'Je zaměstnanec' : 'Vytvořit zaměstnance'}
                                 </Button>
                                 <Select
                                     value={user.user_metadata?.role || ''}

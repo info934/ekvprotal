@@ -451,9 +451,9 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
         <form id="payout-form" onSubmit={handleSubmit} className="min-w-0 space-y-6">
             <div className="rounded-xl border bg-slate-50/60 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField label="Projektant" icon={User} required error={validationErrors.member_id}>
+                <FormField label="Zaměstnanec" icon={User} required error={validationErrors.member_id}>
                   <Select value={memberId} onValueChange={setMemberId} disabled={!isSuperUser || isSubmitting}>
-                    <SelectTrigger className={validationErrors.member_id ? "border-red-500" : ""}><SelectValue placeholder="-- Vyberte projektanta --" /></SelectTrigger>
+                    <SelectTrigger className={validationErrors.member_id ? "border-red-500" : ""}><SelectValue placeholder="-- Vyberte zaměstnance --" /></SelectTrigger>
                     <SelectContent>{members.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </FormField>
@@ -539,7 +539,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
                     </div>
                   )}
 
-                  {!memberId && <div className="text-center p-4 border-2 border-dashed rounded-lg text-muted-foreground"><Info className="mx-auto w-8 h-8 mb-2" />Nejprve vyberte projektanta.</div>}
+                  {!memberId && <div className="text-center p-4 border-2 border-dashed rounded-lg text-muted-foreground"><Info className="mx-auto w-8 h-8 mb-2" />Nejprve vyberte zaměstnance.</div>}
                 </div>
               )}
             </FormSection>

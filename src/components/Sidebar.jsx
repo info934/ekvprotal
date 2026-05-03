@@ -57,7 +57,7 @@ const NAV_ITEMS = [
     { icon: FileText, label: 'Dokumenty', path: '/documents', module: 'documents', badge: null, category: 'Správa' },
     { icon: Building, label: 'Subjekty', path: '/subjects', module: 'subjects', badge: null, category: 'Správa' },
     { icon: Wrench, label: 'Inženýring', path: '/engineering', module: 'engineering', badge: null, category: 'Správa' },
-    { icon: Users, label: 'Projektanti', path: '/members', module: 'members', badge: null, category: 'Správa' },
+    { icon: Users, label: 'Zaměstnanci', path: '/members', module: 'members', badge: null, category: 'Správa' },
     { icon: DollarSign, label: 'Výplaty', path: '/payouts', module: 'payouts', badge: null, category: 'Finance' },
     { icon: FilePieChart, label: 'Režijní náklady', path: '/overhead-costs', module: 'finance', badge: null, category: 'Finance' },
     { icon: BarChart, label: 'Reporty', path: '/reports', module: 'reports', badge: null, category: 'Reporty' },
