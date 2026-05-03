@@ -745,20 +745,40 @@ const Engineering = () => {
           actions={
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
               {hasPermission('engineering', 'can_create') && (
-                <>
-                  <Button onClick={() => handleOpenForm(null, 'general')} className="w-full sm:w-auto">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Obecná aktivita
-                  </Button>
-                  <Button onClick={() => handleOpenForm(null, 'dotceny')} variant="secondary" className="w-full sm:w-auto">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Dotčený stavbou
-                  </Button>
-                  <Button onClick={() => setIsSubjectDialogOpen(true)} variant="outline" className="w-full sm:w-auto">
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Přidat subjekt
-                  </Button>
-                </>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button className="w-full sm:w-auto">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Nový záznam
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72">
+                    <DropdownMenuLabel>Vyberte typ záznamu</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleOpenForm(null, 'general')} className="flex-col items-start gap-1">
+                      <div className="flex items-center gap-2 font-medium">
+                        <Wrench className="w-4 h-4 text-slate-500" />
+                        Obecná aktivita
+                      </div>
+                      <span className="pl-6 text-xs text-muted-foreground">DOSS, sítě, ostatní inženýrská agenda</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleOpenForm(null, 'dotceny')} className="flex-col items-start gap-1">
+                      <div className="flex items-center gap-2 font-medium">
+                        <Building className="w-4 h-4 text-slate-500" />
+                        Dotčený stavbou
+                      </div>
+                      <span className="pl-6 text-xs text-muted-foreground">Majetkoprávní záznam vlastníka nebo subjektu</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setIsSubjectDialogOpen(true)} className="flex-col items-start gap-1">
+                      <div className="flex items-center gap-2 font-medium">
+                        <UserPlus className="w-4 h-4 text-slate-500" />
+                        Subjekt
+                      </div>
+                      <span className="pl-6 text-xs text-muted-foreground">Samostatný kontakt pro další použití</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -1008,16 +1028,32 @@ const Engineering = () => {
                   Zkuste změnit filtry nebo vytvořte novou aktivitu.
                 </p>
                 {hasPermission('engineering', 'can_create') && (
-                  <div className="flex justify-center gap-4">
-                      <Button onClick={() => handleOpenForm(null, 'general')}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button>
                         <Plus className="w-4 h-4 mr-2" />
-                        Obecná aktivita
+                        Nový záznam
                       </Button>
-                      <Button onClick={() => handleOpenForm(null, 'dotceny')} variant="secondary">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Dotčený stavbou
-                      </Button>
-                  </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="center" className="w-72">
+                      <DropdownMenuLabel>Vyberte typ záznamu</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleOpenForm(null, 'general')} className="flex-col items-start gap-1">
+                        <div className="flex items-center gap-2 font-medium">
+                          <Wrench className="w-4 h-4 text-slate-500" />
+                          Obecná aktivita
+                        </div>
+                        <span className="pl-6 text-xs text-muted-foreground">DOSS, sítě, ostatní inženýrská agenda</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleOpenForm(null, 'dotceny')} className="flex-col items-start gap-1">
+                        <div className="flex items-center gap-2 font-medium">
+                          <Building className="w-4 h-4 text-slate-500" />
+                          Dotčený stavbou
+                        </div>
+                        <span className="pl-6 text-xs text-muted-foreground">Majetkoprávní záznam vlastníka nebo subjektu</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </CardContent>
             </Card>
