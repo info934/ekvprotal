@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
   Plus, Wrench, Search, Filter, LayoutGrid, List, Calendar,
-  CheckCircle, XCircle, Hourglass, AlertTriangle, RefreshCw,
+  CheckCircle, Hourglass, AlertTriangle, RefreshCw,
   MoreHorizontal, Edit2, Trash2, Eye, Building,
   Download, BarChart3, Upload, FileSpreadsheet, UserPlus
 } from 'lucide-react';
@@ -26,29 +26,7 @@ import EngineeringDetail from '@/components/EngineeringDetail';
 import EngineeringGanttChart from '@/components/EngineeringGanttChart';
 import SubjectDialog from '@/components/SubjectDialog';
 import PageHeader from '@/components/ui/page-header';
-
-const activityStatusConfig = {
-  'new': { label: 'Nová', icon: Clock, color: 'text-blue-600', bg: 'bg-blue-100', variant: 'info' },
-  'in_progress': { label: 'V řešení', icon: Hourglass, color: 'text-orange-600', bg: 'bg-orange-100', variant: 'warning' },
-  'waiting_for_input': { label: 'Čeká na podklady', icon: AlertTriangle, color: 'text-yellow-600', bg: 'bg-yellow-100', variant: 'warning' },
-  'waiting_for_approval': { label: 'Čeká na schválení', icon: CheckCircle, color: 'text-purple-600', bg: 'bg-purple-100', variant: 'secondary' },
-  'done': { label: 'Hotovo', icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100', variant: 'success' },
-  'rejected': { label: 'Zamítnuto', icon: XCircle, color: 'text-red-600', bg: 'bg-red-100', variant: 'destructive' },
-};
-
-const categoryLabels = {
-  all: 'Všechny kategorie',
-  dotceny_stavbou: 'Dotčený stavbou',
-  doss: 'DOSS',
-  vyjadreni_siti: 'Vyjádření existence sítí',
-  ostatni: 'Ostatní',
-};
-
-const formatCategoryLabel = (category) => categoryLabels[category] || category || 'Bez kategorie';
-
-function Clock(props) {
-    return <Calendar {...props} />
-}
+import { activityStatusConfig, formatEngineeringCategory, getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
 
 
 const StatCard = ({ icon: Icon, title, value, subtitle, color = "text-blue-600" }) => (
@@ -71,7 +49,7 @@ const StatCard = ({ icon: Icon, title, value, subtitle, color = "text-blue-600" 
 );
 
 const ActivityCard = ({ activity, onCardClick, onEdit, onDelete, onStatusChange, onDragStart, hasPermission }) => {
-  const config = activityStatusConfig[activity.status] || activityStatusConfig['new'];
+  const config = getActivityStatusConfig(activity.status);
   const StatusIcon = config.icon;
   const isOverdue = activity.end_date && isPast(parseISO(activity.end_date)) && activity.status !== 'done';
   const daysRemaining = activity.end_date ? differenceInDays(parseISO(activity.end_date), new Date()) : null;
@@ -132,7 +110,7 @@ const ActivityCard = ({ activity, onCardClick, onEdit, onDelete, onStatusChange,
         {activity.category && (
           <div className="flex items-center gap-2 text-muted-foreground">
             <Wrench className="w-3 h-3 flex-shrink-0" />
-            <span className="text-xs">{activity.category === 'dotceny_stavbou' ? 'Dotčený stavbou' : activity.category}</span>
+            <span className="text-xs">{formatEngineeringCategory(activity.category)}</span>
           </div>
         )}
       </div>
@@ -277,7 +255,7 @@ const EngineeringTable = ({ activities, onRowClick, onEdit, onDelete, onStatusCh
             </TableHeader>
             <TableBody>
               {activities.map((activity) => {
-                const config = activityStatusConfig[activity.status] || activityStatusConfig['new'];
+                const config = getActivityStatusConfig(activity.status);
                 const StatusIcon = config.icon;
                 const isOverdue = activity.end_date && isPast(parseISO(activity.end_date)) && activity.status !== 'done';
 
@@ -309,7 +287,7 @@ const EngineeringTable = ({ activities, onRowClick, onEdit, onDelete, onStatusCh
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs">
-                         {activity.category === 'dotceny_stavbou' ? 'Dotčený stavbou' : (activity.category || 'N/A')}
+                         {formatEngineeringCategory(activity.category)}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -922,7 +900,7 @@ const Engineering = () => {
                     <SelectContent>
                       {uniqueCategories.map(category => (
                         <SelectItem key={category} value={category}>
-                          {formatCategoryLabel(category)}
+                          {formatEngineeringCategory(category)}
                         </SelectItem>
                       ))}
                     </SelectContent>

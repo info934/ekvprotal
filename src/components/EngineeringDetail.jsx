@@ -11,22 +11,7 @@ import EngineeringRequestForm from '@/components/EngineeringRequestForm';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { logAction } from '@/lib/logger';
-
-const statusConfig = {
-  new: { label: 'Nová', color: 'text-blue-700', bg: 'bg-blue-100' },
-  in_progress: { label: 'V řešení', color: 'text-orange-700', bg: 'bg-orange-100' },
-  done: { label: 'Hotovo', color: 'text-green-700', bg: 'bg-green-100' },
-  waiting_for_input: { label: 'Čeká na podklady', color: 'text-yellow-700', bg: 'bg-yellow-100' },
-  waiting_for_approval: { label: 'Čeká na schválení', color: 'text-purple-700', bg: 'bg-purple-100' },
-  rejected: { label: 'Zamítnuto', color: 'text-red-700', bg: 'bg-red-100' },
-};
-
-const categoryLabels = {
-  dotceny_stavbou: 'Dotčený stavbou',
-  doss: 'DOSS',
-  vyjadreni_siti: 'Vyjádření existence sítí',
-  ostatni: 'Ostatní'
-};
+import { activityStatusConfig, formatEngineeringCategory, getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
 
 const DetailItem = ({ icon, label, children }) => (
     <div className="flex items-start space-x-3">
@@ -60,16 +45,16 @@ const EngineeringDetail = ({ isOpen, onClose, activity, onEdit, onDelete, onTogg
                 project_id: activity.project_id,
                 project_name: activity.projects?.name || 'N/A',
                 activity_subject: activity.subject,
-                old_status: statusConfig[originalStatus]?.label || originalStatus,
-                new_status: statusConfig[newStatus]?.label || newStatus
+                old_status: getActivityStatusConfig(originalStatus).label || originalStatus,
+                new_status: getActivityStatusConfig(newStatus).label || newStatus
             });
             onStatusChange(); // re-fetch activities
             // We don't close dialog here to allow user to see the change in status dropdown
         }
     };
 
-    const status = statusConfig[activity.status] || statusConfig['new'];
-    const categoryLabel = categoryLabels[activity.category] || activity.category;
+    const status = getActivityStatusConfig(activity.status);
+    const categoryLabel = formatEngineeringCategory(activity.category);
     // Use parseISO for safer date parsing
     const isOverdue = activity.status !== 'done' && activity.start_date && activity.dny_na_vyjadreni && isPast(addDays(parseISO(activity.start_date), activity.dny_na_vyjadreni));
 
@@ -124,7 +109,7 @@ const EngineeringDetail = ({ isOpen, onClose, activity, onEdit, onDelete, onTogg
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {Object.entries(statusConfig).map(([key, conf]) => (
+                                        {Object.entries(activityStatusConfig).map(([key, conf]) => (
                                             <SelectItem key={key} value={key}>{conf.label}</SelectItem>
                                         ))}
                                     </SelectContent>
