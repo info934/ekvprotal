@@ -11,6 +11,9 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import TaskDialog from '@/components/TaskDialog';
 import { format, isPast } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -18,58 +21,6 @@ import { logAction } from '@/lib/logger';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { cn } from '@/lib/utils';
 import PageHeader from '@/components/ui/page-header';
-
-// Modern UI Components implemented directly in file
-const Card = ({ children, className, ...props }) => (
-  <div
-    className={cn("rounded-xl border bg-card text-card-foreground shadow-sm hover:shadow-md transition-shadow", className)}
-    {...props}
-  >
-    {children}
-  </div>
-);
-
-const CardContent = ({ children, className, ...props }) => (
-  <div className={cn("p-6 pt-0", className)} {...props}>
-    {children}
-  </div>
-);
-
-const CardHeader = ({ children, className, ...props }) => (
-  <div className={cn("flex flex-col space-y-1.5 p-6", className)} {...props}>
-    {children}
-  </div>
-);
-
-const CardTitle = ({ children, className, ...props }) => (
-  <h3 className={cn("font-semibold leading-none tracking-tight", className)} {...props}>
-    {children}
-  </h3>
-);
-
-const Badge = ({ children, variant = "default", className, ...props }) => {
-  const variants = {
-    default: "bg-primary text-primary-foreground hover:bg-primary/80",
-    secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-    destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/80",
-    outline: "text-foreground border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-    success: "bg-green-100 text-green-800 border-green-200",
-    warning: "bg-orange-100 text-orange-800 border-orange-200",
-    info: "bg-blue-100 text-blue-800 border-blue-200"
-  };
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border",
-        variants[variant],
-        className
-      )}
-      {...props}
-    >
-      {children}
-    </span>
-  );
-};
 
 const StatCard = ({ icon: Icon, title, value, subtitle, trend, color = "text-blue-600", className, ...props }) => (
   <motion.div
@@ -96,86 +47,6 @@ const StatCard = ({ icon: Icon, title, value, subtitle, trend, color = "text-blu
       {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
     </div>
   </motion.div>
-);
-
-const DropdownMenu = ({ children }) => {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div className="relative">
-      {React.Children.map(children, child => {
-        if (child.type === DropdownMenuTrigger) {
-          return React.cloneElement(child, { isOpen, setIsOpen });
-        } else if (child.type === DropdownMenuContent) {
-          return React.cloneElement(child, { isOpen, setIsOpen });
-        }
-        return child;
-      })}
-    </div>
-  );
-};
-
-const DropdownMenuTrigger = ({ children, asChild, isOpen, setIsOpen, ...props }) => {
-  const handleClick = (e) => {
-    e.stopPropagation();
-    setIsOpen(!isOpen);
-  };
-
-  if (asChild) {
-    return React.cloneElement(children, {
-      onClick: handleClick,
-      ...props
-    });
-  }
-
-  return (
-    <button onClick={handleClick} {...props}>
-      {children}
-    </button>
-  );
-};
-
-const DropdownMenuContent = ({ children, align = "center", className, isOpen, setIsOpen, ...props }) => {
-  if (!isOpen) return null;
-
-  return (
-    <>
-      <div
-        className="fixed inset-0 z-40"
-        onClick={() => setIsOpen(false)}
-      />
-      <div
-        className={cn(
-          "absolute z-50 min-w-[8rem] overflow-hidden rounded-md border bg-white p-1 text-gray-900 shadow-lg",
-          align === "end" && "right-0",
-          className
-        )}
-        {...props}
-      >
-        {React.Children.map(children, child =>
-          child.type === DropdownMenuItem ?
-            React.cloneElement(child, { setIsOpen }) :
-            child
-        )}
-      </div>
-    </>
-  );
-};
-
-const DropdownMenuItem = ({ children, className, setIsOpen, ...props }) => (
-  <div
-    className={cn(
-      "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-gray-100 focus:bg-gray-100",
-      className
-    )}
-    onClick={(e) => {
-      e.stopPropagation();
-      setIsOpen(false);
-    }}
-    {...props}
-  >
-    {children}
-  </div>
 );
 
 const taskStatusConfig = {
