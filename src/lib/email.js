@@ -59,7 +59,7 @@ export const sendPayoutPaidEmail = async (params) => sendPayoutNotification({ ..
 export const sendPayoutCompletedEmail = async (params) => sendPayoutNotification({ ...params, status: 'completed' });
 
 export const sendHourlyPayoutRequestEmail = async ({ memberName, hours, projects, totalAmount, createdAt }) => {
-  await sendAdminPayoutNotification({
+  return await sendAdminPayoutNotification({
     memberName,
     amount: totalAmount,
     action: `Nová hodinová žádost (${hours}h)`
@@ -71,6 +71,10 @@ export const sendAttendanceApprovalRequestEmail = async ({ memberName, totalHour
 };
 
 export const sendHourlyPayoutPaidEmail = async ({ email, memberName, amount, hours, paidAt }) => {
-  // Can use the new service
-  await sendPayoutPaidEmail({ memberId: null, status: 'paid', amount, emailOverride: email, memberNameOverride: memberName }); // Needs slight adjustment if we don't have memberId
+  return await sendPayoutPaidEmail({
+    memberId: null,
+    amount,
+    emailOverride: email,
+    memberNameOverride: memberName
+  });
 };

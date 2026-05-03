@@ -344,7 +344,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
       console.log('[PayoutDialog] Submitting payout data:', dataToValidate);
 
       // Call the onSave callback with the validated data
-      await onSave(dataToValidate, isEditMode, payout?.id);
+      const savedPayout = await onSave(dataToValidate, isEditMode, payout?.id);
 
       // Success handling
       toast({ 
@@ -359,13 +359,13 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
           console.log('[PayoutDialog] Sending creation email notification...');
           
           // FIXED: Fetch the newly created payout with explicit FK
-          const { data: newPayout } = await supabase
+          const { data: fetchedPayout } = savedPayout?.id ? await supabase
             .from('payouts')
             .select('*, members:members!payouts_member_id_fkey(name, email)')
-            .eq('member_id', memberId)
-            .order('request_date', { ascending: false })
-            .limit(1)
-            .single();
+            .eq('id', savedPayout.id)
+            .single() : { data: null };
+
+          const newPayout = fetchedPayout || savedPayout;
 
           if (newPayout) {
             const emailResult = await sendPayoutCreatedEmail(newPayout);

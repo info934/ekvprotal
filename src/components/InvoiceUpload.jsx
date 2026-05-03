@@ -5,6 +5,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { motion } from 'framer-motion';
 import { logPayoutAction } from '@/lib/payoutLogger';
+import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_RETRIES = 3;
@@ -84,7 +85,7 @@ const InvoiceUpload = ({ requestId, memberId, onUploadSuccess }) => {
         .from('hourly_payout_requests')
         .update(updateData)
         .eq('id', requestId)
-        .select()
+        .select('*, members:members!hourly_payout_requests_member_id_fkey(name)')
         .single();
 
       if (dbError) {
@@ -95,6 +96,16 @@ const InvoiceUpload = ({ requestId, memberId, onUploadSuccess }) => {
       }
 
       await logPayoutAction('invoice_upload_success', requestId, { dbUrlPath });
+
+      const emailResult = await sendAdminPayoutNotification({
+        memberName: dbData?.members?.name || 'Pracovnik',
+        amount: dbData?.total_amount || 0,
+        action: 'Faktura nahrana k hodinove zadosti'
+      });
+
+      if (!emailResult.success) {
+        console.error('[InvoiceUpload] Admin notification failed:', emailResult.error);
+      }
 
       setUploadProgress(100);
       toast({
