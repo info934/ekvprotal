@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useMemo } from 'react';
 import { activityStatusConfig, getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
+import EngineeringStatusBadge from '@/components/engineering/EngineeringStatusBadge';
 
 const ProjectEngineering = ({ project: initialProject }) => {
     const { projectId } = useParams();
@@ -250,7 +251,7 @@ const ProjectEngineering = ({ project: initialProject }) => {
                                     return (
                                     <TableRow key={activity.id} onDoubleClick={() => openDetailDialog(activity)} className={cn("cursor-pointer", overdue && "bg-red-100/50", activity.is_urgent && "bg-yellow-100/50")}>
                                         <TableCell className="font-medium">{activity.subject}</TableCell>
-                                        <TableCell>{(() => { const statusConfig = getActivityStatusConfig(activity.status); return <span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusConfig.bg} ${statusConfig.color}`}>{statusConfig.label}</span>; })()}</TableCell>
+                                        <TableCell><EngineeringStatusBadge status={activity.status} /></TableCell>
                                         <TableCell>{activity.end_date ? format(new Date(activity.end_date), 'd.M.yyyy') : '-'}</TableCell>
                                         <TableCell className="text-right">
                                             {overdue && (

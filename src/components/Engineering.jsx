@@ -27,6 +27,7 @@ import EngineeringGanttChart from '@/components/EngineeringGanttChart';
 import SubjectDialog from '@/components/SubjectDialog';
 import PageHeader from '@/components/ui/page-header';
 import { activityStatusConfig, formatEngineeringCategory, getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
+import EngineeringStatusBadge from '@/components/engineering/EngineeringStatusBadge';
 
 
 const StatCard = ({ icon: Icon, title, value, subtitle, color = "text-blue-600" }) => (
@@ -75,9 +76,7 @@ const ActivityCard = ({ activity, onCardClick, onEdit, onDelete, onStatusChange,
           <StatusIcon className={cn("w-4 h-4 flex-shrink-0", config.color)} />
           <h3 className="font-semibold text-sm truncate">{activity.subject}</h3>
         </div>
-        <Badge variant={config.variant} className="text-xs flex-shrink-0">
-          {config.label}
-        </Badge>
+        <EngineeringStatusBadge status={activity.status} className="flex-shrink-0" showIcon={false} />
       </div>
       <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{activity.description}</p>
       <div className="space-y-2 text-sm mt-3">
@@ -302,10 +301,7 @@ const EngineeringTable = ({ activities, onRowClick, onEdit, onDelete, onStatusCh
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={config.variant} className="text-xs">
-                        <StatusIcon className="w-3 h-3 mr-1" />
-                        {config.label}
-                      </Badge>
+                      <EngineeringStatusBadge status={activity.status} />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end items-center gap-2">
