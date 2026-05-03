@@ -130,7 +130,7 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
         <FormDialogHeader
           icon={member ? Edit2 : Plus}
           title={member ? 'Upravit projektanta' : 'Nový projektant'}
-          description="Správa základních údajů, kontaktu a nastavení docházky."
+          description="Správa základních údajů, kontaktu, pracovní role a nastavení docházky."
         />
         
         <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-hidden flex flex-col">
@@ -177,7 +177,7 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
                   <div className="space-y-2">
                     <Label htmlFor="role" className="flex items-center gap-2 text-sm font-medium">
                       <Shield className="h-4 w-4 text-muted-foreground" />
-                      Role
+                      Pracovní role / pozice
                     </Label>
                     <Controller
                         name="role_id"
@@ -188,7 +188,7 @@ const MemberDialog = ({ isOpen, onClose, onSave, member }) => {
                               onValueChange={field.onChange}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="-- Vyberte roli --" />
+                                <SelectValue placeholder="-- Vyberte pracovní roli --" />
                               </SelectTrigger>
                               <SelectContent>
                                 {roles.map(role => (
