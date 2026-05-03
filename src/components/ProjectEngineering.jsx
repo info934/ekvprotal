@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Wrench, Plus, Edit2, Trash2, LayoutGrid, List, ChevronLeft, Circle, CircleDot, CheckCircle as CheckCircleIcon, Bell, Zap, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, Trash2, LayoutGrid, List, Bell, Zap, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -14,13 +14,7 @@ import { format, isPast, addDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useMemo } from 'react';
-
-
-const engineeringStatusConfig = {
-  new: { label: 'Nová', icon: Circle, color: 'text-blue-700', bg: 'bg-blue-100', dot: 'bg-blue-500' },
-  in_progress: { label: 'V řešení', icon: CircleDot, color: 'text-orange-700', bg: 'bg-orange-100', dot: 'bg-orange-500' },
-  done: { label: 'Hotovo', icon: CheckCircleIcon, color: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500' },
-};
+import { activityStatusConfig, getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
 
 const ProjectEngineering = ({ project: initialProject }) => {
     const { projectId } = useParams();
@@ -75,8 +69,8 @@ const ProjectEngineering = ({ project: initialProject }) => {
                         project_id: projectId,
                         project_name: project.name,
                         activity_subject: dataToSave.subject,
-                        old_status: engineeringStatusConfig[originalStatus]?.label || originalStatus,
-                        new_status: engineeringStatusConfig[newStatus]?.label || newStatus
+                        old_status: getActivityStatusConfig(originalStatus).label || originalStatus,
+                        new_status: getActivityStatusConfig(newStatus).label || newStatus
                     });
                 }
                 toast({ title: "✅ Činnost upravena!" });
@@ -111,10 +105,10 @@ const ProjectEngineering = ({ project: initialProject }) => {
                 project_id: activity.project_id,
                 project_name: project.name,
                 activity_subject: activity.subject,
-                old_status: engineeringStatusConfig[originalStatus]?.label || originalStatus,
-                new_status: engineeringStatusConfig[newStatus]?.label || newStatus
+                old_status: getActivityStatusConfig(originalStatus).label || originalStatus,
+                new_status: getActivityStatusConfig(newStatus).label || newStatus
             });
-            toast({ title: `Činnost přesunuta do stavu "${engineeringStatusConfig[newStatus].label}"` });
+            toast({ title: `Činnost přesunuta do stavu "${getActivityStatusConfig(newStatus).label}"` });
         }
     };
     
@@ -229,11 +223,11 @@ const ProjectEngineering = ({ project: initialProject }) => {
             <div className="mt-6 space-y-4">
                 {view === 'kanban' ? (
                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {Object.entries(engineeringStatusConfig).map(([status, config]) => (
+                        {Object.entries(activityStatusConfig).map(([status, config]) => (
                             <div key={status} onDragOver={(e) => canEdit && e.preventDefault()} onDrop={(e) => canEdit && handleActivityDrop(e.dataTransfer.getData('activityId'), status)} className="bg-slate-50/50 rounded-xl flex flex-col">
                                 <div className={`p-4 border-b-2 ${config.color.replace('text', 'border')}`}>
                                     <h2 className={`font-bold text-lg flex items-center gap-2 ${config.color}`}>
-                                        <div className={`w-3 h-3 rounded-full ${config.dot}`}></div>
+                                        <div className={`w-3 h-3 rounded-full ${config.color.replace('text', 'bg')}`}></div>
                                         {config.label}
                                         <span className="text-sm font-normal text-muted-foreground ml-auto bg-slate-200 rounded-full px-2 py-0.5">{activities.filter(a => a.status === status).length}</span>
                                     </h2>
@@ -256,7 +250,7 @@ const ProjectEngineering = ({ project: initialProject }) => {
                                     return (
                                     <TableRow key={activity.id} onDoubleClick={() => openDetailDialog(activity)} className={cn("cursor-pointer", overdue && "bg-red-100/50", activity.is_urgent && "bg-yellow-100/50")}>
                                         <TableCell className="font-medium">{activity.subject}</TableCell>
-                                        <TableCell><span className={`px-2 py-1 text-xs font-semibold rounded-full ${engineeringStatusConfig[activity.status]?.bg} ${engineeringStatusConfig[activity.status]?.color}`}>{engineeringStatusConfig[activity.status]?.label}</span></TableCell>
+                                        <TableCell>{(() => { const statusConfig = getActivityStatusConfig(activity.status); return <span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusConfig.bg} ${statusConfig.color}`}>{statusConfig.label}</span>; })()}</TableCell>
                                         <TableCell>{activity.end_date ? format(new Date(activity.end_date), 'd.M.yyyy') : '-'}</TableCell>
                                         <TableCell className="text-right">
                                             {overdue && (

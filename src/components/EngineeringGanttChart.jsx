@@ -2,12 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { format, differenceInDays, startOfDay, parseISO } from 'date-fns';
 import { cs } from 'date-fns/locale';
-
-const engineeringStatusConfig = {
-  new: { label: 'Nová', color: 'bg-blue-500' },
-  in_progress: { label: 'V řešení', color: 'bg-orange-500' },
-  done: { label: 'Hotovo', color: 'bg-green-500' },
-};
+import { getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
 
 const EngineeringGanttChart = ({ activities }) => {
   const validActivities = activities.filter(a => a.start_date && a.end_date);
@@ -31,15 +26,11 @@ const EngineeringGanttChart = ({ activities }) => {
   const sortedActivities = [...validActivities].sort((a,b) => parseISO(a.start_date) - parseISO(b.start_date));
 
   const getBarColor = (activity) => {
-    const config = engineeringStatusConfig[activity.status];
-    if (config) {
-      return config.color;
-    }
     const endDate = parseISO(activity.end_date);
     if (endDate < today && activity.status !== 'done') {
       return 'bg-red-500';
     }
-    return 'bg-gray-500';
+    return getActivityStatusConfig(activity.status).color.replace('text', 'bg');
   };
 
   const todayOffset = differenceInDays(today, overallStartDate);
