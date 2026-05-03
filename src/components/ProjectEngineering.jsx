@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Plus, Edit2, Trash2, LayoutGrid, List, Bell, Zap, AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Edit2, Trash2, LayoutGrid, List, Bell, Zap, AlertTriangle, Wrench, Building } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, AlertDialogFooter } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import EngineeringDialog from '@/components/EngineeringDialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import EngineeringForm from '@/components/EngineeringForm';
 import EngineeringDetail from '@/components/EngineeringDetail';
 import { logAction } from '@/lib/logger';
 import { format, isPast, addDays } from 'date-fns';
@@ -26,7 +27,8 @@ const ProjectEngineering = ({ project: initialProject }) => {
     const [view, setView] = useState('kanban');
     const [editingActivity, setEditingActivity] = useState(null);
     const [selectedActivityForDetail, setSelectedActivityForDetail] = useState(null);
-    const [isEngineeringDialogOpen, setIsEngineeringDialogOpen] = useState(false);
+    const [isFormOpen, setIsFormOpen] = useState(false);
+    const [activeFormType, setActiveFormType] = useState('general');
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     
     const canEdit = useMemo(() => hasPermission('engineering', 'can_edit'), [hasPermission]);
@@ -82,8 +84,9 @@ const ProjectEngineering = ({ project: initialProject }) => {
             else { toast({ title: "✅ Nová činnost vytvořena!" }); }
         }
         fetchData();
-        setIsEngineeringDialogOpen(false);
+        setIsFormOpen(false);
         setEditingActivity(null);
+        setActiveFormType('general');
     };
 
     const handleActivityDrop = async (activityId, newStatus) => {
@@ -146,9 +149,16 @@ const ProjectEngineering = ({ project: initialProject }) => {
         }
     };
     
-    const openEditDialog = (activity) => {
+    const openActivityForm = (activity, formType = 'general') => {
         setEditingActivity(activity);
-        setIsEngineeringDialogOpen(true);
+        setActiveFormType(activity?.category === 'dotceny_stavbou' ? 'dotceny' : formType);
+        setIsFormOpen(true);
+    };
+
+    const closeActivityForm = () => {
+        setIsFormOpen(false);
+        setEditingActivity(null);
+        setActiveFormType('general');
     };
 
     const openDetailDialog = (activity) => {
@@ -198,7 +208,7 @@ const ProjectEngineering = ({ project: initialProject }) => {
                         <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleUrgencyToggle(activity);}} title={activity.is_urgent ? "Zrušit urgenci" : "Označit jako urgentní"}>
                             <Bell className={cn("w-4 h-4", activity.is_urgent ? "text-yellow-600 fill-yellow-200" : "text-gray-400")} />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openEditDialog(activity); }}><Edit2 className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openActivityForm(activity); }}><Edit2 className="w-4 h-4" /></Button>
                     </div>
                 )}
             </motion.div>
@@ -210,9 +220,25 @@ const ProjectEngineering = ({ project: initialProject }) => {
             <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
                 <div className="flex items-center justify-between">
                     {canEdit && (
-                        <Button onClick={() => openEditDialog(null)}>
-                            <Plus className="w-4 h-4 mr-2" /> Nová činnost
-                        </Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button>
+                                    <Plus className="w-4 h-4 mr-2" /> Nový záznam
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-56">
+                                <DropdownMenuLabel>Vyberte typ záznamu</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => openActivityForm(null, 'general')}>
+                                    <Wrench className="w-4 h-4 mr-2" />
+                                    Obecná aktivita
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openActivityForm(null, 'dotceny')}>
+                                    <Building className="w-4 h-4 mr-2" />
+                                    Dotčený stavbou
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     )}
                     <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
                         <Button variant={view === 'kanban' ? 'secondary' : 'ghost'} size="icon" onClick={() => setView('kanban')}><LayoutGrid className="w-5 h-5" /></Button>
@@ -220,6 +246,26 @@ const ProjectEngineering = ({ project: initialProject }) => {
                     </div>
                 </div>
             </motion.div>
+
+            <AnimatePresence>
+                {isFormOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                    >
+                        <EngineeringForm
+                            activity={editingActivity}
+                            formType={activeFormType}
+                            projectId={projectId}
+                            onSave={handleSaveActivity}
+                            onCancel={closeActivityForm}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             <div className="mt-6 space-y-4">
                 {view === 'kanban' ? (
@@ -264,7 +310,7 @@ const ProjectEngineering = ({ project: initialProject }) => {
                                                     <Bell className={cn("w-4 h-4", activity.is_urgent ? "text-yellow-600 fill-yellow-200" : "text-gray-400")} />
                                                 </Button>
                                             )}
-                                            {canEdit && <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openEditDialog(activity); }}><Edit2 className="w-4 h-4" /></Button>}
+                                            {canEdit && <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openActivityForm(activity); }}><Edit2 className="w-4 h-4" /></Button>}
                                             {canAdmin && (
                                                 <AlertDialog>
                                                     <AlertDialogTrigger asChild><Button variant="ghost" size="icon" onClick={e => e.stopPropagation()}><Trash2 className="w-4 h-4 text-red-500" /></Button></AlertDialogTrigger>
@@ -279,13 +325,11 @@ const ProjectEngineering = ({ project: initialProject }) => {
                     </div>
                 )}
             </div>
-            <EngineeringDialog isOpen={isEngineeringDialogOpen} onClose={() => { setIsEngineeringDialogOpen(false); setEditingActivity(null); }} onSave={handleSaveActivity} activity={editingActivity} projectId={projectId}/>
-            
             <EngineeringDetail
                 isOpen={isDetailOpen}
                 onClose={() => { setIsDetailOpen(false); setSelectedActivityForDetail(null); }}
                 activity={selectedActivityForDetail}
-                onEdit={(act) => { setIsDetailOpen(false); openEditDialog(act); }}
+                onEdit={(act) => { setIsDetailOpen(false); openActivityForm(act); }}
                 onDelete={handleDeleteActivity}
                 onToggleUrgency={handleUrgencyToggle}
                 onStatusChange={fetchData}
