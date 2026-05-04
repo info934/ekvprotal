@@ -12,7 +12,7 @@ import PayoutApprovalAuditLog from './PayoutApprovalAuditLog';
 const getStatusBadge = (status) => {
   switch (status) {
     case 'pending': return <Badge variant="warning" className="bg-amber-100 text-amber-800 border-none hover:bg-amber-100"><Clock className="w-3 h-3 mr-1"/> Čeká</Badge>;
-    case 'approved': return <Badge variant="success" className="bg-blue-100 text-blue-800 border-none hover:bg-blue-100"><CheckCircle2 className="w-3 h-3 mr-1"/> Schváleno</Badge>;
+    case 'approved': return <Badge variant="success" className="bg-blue-100 text-blue-800 border-none hover:bg-blue-100"><CheckCircle2 className="w-3 h-3 mr-1"/> Čeká na fakturu</Badge>;
     case 'invoice_uploaded': return <Badge variant="secondary" className="bg-slate-200 text-slate-800 border-none"><FileText className="w-3 h-3 mr-1"/> Faktura nahrána</Badge>;
     case 'paid': return <Badge variant="success" className="bg-emerald-100 text-emerald-800 border-none hover:bg-emerald-100"><CheckCircle2 className="w-3 h-3 mr-1"/> Vyplaceno</Badge>;
     case 'rejected': return <Badge variant="destructive" className="bg-red-100 text-red-800 border-none"><AlertTriangle className="w-3 h-3 mr-1"/> Zamítnuto</Badge>;

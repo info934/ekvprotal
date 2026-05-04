@@ -3,16 +3,14 @@ import { Dialog } from '@/components/ui/dialog';
 import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { AlertCircle, CheckCircle } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { sendPayoutApprovalEmail } from '@/lib/email';
 import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
 import { useToast } from '@/components/ui/use-toast';
 
 const AdminPayoutApprovalDialog = ({ isOpen, onClose, payout, onConfirm }) => {
-  const [isWithoutInvoice, setIsWithoutInvoice] = useState(false);
   const [adminNote, setAdminNote] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -20,7 +18,6 @@ const AdminPayoutApprovalDialog = ({ isOpen, onClose, payout, onConfirm }) => {
 
   useEffect(() => {
     if (isOpen) {
-      setIsWithoutInvoice(false);
       setAdminNote('');
       setError('');
     }
@@ -28,12 +25,6 @@ const AdminPayoutApprovalDialog = ({ isOpen, onClose, payout, onConfirm }) => {
 
   const handleSubmit = async () => {
     setError('');
-    
-    const hasInvoice = !!payout?.invoice_url;
-    if (!hasInvoice && !isWithoutInvoice) {
-      setError('K této žádosti není přiložena faktura. Musíte potvrdit, že schvalujete výplatu bez faktury.');
-      return;
-    }
 
     if (adminNote.length > 500) {
       setError('Poznámka administrátora může mít maximálně 500 znaků.');
@@ -42,22 +33,26 @@ const AdminPayoutApprovalDialog = ({ isOpen, onClose, payout, onConfirm }) => {
 
     setIsSubmitting(true);
     try {
-      await onConfirm(payout.id, adminNote, isWithoutInvoice);
+      await onConfirm(payout.id, adminNote, false);
       
       // Send emails
-      await sendPayoutApprovalEmail({ 
-        memberId: payout.member_id, 
-        amount: payout.amount, 
-        approved_without_invoice: isWithoutInvoice 
+      const memberResult = await sendPayoutApprovalEmail({
+        memberId: payout.member_id,
+        amount: payout.amount,
+        approved_without_invoice: false
       });
       
-      await sendAdminPayoutNotification({
+      const adminResult = await sendAdminPayoutNotification({
         memberName: payout.members?.name || 'Pracovník',
         amount: payout.amount,
         action: 'Schválení žádosti'
       });
       
-      toast({ title: "Notifikace odeslány", description: "Email byl odeslán uživateli." });
+      if (!memberResult?.success || !adminResult?.success) {
+        toast({ title: "Schváleno, ale notifikace selhala", description: memberResult?.error || adminResult?.error, variant: "warning" });
+      } else {
+        toast({ title: "Schváleno", description: "Zaměstnanec byl vyzván k nahrání faktury." });
+      }
       onClose();
     } catch (err) {
       setError('Při schvalování došlo k chybě: ' + err.message);
@@ -68,8 +63,6 @@ const AdminPayoutApprovalDialog = ({ isOpen, onClose, payout, onConfirm }) => {
 
   if (!payout) return null;
 
-  const hasInvoice = !!payout.invoice_url;
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <FormDialogContent size="md">
@@ -79,31 +72,15 @@ const AdminPayoutApprovalDialog = ({ isOpen, onClose, payout, onConfirm }) => {
         />
 
         <FormDialogBody className="space-y-6">
-          {hasInvoice ? (
-            <Alert className="bg-emerald-50 text-emerald-800 border-emerald-200">
-              <CheckCircle className="h-4 w-4 text-emerald-600" />
-              <AlertTitle>Faktura je přiložena</AlertTitle>
-              <AlertDescription>K této žádosti již byla nahrána faktura. Můžete standardně schválit.</AlertDescription>
-            </Alert>
-          ) : (
-            <Alert className="bg-amber-50 text-amber-800 border-amber-200">
-              <AlertCircle className="h-4 w-4 text-amber-600" />
-              <AlertTitle>Chybí faktura</AlertTitle>
-              <AlertDescription>Tato žádost zatím nemá přiloženou fakturu. Chcete-li ji přesto schválit k vyplacení, musíte to výslovně potvrdit.</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="flex items-start space-x-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
-            <Checkbox id="without-invoice" checked={isWithoutInvoice} onCheckedChange={setIsWithoutInvoice} className="mt-1" />
-            <div className="space-y-1 leading-none">
-              <Label htmlFor="without-invoice" className="font-semibold cursor-pointer">Potvrzuji, že výplata je bez faktury</Label>
-              <p className="text-sm text-slate-500">Zaškrtnutím umožníte vyplacení této částky bez nutnosti dokládat účetní fakturu do systému.</p>
-            </div>
-          </div>
+          <Alert className="bg-blue-50 text-blue-900 border-blue-200">
+            <CheckCircle className="h-4 w-4 text-blue-600" />
+            <AlertTitle>Schválení je první krok</AlertTitle>
+            <AlertDescription>Po schválení bude žádost čekat na fakturu od zaměstnance. Teprve po jejím nahrání ji půjde označit jako vyplacenou a uzavřít.</AlertDescription>
+          </Alert>
 
           <div className="space-y-2">
             <Label htmlFor="admin-note">Poznámka (volitelné)</Label>
-            <Textarea id="admin-note" placeholder="Důvod schválení bez faktury nebo jiné poznámky k vyplacení..." value={adminNote} onChange={(e) => setAdminNote(e.target.value)} className="resize-none h-24" maxLength={500} />
+            <Textarea id="admin-note" placeholder="Interní poznámka ke schválení..." value={adminNote} onChange={(e) => setAdminNote(e.target.value)} className="resize-none h-24" maxLength={500} />
             <div className="text-right text-xs text-slate-400">{adminNote.length}/500</div>
           </div>
 

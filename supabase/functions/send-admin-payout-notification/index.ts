@@ -11,6 +11,9 @@ Deno.serve(async (req) => {
     if (!resendApiKey) throw new Error("Missing RESEND_API_KEY");
 
     const { subject, htmlContent } = await req.json();
+    if (!subject || !htmlContent) {
+      throw new Error("Missing required fields: subject, htmlContent");
+    }
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -27,6 +30,10 @@ Deno.serve(async (req) => {
     });
 
     const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data?.message || data?.error || `Resend API error ${res.status}`);
+    }
+
     return new Response(JSON.stringify({ success: true, data }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

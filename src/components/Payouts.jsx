@@ -4,7 +4,7 @@ import {
   DollarSign, Plus, CheckCircle, XCircle, Clock, Eye, Edit2, Trash2, AlertTriangle,
   CheckCircle2, XCircle as XCircleIcon, Upload, FileText, Check, FileDown, Hash,
   LayoutGrid, List, TrendingUp, Target, BarChart3, Users, Calendar, Filter,
-  MoreHorizontal, RefreshCw, Zap, Award, Timer, Search, ArrowUpDown, Layers, Wallet, PiggyBank, Settings, FileWarning
+  MoreHorizontal, RefreshCw, Zap, Award, Timer, Search, ArrowUpDown, Layers, Wallet, PiggyBank, Settings, FileWarning, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import PayoutDialog from '@/components/PayoutDialog';
@@ -23,8 +23,11 @@ import PayoutTableHistory from '@/components/PayoutTable';
 import HourlyPayoutRequestsAdmin from '@/components/HourlyPayoutRequestsAdmin';
 import AdminPayoutApprovalDialog from '@/components/AdminPayoutApprovalDialog';
 import { approvePayout } from '@/lib/PayoutApprovalService';
-import { sendPayoutRejectionEmail, sendPayoutPaidEmail } from '@/lib/email';
+import { sendPayoutRejectionEmail } from '@/lib/email';
 import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
+import { uploadInvoice, confirmInvoice, approveWithoutInvoice } from '@/lib/payoutWorkflowService';
+import { sendInvoiceUploadedNotification, sendPayoutPaidEmail as sendWorkflowPayoutPaidEmail } from '@/lib/payoutWorkflowEmailService';
+import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import PageHeader from '@/components/ui/page-header';
 
 const Badge = ({ children, variant = "default", className, ...props }) => {
@@ -66,6 +69,16 @@ const statusConfig = {
   rejected: { label: 'Zamítnuto', icon: XCircleIcon, variant: 'destructive' }
 };
 
+const getPayoutNextStep = (payout, canAdmin, isOwner) => {
+  if (payout.status === 'pending') return canAdmin ? 'Zkontrolujte žádost a schvalte ji.' : 'Žádost čeká na schválení administrátorem.';
+  if (payout.status === 'approved' && payout.approved_without_invoice) return canAdmin ? 'Schváleno bez faktury. Můžete uzavřít jako vyplacené.' : 'Žádost je schválena bez nutnosti faktury.';
+  if (payout.status === 'approved') return isOwner ? 'Nahrajte fakturu, aby mohl administrátor výplatu uzavřít.' : 'Čeká se na nahrání faktury zaměstnancem.';
+  if (payout.status === 'invoice_uploaded') return canAdmin ? 'Faktura je nahraná. Zkontrolujte ji a označte výplatu jako vyplacenou.' : 'Faktura byla předána ke kontrole.';
+  if (payout.status === 'paid') return 'Výplata je vyplacená a uzavřená.';
+  if (payout.status === 'rejected') return 'Žádost byla zamítnuta.';
+  return null;
+};
+
 const PayoutProjectsPopover = ({ items }) => (
   <Popover>
     <PopoverTrigger asChild><Button variant="link" size="sm" className="h-auto p-0 text-muted-foreground hover:text-primary"><Layers className="w-3.5 h-3.5 mr-1.5" />{items.length} položek</Button></PopoverTrigger>
@@ -80,10 +93,24 @@ const PayoutCard = ({ payout, onUpdateStatus, onDelete, onEdit, onApproveWithDia
   const Icon = config.icon;
   const { user } = useAuth();
   const fileInputRef = useRef(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const handleFileSelect = () => fileInputRef.current.click();
-  const handleFileChange = (event) => { const file = event.target.files[0]; if (file) onUploadInvoice(payout.id, file); };
+  const handleFileChange = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      await onUploadInvoice(payout, file);
+      event.target.value = '';
+    } finally {
+      setIsUploading(false);
+    }
+  };
   const isOwner = user?.id === payout.members?.auth_user_id;
+  const nextStep = getPayoutNextStep(payout, canAdmin, isOwner);
+  const canUploadInvoice = payout.status === 'approved' && isOwner && !payout.approved_without_invoice && !payout.invoice_url;
+  const canMarkPaid = canAdmin && (payout.status === 'invoice_uploaded' || (payout.status === 'approved' && payout.approved_without_invoice));
 
   return (
     <Card className="group hover:shadow-md hover:border-primary/30 transition-all duration-300 flex flex-col bg-white">
@@ -102,6 +129,7 @@ const PayoutCard = ({ payout, onUpdateStatus, onDelete, onEdit, onApproveWithDia
         <div className="space-y-3 mb-5">
           {payout.variable_symbol && <div className="flex items-center gap-2.5 p-2.5 bg-slate-50/80 border border-slate-100 rounded-lg text-sm"><Hash className="w-4 h-4 text-slate-400" /><span className="text-slate-600">VS: <span className="font-semibold text-slate-900 select-all">{payout.variable_symbol}</span></span></div>}
           {payout.invoice_name && <Button variant="outline" size="sm" onClick={() => onDownloadInvoice(payout.invoice_url, payout.invoice_name)} className="w-full justify-start gap-2.5 bg-white hover:bg-slate-50 border-slate-200 text-slate-700 shadow-sm"><FileDown className="w-4 h-4 text-primary" /><span className="truncate">{payout.invoice_name}</span></Button>}
+          {nextStep && <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">{nextStep}</div>}
         </div>
         <div className="flex justify-between items-center pt-4 border-t border-slate-100 mt-auto">
           <div className="flex gap-2">
@@ -110,11 +138,11 @@ const PayoutCard = ({ payout, onUpdateStatus, onDelete, onEdit, onApproveWithDia
             )}
             {payout.status === 'approved' && (
               <>
-                {isOwner && !payout.approved_without_invoice && <><input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".pdf,.doc,.docx,.jpg,.png" /><Button onClick={handleFileSelect} size="sm" className="shadow-sm"><Upload className="w-3.5 h-3.5 mr-2" /> Nahrát</Button></>}
-                {canAdmin && <Button onClick={() => onUpdateStatus(payout.id, 'paid', payout)} size="sm" variant="secondary" className="shadow-sm"><Check className="w-3.5 h-3.5 mr-2" /> Vyplaceno</Button>}
+                {canUploadInvoice && <><input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" /><Button onClick={handleFileSelect} size="sm" className="shadow-sm" disabled={isUploading}>{isUploading ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Upload className="w-3.5 h-3.5 mr-2" />} Nahrát fakturu</Button></>}
+                {canMarkPaid && <Button onClick={() => onUpdateStatus(payout.id, 'paid', payout)} size="sm" variant="secondary" className="shadow-sm"><Check className="w-3.5 h-3.5 mr-2" /> Vyplaceno</Button>}
               </>
             )}
-             {canAdmin && payout.status === 'invoice_uploaded' && <Button onClick={() => onUpdateStatus(payout.id, 'paid', payout)} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Check className="w-3.5 h-3.5 mr-2" /> Vyplaceno</Button>}
+             {canAdmin && payout.status === 'invoice_uploaded' && <Button onClick={() => onUpdateStatus(payout.id, 'paid', payout)} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Check className="w-3.5 h-3.5 mr-2" /> Vyplaceno a uzavřít</Button>}
           </div>
           {(canAdmin || (isOwner && payout.status === 'pending' && canEditOwn)) && (
             <DropdownMenu>
@@ -327,30 +355,117 @@ const Payouts = () => {
   };
 
   const handleUpdateStatus = async (id, status, payout) => {
-    const dataToUpdate = { status };
-    if (status === 'approved' && !payout?.variable_symbol) dataToUpdate.variable_symbol = Math.floor(Math.random() * 10000000000).toString().padStart(10, '0');
-    
-    const { error } = await supabase.from('payouts').update(dataToUpdate).eq('id', id);
-    if (!error) {
-        toast({ title: "Stav aktualizován" });
+    try {
+      if (status === 'rejected') {
+        const { error } = await supabase.from('payouts').update({ status }).eq('id', id);
+        if (error) throw error;
+
+        toast({ title: "Žádost zamítnuta" });
         fetchPayouts();
-        
-        if (status === 'rejected') {
-            await sendPayoutRejectionEmail({ memberId: payout.member_id, amount: payout.amount });
-            await sendAdminPayoutNotification({ memberName: payout.members?.name, amount: payout.amount, action: 'Zamítnutí žádosti' });
-            toast({ title: "Email odeslán" });
-        } else if (status === 'paid') {
-            await sendPayoutPaidEmail({ memberId: payout.member_id, amount: payout.amount });
-            await sendAdminPayoutNotification({ memberName: payout.members?.name, amount: payout.amount, action: 'Vyplaceno' });
-            toast({ title: "Email odeslán" });
+
+        const memberResult = await sendPayoutRejectionEmail({ memberId: payout.member_id, amount: payout.amount });
+        const adminResult = await sendAdminPayoutNotification({ memberName: payout.members?.name, amount: payout.amount, action: 'Zamítnutí žádosti' });
+        if (!memberResult?.success || !adminResult?.success) {
+          toast({ title: "Notifikace se nepodařilo odeslat", description: memberResult?.error || adminResult?.error, variant: "warning" });
         }
+        return;
+      }
+
+      if (status === 'paid') {
+        if (payout.status === 'invoice_uploaded') {
+          const result = await confirmInvoice(id, user?.id);
+          if (!result.success) throw new Error(result.error);
+        } else if (payout.status === 'approved' && payout.approved_without_invoice) {
+          const result = await approveWithoutInvoice(id, user?.id);
+          if (!result.success) throw new Error(result.error);
+        } else {
+          toast({ title: "Chybí faktura", description: "Výplatu lze uzavřít až po nahrání faktury.", variant: "warning" });
+          return;
+        }
+
+        const paidPayout = { ...payout, status: 'paid', paid_at: new Date().toISOString() };
+        toast({ title: "Výplata uzavřena", description: "Žádost byla označena jako vyplacená." });
+        fetchPayouts();
+
+        const memberResult = await sendWorkflowPayoutPaidEmail(paidPayout);
+        const adminResult = await sendAdminPayoutNotification({ memberName: payout.members?.name, amount: payout.amount, action: 'Vyplaceno a uzavřeno' });
+        if (!memberResult?.success || !adminResult?.success) {
+          toast({ title: "Notifikace se nepodařilo odeslat", description: memberResult?.error || adminResult?.error, variant: "warning" });
+        }
+        return;
+      }
+    } catch (error) {
+      console.error('Error updating payout status:', error);
+      toast({ title: "Chyba změny stavu", description: error.message, variant: "destructive" });
     }
   };
 
   const handleApproveWithDialog = (payout) => { setApprovalPayout(payout); setApprovalDialogOpen(true); };
   const handleConfirmApproval = async (payoutId, adminNote, approvedWithoutInvoice) => {
     const result = await approvePayout(payoutId, adminNote, approvedWithoutInvoice);
-    if (result.success) fetchPayouts(); else throw new Error(result.error);
+    if (result.success) {
+      fetchPayouts();
+      return result.data;
+    }
+    throw new Error(result.error);
+  };
+  const handleUploadInvoice = async (payout, file) => {
+    if (!payout || !file) return;
+    if (payout.status !== 'approved') {
+      toast({ title: "Fakturu lze nahrát až po schválení žádosti.", variant: "warning" });
+      return;
+    }
+
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast({ title: "Soubor je příliš velký", description: "Maximální velikost faktury je 10 MB.", variant: "destructive" });
+      return;
+    }
+
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || 'pdf';
+    const allowedExt = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+    if (!allowedExt.includes(fileExt)) {
+      toast({ title: "Nepodporovaný typ souboru", description: "Použijte PDF, DOC, DOCX, JPG nebo PNG.", variant: "destructive" });
+      return;
+    }
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const bucketName = 'invoices';
+    const filePath = `${year}/${month}/payout_${payout.member_id}_${payout.id}_${Date.now()}_${safeName}`;
+    const dbUrlPath = `${bucketName}/${filePath}`;
+
+    try {
+      const { error: uploadError } = await supabase.storage.from(bucketName).upload(filePath, file, { cacheControl: '3600', upsert: true });
+      if (uploadError) throw uploadError;
+
+      const result = await uploadInvoice(payout.id, dbUrlPath, file.name);
+      if (!result.success) {
+        await supabase.storage.from(bucketName).remove([filePath]).catch(console.error);
+        throw new Error(result.error);
+      }
+
+      const updatedPayout = { ...payout, invoice_url: dbUrlPath, invoice_name: file.name, invoice_uploaded_at: new Date().toISOString(), status: 'invoice_uploaded' };
+      toast({ title: "Faktura nahrána", description: "Administrátor byl upozorněn a může výplatu uzavřít." });
+      fetchPayouts();
+
+      const notifyResult = await sendInvoiceUploadedNotification(updatedPayout);
+      if (!notifyResult?.success) {
+        toast({ title: "Notifikace administrátorovi se nepodařila", description: notifyResult?.error, variant: "warning" });
+      }
+    } catch (error) {
+      console.error('Invoice upload error:', error);
+      toast({ title: "Chyba nahrávání faktury", description: error.message, variant: "destructive" });
+      throw error;
+    }
+  };
+  const handleDownloadInvoice = async (invoiceUrl) => {
+    const { success, error } = await downloadInvoiceFromStorage(invoiceUrl);
+    if (!success) {
+      toast({ title: "Fakturu se nepodařilo stáhnout", description: error, variant: "destructive" });
+    }
   };
   const handleDelete = async (id) => { 
     try {
@@ -419,16 +534,16 @@ const Payouts = () => {
           <TabsContent value="fixed" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <Card className="border-slate-200 shadow-sm bg-white">
               <CardContent className="p-4 sm:p-6 flex flex-col lg:flex-row gap-4 justify-between items-center">
-                <div className="relative w-full lg:w-96"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" /><Input placeholder="Hledat projekt, VS, projektanta..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 bg-slate-50 border-slate-200 focus-visible:ring-primary/20" /></div>
+                <div className="relative w-full lg:w-96"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" /><Input placeholder="Hledat projekt, VS, zaměstnance..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 bg-slate-50 border-slate-200 focus-visible:ring-primary/20" /></div>
                 <div className="flex flex-wrap gap-3 w-full lg:w-auto justify-end">
                   <Select value={withoutInvoiceFilter} onValueChange={setWithoutInvoiceFilter}><SelectTrigger className="w-[160px] bg-slate-50 border-slate-200"><SelectValue placeholder="Typ fakturace" /></SelectTrigger><SelectContent><SelectItem value="all">Všechny fakturace</SelectItem><SelectItem value="no">S fakturou</SelectItem><SelectItem value="yes">Bez faktury</SelectItem></SelectContent></Select>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px] bg-slate-50 border-slate-200"><SelectValue placeholder="Všechny stavy" /></SelectTrigger><SelectContent><SelectItem value="all">Všechny stavy</SelectItem><SelectItem value="pending">Čeká na schválení</SelectItem><SelectItem value="approved">Čeká na fakturu</SelectItem><SelectItem value="paid">Vyplaceno</SelectItem></SelectContent></Select>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px] bg-slate-50 border-slate-200"><SelectValue placeholder="Všechny stavy" /></SelectTrigger><SelectContent><SelectItem value="all">Všechny stavy</SelectItem><SelectItem value="pending">Čeká na schválení</SelectItem><SelectItem value="approved">Čeká na fakturu</SelectItem><SelectItem value="invoice_uploaded">Faktura nahrána</SelectItem><SelectItem value="paid">Vyplaceno</SelectItem><SelectItem value="rejected">Zamítnuto</SelectItem></SelectContent></Select>
                   <div className="flex bg-slate-100 p-1 rounded-lg"><Button variant={view === 'pending' ? 'secondary' : 'ghost'} onClick={() => setView('pending')} size="sm" className="h-8">Aktivní</Button><Button variant={view === 'all' ? 'secondary' : 'ghost'} onClick={() => setView('all')} size="sm" className="h-8">Všechny</Button></div>
                   <div className="flex bg-slate-100 p-1 rounded-lg"><Button variant={displayMode === 'cards' ? 'secondary' : 'ghost'} size="icon" onClick={() => setDisplayMode('cards')} className="h-8 w-8"><LayoutGrid className="w-4 h-4" /></Button><Button variant={displayMode === 'table' ? 'secondary' : 'ghost'} size="icon" onClick={() => setDisplayMode('table')} className="h-8 w-8"><List className="w-4 h-4" /></Button></div>
                 </div>
               </CardContent>
             </Card>
-            {loading ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{[1,2,3].map(i => <div key={i} className="h-[250px] bg-slate-100 animate-pulse rounded-xl" />)}</div> : filteredPayouts.length === 0 ? <Card className="border-dashed border-2 border-slate-200 bg-transparent shadow-none"><CardContent className="p-12 text-center flex flex-col items-center"><div className="bg-slate-100 p-4 rounded-full mb-4"><DollarSign className="w-8 h-8 text-slate-400" /></div><h3 className="text-lg font-semibold text-slate-800 mb-1">Žádné úkolové žádosti nenalezeny</h3><p className="text-slate-500 mb-6">Zkuste změnit filtry nebo vytvořte novou žádost.</p><Button onClick={() => {setIsDialogOpen(true); setEditingPayout(null);}}><Plus className="w-4 h-4 mr-2" /> Vytvořit žádost</Button></CardContent></Card> : <AnimatePresence mode="wait">{displayMode === 'cards' ? <motion.div key="cards" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredPayouts.map(payout => <PayoutCard key={payout.id} payout={payout} onUpdateStatus={handleUpdateStatus} onDelete={handleDelete} onEdit={(p) => { setEditingPayout(p); setIsDialogOpen(true); }} onApproveWithDialog={handleApproveWithDialog} onUploadInvoice={() => {}} onDownloadInvoice={() => {}} canAdmin={canAdmin} canEditOwn={canEditOwn} />)}</motion.div> : <motion.div key="table" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><PayoutTableHistory data={filteredPayouts} loading={loading} onRefresh={fetchPayouts} /></motion.div>}</AnimatePresence>}
+            {loading ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{[1,2,3].map(i => <div key={i} className="h-[250px] bg-slate-100 animate-pulse rounded-xl" />)}</div> : filteredPayouts.length === 0 ? <Card className="border-dashed border-2 border-slate-200 bg-transparent shadow-none"><CardContent className="p-12 text-center flex flex-col items-center"><div className="bg-slate-100 p-4 rounded-full mb-4"><DollarSign className="w-8 h-8 text-slate-400" /></div><h3 className="text-lg font-semibold text-slate-800 mb-1">Žádné úkolové žádosti nenalezeny</h3><p className="text-slate-500 mb-6">Zkuste změnit filtry nebo vytvořte novou žádost.</p><Button onClick={() => {setIsDialogOpen(true); setEditingPayout(null);}}><Plus className="w-4 h-4 mr-2" /> Vytvořit žádost</Button></CardContent></Card> : <AnimatePresence mode="wait">{displayMode === 'cards' ? <motion.div key="cards" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredPayouts.map(payout => <PayoutCard key={payout.id} payout={payout} onUpdateStatus={handleUpdateStatus} onDelete={handleDelete} onEdit={(p) => { setEditingPayout(p); setIsDialogOpen(true); }} onApproveWithDialog={handleApproveWithDialog} onUploadInvoice={handleUploadInvoice} onDownloadInvoice={handleDownloadInvoice} canAdmin={canAdmin} canEditOwn={canEditOwn} />)}</motion.div> : <motion.div key="table" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><PayoutTableHistory data={filteredPayouts} loading={loading} onRefresh={fetchPayouts} /></motion.div>}</AnimatePresence>}
           </TabsContent>
 
           <TabsContent value="hourly" className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
