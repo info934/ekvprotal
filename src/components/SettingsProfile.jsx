@@ -20,7 +20,6 @@ import {
   ExternalLink,
   Languages,
   Mail,
-  Phone,
   Save,
   Shield,
   User,

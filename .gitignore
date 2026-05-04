@@ -20,6 +20,7 @@ yarn-error.log*
 pnpm-debug.log*
 .playwright-cli/
 output/playwright/
+output/supabase-backups/
 
 # Editor and OS files
 .DS_Store

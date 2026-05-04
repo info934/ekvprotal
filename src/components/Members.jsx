@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Plus, Edit2, Trash2, LayoutGrid, Rows, Award, AlertTriangle, CheckCircle, Search, Filter, MoreHorizontal, Eye, DollarSign, Clock, Shield, Mail, Phone, Calendar, RefreshCw } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, LayoutGrid, Rows, AlertTriangle, CheckCircle, Search, Filter, MoreHorizontal, Eye, Clock, Shield, Mail, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -356,37 +356,6 @@ const Members = () => {
                         </>
                     }
                 />
-                <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="hidden"
-                >
-                    <div>
-                        <h1 className="text-3xl font-bold text-slate-800 mb-2 flex items-center gap-3">
-                            <Users className="w-8 h-8 text-primary" />
-                            Zaměstnanci
-                        </h1>
-                        <p className="text-muted-foreground">
-                            {isSuperUser ? 'Správa zaměstnanců, jejich pozic, kategorií a odměn' : 'Váš profil, pozice a odměny'}
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-3 w-full md:w-auto">
-                        {canEdit && isSuperUser && (
-                            <Button
-                                onClick={() => handleOpenDialog()}
-                                className="w-full md:w-auto"
-                            >
-                                <Plus className="w-4 h-4 mr-2" />
-                                Nový zaměstnanec
-                            </Button>
-                        )}
-                        <Button variant="outline" size="sm" onClick={fetchMembersAndRewards} className="bg-white/80 hidden md:inline-flex">
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Aktualizovat
-                        </Button>
-                    </div>
-                </motion.div>
-
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <Card>
