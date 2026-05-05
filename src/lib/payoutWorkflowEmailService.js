@@ -26,21 +26,32 @@ const createEmailTemplate = (subject, content) => {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>${subject}</title>
     </head>
-    <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
-      <div style="max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
-          <h1 style="color: #ffffff; margin: 0; font-size: 24px;">${subject}</h1>
+    <body style="margin:0; padding:0; background:#eef2f7; font-family:Arial, Helvetica, sans-serif; color:#111827;">
+      <div style="display:none; max-height:0; overflow:hidden; opacity:0;">${subject}</div>
+      <div style="width:100%; padding:32px 12px;">
+        <div style="max-width:640px; margin:0 auto;">
+          <div style="padding:0 4px 12px 4px; color:#64748b; font-size:13px; letter-spacing:.04em; text-transform:uppercase; font-weight:700;">
+            EKV Portal
+          </div>
+          <div style="background:#ffffff; border:1px solid #dbe3ee; border-radius:18px; overflow:hidden; box-shadow:0 18px 45px rgba(15,23,42,.10);">
+            <div style="background:#0f172a; padding:28px 30px;">
+              <div style="display:inline-block; padding:6px 10px; border-radius:999px; background:#1e293b; color:#cbd5e1; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;">Výplaty</div>
+              <h1 style="margin:14px 0 0 0; color:#ffffff; font-size:26px; line-height:1.25; font-weight:800;">${subject}</h1>
+            </div>
+            <div style="padding:30px;">
+              ${content}
+            </div>
+            <div style="background:#f8fafc; padding:20px 30px; border-top:1px solid #e2e8f0;">
+              <p style="margin:0; color:#64748b; font-size:12px; line-height:1.6;">
+                Tento e-mail byl odeslán automaticky systémem EKV Portal. Na tuto zprávu není potřeba odpovídat.
+              </p>
+            </div>
+          </div>
+          <div style="padding:16px 4px 0 4px; color:#94a3b8; font-size:12px; text-align:center;">
+            EKV Group
+          </div>
         </div>
-        <div style="padding: 30px;">
-          ${content}
-        </div>
-        <div style="background: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
-          <p style="margin: 0; color: #6b7280; font-size: 12px;">
-            Tento email byl odeslán automaticky systémem EKV Group.<br>
-            Pro více informací se přihlaste do portálu.
-          </p>
-        </div>
-      </div>
+      </div> 
     </body>
     </html>
   `;

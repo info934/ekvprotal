@@ -1,5 +1,7 @@
 const PORTAL_URL = 'https://ekvgroup.cz/payouts';
 
+const formatAmount = (amount = 0) => amount.toLocaleString('cs-CZ');
+
 const baseTemplate = (title, content) => `
 <!DOCTYPE html>
 <html lang="cs">
@@ -8,28 +10,47 @@ const baseTemplate = (title, content) => `
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
   <style>
-    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f5; margin: 0; padding: 20px; }
-    .container { max-width: 600px; margin: 0 auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-    .header { background-color: #1e3a8a; color: #fff; padding: 20px; text-align: center; }
+    body { margin: 0; padding: 0; background: #eef2f7; font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.6; }
+    .outer { width: 100%; padding: 32px 12px; box-sizing: border-box; }
+    .shell { max-width: 640px; margin: 0 auto; }
+    .brand { padding: 0 4px 12px; color: #64748b; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; font-weight: 700; }
+    .container { background: #ffffff; border: 1px solid #dbe3ee; border-radius: 18px; overflow: hidden; box-shadow: 0 18px 45px rgba(15, 23, 42, .10); }
+    .header { background: #0f172a; color: #fff; padding: 28px 30px; }
+    .kicker { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #1e293b; color: #cbd5e1; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    h2 { margin: 14px 0 0; color: #fff; font-size: 26px; line-height: 1.25; font-weight: 800; }
     .content { padding: 30px; }
-    .footer { background-color: #f8fafc; padding: 15px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; }
-    .btn { display: inline-block; padding: 10px 20px; background-color: #2563eb; color: #fff; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 20px; }
-    table { widdth: 100%; border-collapse: collapse; margin-top: 15px; }
-    th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left; }
-    th { background-color: #f8fafc; font-weight: 600; width: 40%; }
+    .content p { color: #374151; font-size: 16px; line-height: 1.6; margin: 0 0 16px; }
+    .footer { background: #f8fafc; padding: 20px 30px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; line-height: 1.6; }
+    .fineprint { padding: 16px 4px 0; color: #94a3b8; font-size: 12px; text-align: center; }
+    .btn { display: inline-block; padding: 12px 18px; background: #2563eb; color: #fff !important; text-decoration: none; border-radius: 10px; font-weight: 700; margin-top: 18px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; text-align: left; font-size: 14px; }
+    tr:last-child th, tr:last-child td { border-bottom: 0; }
+    th { color: #64748b; font-weight: 700; width: 40%; }
+    td { color: #111827; }
+    strong { color: #0f172a; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h2 style="margin:0;">${title}</h2>
-    </div>
-    <div class="content">
-      ${content}
-    </div>
-    <div class="footer">
-      &copy; ${new Date().getFullYear()} EKV Group. Všechna práva vyhrazena.<br>
-      Tento email byl generován automaticky.
+  <div style="display:none; max-height:0; overflow:hidden; opacity:0;">${title}</div>
+  <div class="outer">
+    <div class="shell">
+      <div class="brand">EKV Portal</div>
+      <div class="container">
+        <div class="header">
+          <span class="kicker">Výplaty</span>
+          <h2>${title}</h2>
+        </div>
+        <div class="content">
+          ${content}
+        </div>
+        <div class="footer">
+          Tento e-mail byl odeslán automaticky systémem EKV Portal. Na tuto zprávu není potřeba odpovídat.
+        </div>
+      </div>
+      <div class="fineprint">
+        &copy; ${new Date().getFullYear()} EKV Group
+      </div>
     </div>
   </div>
 </body>
@@ -43,7 +64,7 @@ export const templates = {
       <p>Dobrý den, ${data.memberName},</p>
       <p>Vaše žádost o výplatu byla úspěšně přijata a čeká na schválení administrátorem.</p>
       <table>
-        <tr><th>Částka</th><td><strong>${data.amount.toLocaleString('cs-CZ')} Kč</strong></td></tr>
+        <tr><th>Částka</th><td><strong>${formatAmount(data.amount)} Kč</strong></td></tr>
         <tr><th>Stav</th><td>Čeká na schválení</td></tr>
         <tr><th>Datum</th><td>${new Date().toLocaleDateString('cs-CZ')}</td></tr>
       </table>
@@ -54,7 +75,7 @@ export const templates = {
     'Žádost o výplatu schválena',
     `
       <p>Dobrý den, ${data.memberName},</p>
-      <p>Vaše žádost o výplatu ve výši <strong>${data.amount.toLocaleString('cs-CZ')} Kč</strong> byla schválena.</p>
+      <p>Vaše žádost o výplatu ve výši <strong>${formatAmount(data.amount)} Kč</strong> byla schválena.</p>
       ${!data.approved_without_invoice ? '<p>Nyní prosím nahrajte fakturu do systému, abychom mohli provést platbu.</p>' : '<p>Žádost byla schválena k vyplacení bez nutnosti faktury.</p>'}
       <a href="${PORTAL_URL}" class="btn">Přejít do portálu</a>
     `
@@ -63,7 +84,7 @@ export const templates = {
     'Žádost o výplatu zamítnuta',
     `
       <p>Dobrý den, ${data.memberName},</p>
-      <p>Vaše žádost o výplatu ve výši <strong>${data.amount.toLocaleString('cs-CZ')} Kč</strong> byla zamítnuta.</p>
+      <p>Vaše žádost o výplatu ve výši <strong>${formatAmount(data.amount)} Kč</strong> byla zamítnuta.</p>
       ${data.reason ? `<p><strong>Důvod:</strong> ${data.reason}</p>` : ''}
       <p>Pro více informací se prosím přihlaste do portálu.</p>
       <a href="${PORTAL_URL}" class="btn">Zobrazit detaily</a>
@@ -73,7 +94,7 @@ export const templates = {
     'Faktura úspěšně nahrána',
     `
       <p>Dobrý den, ${data.memberName},</p>
-      <p>Vaše faktura k žádosti o výplatu (${data.amount.toLocaleString('cs-CZ')} Kč) byla úspěšně nahrána do systému.</p>
+      <p>Vaše faktura k žádosti o výplatu (<strong>${formatAmount(data.amount)} Kč</strong>) byla úspěšně nahrána do systému.</p>
       <p>Platba bude brzy zpracována.</p>
       <a href="${PORTAL_URL}" class="btn">Zobrazit v portálu</a>
     `
@@ -82,8 +103,8 @@ export const templates = {
     'Výplata odeslána',
     `
       <p>Dobrý den, ${data.memberName},</p>
-      <p>Vaše výplata ve výši <strong>${data.amount.toLocaleString('cs-CZ')} Kč</strong> byla odeslána na váš účet.</p>
-      <p>Děkujeme za spolupráci!</p>
+      <p>Vaše výplata ve výši <strong>${formatAmount(data.amount)} Kč</strong> byla odeslána na váš účet.</p>
+      <p>Děkujeme za spolupráci.</p>
       <a href="${PORTAL_URL}" class="btn">Zobrazit historii výplat</a>
     `
   ),
@@ -91,7 +112,7 @@ export const templates = {
     'Výplata dokončena',
     `
       <p>Dobrý den, ${data.memberName},</p>
-      <p>Proces vaší výplaty (${data.amount.toLocaleString('cs-CZ')} Kč) byl kompletně uzavřen.</p>
+      <p>Proces vaší výplaty (<strong>${formatAmount(data.amount)} Kč</strong>) byl kompletně uzavřen.</p>
       <a href="${PORTAL_URL}" class="btn">Přejít do portálu</a>
     `
   ),
@@ -103,7 +124,7 @@ export const templates = {
       <table>
         <tr><th>Akce</th><td>${data.action}</td></tr>
         <tr><th>Pracovník</th><td>${data.memberName}</td></tr>
-        <tr><th>Částka</th><td><strong>${data.amount.toLocaleString('cs-CZ')} Kč</strong></td></tr>
+        <tr><th>Částka</th><td><strong>${formatAmount(data.amount)} Kč</strong></td></tr>
       </table>
       <a href="${PORTAL_URL}" class="btn">Přejít do administrace</a>
     `
