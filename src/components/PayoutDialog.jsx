@@ -433,16 +433,31 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
 
   const content = (
     <>
-      <FormDialogHeader
-        icon={isEditMode ? Edit2 : Plus}
-        title={isEditMode ? 'Upravit žádost o výplatu' : 'Nová žádost o výplatu'}
-        description={
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className={cn("inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold", isEditMode ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700")}>{isEditMode ? 'Editace' : 'Nová žádost'}</span>
-            <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-700">{totalItems} položek</span>
+      {embedded ? (
+        <div className="border-b bg-slate-50/60 px-5 py-4 text-left sm:px-6">
+          <div className="flex min-w-0 items-center gap-3 text-xl font-semibold tracking-tight">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Plus className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 truncate">Nová žádost o výplatu</span>
           </div>
-        }
-      />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Nová žádost</span>
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{totalItems} položek</span>
+          </div>
+        </div>
+      ) : (
+        <FormDialogHeader
+          icon={isEditMode ? Edit2 : Plus}
+          title={isEditMode ? 'Upravit žádost o výplatu' : 'Nová žádost o výplatu'}
+          description={
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className={cn("inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold", isEditMode ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700")}>{isEditMode ? 'Editace' : 'Nová žádost'}</span>
+              <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-700">{totalItems} položek</span>
+            </div>
+          }
+        />
+      )}
 
       <FormDialogBody className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <form id="payout-form" onSubmit={handleSubmit} className="min-w-0 space-y-6">
