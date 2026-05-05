@@ -1,14 +1,27 @@
 import { supabase } from '@/lib/customSupabaseClient';
 import { templates } from './payoutEmailTemplates';
 
-export const sendPayoutNotification = async ({ payoutId, memberId, status, amount, reason, approved_without_invoice, action }) => {
+const invokeEmailFunction = async (functionName, body) => {
+  const { data, error } = await supabase.functions.invoke(functionName, { body });
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || `Edge funkce ${functionName} vrátila chybu.`);
+  return data;
+};
+
+export const sendPayoutNotification = async ({ memberId, status, amount, reason, approved_without_invoice, action, emailOverride, memberNameOverride }) => {
   try {
-    // FIXED: Explicit FK reference - no members table join needed when we already have memberId
-    const { data: member } = await supabase
-      .from('members')
-      .select('email, name')
-      .eq('id', memberId)
-      .single();
+    let member = { email: emailOverride, name: memberNameOverride };
+
+    if (!member.email && memberId) {
+      const { data, error } = await supabase
+        .from('members')
+        .select('email, name')
+        .eq('id', memberId)
+        .single();
+
+      if (error) throw error;
+      member = data || member;
+    }
       
     if (!member?.email) {
       console.warn(`No email found for member ${memberId}`);
@@ -40,11 +53,7 @@ export const sendPayoutNotification = async ({ payoutId, memberId, status, amoun
       return { success: false, error: 'Unknown status' };
     }
 
-    const { data, error } = await supabase.functions.invoke('send-payout-email', {
-      body: { to: member.email, subject, htmlContent }
-    });
-
-    if (error) throw error;
+    const data = await invokeEmailFunction('send-payout-email', { to: member.email, subject, htmlContent });
     return { success: true, data };
   } catch (error) {
     console.error('Error in sendPayoutNotification:', error);
@@ -57,11 +66,7 @@ export const sendAdminPayoutNotification = async ({ memberName, amount, action }
     const htmlContent = templates.admin_notification({ memberName, amount, action });
     const subject = `[Admin] Výplaty: ${action} - ${memberName}`;
 
-    const { data, error } = await supabase.functions.invoke('send-admin-payout-notification', {
-      body: { subject, htmlContent }
-    });
-
-    if (error) throw error;
+    const data = await invokeEmailFunction('send-admin-payout-notification', { subject, htmlContent });
     return { success: true, data };
   } catch (error) {
     console.error('Error in sendAdminPayoutNotification:', error);

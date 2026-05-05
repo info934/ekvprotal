@@ -1,6 +1,25 @@
 
 import { corsHeaders } from "./cors.ts";
 
+const jsonResponse = (body: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+const normalizeRecipients = (value: unknown): string[] => {
+  const recipients = Array.isArray(value) ? value : [value];
+  return recipients
+    .filter((email): email is string => typeof email === "string")
+    .map((email) => email.trim())
+    .filter(Boolean);
+};
+
+const getFromEmail = () =>
+  Deno.env.get("PAYOUT_FROM_EMAIL") ||
+  Deno.env.get("RESEND_FROM_EMAIL") ||
+  "EKV Portal <portal@web.ekvproject.cz>";
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -11,7 +30,8 @@ Deno.serve(async (req) => {
     if (!resendApiKey) throw new Error("Missing RESEND_API_KEY");
 
     const { to, subject, htmlContent } = await req.json();
-    if (!to || !subject || !htmlContent) {
+    const recipients = normalizeRecipients(to);
+    if (recipients.length === 0 || !subject || !htmlContent) {
       throw new Error("Missing required fields: to, subject, htmlContent");
     }
 
@@ -22,8 +42,8 @@ Deno.serve(async (req) => {
         Authorization: `Bearer ${resendApiKey}`,
       },
       body: JSON.stringify({
-        from: "EKV Group <info@ekvgroup.cz>",
-        to: [to],
+        from: getFromEmail(),
+        to: recipients,
         subject: subject,
         html: htmlContent,
       }),
@@ -34,13 +54,14 @@ Deno.serve(async (req) => {
       throw new Error(data?.message || data?.error || `Resend API error ${res.status}`);
     }
 
-    return new Response(JSON.stringify({ success: true, data }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return jsonResponse({
+      success: true,
+      emailId: data?.id,
+      recipients,
+      data,
     });
   } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("[send-payout-email]", error);
+    return jsonResponse({ success: false, error: error.message }, 500);
   }
 });

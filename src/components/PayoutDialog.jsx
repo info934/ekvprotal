@@ -374,7 +374,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
               console.error('[PayoutDialog] Email notification failed:', emailResult.error);
               toast({ 
                 title: "Upozornění", 
-                description: "Žádost byla vytvořena, ale emailové notifikace se nepodařilo odeslat.", 
+                description: `Žádost byla vytvořena, ale emailové notifikace se nepodařilo odeslat: ${emailResult.error || 'neznámá chyba'}`,
                 variant: "warning" 
               });
             }
@@ -384,7 +384,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
           // Don't fail the whole operation if email fails
           toast({ 
             title: "Upozornění", 
-            description: "Žádost byla vytvořena, ale emailové notifikace se nepodařilo odeslat.", 
+            description: `Žádost byla vytvořena, ale emailové notifikace se nepodařilo odeslat: ${emailError.message || 'neznámá chyba'}`,
             variant: "warning" 
           });
         }
