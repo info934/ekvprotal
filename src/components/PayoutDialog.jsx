@@ -95,7 +95,7 @@ const ProjectPayoutInput = ({ project, onAmountChange, amount, onRemove, onFillM
   );
 };
 
-const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
+const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = false }) => {
   const { toast } = useToast();
   const { memberId: currentMemberId, isSuperUser, hasPermission } = useAuth();
   const isEditMode = Boolean(payout);
@@ -344,7 +344,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
       console.log('[PayoutDialog] Submitting payout data:', dataToValidate);
 
       // Call the onSave callback with the validated data
-      await onSave(dataToValidate, isEditMode, payout?.id);
+      const savedPayout = await onSave(dataToValidate, isEditMode, payout?.id);
 
       // Success handling
       toast({ 
@@ -362,9 +362,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
           const { data: newPayout } = await supabase
             .from('payouts')
             .select('*, members:members!payouts_member_id_fkey(name, email)')
-            .eq('member_id', memberId)
-            .order('request_date', { ascending: false })
-            .limit(1)
+            .eq('id', savedPayout?.id)
             .single();
 
           if (newPayout) {
@@ -433,19 +431,18 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
     return availableRealizaceToAdd.filter((r) => `${r.name || ''} ${r.status || ''}`.toLowerCase().includes(q));
   }, [realizationSearch, availableRealizaceToAdd]);
 
-  return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !isSubmitting) { resetForm(); onClose(); } }} modal={false}>
-    <FormDialogContent size="xl" onInteractOutside={(e) => { if (isSubmitting) e.preventDefault(); }} onPointerDownOutside={(e) => { if (isSubmitting) e.preventDefault(); }} onEscapeKeyDown={(e) => { if (isSubmitting) e.preventDefault(); }}>
-        <FormDialogHeader
-          icon={isEditMode ? Edit2 : Plus}
-          title={isEditMode ? 'Upravit žádost o výplatu' : 'Nová žádost o výplatu'}
-          description={
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className={cn("inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold", isEditMode ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700")}>{isEditMode ? 'Editace' : 'Nová žádost'}</span>
-              <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-700">{totalItems} položek</span>
-            </div>
-          }
-        />
+  const content = (
+    <>
+      <FormDialogHeader
+        icon={isEditMode ? Edit2 : Plus}
+        title={isEditMode ? 'Upravit žádost o výplatu' : 'Nová žádost o výplatu'}
+        description={
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className={cn("inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold", isEditMode ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700")}>{isEditMode ? 'Editace' : 'Nová žádost'}</span>
+            <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-700">{totalItems} položek</span>
+          </div>
+        }
+      />
 
       <FormDialogBody className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <form id="payout-form" onSubmit={handleSubmit} className="min-w-0 space-y-6">
@@ -466,9 +463,16 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
             <FormSection title="Položky k vyplacení" icon={Building}>
               {validationErrors.items && <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-2 flex items-center"><AlertCircle className="w-4 h-4 mr-2"/> {validationErrors.items}</div>}
               {isLoadingProjects ? <div className="text-center p-4 text-muted-foreground">Načítám projekty...</div> : (
-                <div className="space-y-4">
-                  <div className="rounded-lg border bg-white p-3">
-                    {selectedProjects.length === 0 && selectedRealizations.length === 0 ? <div className="text-sm text-muted-foreground">Zatím žádné vybrané položky.</div> : (
+                <div className="space-y-5">
+                  <div className="rounded-xl border bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-medium text-slate-800">Vybrané položky</div>
+                        <div className="text-xs text-slate-500">Kliknutím na štítek položku odeberete.</div>
+                      </div>
+                      <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{totalItems} položek</div>
+                    </div>
+                    {selectedProjects.length === 0 && selectedRealizations.length === 0 ? <div className="rounded-lg border border-dashed bg-slate-50 p-4 text-sm text-muted-foreground">Zatím žádné vybrané položky. Vyberte projekt nebo realizaci níže.</div> : (
                       <div className="flex flex-wrap gap-2">
                         {selectedProjects.map((project) => (
                           <button type="button" key={project.project_id} onClick={() => !isSubmitting && handleRemoveProject(project.project_id)} disabled={isSubmitting} className="inline-flex items-center gap-2 rounded-full border bg-slate-50 px-3 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed">
@@ -484,26 +488,36 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {memberId && (
-                      <div className="space-y-2">
+                      <div className="space-y-2 rounded-xl border bg-white p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-medium text-slate-800">Projekty</div>
+                            <div className="text-xs text-slate-500">Vyberte projekt s dostupným zůstatkem.</div>
+                          </div>
+                        </div>
                         <Input value={projectSearch} onChange={(e) => setProjectSearch(e.target.value)} placeholder="Hledat projekt..." disabled={isSubmitting} />
-                        <div className="max-h-48 overflow-y-auto rounded-md border bg-white">
+                        <div className="max-h-56 overflow-y-auto rounded-lg border bg-white">
                           {filteredProjectsToAdd.length > 0 ? filteredProjectsToAdd.map(p => (
-                              <button type="button" key={p.project_id} onClick={() => !isSubmitting && handleAddProject(p.project_id)} disabled={isSubmitting} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                                <span className="truncate">{p.project_code} - {p.project_name}</span><span className="ml-3 shrink-0 font-mono text-xs text-muted-foreground">{p.available_balance.toLocaleString('cs-CZ')} Kč</span>
+                              <button type="button" key={p.project_id} onClick={() => !isSubmitting && handleAddProject(p.project_id)} disabled={isSubmitting} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                                <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{p.project_name}</span><span className="block truncate text-xs text-slate-500">{p.project_code}</span></span><span className="ml-3 shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 font-mono text-xs font-semibold text-emerald-700">{p.available_balance.toLocaleString('cs-CZ')} Kč</span>
                               </button>
                             )) : <div className="px-3 py-2 text-sm text-muted-foreground">Nenalezeny žádné projekty</div>}
                         </div>
                       </div>
                     )}
                     {memberId && (
-                      <div className="space-y-2">
+                      <div className="space-y-2 rounded-xl border bg-white p-4">
+                        <div>
+                          <div className="font-medium text-slate-800">Realizace</div>
+                          <div className="text-xs text-slate-500">Vyberte realizaci podle dostupného podílu.</div>
+                        </div>
                         <Input value={realizationSearch} onChange={(e) => setRealizationSearch(e.target.value)} placeholder="Hledat realizaci..." disabled={isSubmitting} />
-                        <div className="max-h-48 overflow-y-auto rounded-md border bg-white">
+                        <div className="max-h-56 overflow-y-auto rounded-lg border bg-white">
                           {filteredRealizaceToAdd.length > 0 ? filteredRealizaceToAdd.map(r => (
-                              <button type="button" key={r.id} onClick={() => !isSubmitting && handleAddRealizace(r.id)} disabled={isSubmitting} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                                <span className="truncate">{r.name}</span><span className="ml-3 shrink-0 font-mono text-xs text-muted-foreground">{(r.available_share || 0).toLocaleString('cs-CZ')} Kč</span>
+                              <button type="button" key={r.id} onClick={() => !isSubmitting && handleAddRealizace(r.id)} disabled={isSubmitting} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                                <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{r.name}</span><span className="block truncate text-xs text-slate-500">Realizace</span></span><span className="ml-3 shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 font-mono text-xs font-semibold text-emerald-700">{(r.available_share || 0).toLocaleString('cs-CZ')} Kč</span>
                               </button>
                             )) : <div className="px-3 py-2 text-sm text-muted-foreground">Nenalezeny žádné realizace</div>}
                         </div>
@@ -582,7 +596,18 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout }) => {
             </div>
           </aside>
         </FormDialogBody>
-      </FormDialogContent>
+      </>
+  );
+
+  if (embedded) {
+    return <div className="rounded-xl border border-slate-200 bg-white shadow-sm">{content}</div>;
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !isSubmitting) { resetForm(); onClose(); } }} modal={false}>
+    <FormDialogContent size="xl" onInteractOutside={(e) => { if (isSubmitting) e.preventDefault(); }} onPointerDownOutside={(e) => { if (isSubmitting) e.preventDefault(); }} onEscapeKeyDown={(e) => { if (isSubmitting) e.preventDefault(); }}>
+      {content}
+    </FormDialogContent>
     </Dialog>
   );
 };

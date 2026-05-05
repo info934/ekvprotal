@@ -8,6 +8,7 @@ import Projects from '@/components/Projects';
 import Documents from '@/components/Documents';
 import Engineering from '@/components/Engineering';
 import Payouts from '@/components/Payouts';
+import PayoutFormPage from '@/components/PayoutFormPage';
 import HourlyPayoutRequestsAdmin from '@/components/HourlyPayoutRequestsAdmin';
 import AuditLog from '@/components/AuditLog';
 import ProjectDetail from '@/components/ProjectDetail';
@@ -153,6 +154,7 @@ function AppContent() {
                 <Route path="/members/:memberId" element={<PrivateRoute module="members"><MemberDetail /></PrivateRoute>} />
                 
                 <Route path="/payouts" element={<ProtectedRoute><Payouts /></ProtectedRoute>} />
+                <Route path="/payouts/new" element={<ProtectedRoute><PayoutFormPage /></ProtectedRoute>} />
                 <Route path="/payouts/hourly-admin" element={<PrivateRoute module="payouts" level="can_admin"><div className="p-8"><HourlyPayoutRequestsAdmin /></div></PrivateRoute>} />
 
                 <Route path="/overhead-costs" element={<PrivateRoute module="finance" level="can_admin"><OverheadCosts /></PrivateRoute>} />

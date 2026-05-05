@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DollarSign, Plus, CheckCircle, XCircle, Clock, Eye, Edit2, Trash2, AlertTriangle,
@@ -28,6 +29,7 @@ import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
 import { uploadInvoice, confirmInvoice, approveWithoutInvoice } from '@/lib/payoutWorkflowService';
 import { sendInvoiceUploadedNotification, sendPayoutPaidEmail as sendWorkflowPayoutPaidEmail } from '@/lib/payoutWorkflowEmailService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
+import { savePayoutRequest } from '@/lib/payoutRequestService';
 import PageHeader from '@/components/ui/page-header';
 
 const Badge = ({ children, variant = "default", className, ...props }) => {
@@ -162,6 +164,7 @@ const PayoutCard = ({ payout, onUpdateStatus, onDelete, onEdit, onApproveWithDia
 const Payouts = () => {
   const { toast } = useToast();
   const { memberId, hasPermission, user } = useAuth();
+  const navigate = useNavigate();
   
   const [payouts, setPayouts] = useState([]);
   const [hourlyRequests, setHourlyRequests] = useState([]);
@@ -255,99 +258,10 @@ const Payouts = () => {
   }, [payouts, searchTerm, statusFilter, view, withoutInvoiceFilter]);
 
   const handleSavePayout = async (payoutData, isEditMode, payoutId) => {
-    console.log('handleSavePayout called with:', { payoutData, isEditMode, payoutId });
-    
     try {
-      if (isEditMode) {
-        console.log('Updating payout:', payoutId);
-        
-        const { error: payoutError } = await supabase
-          .from('payouts')
-          .update({
-            member_id: payoutData.member_id,
-            request_date: payoutData.request_date,
-            reason: payoutData.reason,
-            amount: payoutData.items.reduce((sum, item) => sum + item.amount, 0)
-          })
-          .eq('id', payoutId);
-
-        if (payoutError) {
-          console.error('Payout update error:', payoutError);
-          throw payoutError;
-        }
-
-        const { error: deleteError } = await supabase
-          .from('payout_items')
-          .delete()
-          .eq('payout_id', payoutId);
-
-        if (deleteError) {
-          console.error('Payout items delete error:', deleteError);
-          throw deleteError;
-        }
-
-        const itemsToInsert = payoutData.items.map(item => ({
-          payout_id: payoutId,
-          project_id: item.project_id || null,
-          realization_id: item.realization_id || null,
-          amount: item.amount
-        }));
-
-        const { error: itemsError } = await supabase
-          .from('payout_items')
-          .insert(itemsToInsert);
-
-        if (itemsError) {
-          console.error('Payout items insert error:', itemsError);
-          throw itemsError;
-        }
-
-        console.log('Payout updated successfully');
-      } else {
-        console.log('Creating new payout');
-        
-        const totalAmount = payoutData.items.reduce((sum, item) => sum + item.amount, 0);
-        
-        const { data: newPayout, error: payoutError } = await supabase
-          .from('payouts')
-          .insert({
-            member_id: payoutData.member_id,
-            amount: totalAmount,
-            status: 'pending',
-            request_date: payoutData.request_date,
-            reason: payoutData.reason
-          })
-          .select()
-          .single();
-
-        if (payoutError) {
-          console.error('Payout insert error:', payoutError);
-          throw payoutError;
-        }
-
-        console.log('New payout created:', newPayout);
-
-        const itemsToInsert = payoutData.items.map(item => ({
-          payout_id: newPayout.id,
-          project_id: item.project_id || null,
-          realization_id: item.realization_id || null,
-          amount: item.amount
-        }));
-
-        const { error: itemsError } = await supabase
-          .from('payout_items')
-          .insert(itemsToInsert);
-
-        if (itemsError) {
-          console.error('Payout items insert error:', itemsError);
-          throw itemsError;
-        }
-
-        console.log('Payout items inserted successfully');
-      }
-
+      const savedPayout = await savePayoutRequest(payoutData, isEditMode, payoutId);
       await fetchPayouts();
-      
+      return savedPayout;
     } catch (error) {
       console.error('Error in handleSavePayout:', error);
       throw error;
@@ -500,7 +414,7 @@ const Payouts = () => {
                 <Button variant="outline" onClick={fetchPayouts} className="bg-white shadow-sm border-slate-200 hidden sm:flex">
                   <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />Aktualizovat
                 </Button>
-                <Button onClick={() => {setIsDialogOpen(true); setEditingPayout(null);}} className="shadow-sm w-full sm:w-auto">
+                <Button onClick={() => navigate('/payouts/new')} className="shadow-sm w-full sm:w-auto">
                   <Plus className="w-4 h-4 mr-2" />Nová žádost (Úkol)
                 </Button>
               </>
@@ -543,7 +457,7 @@ const Payouts = () => {
                 </div>
               </CardContent>
             </Card>
-            {loading ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{[1,2,3].map(i => <div key={i} className="h-[250px] bg-slate-100 animate-pulse rounded-xl" />)}</div> : filteredPayouts.length === 0 ? <Card className="border-dashed border-2 border-slate-200 bg-transparent shadow-none"><CardContent className="p-12 text-center flex flex-col items-center"><div className="bg-slate-100 p-4 rounded-full mb-4"><DollarSign className="w-8 h-8 text-slate-400" /></div><h3 className="text-lg font-semibold text-slate-800 mb-1">Žádné úkolové žádosti nenalezeny</h3><p className="text-slate-500 mb-6">Zkuste změnit filtry nebo vytvořte novou žádost.</p><Button onClick={() => {setIsDialogOpen(true); setEditingPayout(null);}}><Plus className="w-4 h-4 mr-2" /> Vytvořit žádost</Button></CardContent></Card> : <AnimatePresence mode="wait">{displayMode === 'cards' ? <motion.div key="cards" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredPayouts.map(payout => <PayoutCard key={payout.id} payout={payout} onUpdateStatus={handleUpdateStatus} onDelete={handleDelete} onEdit={(p) => { setEditingPayout(p); setIsDialogOpen(true); }} onApproveWithDialog={handleApproveWithDialog} onUploadInvoice={handleUploadInvoice} onDownloadInvoice={handleDownloadInvoice} canAdmin={canAdmin} canEditOwn={canEditOwn} />)}</motion.div> : <motion.div key="table" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><PayoutTableHistory data={filteredPayouts} loading={loading} onRefresh={fetchPayouts} /></motion.div>}</AnimatePresence>}
+            {loading ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{[1,2,3].map(i => <div key={i} className="h-[250px] bg-slate-100 animate-pulse rounded-xl" />)}</div> : filteredPayouts.length === 0 ? <Card className="border-dashed border-2 border-slate-200 bg-transparent shadow-none"><CardContent className="p-12 text-center flex flex-col items-center"><div className="bg-slate-100 p-4 rounded-full mb-4"><DollarSign className="w-8 h-8 text-slate-400" /></div><h3 className="text-lg font-semibold text-slate-800 mb-1">Žádné úkolové žádosti nenalezeny</h3><p className="text-slate-500 mb-6">Zkuste změnit filtry nebo vytvořte novou žádost.</p><Button onClick={() => navigate('/payouts/new')}><Plus className="w-4 h-4 mr-2" /> Vytvořit žádost</Button></CardContent></Card> : <AnimatePresence mode="wait">{displayMode === 'cards' ? <motion.div key="cards" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredPayouts.map(payout => <PayoutCard key={payout.id} payout={payout} onUpdateStatus={handleUpdateStatus} onDelete={handleDelete} onEdit={(p) => { setEditingPayout(p); setIsDialogOpen(true); }} onApproveWithDialog={handleApproveWithDialog} onUploadInvoice={handleUploadInvoice} onDownloadInvoice={handleDownloadInvoice} canAdmin={canAdmin} canEditOwn={canEditOwn} />)}</motion.div> : <motion.div key="table" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><PayoutTableHistory data={filteredPayouts} loading={loading} onRefresh={fetchPayouts} /></motion.div>}</AnimatePresence>}
           </TabsContent>
 
           <TabsContent value="hourly" className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
