@@ -156,6 +156,25 @@ export const AuthProvider = ({ children }) => {
     return { error };
   }, [toast]);
 
+  const signInWithSso = useCallback(async (provider) => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/`,
+      },
+    });
+
+    if (error) {
+      toast({
+        variant: "destructive",
+        title: "SSO přihlášení se nezdařilo",
+        description: error.message || "Zkontrolujte nastavení poskytovatele v Supabase Auth.",
+      });
+    }
+
+    return { error };
+  }, [toast]);
+
   const togglePrivateMode = useCallback(async (enable) => {
     if (!memberId) return;
     
@@ -451,10 +470,11 @@ export const AuthProvider = ({ children }) => {
     hasPermission,
     signOut,
     signIn,
+    signInWithSso,
     signUp,
     isPrivateMode,
     togglePrivateMode,
-  }), [user, session, loading, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signUp, isPrivateMode, togglePrivateMode]);
+  }), [user, session, loading, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signInWithSso, signUp, isPrivateMode, togglePrivateMode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
