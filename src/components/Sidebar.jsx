@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   Home, Folder, FileText, Users, DollarSign, BarChart, Settings, LogOut, 
   ListTodo, UserCog, ChevronsRight, ChevronsLeft, Wrench, Clock, Menu, 
-  Building, Shield, Search, Moon, Sun, Plus, ClipboardList, Briefcase, X, FilePieChart, HardHat, EyeOff, Copy
+  Building, Shield, Search, Moon, Sun, Plus, ClipboardList, Briefcase, X, FilePieChart, HardHat, EyeOff, Copy, Contact
 } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
@@ -55,6 +55,7 @@ const NAV_ITEMS = [
     { icon: Copy, label: 'Šablony projektů', path: '/templates', module: 'projects', badge: null, category: 'Projekty' },
     { icon: Clock, label: 'Docházka', path: '/attendance', module: 'attendance', badge: null, category: 'Správa' },
     { icon: FileText, label: 'Dokumenty', path: '/documents', module: 'documents', badge: null, category: 'Správa' },
+    { icon: Contact, label: 'CRM', path: '/crm', module: 'crm', badge: null, category: 'Správa' },
     { icon: Building, label: 'Subjekty', path: '/subjects', module: 'subjects', badge: null, category: 'Správa' },
     { icon: Wrench, label: 'Inženýring', path: '/engineering', module: 'engineering', badge: null, category: 'Správa' },
     { icon: Users, label: 'Zaměstnanci', path: '/members', module: 'members', badge: null, category: 'Správa' },

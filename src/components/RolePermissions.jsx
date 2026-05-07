@@ -16,6 +16,7 @@ const modules = [
     { key: 'tasks', name: 'Úkoly' },
     { key: 'attendance', name: 'Docházka' },
     { key: 'documents', name: 'Dokumenty' },
+    { key: 'crm', name: 'CRM' },
     { key: 'subjects', name: 'Subjekty' },
     { key: 'engineering', name: 'Inženýring' },
     { key: 'members', name: 'Členové' },

@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar';
 import Dashboard from '@/components/Dashboard';
 import Projects from '@/components/Projects';
 import Documents from '@/components/Documents';
+import CRM from '@/components/CRM';
 import Engineering from '@/components/Engineering';
 import Payouts from '@/components/Payouts';
 import PayoutFormPage from '@/components/PayoutFormPage';
@@ -145,6 +146,7 @@ function AppContent() {
                 <Route path="/realizace/:realizaceId/orders/new" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
                 <Route path="/realizace/:realizaceId/orders/:orderId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
                 <Route path="/documents" element={<PrivateRoute module="documents"><Documents /></PrivateRoute>} />
+                <Route path="/crm" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
                 <Route path="/engineering" element={<PrivateRoute module="engineering"><Engineering /></PrivateRoute>} />
                 <Route path="/tasks" element={<PrivateRoute module="tasks"><Tasks /></PrivateRoute>} />
                 <Route path="/attendance" element={<PrivateRoute module="attendance"><Attendance /></PrivateRoute>} />

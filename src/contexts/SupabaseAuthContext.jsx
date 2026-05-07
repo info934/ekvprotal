@@ -279,6 +279,7 @@ export const AuthProvider = ({ children }) => {
           tasks: { can_read: true, can_edit: true, can_admin: true },
           attendance: { can_read: true, can_edit: true, can_admin: true },
           documents: { can_read: true, can_edit: true, can_admin: true },
+          crm: { can_read: true, can_edit: true, can_admin: true },
           subjects: { can_read: true, can_edit: true, can_admin: true },
           engineering: { can_read: true, can_edit: true, can_admin: true },
           members: { can_read: true, can_edit: true, can_admin: true },
@@ -301,6 +302,7 @@ export const AuthProvider = ({ children }) => {
           const basicPermissions = {
               dashboard: { can_read: true, can_edit: false, can_admin: false },
               projects: { can_read: true, can_edit: false, can_admin: false },
+              crm: { can_read: true, can_edit: false, can_admin: false },
               realizace: { can_read: true, can_edit: true, can_admin: false },
               tasks: { can_read: true, can_edit: true, can_admin: false },
           };
@@ -312,6 +314,7 @@ export const AuthProvider = ({ children }) => {
           finalPermissions = {
             dashboard: { can_read: true, can_edit: false, can_admin: false },
             projects: { can_read: true, can_edit: false, can_admin: false },
+            crm: { can_read: true, can_edit: false, can_admin: false },
             realizace: { can_read: true, can_edit: true, can_admin: false },
             tasks: { can_read: true, can_edit: true, can_admin: false },
           };
