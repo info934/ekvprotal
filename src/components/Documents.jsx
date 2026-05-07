@@ -11,6 +11,11 @@ import DocumentDialog from '@/components/DocumentDialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format } from 'date-fns';
 import PageHeader from '@/components/ui/page-header';
+import {
+  downloadProjectDocument,
+  isStorageConfigMissingError,
+  uploadProjectDocument,
+} from '@/lib/documentStorageService';
 
 const statusConfig = {
   in_work: { label: 'V práci', color: 'bg-blue-100 text-blue-800 border-blue-200' },
@@ -96,26 +101,16 @@ const Documents = () => {
     }
   }, [projectSearch, projects]);
 
-  const handleDownloadFile = async (filePath, fileName) => {
-    if (!filePath) {
-        toast({ title: 'Chyba', description: 'Cesta k souboru není definována.', variant: 'destructive' });
-        return;
+  const handleDownloadFile = async (document) => {
+    try {
+      await downloadProjectDocument(document);
+    } catch (error) {
+      toast({
+        title: 'Chyba při stahování',
+        description: error.message || 'Soubor nebyl nalezen nebo k němu nemáte přístup.',
+        variant: 'destructive',
+      });
     }
-    const { data, error } = await supabase.storage.from('project-files').download(filePath);
-    if (error) {
-        toast({ title: 'Chyba při stahování', description: 'Soubor nebyl nalezen nebo k němu nemáte přístup.', variant: 'destructive' });
-        return;
-    }
-    const blob = new Blob([data]);
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
   };
   
   const handleAddDocument = async (docData) => {
@@ -133,27 +128,42 @@ const Documents = () => {
         return;
     }
 
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${project.code}/${restOfDocData.name.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
-    const filePath = `${project_id}/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage.from('project-files').upload(filePath, file);
-
-    if (uploadError) {
+    let uploadResult;
+    try {
+      uploadResult = await uploadProjectDocument({
+        file,
+        project,
+        documentName: restOfDocData.name,
+      });
+    } catch (uploadError) {
         toast({ title: "🛑 Chyba při nahrávání souboru", description: uploadError.message, variant: "destructive" });
         return;
     }
 
-    const { error } = await supabase.from('documents').insert({ 
+    const basePayload = {
         ...restOfDocData, 
         project_id: project_id, 
         file_name: file.name, 
-        file_path: filePath,
+        file_path: uploadResult.filePath,
+    };
+
+    const { error } = await supabase.from('documents').insert({
+        ...basePayload,
+        ...uploadResult.storageFields,
     });
 
     if (error) {
-        toast({ title: "🛑 Chyba při ukládání dokumentu", variant: "destructive" });
-        await supabase.storage.from('project-files').remove([filePath]);
+        if (isStorageConfigMissingError(error) && uploadResult.provider === 'supabase') {
+          const { error: fallbackError } = await supabase.from('documents').insert(basePayload);
+          if (!fallbackError) {
+            fetchDocuments();
+            toast({ title: "✅ Dokument úspěšně nahrán!" });
+            return;
+          }
+        }
+
+        toast({ title: "🛑 Chyba při ukládání dokumentu", description: error.message, variant: "destructive" });
+        if (uploadResult.cleanup) await uploadResult.cleanup();
         return;
     }
     
@@ -271,8 +281,8 @@ const Documents = () => {
                             </TableCell>
                             <TableCell>{format(new Date(doc.created_at), 'd.M.yyyy')}</TableCell>
                             <TableCell className="text-right">
-                                {doc.file_path && (
-                                    <Button variant="ghost" size="icon" onClick={() => handleDownloadFile(doc.file_path, doc.file_name)}>
+                                {(doc.file_path || doc.external_web_url) && (
+                                    <Button variant="ghost" size="icon" onClick={() => handleDownloadFile(doc)}>
                                        <Download className="w-5 h-5"/>
                                     </Button>
                                 )}

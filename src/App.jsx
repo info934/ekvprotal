@@ -42,6 +42,7 @@ import RealizaceOrderForm from '@/components/RealizaceOrderForm';
 import SettingsProfile from '@/components/SettingsProfile';
 import SettingsPortal from '@/components/SettingsPortal';
 import SettingsDictionaries from '@/components/SettingsDictionaries';
+import SettingsStorage from '@/components/SettingsStorage';
 import ProjectTemplatesSettings from '@/components/ProjectTemplatesSettings';
 import ProjectTemplatesPage from '@/components/ProjectTemplatesPage';
 import BackupMaintenance from '@/components/BackupMaintenance';
@@ -174,6 +175,7 @@ function AppContent() {
                   <Route path="portal" element={<PrivateRoute module="settings" level="can_admin"><SettingsPortal /></PrivateRoute>} />
                   <Route path="order-templates" element={<PrivateRoute module="settings" level="can_admin"><OrderTemplateManager /></PrivateRoute>} />
                   <Route path="dictionaries" element={<PrivateRoute module="settings" level="can_admin"><SettingsDictionaries /></PrivateRoute>} />
+                  <Route path="storage" element={<PrivateRoute module="settings" level="can_admin"><SettingsStorage /></PrivateRoute>} />
                   <Route path="project-templates" element={<PrivateRoute module="settings" level="can_admin"><ProjectTemplatesSettings /></PrivateRoute>} />
                   <Route path="backup-maintenance" element={<ProtectedRoute requiredRole="admin"><BackupMaintenance /></ProtectedRoute>} />
                 </Route>
