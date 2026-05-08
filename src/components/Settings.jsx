@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useLocation, Outlet } from 'react-router-dom';
-import { Settings as SettingsIcon, Users, Key, ShoppingCart, User, BookOpen, FileText, Database, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { Settings as SettingsIcon, Users, Key, ShoppingCart, User, BookOpen, FileText, Database, ChevronRight, SlidersHorizontal, Cloud } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PageHeader from '@/components/ui/page-header';
 import { cn } from '@/lib/utils';
@@ -25,6 +25,7 @@ const settingsNav = [
       { name: 'Číselníky', description: 'Centrální hodnoty pro formuláře', href: '/settings/dictionaries', icon: BookOpen, requiredPermission: 'can_admin' },
       { name: 'Šablony projektů', description: 'Výchozí struktury projektů', href: '/settings/project-templates', icon: FileText, requiredPermission: 'can_admin' },
       { name: 'Šablony objednávek', description: 'Texty a proměnné objednávek', href: '/settings/order-templates', icon: ShoppingCart, requiredPermission: 'can_admin' },
+      { name: 'Úložiště dokumentů', description: 'Supabase, SharePoint nebo Google Drive', href: '/settings/storage', icon: Cloud, requiredPermission: 'can_admin' },
     ],
   },
   {

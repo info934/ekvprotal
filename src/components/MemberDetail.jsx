@@ -201,7 +201,7 @@ const MemberDetail = () => {
       .single();
 
     if (memberError || !memberData) {
-      toast({ title: 'Chyba při načítání projektanta', variant: 'destructive' });
+      toast({ title: 'Chyba při načítání zaměstnance', variant: 'destructive' });
       setLoading(false);
       return;
     }
@@ -334,9 +334,9 @@ const MemberDetail = () => {
   const handleSaveMember = async (memberData) => {
     const { error } = await supabase.from('members').update(memberData).eq('id', memberId);
     if (error) {
-      toast({ title: "Chyba při úpravě projektanta", variant: "destructive", description: error.message });
+      toast({ title: "Chyba při úpravě zaměstnance", variant: "destructive", description: error.message });
     } else {
-      toast({ title: "✅ Projektant upraven!" });
+      toast({ title: "Zaměstnanec upraven" });
       fetchData();
     }
     setIsMemberDialogOpen(false);
@@ -346,16 +346,16 @@ const MemberDetail = () => {
     if (!canAdmin) return;
     const { error } = await supabase.from('members').delete().eq('id', memberId);
     if (error) {
-      toast({ title: "Chyba při mazání projektanta", variant: "destructive" });
+      toast({ title: "Chyba při mazání zaměstnance", variant: "destructive" });
     } else {
-      toast({ title: "🗑️ Projektant smazán." });
+      toast({ title: "Zaměstnanec smazán" });
       navigate('/members');
     }
   };
 
   const handleSendMessage = async ({ subject, message }) => {
     if (!member?.email) {
-      toast({ title: 'Projektant nemá zadaný email.', variant: 'destructive' });
+      toast({ title: 'Zaměstnanec nemá zadaný email.', variant: 'destructive' });
       return;
     }
 
@@ -401,7 +401,7 @@ const MemberDetail = () => {
   };
 
   if (loading) return <div className="text-center py-12">Načítání...</div>;
-  if (!member) return <div className="text-center py-12">Projektant nenalezen.</div>;
+  if (!member) return <div className="text-center py-12">Zaměstnanec nenalezen.</div>;
 
   const getCertRowClass = (expiryDate) => {
     if (!expiryDate) return '';
@@ -416,13 +416,13 @@ const MemberDetail = () => {
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div>
           <Link to="/members" className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary mb-4">
-            <ChevronLeft className="w-4 h-4" /> Zpět na projektanty
+            <ChevronLeft className="w-4 h-4" /> Zpět na zaměstnance
           </Link>
           <h1 className="text-3xl sm:text-4xl font-bold gradient-text mb-2 flex items-center gap-3">
             <User className="w-8 h-8" />
             {member.name}
           </h1>
-          <p className="text-muted-foreground">Detailní přehled projektanta, jeho projektů, financí a certifikací.</p>
+          <p className="text-muted-foreground">Detailní přehled zaměstnance, jeho pozice, projektů, financí a certifikací.</p>
         </div>
         <div className="flex-shrink-0 flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           {canEdit && <Button variant="outline" onClick={() => setIsMessageDialogOpen(true)} className="w-full sm:w-auto"><MessageSquare className="w-4 h-4 mr-2" />Poslat zprávu</Button>}
@@ -446,7 +446,7 @@ const MemberDetail = () => {
 
         <TabsContent value="overview" className="glass-effect rounded-xl p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <InfoItem label="Pracovní role / pozice" value={member.member_roles ? member.member_roles.name : 'Není nastaveno'} />
+            <InfoItem label="Pozice / kategorie" value={member.member_roles ? member.member_roles.name : 'Není nastaveno'} />
             <InfoItem label="Email" value={member.email} />
             <InfoItem label="Telefon" value={member.phone} />
             <InfoItem label="Hodinová sazba">
@@ -742,8 +742,8 @@ const MemberDetail = () => {
       <AlertDialog open={isDeleteMemberAlertOpen} onOpenChange={setIsDeleteMemberAlertOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Opravdu smazat projektanta?</AlertDialogTitle>
-            <AlertDialogDescription>Tato akce je nevratná a trvale smaže veškerá data spojená s tímto projektantem.</AlertDialogDescription>
+            <AlertDialogTitle>Opravdu smazat zaměstnance?</AlertDialogTitle>
+            <AlertDialogDescription>Tato akce je nevratná a trvale smaže veškerá data spojená s tímto zaměstnancem.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Zrušit</AlertDialogCancel>

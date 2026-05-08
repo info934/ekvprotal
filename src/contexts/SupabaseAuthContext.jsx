@@ -156,6 +156,25 @@ export const AuthProvider = ({ children }) => {
     return { error };
   }, [toast]);
 
+  const signInWithSso = useCallback(async (provider) => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/`,
+      },
+    });
+
+    if (error) {
+      toast({
+        variant: "destructive",
+        title: "SSO přihlášení se nezdařilo",
+        description: error.message || "Zkontrolujte nastavení poskytovatele v Supabase Auth.",
+      });
+    }
+
+    return { error };
+  }, [toast]);
+
   const togglePrivateMode = useCallback(async (enable) => {
     if (!memberId) return;
     
@@ -260,6 +279,7 @@ export const AuthProvider = ({ children }) => {
           tasks: { can_read: true, can_edit: true, can_admin: true },
           attendance: { can_read: true, can_edit: true, can_admin: true },
           documents: { can_read: true, can_edit: true, can_admin: true },
+          crm: { can_read: true, can_edit: true, can_admin: true },
           subjects: { can_read: true, can_edit: true, can_admin: true },
           engineering: { can_read: true, can_edit: true, can_admin: true },
           members: { can_read: true, can_edit: true, can_admin: true },
@@ -282,6 +302,7 @@ export const AuthProvider = ({ children }) => {
           const basicPermissions = {
               dashboard: { can_read: true, can_edit: false, can_admin: false },
               projects: { can_read: true, can_edit: false, can_admin: false },
+              crm: { can_read: true, can_edit: false, can_admin: false },
               realizace: { can_read: true, can_edit: true, can_admin: false },
               tasks: { can_read: true, can_edit: true, can_admin: false },
           };
@@ -293,6 +314,7 @@ export const AuthProvider = ({ children }) => {
           finalPermissions = {
             dashboard: { can_read: true, can_edit: false, can_admin: false },
             projects: { can_read: true, can_edit: false, can_admin: false },
+            crm: { can_read: true, can_edit: false, can_admin: false },
             realizace: { can_read: true, can_edit: true, can_admin: false },
             tasks: { can_read: true, can_edit: true, can_admin: false },
           };
@@ -451,10 +473,11 @@ export const AuthProvider = ({ children }) => {
     hasPermission,
     signOut,
     signIn,
+    signInWithSso,
     signUp,
     isPrivateMode,
     togglePrivateMode,
-  }), [user, session, loading, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signUp, isPrivateMode, togglePrivateMode]);
+  }), [user, session, loading, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signInWithSso, signUp, isPrivateMode, togglePrivateMode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

@@ -1,6 +1,28 @@
 
 import { corsHeaders } from "./cors.ts";
 
+const jsonResponse = (body: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+const splitEmails = (value: string | null) =>
+  (value || "")
+    .split(",")
+    .map((email) => email.trim())
+    .filter(Boolean);
+
+const getAdminRecipients = () => {
+  const configured = splitEmails(Deno.env.get("PAYOUT_ADMIN_EMAILS") || Deno.env.get("ADMIN_EMAILS"));
+  return configured.length > 0 ? configured : ["info@ekvproject.cz"];
+};
+
+const getFromEmail = () =>
+  Deno.env.get("PAYOUT_FROM_EMAIL") ||
+  Deno.env.get("RESEND_FROM_EMAIL") ||
+  "EKV Portal <portal@web.ekvproject.cz>";
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -11,6 +33,11 @@ Deno.serve(async (req) => {
     if (!resendApiKey) throw new Error("Missing RESEND_API_KEY");
 
     const { subject, htmlContent } = await req.json();
+    if (!subject || !htmlContent) {
+      throw new Error("Missing required fields: subject, htmlContent");
+    }
+
+    const recipients = getAdminRecipients();
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -19,8 +46,8 @@ Deno.serve(async (req) => {
         Authorization: `Bearer ${resendApiKey}`,
       },
       body: JSON.stringify({
-        from: "EKV Group Portal <info@ekvgroup.cz>",
-        to: ["info@ekvgroup.cz"], // Send to admin email
+        from: getFromEmail(),
+        to: recipients,
         subject: subject,
         html: htmlContent,
       }),
@@ -30,23 +57,21 @@ Deno.serve(async (req) => {
 
     if (!res.ok) {
       console.error("Resend admin payout notification error:", data);
-      return new Response(JSON.stringify({
+      return jsonResponse({
         success: false,
-        error: data?.message || "Resend API error",
+        error: data?.message || data?.error || `Resend API error ${res.status}`,
         data,
-      }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      }, 502);
     }
 
-    return new Response(JSON.stringify({ success: true, data }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return jsonResponse({
+      success: true,
+      emailId: data?.id,
+      recipients,
+      data,
     });
   } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("[send-admin-payout-notification]", error);
+    return jsonResponse({ success: false, error: error.message }, 500);
   }
 });

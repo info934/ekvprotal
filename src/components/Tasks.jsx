@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { 
-  ListTodo, User, Folder, Calendar, Search, Plus, LayoutGrid, List, 
-  Clock, CheckCircle2, AlertCircle, TrendingUp, Target, BarChart3,
-  Filter, RefreshCw, Eye, Edit2, Trash2, MoreHorizontal, Zap,
-  ArrowUpDown, Calendar as CalendarIcon, Users, Building
+  ListTodo, Search, Plus, LayoutGrid, List,
+  Clock, CheckCircle2, AlertCircle, Target, BarChart3,
+  Filter, RefreshCw, Eye, Edit2, MoreHorizontal,
+  Calendar as CalendarIcon, Users, Building
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import TaskDialog from '@/components/TaskDialog';
 import { format, isPast } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -19,163 +23,29 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { cn } from '@/lib/utils';
 import PageHeader from '@/components/ui/page-header';
 
-// Modern UI Components implemented directly in file
-const Card = ({ children, className, ...props }) => (
-  <div
-    className={cn("rounded-xl border bg-card text-card-foreground shadow-sm hover:shadow-md transition-shadow", className)}
-    {...props}
-  >
-    {children}
-  </div>
-);
-
-const CardContent = ({ children, className, ...props }) => (
-  <div className={cn("p-6 pt-0", className)} {...props}>
-    {children}
-  </div>
-);
-
-const CardHeader = ({ children, className, ...props }) => (
-  <div className={cn("flex flex-col space-y-1.5 p-6", className)} {...props}>
-    {children}
-  </div>
-);
-
-const CardTitle = ({ children, className, ...props }) => (
-  <h3 className={cn("font-semibold leading-none tracking-tight", className)} {...props}>
-    {children}
-  </h3>
-);
-
-const Badge = ({ children, variant = "default", className, ...props }) => {
-  const variants = {
-    default: "bg-primary text-primary-foreground hover:bg-primary/80",
-    secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-    destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/80",
-    outline: "text-foreground border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-    success: "bg-green-100 text-green-800 border-green-200",
-    warning: "bg-orange-100 text-orange-800 border-orange-200",
-    info: "bg-blue-100 text-blue-800 border-blue-200"
-  };
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border",
-        variants[variant],
-        className
-      )}
-      {...props}
-    >
-      {children}
-    </span>
-  );
-};
-
-const StatCard = ({ icon: Icon, title, value, subtitle, trend, color = "text-blue-600", className, ...props }) => (
-  <motion.div
+const StatCard = ({ icon: Icon, title, value, subtitle, color = "text-blue-600", className, ...props }) => (
+  <motion.button
+    type="button"
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
-    whileHover={{ y: -4, scale: 1.02 }}
-    className={cn("group bg-white border rounded-xl p-6 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all duration-200", className)}
-    {...props}
-  >
-    <div className="flex items-center justify-between mb-4">
-      <div className={cn("p-3 bg-muted rounded-lg", color)}>
-        <Icon className="w-6 h-6" />
-      </div>
-      {trend && (
-        <Badge variant={trend > 0 ? "success" : "warning"} className="text-xs">
-          <TrendingUp className="w-3 h-3 mr-1" />
-          {trend > 0 ? '+' : ''}{trend}%
-        </Badge>
-      )}
-    </div>
-    <div className="space-y-2">
-      <h3 className="font-semibold text-lg">{title}</h3>
-      <p className="text-3xl font-bold">{value}</p>
-      {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
-    </div>
-  </motion.div>
-);
-
-const DropdownMenu = ({ children }) => {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div className="relative">
-      {React.Children.map(children, child => {
-        if (child.type === DropdownMenuTrigger) {
-          return React.cloneElement(child, { isOpen, setIsOpen });
-        } else if (child.type === DropdownMenuContent) {
-          return React.cloneElement(child, { isOpen, setIsOpen });
-        }
-        return child;
-      })}
-    </div>
-  );
-};
-
-const DropdownMenuTrigger = ({ children, asChild, isOpen, setIsOpen, ...props }) => {
-  const handleClick = (e) => {
-    e.stopPropagation();
-    setIsOpen(!isOpen);
-  };
-
-  if (asChild) {
-    return React.cloneElement(children, {
-      onClick: handleClick,
-      ...props
-    });
-  }
-
-  return (
-    <button onClick={handleClick} {...props}>
-      {children}
-    </button>
-  );
-};
-
-const DropdownMenuContent = ({ children, align = "center", className, isOpen, setIsOpen, ...props }) => {
-  if (!isOpen) return null;
-
-  return (
-    <>
-      <div
-        className="fixed inset-0 z-40"
-        onClick={() => setIsOpen(false)}
-      />
-      <div
-        className={cn(
-          "absolute z-50 min-w-[8rem] overflow-hidden rounded-md border bg-white p-1 text-gray-900 shadow-lg",
-          align === "end" && "right-0",
-          className
-        )}
-        {...props}
-      >
-        {React.Children.map(children, child =>
-          child.type === DropdownMenuItem ?
-            React.cloneElement(child, { setIsOpen }) :
-            child
-        )}
-      </div>
-    </>
-  );
-};
-
-const DropdownMenuItem = ({ children, className, setIsOpen, ...props }) => (
-  <div
+    whileHover={{ y: -2 }}
     className={cn(
-      "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-gray-100 focus:bg-gray-100",
+      "group flex min-h-[112px] w-full items-center gap-4 rounded-lg border bg-white p-4 text-left shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-md",
       className
     )}
-    onClick={(e) => {
-      e.stopPropagation();
-      setIsOpen(false);
-    }}
     {...props}
   >
-    {children}
-  </div>
+    <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-slate-50", color)}>
+      <Icon className="h-5 w-5" />
+    </div>
+    <div className="min-w-0 flex-1">
+      <p className="text-sm font-medium text-muted-foreground">{title}</p>
+      <div className="mt-1 flex items-end gap-2">
+        <p className="text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+      </div>
+      {subtitle && <p className="mt-1 truncate text-xs text-muted-foreground">{subtitle}</p>}
+    </div>
+  </motion.button>
 );
 
 const taskStatusConfig = {
@@ -218,26 +88,33 @@ const TaskCard = ({ task, onDragStart, onClick }) => {
       dragElastic={0.5}
       dragConstraints={{ top: 0, bottom: 0, left: 0, right: 0 }}
       className={cn(
-        "group bg-white border rounded-xl p-4 mb-4 cursor-grab active:cursor-grabbing hover:shadow-lg hover:border-primary/50 transition-all duration-200",
-        isTaskPast && "opacity-70 border-red-300",
-        task.status === 'Hotovo' && "opacity-50"
+        "group relative mb-3 overflow-hidden rounded-lg border bg-white p-4 shadow-sm transition-all duration-200 hover:border-primary/40 hover:shadow-md",
+        hasPermission('tasks', 'can_edit') ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+        isTaskPast && "border-red-300 bg-red-50/60",
+        task.status === 'Hotovo' && "opacity-75"
       )}
     >
-      {/* Header */}
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <StatusIcon className={cn("w-4 h-4 flex-shrink-0", config.titleColor)} />
-          <h3 className="font-semibold text-sm truncate">{task.name}</h3>
+      <div className={cn("absolute inset-x-0 top-0 h-1", config.dot)} />
+      <div className="mb-4 flex items-start justify-between gap-3 pt-1">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <StatusIcon className={cn("h-4 w-4 shrink-0", config.titleColor)} />
+            <h3 className="truncate text-sm font-semibold text-slate-950">{task.name}</h3>
+          </div>
+          {task.description && (
+            <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
+              {task.description}
+            </p>
+          )}
         </div>
-        <Badge variant={config.variant} className="text-xs flex-shrink-0">
+        <Badge variant={config.variant} className="shrink-0 text-xs">
           {task.status}
         </Badge>
       </div>
 
-      {/* Content */}
-      <div className="space-y-2 text-sm">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Building className="w-3 h-3 flex-shrink-0" />
+      <div className="space-y-2.5 text-sm">
+        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+          <Building className="h-3.5 w-3.5 shrink-0" />
           <Link 
             to={`/projects/${task.project_id}`} 
             className="truncate hover:text-primary transition-colors" 
@@ -246,13 +123,13 @@ const TaskCard = ({ task, onDragStart, onClick }) => {
             {task.projects?.name || 'Neznámý projekt'}
           </Link>
         </div>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Users className="w-3 h-3 flex-shrink-0" />
+        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+          <Users className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">{task.members?.name || 'Nepřiřazeno'}</span>
         </div>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <CalendarIcon className="w-3 h-3 flex-shrink-0" />
-          <span className="text-xs">
+        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+          <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate text-xs">
             {format(new Date(task.start_date), 'd.M.yy')} - {format(new Date(task.end_date), 'd.M.yy')}
           </span>
           {isTaskPast && (
@@ -273,15 +150,15 @@ const StatusColumn = ({ status, tasks, config, onDragOver, onDrop, onTaskClick }
         <Card 
             onDragOver={onDragOver}
             onDrop={(e) => onDrop(e, status)}
-            className="bg-gradient-to-b from-slate-50 to-white border-slate-200 flex flex-col h-full"
+            className="flex h-full min-h-[360px] flex-col overflow-hidden border-slate-200 bg-slate-50/70 shadow-sm"
         >
-            <CardHeader className="pb-4">
+            <CardHeader className="border-b bg-white/80 pb-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className={cn("p-2 rounded-lg", config.titleColor.replace('text', 'bg'))}>
-                            <StatusIcon className={cn("w-5 h-5", config.titleColor)} />
+                        <div className={cn("flex h-9 w-9 items-center justify-center rounded-md", config.titleColor.replace('text', 'bg'))}>
+                            <StatusIcon className={cn("h-4 w-4", config.titleColor)} />
                         </div>
-                        <CardTitle className={cn("text-lg", config.titleColor)}>
+                        <CardTitle className="text-base text-slate-950">
                             {status}
                         </CardTitle>
                     </div>
@@ -290,10 +167,10 @@ const StatusColumn = ({ status, tasks, config, onDragOver, onDrop, onTaskClick }
                     </Badge>
                 </div>
             </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto">
+            <CardContent className="flex-1 overflow-y-auto p-3">
                 <AnimatePresence>
                     {tasks.length > 0 ? (
-                        <div className="space-y-3">
+                        <div>
                             {tasks.map((task) => (
                                 <TaskCard 
                                     key={task.id} 
@@ -304,8 +181,8 @@ const StatusColumn = ({ status, tasks, config, onDragOver, onDrop, onTaskClick }
                             ))}
                         </div>
                     ) : (
-                        <div className="text-center text-muted-foreground py-12">
-                            <StatusIcon className="w-8 h-8 mx-auto mb-3 opacity-50" />
+                        <div className="flex min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed bg-white/70 p-6 text-center text-muted-foreground">
+                            <StatusIcon className="mx-auto mb-3 h-8 w-8 opacity-40" />
                             <p className="text-sm">Žádné úkoly v tomto stavu</p>
                         </div>
                     )}
@@ -319,10 +196,10 @@ const TaskTable = ({ tasks, onTaskClick }) => {
     const { hasPermission } = useAuth();
 
     return (
-        <Card>
-            <CardHeader>
+        <Card className="overflow-hidden">
+            <CardHeader className="border-b bg-slate-50/70">
                 <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5" />
+                    <BarChart3 className="h-5 w-5 text-primary" />
                     Přehled úkolů
                 </CardTitle>
             </CardHeader>
@@ -348,34 +225,34 @@ const TaskTable = ({ tasks, onTaskClick }) => {
                                 return (
                                     <TableRow 
                                         key={task.id} 
-                                        className="cursor-pointer hover:bg-slate-50 transition-colors" 
+                                        className="cursor-pointer transition-colors hover:bg-slate-50/80"
                                         onClick={() => onTaskClick(task)}
                                     >
-                                        <TableCell className="font-semibold">
-                                            <div className="flex items-center gap-2">
-                                                <StatusIcon className={cn("w-4 h-4", config.titleColor)} />
-                                                {task.name}
+                                        <TableCell className="min-w-[240px] font-semibold">
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <StatusIcon className={cn("h-4 w-4 shrink-0", config.titleColor)} />
+                                                <span className="truncate">{task.name}</span>
                                             </div>
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell className="min-w-[180px]">
                                             <Link 
                                                 to={`/projects/${task.project_id}`} 
-                                                className="hover:text-primary transition-colors flex items-center gap-1" 
+                                                className="flex min-w-0 items-center gap-1 transition-colors hover:text-primary"
                                                 onClick={(e) => e.stopPropagation()}
                                             >
-                                                <Building className="w-3 h-3" />
-                                                {task.projects?.name || 'N/A'}
+                                                <Building className="h-3.5 w-3.5 shrink-0" />
+                                                <span className="truncate">{task.projects?.name || 'N/A'}</span>
                                             </Link>
                                         </TableCell>
-                                        <TableCell>
-                                            <div className="flex items-center gap-1">
-                                                <Users className="w-3 h-3 text-muted-foreground" />
-                                                {task.members?.name || 'Nepřiřazeno'}
+                                        <TableCell className="min-w-[160px]">
+                                            <div className="flex min-w-0 items-center gap-1">
+                                                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                                <span className="truncate">{task.members?.name || 'Nepřiřazeno'}</span>
                                             </div>
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell className="min-w-[160px]">
                                             <div className="flex items-center gap-1">
-                                                <CalendarIcon className="w-3 h-3 text-muted-foreground" />
+                                                <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
                                                 <span>{format(new Date(task.end_date), 'd.M.yyyy')}</span>
                                                 {isTaskPast && (
                                                     <Badge variant="destructive" className="text-xs ml-2">
@@ -587,6 +464,8 @@ const Tasks = () => {
       return matchesSearch && matchesStatus;
   });
 
+  const hasActiveFilters = searchTerm.trim() !== '' || statusFilter !== 'all';
+
   const tasksByStatus = Object.keys(taskStatusConfig).reduce((acc, status) => {
     acc[status] = filteredTasks.filter(task => task.status === status);
     return acc;
@@ -607,50 +486,17 @@ const Tasks = () => {
                   Nový úkol
                 </Button>
               )}
-              <Button variant="outline" size="sm" className="bg-white/80">
+              <Button variant="outline" size="sm" className="bg-white/80" onClick={fetchTasks}>
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Aktualizovat
               </Button>
             </>
           }
         />
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="hidden"
-        >
-          <div>
-            <h1 className="text-3xl font-bold text-slate-800 mb-2 flex items-center gap-3">
-              <ListTodo className="w-8 h-8 text-blue-600" />
-              Přehled úkolů
-            </h1>
-            <p className="text-muted-foreground">
-              {isSuperUser ? 'Správa všech úkolů napříč projekty' : 'Přehled vašich úkolů'}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {hasPermission('tasks', 'can_edit') && (
-              <Button 
-                onClick={() => { setEditingTask(null); setIsDialogOpen(true); }} 
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Nový úkol
-              </Button>
-            )}
-            <Button variant="outline" size="sm" className="bg-white/80">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Aktualizovat
-            </Button>
-          </div>
-        </motion.div>
-
-        {/* Statistics Cards */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"
         >
           <StatCard
             icon={ListTodo}
@@ -690,12 +536,11 @@ const Tasks = () => {
         </motion.div>
 
         {/* Filters and Controls */}
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-              {/* Search */}
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+        <Card className="overflow-hidden">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="relative w-full xl:max-w-xl">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Hledat úkol, projekt, projektanta..."
                   value={searchTerm}
@@ -704,38 +549,56 @@ const Tasks = () => {
                 />
               </div>
 
-              {/* Filters */}
-              <div className="flex gap-4 items-center">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-muted-foreground" />
-                  <select
+              <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center xl:w-auto xl:justify-end">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Filter className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <Select
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                    onValueChange={setStatusFilter}
                   >
-                    <option value="all">Všechny stavy</option>
-                    <option value="Nové">Nové</option>
-                    <option value="V řešení">V řešení</option>
-                    <option value="Hotovo">Hotovo</option>
-                  </select>
+                    <SelectTrigger className="w-full bg-white sm:w-[180px]">
+                      <SelectValue placeholder="Filtrovat stav" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Všechny stavy</SelectItem>
+                      <SelectItem value="Nové">Nové</SelectItem>
+                      <SelectItem value="V řešení">V řešení</SelectItem>
+                      <SelectItem value="Hotovo">Hotovo</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex rounded-lg bg-slate-100 p-1">
                   <Button
-                    variant={view === 'kanban' ? 'default' : 'outline'}
+                    variant={view === 'kanban' ? 'secondary' : 'ghost'}
                     onClick={() => setView('kanban')}
                     size="sm"
+                    className="flex-1 sm:flex-none"
                   >
                     <LayoutGrid className="w-4 h-4 mr-2" /> Kanban
                   </Button>
                   <Button
-                    variant={view === 'table' ? 'default' : 'outline'}
+                    variant={view === 'table' ? 'secondary' : 'ghost'}
                     onClick={() => setView('table')}
                     size="sm"
+                    className="flex-1 sm:flex-none"
                   >
                     <List className="w-4 h-4 mr-2" /> Tabulka
                   </Button>
                 </div>
+
+                {hasActiveFilters && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setStatusFilter('all');
+                    }}
+                  >
+                    Zrušit filtry
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>
@@ -749,7 +612,7 @@ const Tasks = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              className="grid grid-cols-1 gap-4 lg:grid-cols-3"
             >
               {Object.entries(tasksByStatus).map(([status, tasksInStatus]) => (
                 <StatusColumn 

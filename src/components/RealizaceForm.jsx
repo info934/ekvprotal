@@ -20,6 +20,7 @@ import { parseApiError } from '@/lib/apiValidation';
 import SubjectSelect from '@/components/SubjectSelect';
 import MemberSelect from '@/components/MemberSelect';
 import PageHeader from '@/components/ui/page-header';
+import { ensureEntityFolder } from '@/lib/documentStorageService';
 
 const RealizaceForm = () => {
     const { realizaceId } = useParams();
@@ -264,6 +265,18 @@ const RealizaceForm = () => {
                 const { data: newRealization, error } = await supabase.from('realizations').insert(dataToSave).select().single();
                 if (error) throw error;
                 targetId = newRealization.id;
+
+                try {
+                    await ensureEntityFolder({
+                        entityType: 'realizace',
+                        entityId: newRealization.id,
+                        code: newRealization.code,
+                        name: newRealization.name,
+                    });
+                } catch (storageError) {
+                    console.warn('Failed to prepare realization storage folder', storageError);
+                    toast({ title: 'Realizace vytvořena, ale složku dokumentů se nepodařilo připravit.', variant: 'warning' });
+                }
             }
 
             // Pokud je dokončeno, uložíme rozdělení zisku pro tým

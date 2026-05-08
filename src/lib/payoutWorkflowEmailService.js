@@ -6,37 +6,20 @@
  */
 
 import { supabase } from '@/lib/customSupabaseClient';
+import { createPayoutEmailShell } from './payoutEmailShell';
+
+const invokeEmailFunction = async (functionName, body) => {
+  const { data, error } = await supabase.functions.invoke(functionName, { body });
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || `Edge funkce ${functionName} vrátila chybu.`);
+  return data;
+};
 
 /**
  * Creates HTML email template
  */
 const createEmailTemplate = (subject, content) => {
-  return `
-    <!DOCTYPE html>
-    <html lang="cs">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>${subject}</title>
-    </head>
-    <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
-      <div style="max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
-          <h1 style="color: #ffffff; margin: 0; font-size: 24px;">${subject}</h1>
-        </div>
-        <div style="padding: 30px;">
-          ${content}
-        </div>
-        <div style="background: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
-          <p style="margin: 0; color: #6b7280; font-size: 12px;">
-            Tento email byl odeslán automaticky systémem EKV Group.<br>
-            Pro více informací se přihlaste do portálu.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
+  return createPayoutEmailShell(subject, content);
 };
 
 /**
@@ -69,6 +52,7 @@ export const sendPayoutCreatedEmail = async (payout) => {
       throw fetchError;
     }
 
+    const memberEmail = payoutData?.members?.email;
     const memberName = payoutData?.members?.name || 'Neznámý pracovník';
     const amount = payout.amount || 0;
 
@@ -118,21 +102,60 @@ export const sendPayoutCreatedEmail = async (payout) => {
     
     const htmlContent = createEmailTemplate(subject, content);
     
-    const { data, error } = await supabase.functions.invoke('send-admin-payout-notification', {
-      body: { subject, htmlContent }
-    });
-    
-    if (error) {
-      console.error('[PayoutEmail] Edge function error:', error);
-      throw error;
+    const adminData = await invokeEmailFunction('send-admin-payout-notification', { subject, htmlContent });
+
+    let memberData = null;
+    if (memberEmail) {
+      const memberSubject = 'Žádost o výplatu přijata';
+      const memberContent = `
+        <p style="color: #374151; font-size: 16px; line-height: 1.6;">
+          Dobrý den <strong>${memberName}</strong>,
+        </p>
+        <p style="color: #374151; font-size: 16px; line-height: 1.6;">
+          Vaše žádost o výplatu ve výši <strong style="color: #10b981;">${amount.toLocaleString('cs-CZ')} Kč</strong> byla přijata a čeká na schválení.
+        </p>
+        <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 24px 0;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Stav:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600; text-align: right;">Čeká na schválení</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Částka:</td>
+              <td style="padding: 8px 0; color: #10b981; font-size: 14px; font-weight: 600; text-align: right;">${amount.toLocaleString('cs-CZ')} Kč</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">ID žádosti:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 14px; font-family: monospace; text-align: right;">${payout.id}</td>
+            </tr>
+          </table>
+        </div>
+        <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+          Jakmile bude žádost schválena, přijde vám další e-mail s instrukcemi k nahrání faktury.
+        </p>
+      `;
+      memberData = await invokeEmailFunction('send-payout-email', {
+        to: memberEmail,
+        subject: memberSubject,
+        htmlContent: createEmailTemplate(memberSubject, memberContent),
+      });
     }
     
     console.log('[PayoutEmail] Payout created notification sent successfully:', {
       payoutId: payout.id,
-      response: data
+      adminResponse: adminData,
+      memberResponse: memberData
     });
+
+    if (!memberEmail) {
+      return {
+        success: false,
+        error: 'Zaměstnanec nemá vyplněný email, potvrzení žádosti nebylo komu odeslat.',
+        data: { admin: adminData, member: null }
+      };
+    }
     
-    return { success: true, data };
+    return { success: true, data: { admin: adminData, member: memberData } };
     
   } catch (error) {
     console.error('[PayoutEmail] sendPayoutCreatedEmail error:', {
@@ -231,14 +254,7 @@ export const sendPayoutApprovedEmail = async (payout) => {
     
     const htmlContent = createEmailTemplate(subject, content);
     
-    const { data, error } = await supabase.functions.invoke('send-payout-email', {
-      body: { to: memberEmail, subject, htmlContent }
-    });
-    
-    if (error) {
-      console.error('[PayoutEmail] Edge function error:', error);
-      throw error;
-    }
+    const data = await invokeEmailFunction('send-payout-email', { to: memberEmail, subject, htmlContent });
     
     console.log('[PayoutEmail] Approval notification sent successfully:', {
       payoutId: payout.id,
@@ -370,14 +386,7 @@ export const sendInvoiceUploadedNotification = async (payout) => {
     
     const htmlContent = createEmailTemplate(subject, content);
     
-    const { data, error } = await supabase.functions.invoke('send-admin-payout-notification', {
-      body: { subject, htmlContent }
-    });
-    
-    if (error) {
-      console.error('[PayoutEmail] Edge function error:', error);
-      throw error;
-    }
+    const data = await invokeEmailFunction('send-admin-payout-notification', { subject, htmlContent });
     
     console.log('[PayoutEmail] Invoice uploaded notification sent successfully:', {
       payoutId: payout.id,
@@ -485,14 +494,7 @@ export const sendPayoutPaidEmail = async (payout) => {
     
     const htmlContent = createEmailTemplate(subject, content);
     
-    const { data, error } = await supabase.functions.invoke('send-payout-email', {
-      body: { to: memberEmail, subject, htmlContent }
-    });
-    
-    if (error) {
-      console.error('[PayoutEmail] Edge function error:', error);
-      throw error;
-    }
+    const data = await invokeEmailFunction('send-payout-email', { to: memberEmail, subject, htmlContent });
     
     console.log('[PayoutEmail] Payment processed notification sent successfully:', {
       payoutId: payout.id,

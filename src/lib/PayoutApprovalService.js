@@ -33,6 +33,13 @@ export const logPayoutApproval = async (payoutId, adminId, adminNote, approvedWi
 export const approvePayout = async (payoutId, adminNote, approvedWithoutInvoice) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
+    const { data: currentPayout, error: fetchError } = await supabase
+      .from('payouts')
+      .select('variable_symbol')
+      .eq('id', payoutId)
+      .single();
+
+    if (fetchError) throw fetchError;
     
     const updateData = {
       status: 'approved',
@@ -40,6 +47,10 @@ export const approvePayout = async (payoutId, adminNote, approvedWithoutInvoice)
       admin_note: adminNote,
       approved_at: new Date().toISOString()
     };
+
+    if (!currentPayout?.variable_symbol) {
+      updateData.variable_symbol = Math.floor(Math.random() * 10000000000).toString().padStart(10, '0');
+    }
 
     const { data, error } = await supabase
       .from('payouts')

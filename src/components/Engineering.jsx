@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
   Plus, Wrench, Search, Filter, LayoutGrid, List, Calendar,
-  CheckCircle, XCircle, Hourglass, AlertTriangle, RefreshCw,
+  CheckCircle, Hourglass, AlertTriangle, RefreshCw,
   MoreHorizontal, Edit2, Trash2, Eye, Building,
   Download, BarChart3, Upload, FileSpreadsheet, UserPlus
 } from 'lucide-react';
@@ -26,43 +26,31 @@ import EngineeringDetail from '@/components/EngineeringDetail';
 import EngineeringGanttChart from '@/components/EngineeringGanttChart';
 import SubjectDialog from '@/components/SubjectDialog';
 import PageHeader from '@/components/ui/page-header';
-
-const activityStatusConfig = {
-  'new': { label: 'Nová', icon: Clock, color: 'text-blue-600', bg: 'bg-blue-100', variant: 'info' },
-  'in_progress': { label: 'V řešení', icon: Hourglass, color: 'text-orange-600', bg: 'bg-orange-100', variant: 'warning' },
-  'waiting_for_input': { label: 'Čeká na podklady', icon: AlertTriangle, color: 'text-yellow-600', bg: 'bg-yellow-100', variant: 'warning' },
-  'waiting_for_approval': { label: 'Čeká na schválení', icon: CheckCircle, color: 'text-purple-600', bg: 'bg-purple-100', variant: 'secondary' },
-  'done': { label: 'Hotovo', icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100', variant: 'success' },
-  'rejected': { label: 'Zamítnuto', icon: XCircle, color: 'text-red-600', bg: 'bg-red-100', variant: 'destructive' },
-};
-
-function Clock(props) {
-    return <Calendar {...props} />
-}
+import { activityStatusConfig, formatEngineeringCategory, getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
+import EngineeringStatusBadge from '@/components/engineering/EngineeringStatusBadge';
 
 
 const StatCard = ({ icon: Icon, title, value, subtitle, color = "text-blue-600" }) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
-    whileHover={{ y: -4, scale: 1.02 }}
-    className="group bg-white border rounded-xl p-6 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all duration-200"
+    className="group rounded-lg border bg-white p-5 shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-md"
   >
-    <div className="flex items-center justify-between mb-4">
-      <div className={cn("p-3 bg-muted rounded-lg", color)}>
-        <Icon className="w-6 h-6" />
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0 space-y-1">
+        <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
+        <p className="text-2xl font-bold tracking-tight text-slate-900">{value}</p>
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
       </div>
-    </div>
-    <div className="space-y-2">
-      <h3 className="font-semibold text-lg">{title}</h3>
-      <p className="text-3xl font-bold">{value}</p>
-      {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+      <div className={cn("rounded-md bg-slate-50 p-2.5", color)}>
+        <Icon className="h-5 w-5" />
+      </div>
     </div>
   </motion.div>
 );
 
 const ActivityCard = ({ activity, onCardClick, onEdit, onDelete, onStatusChange, onDragStart, hasPermission }) => {
-  const config = activityStatusConfig[activity.status] || activityStatusConfig['new'];
+  const config = getActivityStatusConfig(activity.status);
   const StatusIcon = config.icon;
   const isOverdue = activity.end_date && isPast(parseISO(activity.end_date)) && activity.status !== 'done';
   const daysRemaining = activity.end_date ? differenceInDays(parseISO(activity.end_date), new Date()) : null;
@@ -88,9 +76,7 @@ const ActivityCard = ({ activity, onCardClick, onEdit, onDelete, onStatusChange,
           <StatusIcon className={cn("w-4 h-4 flex-shrink-0", config.color)} />
           <h3 className="font-semibold text-sm truncate">{activity.subject}</h3>
         </div>
-        <Badge variant={config.variant} className="text-xs flex-shrink-0">
-          {config.label}
-        </Badge>
+        <EngineeringStatusBadge status={activity.status} className="flex-shrink-0" showIcon={false} />
       </div>
       <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{activity.description}</p>
       <div className="space-y-2 text-sm mt-3">
@@ -123,7 +109,7 @@ const ActivityCard = ({ activity, onCardClick, onEdit, onDelete, onStatusChange,
         {activity.category && (
           <div className="flex items-center gap-2 text-muted-foreground">
             <Wrench className="w-3 h-3 flex-shrink-0" />
-            <span className="text-xs">{activity.category === 'dotceny_stavbou' ? 'Dotčený stavbou' : activity.category}</span>
+            <span className="text-xs">{formatEngineeringCategory(activity.category)}</span>
           </div>
         )}
       </div>
@@ -268,7 +254,7 @@ const EngineeringTable = ({ activities, onRowClick, onEdit, onDelete, onStatusCh
             </TableHeader>
             <TableBody>
               {activities.map((activity) => {
-                const config = activityStatusConfig[activity.status] || activityStatusConfig['new'];
+                const config = getActivityStatusConfig(activity.status);
                 const StatusIcon = config.icon;
                 const isOverdue = activity.end_date && isPast(parseISO(activity.end_date)) && activity.status !== 'done';
 
@@ -300,7 +286,7 @@ const EngineeringTable = ({ activities, onRowClick, onEdit, onDelete, onStatusCh
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs">
-                         {activity.category === 'dotceny_stavbou' ? 'Dotčený stavbou' : (activity.category || 'N/A')}
+                         {formatEngineeringCategory(activity.category)}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -315,10 +301,7 @@ const EngineeringTable = ({ activities, onRowClick, onEdit, onDelete, onStatusCh
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={config.variant} className="text-xs">
-                        <StatusIcon className="w-3 h-3 mr-1" />
-                        {config.label}
-                      </Badge>
+                      <EngineeringStatusBadge status={activity.status} />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end items-center gap-2">
@@ -404,7 +387,6 @@ const Engineering = () => {
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [viewMode, setViewMode] = useState('kanban'); // 'kanban', 'table', 'gantt'
   const [loading, setLoading] = useState(true);
-  const [importFile, setImportFile] = useState(null);
 
   // Default form type state
   const [activeFormType, setActiveFormType] = useState('general'); // 'general' or 'dotceny'
@@ -598,6 +580,13 @@ const Engineering = () => {
   const completedActivities = activities.filter(a => a.status === 'done').length;
   const inProgressActivities = activities.filter(a => a.status === 'in_progress').length;
   const overdueActivities = activities.filter(a => a.end_date && isPast(parseISO(a.end_date)) && a.status !== 'done').length;
+  const hasActiveFilters = searchTerm.trim() !== '' || statusFilter !== 'all' || categoryFilter !== 'all';
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setCategoryFilter('all');
+  };
 
   const handleExportDotceny = () => {
     const dataToExport = activities
@@ -728,91 +717,75 @@ const Engineering = () => {
           title="Inženýring"
           description="Správa inženýrských činností a vyjádření k projektům"
           actions={
-            <>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
               {hasPermission('engineering', 'can_create') && (
-                <>
-                  <Button onClick={() => handleOpenForm(null, 'general')} className="w-full md:w-auto">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Obecná aktivita
-                  </Button>
-                  <Button onClick={() => handleOpenForm(null, 'dotceny')} variant="secondary" className="w-full md:w-auto">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Dotčený stavbou
-                  </Button>
-                  <Button onClick={() => setIsSubjectDialogOpen(true)} variant="outline" className="w-full md:w-auto">
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Přidat subjekt
-                  </Button>
-                </>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button className="w-full sm:w-auto">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Nový záznam
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72">
+                    <DropdownMenuLabel>Vyberte typ záznamu</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleOpenForm(null, 'general')} className="flex-col items-start gap-1">
+                      <div className="flex items-center gap-2 font-medium">
+                        <Wrench className="w-4 h-4 text-slate-500" />
+                        Obecná aktivita
+                      </div>
+                      <span className="pl-6 text-xs text-muted-foreground">DOSS, sítě, ostatní inženýrská agenda</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleOpenForm(null, 'dotceny')} className="flex-col items-start gap-1">
+                      <div className="flex items-center gap-2 font-medium">
+                        <Building className="w-4 h-4 text-slate-500" />
+                        Dotčený stavbou
+                      </div>
+                      <span className="pl-6 text-xs text-muted-foreground">Majetkoprávní záznam vlastníka nebo subjektu</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setIsSubjectDialogOpen(true)} className="flex-col items-start gap-1">
+                      <div className="flex items-center gap-2 font-medium">
+                        <UserPlus className="w-4 h-4 text-slate-500" />
+                        Subjekt
+                      </div>
+                      <span className="pl-6 text-xs text-muted-foreground">Samostatný kontakt pro další použití</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
-            </>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-full bg-white sm:w-auto">
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    Excel
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Dotčené stavbou</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleExportDotceny}>
+                    <Download className="w-4 h-4 mr-2" /> Exportovat
+                  </DropdownMenuItem>
+                  <div className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground">
+                    <Upload className="w-4 h-4 mr-2" />
+                    Importovat
+                    <input
+                      type="file"
+                      accept=".xlsx, .xls"
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                      onChange={handleImportDotceny}
+                    />
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button variant="outline" onClick={fetchActivities} className="w-full bg-white sm:w-auto">
+                <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
+                Aktualizovat
+              </Button>
+            </div>
           }
         />
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="hidden"
-        >
-          <div>
-            <h1 className="text-3xl font-bold text-slate-800 mb-2 flex items-center gap-3">
-              <Wrench className="w-8 h-8 text-primary" />
-              Inženýring
-            </h1>
-            <p className="text-muted-foreground">
-              Správa inženýrských činností a vyjádření k projektům
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-             {hasPermission('engineering', 'can_create') && (
-              <>
-                  <Button onClick={() => handleOpenForm(null, 'general')} className="w-full md:w-auto">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Obecná aktivita
-                  </Button>
-                  <Button onClick={() => handleOpenForm(null, 'dotceny')} variant="secondary" className="w-full md:w-auto">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Dotčený stavbou
-                  </Button>
-                   <Button onClick={() => setIsSubjectDialogOpen(true)} variant="outline" className="w-full md:w-auto">
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Přidat subjekt
-                  </Button>
-              </>
-            )}
-             <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-full md:w-auto">
-                        <FileSpreadsheet className="w-4 h-4 mr-2" />
-                        Excel
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                    <DropdownMenuLabel>Dotčené stavbou</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleExportDotceny}>
-                        <Download className="w-4 h-4 mr-2" /> Exportovat
-                    </DropdownMenuItem>
-                     <div className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
-                        <Upload className="w-4 h-4 mr-2" /> 
-                        Importovat
-                        <input 
-                            type="file" 
-                            accept=".xlsx, .xls" 
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            onChange={handleImportDotceny}
-                        />
-                    </div>
-                </DropdownMenuContent>
-            </DropdownMenu>
-
-            <Button variant="outline" size="sm" onClick={fetchActivities} className="bg-white/80 hidden md:inline-flex">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Aktualizovat
-            </Button>
-          </div>
-        </motion.div>
-
         {/* Inline Engineering Form */}
         <AnimatePresence>
             {isFormOpen && (
@@ -870,26 +843,42 @@ const Engineering = () => {
         </motion.div>
 
         {/* Filters and Controls */}
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-              {/* Search */}
-              <div className="relative flex-1 w-full max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input
-                  placeholder="Hledat aktivitu, projekt..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+        <Card className="border-slate-200 shadow-sm">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Pracovní přehled</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Zobrazeno {filteredActivities.length} z {totalActivities} aktivit
+                  </p>
+                </div>
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                  <div className="relative w-full sm:w-80">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Hledat aktivitu, projekt nebo kód..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  {hasActiveFilters && (
+                    <Button variant="ghost" size="sm" onClick={resetFilters} className="shrink-0">
+                      Zrušit filtry
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              {/* Filters */}
-              <div className="flex flex-wrap gap-2 items-center">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-muted-foreground" />
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Filter className="h-4 w-4" />
+                    Filtry
+                  </div>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-48">
+                    <SelectTrigger className="w-full bg-white sm:w-56">
                       <SelectValue placeholder="Filtrovat dle stavu" />
                     </SelectTrigger>
                     <SelectContent>
@@ -899,42 +888,45 @@ const Engineering = () => {
                       ))}
                     </SelectContent>
                   </Select>
+
+                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                    <SelectTrigger className="w-full bg-white sm:w-60">
+                      <SelectValue placeholder="Filtrovat dle kategorie" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {uniqueCategories.map(category => (
+                        <SelectItem key={category} value={category}>
+                          {formatEngineeringCategory(category)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Filtrovat dle kategorie" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {uniqueCategories.map(category => (
-                      <SelectItem key={category} value={category}>
-                        {category === 'all' ? 'Všechny kategorie' : (category === 'dotceny_stavbou' ? 'Dotčený stavbou' : category)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <div className="flex gap-2">
+                <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1 sm:flex sm:w-auto">
                   <Button
-                    variant={viewMode === 'kanban' ? 'default' : 'outline'}
+                    variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
                     onClick={() => setViewMode('kanban')}
                     size="sm"
+                    className="justify-center"
                   >
-                    <LayoutGrid className="w-4 h-4 mr-2" /> Kanban
+                    <LayoutGrid className="w-4 h-4 sm:mr-2" /><span className="hidden sm:inline">Kanban</span>
                   </Button>
                   <Button
-                    variant={viewMode === 'table' ? 'default' : 'outline'}
+                    variant={viewMode === 'table' ? 'secondary' : 'ghost'}
                     onClick={() => setViewMode('table')}
                     size="sm"
+                    className="justify-center"
                   >
-                    <List className="w-4 h-4 mr-2" /> Tabulka
+                    <List className="w-4 h-4 sm:mr-2" /><span className="hidden sm:inline">Tabulka</span>
                   </Button>
                   <Button
-                    variant={viewMode === 'gantt' ? 'default' : 'outline'}
+                    variant={viewMode === 'gantt' ? 'secondary' : 'ghost'}
                     onClick={() => setViewMode('gantt')}
                     size="sm"
+                    className="justify-center"
                   >
-                    <BarChart3 className="w-4 h-4 mr-2" /> Gantt
+                    <BarChart3 className="w-4 h-4 sm:mr-2" /><span className="hidden sm:inline">Gantt</span>
                   </Button>
                 </div>
               </div>
@@ -1010,16 +1002,32 @@ const Engineering = () => {
                   Zkuste změnit filtry nebo vytvořte novou aktivitu.
                 </p>
                 {hasPermission('engineering', 'can_create') && (
-                  <div className="flex justify-center gap-4">
-                      <Button onClick={() => handleOpenForm(null, 'general')}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button>
                         <Plus className="w-4 h-4 mr-2" />
-                        Obecná aktivita
+                        Nový záznam
                       </Button>
-                      <Button onClick={() => handleOpenForm(null, 'dotceny')} variant="secondary">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Dotčený stavbou
-                      </Button>
-                  </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="center" className="w-72">
+                      <DropdownMenuLabel>Vyberte typ záznamu</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleOpenForm(null, 'general')} className="flex-col items-start gap-1">
+                        <div className="flex items-center gap-2 font-medium">
+                          <Wrench className="w-4 h-4 text-slate-500" />
+                          Obecná aktivita
+                        </div>
+                        <span className="pl-6 text-xs text-muted-foreground">DOSS, sítě, ostatní inženýrská agenda</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleOpenForm(null, 'dotceny')} className="flex-col items-start gap-1">
+                        <div className="flex items-center gap-2 font-medium">
+                          <Building className="w-4 h-4 text-slate-500" />
+                          Dotčený stavbou
+                        </div>
+                        <span className="pl-6 text-xs text-muted-foreground">Majetkoprávní záznam vlastníka nebo subjektu</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </CardContent>
             </Card>

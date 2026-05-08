@@ -1,19 +1,11 @@
 import { supabase } from '@/lib/customSupabaseClient';
 import { templates } from './payoutEmailTemplates';
 
-const sendPayoutEmail = async ({ to, subject, htmlContent }) => {
-  if (!to) {
-    return { success: false, error: 'No recipient email found' };
-  }
-
-  const { data, error } = await supabase.functions.invoke('send-payout-email', {
-    body: { to, subject, htmlContent }
-  });
-
+const invokeEmailFunction = async (functionName, body) => {
+  const { data, error } = await supabase.functions.invoke(functionName, { body });
   if (error) throw error;
-  if (data && data.success === false) throw new Error(data.error || 'Payout email function failed');
-
-  return { success: true, data };
+  if (data?.success === false) throw new Error(data.error || `Edge funkce ${functionName} vratila chybu.`);
+  return data;
 };
 
 export const sendPayoutNotification = async ({
@@ -25,12 +17,12 @@ export const sendPayoutNotification = async ({
   approved_without_invoice,
   action,
   emailOverride,
-  memberNameOverride
+  memberNameOverride,
 }) => {
   try {
     let member = {
       email: emailOverride,
-      name: memberNameOverride
+      name: memberNameOverride,
     };
 
     if (memberId && (!member.email || !member.name)) {
@@ -44,10 +36,10 @@ export const sendPayoutNotification = async ({
 
       member = {
         email: member.email || data?.email,
-        name: member.name || data?.name
+        name: member.name || data?.name,
       };
     }
-      
+
     if (!member?.email) {
       console.warn('No email found for payout notification', { payoutId, memberId, status });
       return { success: false, error: 'No email found' };
@@ -58,27 +50,28 @@ export const sendPayoutNotification = async ({
       amount: amount || 0,
       reason: reason || '',
       approved_without_invoice,
-      action: action || status
+      action: action || status,
     };
 
-    let subject = 'Aktualizace stavu výplaty';
+    let subject = 'Aktualizace stavu vyplaty';
     let htmlContent = '';
 
     if (templates[status]) {
       htmlContent = templates[status](templateData);
-      switch(status) {
-        case 'request_created': subject = 'Nová žádost o výplatu přijata'; break;
-        case 'approved': subject = 'Vaše žádost o výplatu byla schválena'; break;
-        case 'rejected': subject = 'Vaše žádost o výplatu byla zamítnuta'; break;
-        case 'invoice_uploaded': subject = 'Faktura úspěšně nahrána'; break;
-        case 'paid': subject = 'Výplata odeslána na váš účet'; break;
-        case 'completed': subject = 'Výplata uzavřena'; break;
+      switch (status) {
+        case 'request_created': subject = 'Nova zadost o vyplatu prijata'; break;
+        case 'approved': subject = 'Vase zadost o vyplatu byla schvalena'; break;
+        case 'rejected': subject = 'Vase zadost o vyplatu byla zamitnuta'; break;
+        case 'invoice_uploaded': subject = 'Faktura uspesne nahrana'; break;
+        case 'paid': subject = 'Vyplata odeslana na vas ucet'; break;
+        case 'completed': subject = 'Vyplata uzavrena'; break;
       }
     } else {
       return { success: false, error: 'Unknown status' };
     }
 
-    return await sendPayoutEmail({ to: member.email, subject, htmlContent });
+    const data = await invokeEmailFunction('send-payout-email', { to: member.email, subject, htmlContent });
+    return { success: true, data };
   } catch (error) {
     console.error('Error in sendPayoutNotification:', error);
     return { success: false, error: error.message };
@@ -88,14 +81,8 @@ export const sendPayoutNotification = async ({
 export const sendAdminPayoutNotification = async ({ memberName, amount, action }) => {
   try {
     const htmlContent = templates.admin_notification({ memberName, amount, action });
-    const subject = `[Admin] Výplaty: ${action} - ${memberName}`;
-
-    const { data, error } = await supabase.functions.invoke('send-admin-payout-notification', {
-      body: { subject, htmlContent }
-    });
-
-    if (error) throw error;
-    if (data && data.success === false) throw new Error(data.error || 'Admin payout notification failed');
+    const subject = `[Admin] Vyplaty: ${action} - ${memberName}`;
+    const data = await invokeEmailFunction('send-admin-payout-notification', { subject, htmlContent });
     return { success: true, data };
   } catch (error) {
     console.error('Error in sendAdminPayoutNotification:', error);

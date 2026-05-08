@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { History, ChevronLeft } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
 
 const statusLabels = {
   nabidka: 'Nabídka',
@@ -11,12 +12,6 @@ const statusLabels = {
   ready_for_delivery: 'Připraveno k dodání',
   delivered: 'Dodáno',
   closed: 'Uzavřeno'
-};
-
-const engineeringStatusConfig = {
-  new: { label: 'Nová' },
-  in_progress: { label: 'V řešení' },
-  done: { label: 'Hotovo' },
 };
 
 const ProjectHistory = () => {
@@ -67,7 +62,7 @@ const ProjectHistory = () => {
             case 'update_task_status':
                 return `změnil stav úkolu "${log.details.task_name}" z "${log.details.old_status}" na "${log.details.new_status}"`;
             case 'update_activity_status':
-                return `změnil stav činnosti "${log.details.activity_subject}" z "${engineeringStatusConfig[log.details.old_status]?.label || log.details.old_status}" na "${engineeringStatusConfig[log.details.new_status]?.label || log.details.new_status}"`;
+                return `změnil stav činnosti "${log.details.activity_subject}" z "${getActivityStatusConfig(log.details.old_status).label || log.details.old_status}" na "${getActivityStatusConfig(log.details.new_status).label || log.details.new_status}"`;
             default:
                 return 'provedl neznámou akci';
         }

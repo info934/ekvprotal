@@ -10,9 +10,9 @@ import PageHeader from '@/components/ui/page-header';
 const actionLabels = {
   'create_project': 'Vytvořil projekt',
   'update_project': 'Upravil projekt',
-  'create_member': 'Vytvořil projektanta',
-  'update_member': 'Upravil projektanta',
-  'delete_member': 'Smazal projektanta',
+  'create_member': 'Vytvořil zaměstnance',
+  'update_member': 'Upravil zaměstnance',
+  'delete_member': 'Smazal zaměstnance',
   'create_subcontractor': 'Vytvořil subdodavatele',
   'update_subcontractor': 'Upravil subdodavatele',
   'delete_subcontractor': 'Smazal subdodavatele',

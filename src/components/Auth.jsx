@@ -125,18 +125,24 @@ const LoginForm = ({
   onSwitchToReset,
   onSubmit,
   onSocialLogin,
-  onFeatureNotImplemented
 }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState(null);
   
   const handleSubmit = async e => {
     e.preventDefault();
     setLoading(true);
     await onSubmit(email, password);
     setLoading(false);
+  };
+
+  const handleSocialLogin = async (provider) => {
+    setSocialLoading(provider);
+    await onSocialLogin(provider);
+    setSocialLoading(null);
   };
   
   return (
@@ -246,21 +252,21 @@ const LoginForm = ({
               <Button 
                 variant="outline" 
                 type="button" 
-                onClick={onFeatureNotImplemented} 
-                disabled={true}
+                onClick={() => handleSocialLogin('google')} 
+                disabled={!!socialLoading}
                 className="h-12 border-gray-200 hover:bg-gray-50"
               >
-                <GoogleIcon /> 
+                {socialLoading === 'google' ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <GoogleIcon />} 
                 <span className="ml-2">Google</span>
               </Button>
               <Button 
                 variant="outline" 
                 type="button" 
-                onClick={onFeatureNotImplemented} 
-                disabled={true}
+                onClick={() => handleSocialLogin('azure')} 
+                disabled={!!socialLoading}
                 className="h-12 border-gray-200 hover:bg-gray-50"
               >
-                <MicrosoftIcon /> 
+                {socialLoading === 'azure' ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <MicrosoftIcon />} 
                 <span className="ml-2">Microsoft</span>
               </Button>
             </div>
@@ -505,7 +511,8 @@ const Auth = () => {
   const [view, setView] = useState('login'); // 'login', 'signup', 'reset'
   const {
     signIn,
-    signUp
+    signUp,
+    signInWithSso
   } = useAuth();
   const {
     toast
@@ -556,10 +563,21 @@ const Auth = () => {
   };
 
   const handleSocialLogin = async (provider) => {
-    // This function is now disabled as per user request
+    const providerLabel = provider === 'azure' ? 'Microsoft' : 'Google';
+    const { error } = await signInWithSso(provider);
+
+    if (!error) {
+      toast({
+        title: `Přesměrovávám na ${providerLabel}`,
+        description: 'Po ověření budete vráceni zpět do portálu.',
+      });
+      return;
+    }
+
     toast({
-        title: '🚧 Tato funkce zatím není implementována – ale nebojte! Můžete si ji vyžádat v dalším promptu! 🚀',
-        variant: 'default',
+      title: `${providerLabel} SSO není dostupné`,
+      description: 'Zkontrolujte, že je provider zapnutý v Supabase Auth nastavení.',
+      variant: 'destructive',
     });
   };
 
@@ -596,7 +614,6 @@ const Auth = () => {
                 onSwitchToSignup={() => setView('signup')} 
                 onSwitchToReset={() => setView('reset')} 
                 onSocialLogin={handleSocialLogin} 
-                onFeatureNotImplemented={handleSocialLogin} 
               />
             )}
             {view === 'signup' && (

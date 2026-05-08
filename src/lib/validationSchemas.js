@@ -7,7 +7,7 @@ const emptyToNull = (val) => (val === '' ? null : val);
 export const MemberSchema = z.object({
   name: z.string().min(1, 'Jméno je povinné'),
   email: z.string().email('Neplatný email').optional().or(z.literal('')),
-  role_id: z.string().uuid('Vyberte roli').optional().nullable(),
+  role_id: z.string().uuid('Vyberte pozici').optional().nullable(),
   hourly_rate: z.coerce.number().nonnegative('Hodinová sazba nesmí být záporná').optional().default(0),
   phone: z.string().optional().nullable(),
   internal_note: z.string().optional().nullable(),
@@ -80,7 +80,7 @@ export const PayoutItemSchema = z.object({
 });
 
 export const PayoutSchema = z.object({
-  member_id: z.string().uuid('Vyberte projektanta'),
+  member_id: z.string().uuid('Vyberte zaměstnance'),
   request_date: z.string().min(1, 'Datum žádosti je povinné'),
   reason: z.string().optional().nullable(),
   items: z.array(PayoutItemSchema).min(1, 'Musíte vybrat alespoň jednu položku k vyplacení'),

@@ -6,8 +6,10 @@ import Sidebar from '@/components/Sidebar';
 import Dashboard from '@/components/Dashboard';
 import Projects from '@/components/Projects';
 import Documents from '@/components/Documents';
+import CRM from '@/components/CRM';
 import Engineering from '@/components/Engineering';
 import Payouts from '@/components/Payouts';
+import PayoutFormPage from '@/components/PayoutFormPage';
 import HourlyPayoutRequestsAdmin from '@/components/HourlyPayoutRequestsAdmin';
 import AuditLog from '@/components/AuditLog';
 import ProjectDetail from '@/components/ProjectDetail';
@@ -40,6 +42,7 @@ import RealizaceOrderForm from '@/components/RealizaceOrderForm';
 import SettingsProfile from '@/components/SettingsProfile';
 import SettingsPortal from '@/components/SettingsPortal';
 import SettingsDictionaries from '@/components/SettingsDictionaries';
+import SettingsStorage from '@/components/SettingsStorage';
 import ProjectTemplatesSettings from '@/components/ProjectTemplatesSettings';
 import ProjectTemplatesPage from '@/components/ProjectTemplatesPage';
 import BackupMaintenance from '@/components/BackupMaintenance';
@@ -123,7 +126,7 @@ function AppContent() {
       {session ? (
         <>
           <Sidebar />
-          <main className="min-w-0 flex-1 overflow-x-hidden lg:ml-56 transition-all duration-300 print:ml-0 print:p-0">
+          <main className="min-w-0 flex-1 overflow-x-hidden transition-all duration-300 lg:ml-[var(--sidebar-width,16rem)] print:ml-0 print:p-0">
             <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />
@@ -144,6 +147,7 @@ function AppContent() {
                 <Route path="/realizace/:realizaceId/orders/new" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
                 <Route path="/realizace/:realizaceId/orders/:orderId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
                 <Route path="/documents" element={<PrivateRoute module="documents"><Documents /></PrivateRoute>} />
+                <Route path="/crm" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
                 <Route path="/engineering" element={<PrivateRoute module="engineering"><Engineering /></PrivateRoute>} />
                 <Route path="/tasks" element={<PrivateRoute module="tasks"><Tasks /></PrivateRoute>} />
                 <Route path="/attendance" element={<PrivateRoute module="attendance"><Attendance /></PrivateRoute>} />
@@ -153,6 +157,7 @@ function AppContent() {
                 <Route path="/members/:memberId" element={<PrivateRoute module="members"><MemberDetail /></PrivateRoute>} />
                 
                 <Route path="/payouts" element={<ProtectedRoute><Payouts /></ProtectedRoute>} />
+                <Route path="/payouts/new" element={<ProtectedRoute><PayoutFormPage /></ProtectedRoute>} />
                 <Route path="/payouts/hourly-admin" element={<PrivateRoute module="payouts" level="can_admin"><div className="p-8"><HourlyPayoutRequestsAdmin /></div></PrivateRoute>} />
 
                 <Route path="/overhead-costs" element={<PrivateRoute module="finance" level="can_admin"><OverheadCosts /></PrivateRoute>} />
@@ -170,6 +175,7 @@ function AppContent() {
                   <Route path="portal" element={<PrivateRoute module="settings" level="can_admin"><SettingsPortal /></PrivateRoute>} />
                   <Route path="order-templates" element={<PrivateRoute module="settings" level="can_admin"><OrderTemplateManager /></PrivateRoute>} />
                   <Route path="dictionaries" element={<PrivateRoute module="settings" level="can_admin"><SettingsDictionaries /></PrivateRoute>} />
+                  <Route path="storage" element={<PrivateRoute module="settings" level="can_admin"><SettingsStorage /></PrivateRoute>} />
                   <Route path="project-templates" element={<PrivateRoute module="settings" level="can_admin"><ProjectTemplatesSettings /></PrivateRoute>} />
                   <Route path="backup-maintenance" element={<ProtectedRoute requiredRole="admin"><BackupMaintenance /></ProtectedRoute>} />
                 </Route>

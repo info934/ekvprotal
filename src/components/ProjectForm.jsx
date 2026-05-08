@@ -21,6 +21,7 @@ import MemberSelect from '@/components/MemberSelect';
 import SubjectSelect from '@/components/SubjectSelect';
 import { parseApiError } from '@/lib/apiValidation';
 import PageHeader from '@/components/ui/page-header';
+import { ensureEntityFolder } from '@/lib/documentStorageService';
 
 const ProjectForm = () => {
     const { projectId } = useParams();
@@ -179,6 +180,18 @@ const ProjectForm = () => {
             } else {
                 const { data: newProject, error } = await supabase.from('projects').insert(dataToSave).select().single();
                 if (error) throw error;
+
+                try {
+                    await ensureEntityFolder({
+                        entityType: 'project',
+                        entityId: newProject.id,
+                        code: newProject.code,
+                        name: newProject.name,
+                    });
+                } catch (storageError) {
+                    console.warn('Failed to prepare project storage folder', storageError);
+                    toast({ title: 'Projekt vytvořen, ale složku dokumentů se nepodařilo připravit.', variant: 'warning' });
+                }
                 
                 if (selectedTemplateId && selectedTemplateId !== 'none') {
                     const tpl = templates.find(t => t.id === selectedTemplateId);

@@ -21,6 +21,13 @@ const statusConfig = {
     'zrušena': { label: 'Zrušena', variant: 'destructive' },
 };
 
+const commercialStatusConfig = {
+    offer: { label: 'Nabídka', variant: 'outline' },
+    order: { label: 'Objednávka', variant: 'secondary' },
+    offer_accepted: { label: 'Nabídka přijata', variant: 'success' },
+    cancelled: { label: 'Zrušeno', variant: 'destructive' },
+};
+
 const RealizaceOrdersTab = ({ realizaceId, realization, onOrdersChanged, distributionAmount }) => {
     const { toast } = useToast();
     const navigate = useNavigate();
@@ -81,7 +88,7 @@ const RealizaceOrdersTab = ({ realizaceId, realization, onOrdersChanged, distrib
                     </div>
                     {canEdit && (
                         <Button onClick={() => navigate(`/realizace/${realizaceId}/orders/new`)}>
-                            <Plus className="w-4 h-4 mr-2" /> Vytvořit objednávku
+                            <Plus className="w-4 h-4 mr-2" /> Vytvořit nabídku / objednávku
                         </Button>
                     )}
                 </CardHeader>
@@ -96,7 +103,9 @@ const RealizaceOrdersTab = ({ realizaceId, realization, onOrdersChanged, distrib
                                         <TableHead>Číslo obj.</TableHead>
                                         <TableHead>Dodavatel</TableHead>
                                         <TableHead>Datum</TableHead>
+                                        <TableHead>Typ</TableHead>
                                         <TableHead>Stav</TableHead>
+                                        <TableHead>PoloĹľky</TableHead>
                                         {canViewAmounts && <TableHead className="text-right">Částka</TableHead>}
                                         <TableHead className="text-right">Akce</TableHead>
                                     </TableRow>
@@ -104,17 +113,21 @@ const RealizaceOrdersTab = ({ realizaceId, realization, onOrdersChanged, distrib
                                 <TableBody>
                                     {orders.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={canViewAmounts ? 6 : 5} className="text-center h-24">Nebyly nalezeny žádné objednávky.</TableCell>
+                                            <TableCell colSpan={canViewAmounts ? 8 : 7} className="text-center h-24">Nebyly nalezeny žádné objednávky.</TableCell>
                                         </TableRow>
                                     ) : (
                                         orders.map(order => {
                                             const status = statusConfig[order.status] || { label: order.status, variant: 'default' };
+                                            const commercialStatus = commercialStatusConfig[order.commercial_status || 'order'] || commercialStatusConfig.order;
+                                            const itemCount = Array.isArray(order.items) ? order.items.length : 0;
                                             return (
                                                 <TableRow key={order.id}>
                                                     <TableCell className="font-medium">{order.order_number}</TableCell>
                                                     <TableCell>{order.supplier?.name || 'N/A'}</TableCell>
                                                     <TableCell>{format(new Date(order.created_at), 'd.M.yyyy')}</TableCell>
+                                                    <TableCell><Badge variant={commercialStatus.variant}>{commercialStatus.label}</Badge></TableCell>
                                                     <TableCell><Badge variant={status.variant}>{status.label}</Badge></TableCell>
+                                                    <TableCell>{itemCount}</TableCell>
                                                     {canViewAmounts && (
                                                         <TableCell className="text-right font-semibold">
                                                             <FinancialValueGuard value={`${(order.total_amount || 0).toLocaleString('cs-CZ')} Kč`} />
