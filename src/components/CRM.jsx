@@ -88,6 +88,8 @@ const isMissingCrmTableError = (error) => {
     message.includes('crm_opportunities') ||
     message.includes('crm_activities') ||
     message.includes('crm_notes') ||
+    message.includes('crm_stage_definitions') ||
+    message.includes('crm_priority_definitions') ||
     message.includes('crm_commercial_documents') ||
     message.includes('crm_commercial_document_items');
 };
@@ -120,6 +122,24 @@ const loadCrmConfig = () => {
     return { stages: DEFAULT_STAGE_CONFIG, priorities: DEFAULT_PRIORITY_CONFIG };
   }
 };
+
+const normalizeStages = (stages) => (
+  (stages?.length ? stages : DEFAULT_STAGE_CONFIG).map((stage, index) => ({
+    ...stage,
+    probability: Number(stage.probability || 0),
+    sort_order: Number(stage.sort_order ?? ((index + 1) * 10)),
+    is_active: stage.is_active ?? true,
+    is_closed: Boolean(stage.is_closed),
+  }))
+);
+
+const normalizePriorities = (priorities) => (
+  (priorities?.length ? priorities : DEFAULT_PRIORITY_CONFIG).map((priority, index) => ({
+    ...priority,
+    sort_order: Number(priority.sort_order ?? ((index + 1) * 10)),
+    is_active: priority.is_active ?? true,
+  }))
+);
 
 const MetricCard = ({ icon: Icon, title, value, description, tone = 'default' }) => (
   <Card className="overflow-hidden">
@@ -451,12 +471,13 @@ const CRM = () => {
   const [crmTablesReady, setCrmTablesReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [savingOpportunity, setSavingOpportunity] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
   const [creatingDocument, setCreatingDocument] = useState(false);
   const [opportunityDialogOpen, setOpportunityDialogOpen] = useState(false);
   const [opportunityForm, setOpportunityForm] = useState(initialOpportunityForm);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
-  const [crmStages, setCrmStages] = useState(() => loadCrmConfig().stages);
-  const [crmPriorities, setCrmPriorities] = useState(() => loadCrmConfig().priorities);
+  const [crmStages, setCrmStages] = useState(() => normalizeStages(loadCrmConfig().stages));
+  const [crmPriorities, setCrmPriorities] = useState(() => normalizePriorities(loadCrmConfig().priorities));
   const [selectedOpportunityId, setSelectedOpportunityId] = useState(null);
   const [query, setQuery] = useState('');
   const [stageFilter, setStageFilter] = useState('open');
@@ -475,7 +496,7 @@ const CRM = () => {
   const fetchCrmData = useCallback(async () => {
     setLoading(true);
 
-    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, commercialDocumentsRes] = await Promise.all([
+    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, commercialDocumentsRes, stagesRes, prioritiesRes] = await Promise.all([
       supabase
         .from('subjects')
         .select('id, name, ico, email, phone, contact_person, created_at, subject_types(name)')
@@ -503,6 +524,16 @@ const CRM = () => {
         .from('crm_commercial_documents')
         .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, items:crm_commercial_document_items(id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
         .order('created_at', { ascending: false }),
+      supabase
+        .from('crm_stage_definitions')
+        .select('value, label, color, probability, sort_order, is_active, is_closed')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('crm_priority_definitions')
+        .select('value, label, tone, sort_order, is_active')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true }),
     ]);
 
     const coreError = subjectsRes.error || projectsRes.error || contactsRes.error;
@@ -518,8 +549,8 @@ const CRM = () => {
       setContacts(contactsRes.data || []);
     }
 
-    if (opportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error) {
-      const crmError = opportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error;
+    if (opportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error) {
+      const crmError = opportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error;
       if (isMissingCrmTableError(crmError)) {
         setCrmTablesReady(false);
         setOpportunities([]);
@@ -541,6 +572,8 @@ const CRM = () => {
         ...document,
         items: [...(document.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
       })));
+      setCrmStages(normalizeStages(stagesRes.data));
+      setCrmPriorities(normalizePriorities(prioritiesRes.data));
     }
 
     setLoading(false);
@@ -834,8 +867,58 @@ const CRM = () => {
   };
 
   const resetCrmConfig = () => {
-    setCrmStages(DEFAULT_STAGE_CONFIG);
-    setCrmPriorities(DEFAULT_PRIORITY_CONFIG);
+    setCrmStages(normalizeStages(DEFAULT_STAGE_CONFIG));
+    setCrmPriorities(normalizePriorities(DEFAULT_PRIORITY_CONFIG));
+  };
+
+  const handleSaveCrmConfig = async () => {
+    if (!canAdminCrm) return;
+
+    setSavingConfig(true);
+
+    const stageRows = crmStages.map((stage, index) => ({
+      value: stage.value,
+      label: stage.label.trim() || stage.value,
+      color: stage.color || 'bg-slate-100 text-slate-700 border-slate-200',
+      probability: Math.min(100, Math.max(0, Number(stage.probability || 0))),
+      sort_order: (index + 1) * 10,
+      is_active: true,
+      is_closed: Boolean(stage.is_closed),
+    }));
+
+    const priorityRows = crmPriorities.map((priority, index) => ({
+      value: priority.value,
+      label: priority.label.trim() || priority.value,
+      tone: priority.tone || 'secondary',
+      sort_order: (index + 1) * 10,
+      is_active: true,
+    }));
+
+    const { error: stagesError } = await supabase
+      .from('crm_stage_definitions')
+      .upsert(stageRows, { onConflict: 'value' });
+
+    const { error: prioritiesError } = stagesError ? { error: null } : await supabase
+      .from('crm_priority_definitions')
+      .upsert(priorityRows, { onConflict: 'value' });
+
+    setSavingConfig(false);
+
+    const error = stagesError || prioritiesError;
+    if (error) {
+      toast({
+        title: 'Nastaveni CRM se nepodarilo ulozit',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCrmStages(normalizeStages(stageRows));
+    setCrmPriorities(normalizePriorities(priorityRows));
+    toast({ title: 'Nastaveni CRM ulozeno' });
+    setConfigDialogOpen(false);
+    fetchCrmData();
   };
 
   return (
@@ -1271,8 +1354,10 @@ const CRM = () => {
               </div>
             </div>
             <DialogFooter className="gap-2 sm:justify-between">
-              <Button type="button" variant="ghost" onClick={resetCrmConfig}>Obnovit vychozi</Button>
-              <Button type="button" onClick={() => setConfigDialogOpen(false)}>Hotovo</Button>
+              <Button type="button" variant="ghost" onClick={resetCrmConfig} disabled={savingConfig}>Obnovit vychozi</Button>
+              <Button type="button" onClick={handleSaveCrmConfig} disabled={savingConfig}>
+                {savingConfig ? 'Ukladam...' : 'Ulozit nastaveni'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
