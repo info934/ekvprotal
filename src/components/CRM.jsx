@@ -1,16 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
+  ArrowLeft,
   BarChart3,
   Building2,
   CalendarClock,
   CheckCircle2,
+  CheckSquare2,
   Clock,
   CircleDollarSign,
   Contact,
   ExternalLink,
+  Filter,
+  LayoutGrid,
+  List,
   Mail,
   MoreHorizontal,
   Package,
@@ -20,7 +25,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  SlidersHorizontal,
   ShoppingCart,
   Target,
   Users,
@@ -40,6 +44,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
+import {
+  downloadGeneratedDocumentDocx,
+  downloadGeneratedDocumentHtml,
+  downloadGeneratedDocumentPdf,
+} from '@/lib/documentGenerationService';
 import { cn } from '@/lib/utils';
 
 const subjectTypeLabels = {
@@ -161,7 +170,23 @@ const MetricCard = ({ icon: Icon, title, value, description, tone = 'default' })
   </Card>
 );
 
-const DealWorkspace = ({ opportunity, documents = [], stages, priorities, onEdit, onCreateDocument, canEdit, creatingDocument }) => {
+const DealWorkspace = ({
+  opportunity,
+  documents = [],
+  documentTemplates = [],
+  selectedTemplateIds = {},
+  stages,
+  priorities,
+  onEdit,
+  onCreateDocument,
+  onGenerateDocument,
+  onTemplateChange,
+  onUpdateOpportunity,
+  canEdit,
+  creatingDocument,
+  generatingDocument,
+  updatingOpportunity,
+}) => {
   if (!opportunity) {
     return (
       <Card className="border-dashed bg-slate-50/70">
@@ -182,6 +207,8 @@ const DealWorkspace = ({ opportunity, documents = [], stages, priorities, onEdit
   const expectedCosts = Math.round(value * 0.72);
   const expectedProfit = value - expectedCosts;
   const primaryDocument = documents[0] || null;
+  const offerDocuments = documents.filter((document) => document.type === 'offer');
+  const orderDocuments = documents.filter((document) => document.type === 'order');
   const primaryItems = primaryDocument?.items || [];
   const productRows = primaryItems.length > 0 ? primaryItems.map((item) => ({
     code: item.code || '-',
@@ -231,9 +258,6 @@ const DealWorkspace = ({ opportunity, documents = [], stages, priorities, onEdit
                   Upravit
                 </Button>
               )}
-              <Button variant="secondary" disabled className="rounded-full">
-                Ulozit
-              </Button>
               <Button disabled className="rounded-full bg-slate-900 hover:bg-slate-800">
                 <Plus className="mr-2 h-4 w-4" />
                 Vlastni akce
@@ -261,21 +285,67 @@ const DealWorkspace = ({ opportunity, documents = [], stages, priorities, onEdit
                   </div>
                   <div className="space-y-1">
                     <Label>Odhad uzavreni</Label>
-                    <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">{formatDate(opportunity.expected_close_date)}</div>
+                    <Input
+                      type="date"
+                      value={opportunity.expected_close_date || ''}
+                      disabled={!canEdit || updatingOpportunity}
+                      onChange={(event) => onUpdateOpportunity?.(opportunity.id, { expected_close_date: event.target.value || null })}
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label>Stav</Label>
-                    <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">{stage.label}</div>
+                    <Select
+                      value={opportunity.stage}
+                      disabled={!canEdit || updatingOpportunity}
+                      onValueChange={(value) => {
+                        const nextStage = getStage(value, stages);
+                        onUpdateOpportunity?.(opportunity.id, {
+                          stage: value,
+                          probability: nextStage.probability,
+                          status: nextStage.is_closed ? 'closed' : 'open',
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="bg-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {stages.map((stageOption) => (
+                          <SelectItem key={stageOption.value} value={stageOption.value}>{stageOption.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1">
                     <Label>Priorita</Label>
-                    <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">{priority?.label || '-'}</div>
+                    <Select
+                      value={opportunity.priority || 'medium'}
+                      disabled={!canEdit || updatingOpportunity}
+                      onValueChange={(value) => onUpdateOpportunity?.(opportunity.id, { priority: value })}
+                    >
+                      <SelectTrigger className="bg-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {priorities.map((priorityOption) => (
+                          <SelectItem key={priorityOption.value} value={priorityOption.value}>{priorityOption.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <div className="flex items-center justify-between text-sm">
                       <Label>Pravdepodobnost</Label>
                       <span className="font-semibold text-slate-950">{opportunity.probability || 0} %</span>
                     </div>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={opportunity.probability || 0}
+                      disabled={!canEdit || updatingOpportunity}
+                      onChange={(event) => onUpdateOpportunity?.(opportunity.id, { probability: Number(event.target.value || 0) })}
+                    />
                     <div className="h-2 overflow-hidden rounded-full bg-slate-200">
                       <div className="h-full rounded-full bg-emerald-500" style={{ width: `${opportunity.probability || 0}%` }} />
                     </div>
@@ -288,7 +358,14 @@ const DealWorkspace = ({ opportunity, documents = [], stages, priorities, onEdit
                     <div className="space-y-3 text-sm">
                       <div className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2">
                         <span className="text-muted-foreground">Konecna cena</span>
-                        <strong>{formatCurrency(value)}</strong>
+                        <Input
+                          type="number"
+                          min="0"
+                          value={opportunity.value ?? 0}
+                          disabled={!canEdit || updatingOpportunity}
+                          onChange={(event) => onUpdateOpportunity?.(opportunity.id, { value: Number(event.target.value || 0) })}
+                          className="h-8 w-40 bg-white text-right font-semibold"
+                        />
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2">
                         <span className="text-muted-foreground">Predpokladane naklady</span>
@@ -315,8 +392,21 @@ const DealWorkspace = ({ opportunity, documents = [], stages, priorities, onEdit
                 </div>
               </TabsContent>
               <TabsContent value="commerce">
-                <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
-                  Tady bude navazani nabidek, objednavek, online podpisu a verzovani dokumentu. Datovy model je pripraveny jako dalsi krok.
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-lg border bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-slate-900">Nabidky</h3>
+                      <Badge variant="outline">{offerDocuments.length}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">Nabidkove dokumenty jsou navazane na tento obchodni pripad a sdili polozky s obchodnim rozpoctem.</p>
+                  </div>
+                  <div className="rounded-lg border bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-slate-900">Objednavky</h3>
+                      <Badge variant="outline">{orderDocuments.length}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">Objednavky navazuji na stejny obchodni pripad a lze je vytvaret ze stejneho polozkoveho zakladu.</p>
+                  </div>
                 </div>
               </TabsContent>
               <TabsContent value="history">
@@ -339,7 +429,18 @@ const DealWorkspace = ({ opportunity, documents = [], stages, priorities, onEdit
                 <Clock className="h-4 w-4" />
                 Nejblizsi naplanovana aktivita
               </div>
-              <p className="mt-3 text-sm text-muted-foreground">{opportunity.next_step || 'Zatim neni naplanovana.'}</p>
+              <Textarea
+                key={opportunity.id}
+                className="mt-3 min-h-[90px]"
+                defaultValue={opportunity.next_step || ''}
+                disabled={!canEdit || updatingOpportunity}
+                placeholder="Zatim neni naplanovana."
+                onBlur={(event) => {
+                  if ((event.target.value || '') !== (opportunity.next_step || '')) {
+                    onUpdateOpportunity?.(opportunity.id, { next_step: event.target.value || null });
+                  }
+                }}
+              />
             </div>
             <div className="rounded-lg border bg-white p-4 shadow-sm">
               <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
@@ -420,38 +521,106 @@ const DealWorkspace = ({ opportunity, documents = [], stages, priorities, onEdit
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-5">
+        <CardContent className="grid gap-4 p-5 xl:grid-cols-2">
+          <div className="rounded-lg border border-dashed bg-slate-50 p-4 text-sm text-muted-foreground xl:col-span-2">
+            Generator dokumentu je pripraveny jako spolecna vrstva pro nabidky, objednavky a smlouvy. Aktualne generuje HTML vystup pro tisk/stazeni; stejny payload bude pouzity pro PDF/DOCX a Edge Function frontu.
+          </div>
           {documents.length === 0 ? (
-            <div className="rounded-lg border border-dashed bg-slate-50 p-6 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-dashed bg-slate-50 p-6 text-sm text-muted-foreground xl:col-span-2">
               Zatim neni zalozena zadna nabidka ani objednavka. Vytvorte prvni dokument tlacitkem nahore.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Typ</TableHead>
-                    <TableHead>Cislo</TableHead>
-                    <TableHead>Nazev</TableHead>
-                    <TableHead>Stav</TableHead>
-                    <TableHead>Datum</TableHead>
-                    <TableHead className="text-right">Celkem</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {documents.map((document) => (
-                    <TableRow key={document.id}>
-                      <TableCell>{document.type === 'offer' ? 'Nabidka' : 'Objednavka'}</TableCell>
-                      <TableCell className="font-medium">{document.number || '-'}</TableCell>
-                      <TableCell>{document.title}</TableCell>
-                      <TableCell><Badge variant="outline">{document.status}</Badge></TableCell>
-                      <TableCell>{formatDate(document.issue_date)}</TableCell>
-                      <TableCell className="text-right font-semibold">{formatCurrency(document.total)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <>
+              {[ 
+                { type: 'offer', title: 'Nabidky', icon: Package, rows: offerDocuments, empty: 'Zatim neni vytvorena zadna nabidka.' },
+                { type: 'order', title: 'Objednavky', icon: ShoppingCart, rows: orderDocuments, empty: 'Zatim neni vytvorena zadna objednavka.' },
+              ].map((module) => (
+                <div key={module.type} className="overflow-hidden rounded-lg border bg-white">
+                  <div className="flex flex-col gap-3 border-b bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2">
+                      <module.icon className="h-4 w-4 text-primary" />
+                      <h3 className="text-sm font-semibold text-slate-900">{module.title}</h3>
+                      <Badge variant="outline">{module.rows.length}</Badge>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <Select
+                        value={selectedTemplateIds[module.type] || 'default'}
+                        onValueChange={(value) => onTemplateChange?.(module.type, value === 'default' ? null : value)}
+                      >
+                        <SelectTrigger className="h-8 w-full bg-white text-xs sm:w-[190px]">
+                          <SelectValue placeholder="Sablona" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">Vychozi sablona</SelectItem>
+                          {documentTemplates.map((template) => (
+                            <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onCreateDocument?.(module.type)}
+                        disabled={!canEdit || creatingDocument}
+                      >
+                        Pridat
+                      </Button>
+                    </div>
+                  </div>
+                  {module.rows.length === 0 ? (
+                    <div className="p-5 text-sm text-muted-foreground">{module.empty}</div>
+                  ) : (
+                    <div className="divide-y">
+                      {module.rows.map((document) => (
+                        <div key={document.id} className="grid gap-2 p-4 text-sm sm:grid-cols-[minmax(0,1fr)_130px]">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-slate-950">{document.number || '-'}</span>
+                              <Badge variant="outline">{document.status}</Badge>
+                            </div>
+                            <div className="mt-1 truncate text-muted-foreground">{document.title}</div>
+                            <div className="mt-2 text-xs text-muted-foreground">{formatDate(document.issue_date)} - {document.items?.length || 0} polozek</div>
+                          </div>
+                          <div className="text-left sm:text-right">
+                            <div className="font-semibold text-slate-950">{formatCurrency(document.total)}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">bez DPH</div>
+                            <div className="mt-3 flex flex-wrap justify-start gap-1 sm:justify-end">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2"
+                                disabled={generatingDocument}
+                                onClick={() => onGenerateDocument?.(document, 'docx', documentTemplates.find((template) => template.id === selectedTemplateIds[module.type]))}
+                              >
+                                DOCX
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2"
+                                disabled={generatingDocument}
+                                onClick={() => onGenerateDocument?.(document, 'pdf', documentTemplates.find((template) => template.id === selectedTemplateIds[module.type]))}
+                              >
+                                PDF
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 px-2"
+                                disabled={generatingDocument}
+                                onClick={() => onGenerateDocument?.(document, 'html', documentTemplates.find((template) => template.id === selectedTemplateIds[module.type]))}
+                              >
+                                HTML
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
           )}
         </CardContent>
       </Card>
@@ -459,29 +628,193 @@ const DealWorkspace = ({ opportunity, documents = [], stages, priorities, onEdit
   );
 };
 
+const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesReady, onSelectOpportunity, onMoveOpportunity }) => (
+  <div className="overflow-x-auto pb-2">
+    <div className="grid min-w-[1180px] gap-3 xl:grid-cols-6">
+      {stages.map((stage) => {
+        const total = stage.opportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
+        return (
+          <section
+            key={stage.value}
+            className="min-h-[340px] rounded-lg bg-slate-100/70 p-2"
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.currentTarget.classList.add('ring-2', 'ring-primary/30');
+            }}
+            onDragLeave={(event) => {
+              event.currentTarget.classList.remove('ring-2', 'ring-primary/30');
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              event.currentTarget.classList.remove('ring-2', 'ring-primary/30');
+              const opportunityId = event.dataTransfer.getData('text/plain');
+              if (opportunityId) onMoveOpportunity?.(opportunityId, stage.value);
+            }}
+          >
+            <div className={cn('mb-2 rounded-md border px-3 py-2', stage.color)}>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="truncate text-xs font-bold uppercase">{stage.label}</h3>
+                <button type="button" className="text-base leading-none opacity-70" aria-label={`Pridat do stavu ${stage.label}`}>
+                  +
+                </button>
+              </div>
+              <div className="mt-1 flex items-center gap-2 text-xs font-semibold">
+                <span className="rounded-full bg-white/70 px-1.5">{stage.opportunities.length}</span>
+                <span className="truncate">{formatCurrency(total)}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {stage.opportunities.map((opportunity) => {
+                const priority = getPriority(opportunity.priority, priorities);
+                return (
+                  <button
+                    key={opportunity.id}
+                    type="button"
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData('text/plain', opportunity.id);
+                      event.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onClick={() => onSelectOpportunity(opportunity.id)}
+                    className={cn(
+                      'group w-full rounded-md border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md',
+                      selectedOpportunity?.id === opportunity.id && 'border-slate-900 ring-2 ring-slate-200'
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="line-clamp-2 text-sm font-semibold leading-5 text-slate-900">{opportunity.title}</div>
+                        <div className="mt-1 truncate text-xs font-medium text-slate-500">{opportunity.subject?.name || 'Bez subjektu'}</div>
+                      </div>
+                      <span className="mt-1 h-2 w-6 shrink-0 rounded-full bg-primary/70" />
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1 text-slate-400">
+                        <CircleDollarSign className="h-3.5 w-3.5" />
+                        {formatCurrency(opportunity.value)}
+                      </span>
+                      <Badge variant={priority?.tone || 'secondary'} className="h-5 text-[10px]">
+                        {opportunity.probability || 0} %
+                      </Badge>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <Clock className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{opportunity.next_step || 'bez aktivity'}</span>
+                      </span>
+                      <span className="shrink-0">{formatDate(opportunity.expected_close_date)}</span>
+                    </div>
+                  </button>
+                );
+              })}
+              {stage.opportunities.length === 0 && (
+                <div className="rounded-md border border-dashed bg-white/70 p-4 text-center text-xs text-muted-foreground">
+                  {crmTablesReady ? 'Zatim prazdne' : 'Ceka na CRM migraci'}
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  </div>
+);
+
+const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportunity, onSelectOpportunity }) => (
+  <div className="overflow-x-auto">
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-slate-50">
+          <TableHead className="w-10"><CheckSquare2 className="h-4 w-4 text-muted-foreground" /></TableHead>
+          <TableHead className="min-w-[120px]">Kod</TableHead>
+          <TableHead className="min-w-[280px]">Predmet</TableHead>
+          <TableHead className="min-w-[220px]">Klient</TableHead>
+          <TableHead className="min-w-[150px]">Typ obchodu</TableHead>
+          <TableHead className="min-w-[180px]">Stav</TableHead>
+          <TableHead className="min-w-[220px]">Naplanovana aktivita</TableHead>
+          <TableHead className="min-w-[150px] text-right">Konecna cena</TableHead>
+          <TableHead className="min-w-[130px]">Priorita</TableHead>
+          <TableHead className="w-12 text-right">Akce</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {opportunities.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={10} className="h-28 text-center text-muted-foreground">
+              Zadny obchodni pripad neodpovida filtru.
+            </TableCell>
+          </TableRow>
+        ) : opportunities.map((opportunity, index) => {
+          const stage = getStage(opportunity.stage, stages);
+          const priority = getPriority(opportunity.priority, priorities);
+          return (
+            <TableRow
+              key={opportunity.id}
+              onClick={() => onSelectOpportunity(opportunity.id)}
+              className={cn('cursor-pointer bg-white hover:bg-slate-50', selectedOpportunity?.id === opportunity.id && 'bg-slate-50')}
+            >
+              <TableCell>
+                <span className="block h-4 w-4 rounded border border-slate-300 bg-white" />
+              </TableCell>
+              <TableCell className="font-semibold text-slate-900">OP-{String(index + 1).padStart(3, '0')}</TableCell>
+              <TableCell>
+                <div className="font-semibold text-slate-800">{opportunity.title}</div>
+                {opportunity.project?.code && <div className="text-xs text-muted-foreground">{opportunity.project.code}</div>}
+              </TableCell>
+              <TableCell className="font-medium">{opportunity.subject?.name || '-'}</TableCell>
+              <TableCell className="text-muted-foreground">{opportunity.project ? 'EKV - Project' : 'EKV - FVE'}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <span className="h-6 w-1 rounded-full bg-primary" />
+                  <Badge className={stage.color}>{stage.label}</Badge>
+                </div>
+              </TableCell>
+              <TableCell className="text-muted-foreground">{opportunity.next_step || 'bez aktivity'}</TableCell>
+              <TableCell className="text-right font-semibold">{formatCurrency(opportunity.value)}</TableCell>
+              <TableCell><Badge variant={priority?.tone || 'secondary'}>{priority?.label || '-'}</Badge></TableCell>
+              <TableCell className="text-right">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(event) => event.stopPropagation()}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  </div>
+);
+
 const CRM = () => {
   const { toast } = useToast();
   const { hasPermission, memberId } = useAuth();
+  const navigate = useNavigate();
+  const { opportunityId } = useParams();
   const [subjects, setSubjects] = useState([]);
   const [projects, setProjects] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [opportunities, setOpportunities] = useState([]);
   const [activities, setActivities] = useState([]);
   const [commercialDocuments, setCommercialDocuments] = useState([]);
+  const [documentTemplates, setDocumentTemplates] = useState([]);
   const [crmTablesReady, setCrmTablesReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [savingOpportunity, setSavingOpportunity] = useState(false);
-  const [savingConfig, setSavingConfig] = useState(false);
+  const [updatingOpportunity, setUpdatingOpportunity] = useState(false);
   const [creatingDocument, setCreatingDocument] = useState(false);
+  const [generatingDocument, setGeneratingDocument] = useState(false);
   const [opportunityDialogOpen, setOpportunityDialogOpen] = useState(false);
   const [opportunityForm, setOpportunityForm] = useState(initialOpportunityForm);
-  const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [crmStages, setCrmStages] = useState(() => normalizeStages(loadCrmConfig().stages));
   const [crmPriorities, setCrmPriorities] = useState(() => normalizePriorities(loadCrmConfig().priorities));
   const [selectedOpportunityId, setSelectedOpportunityId] = useState(null);
   const [query, setQuery] = useState('');
+  const [opportunityQuery, setOpportunityQuery] = useState('');
+  const [opportunityView, setOpportunityView] = useState('kanban');
+  const [sortMode, setSortMode] = useState('updated');
   const [stageFilter, setStageFilter] = useState('open');
   const [priorityFilter, setPriorityFilter] = useState('all');
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState({ offer: 'default', order: 'default' });
 
   const canEditCrm = hasPermission('crm', 'can_edit');
   const canAdminCrm = hasPermission('crm', 'can_admin');
@@ -496,7 +829,7 @@ const CRM = () => {
   const fetchCrmData = useCallback(async () => {
     setLoading(true);
 
-    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, commercialDocumentsRes, stagesRes, prioritiesRes] = await Promise.all([
+    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, commercialDocumentsRes, stagesRes, prioritiesRes, templatesRes] = await Promise.all([
       supabase
         .from('subjects')
         .select('id, name, ico, email, phone, contact_person, created_at, subject_types(name)')
@@ -534,6 +867,10 @@ const CRM = () => {
         .select('value, label, tone, sort_order, is_active')
         .eq('is_active', true)
         .order('sort_order', { ascending: true }),
+      supabase
+        .from('order_templates')
+        .select('id, name, description, content, created_at')
+        .order('created_at', { ascending: false }),
     ]);
 
     const coreError = subjectsRes.error || projectsRes.error || contactsRes.error;
@@ -574,6 +911,12 @@ const CRM = () => {
       })));
       setCrmStages(normalizeStages(stagesRes.data));
       setCrmPriorities(normalizePriorities(prioritiesRes.data));
+    }
+
+    if (templatesRes.error) {
+      setDocumentTemplates([]);
+    } else {
+      setDocumentTemplates(templatesRes.data || []);
     }
 
     setLoading(false);
@@ -633,15 +976,31 @@ const CRM = () => {
   }, [subjects, query]);
 
   const filteredOpportunities = useMemo(() => {
-    return opportunities.filter((opportunity) => {
+    const normalizedQuery = opportunityQuery.trim().toLowerCase();
+    const filtered = opportunities.filter((opportunity) => {
       const stage = getStage(opportunity.stage, crmStages);
       const matchesStage = stageFilter === 'all' ||
         (stageFilter === 'open' && opportunity.status === 'open' && !stage.is_closed) ||
         opportunity.stage === stageFilter;
       const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter;
-      return matchesStage && matchesPriority;
+      const searchable = [
+        opportunity.title,
+        opportunity.subject?.name,
+        opportunity.project?.name,
+        opportunity.project?.code,
+        opportunity.next_step,
+      ].filter(Boolean).join(' ').toLowerCase();
+      const matchesQuery = !normalizedQuery || searchable.includes(normalizedQuery);
+      return matchesStage && matchesPriority && matchesQuery;
     });
-  }, [crmStages, opportunities, priorityFilter, stageFilter]);
+
+    return [...filtered].sort((a, b) => {
+      if (sortMode === 'value_desc') return Number(b.value || 0) - Number(a.value || 0);
+      if (sortMode === 'close_date') return new Date(a.expected_close_date || '9999-12-31') - new Date(b.expected_close_date || '9999-12-31');
+      if (sortMode === 'probability_desc') return Number(b.probability || 0) - Number(a.probability || 0);
+      return String(b.id).localeCompare(String(a.id));
+    });
+  }, [crmStages, opportunities, opportunityQuery, priorityFilter, sortMode, stageFilter]);
 
   const opportunitiesByStage = useMemo(() => {
     return crmStages.map((stage) => ({
@@ -652,8 +1011,8 @@ const CRM = () => {
 
   const selectedOpportunity = useMemo(() => {
     if (!opportunities.length) return null;
-    return opportunities.find((opportunity) => opportunity.id === selectedOpportunityId) || opportunities[0];
-  }, [opportunities, selectedOpportunityId]);
+    return opportunities.find((opportunity) => opportunity.id === (opportunityId || selectedOpportunityId)) || null;
+  }, [opportunities, opportunityId, selectedOpportunityId]);
 
   const selectedOpportunityDocuments = useMemo(() => {
     if (!selectedOpportunity) return [];
@@ -661,13 +1020,63 @@ const CRM = () => {
   }, [commercialDocuments, selectedOpportunity]);
 
   useEffect(() => {
+    if (opportunityId) {
+      setSelectedOpportunityId(opportunityId);
+      return;
+    }
     if (!selectedOpportunityId && opportunities.length > 0) {
       setSelectedOpportunityId(opportunities[0].id);
     }
     if (selectedOpportunityId && opportunities.length > 0 && !opportunities.some((opportunity) => opportunity.id === selectedOpportunityId)) {
       setSelectedOpportunityId(opportunities[0].id);
     }
-  }, [opportunities, selectedOpportunityId]);
+  }, [opportunities, opportunityId, selectedOpportunityId]);
+
+  const openOpportunityDetail = useCallback((id) => {
+    setSelectedOpportunityId(id);
+    navigate(`/crm/${id}`);
+  }, [navigate]);
+
+  const updateOpportunityState = useCallback((opportunityId, patch) => {
+    setOpportunities((current) => current.map((opportunity) => (
+      opportunity.id === opportunityId ? { ...opportunity, ...patch } : opportunity
+    )));
+  }, []);
+
+  const handleInlineOpportunityUpdate = useCallback(async (opportunityId, patch) => {
+    if (!canEditCrm || !opportunityId) return;
+
+    updateOpportunityState(opportunityId, patch);
+    setUpdatingOpportunity(true);
+
+    const { error } = await supabase
+      .from('crm_opportunities')
+      .update(patch)
+      .eq('id', opportunityId);
+
+    setUpdatingOpportunity(false);
+
+    if (error) {
+      toast({
+        title: 'Zmenu se nepodarilo ulozit',
+        description: error.message,
+        variant: 'destructive',
+      });
+      fetchCrmData();
+    }
+  }, [canEditCrm, fetchCrmData, toast, updateOpportunityState]);
+
+  const handleMoveOpportunity = useCallback((opportunityId, targetStageValue) => {
+    const targetStage = getStage(targetStageValue, crmStages);
+    const opportunity = opportunities.find((item) => item.id === opportunityId);
+    if (!opportunity || opportunity.stage === targetStageValue) return;
+
+    handleInlineOpportunityUpdate(opportunityId, {
+      stage: targetStageValue,
+      probability: targetStage.probability,
+      status: targetStage.is_closed ? 'closed' : 'open',
+    });
+  }, [crmStages, handleInlineOpportunityUpdate, opportunities]);
 
   const upcomingActivities = useMemo(() => (
     activities.filter((activity) => activity.status !== 'done' && activity.status !== 'completed').slice(0, 8)
@@ -834,91 +1243,32 @@ const CRM = () => {
     fetchCrmData();
   };
 
-  const updateStageConfig = (index, field, value) => {
-    setCrmStages(current => current.map((stage, stageIndex) => (
-      stageIndex === index ? { ...stage, [field]: field === 'probability' ? Number(value || 0) : value } : stage
-    )));
-  };
+  const handleGenerateCommercialDocument = async (document, format = 'docx', template = null) => {
+    if (!selectedOpportunity || !document) return;
 
-  const updatePriorityConfig = (index, field, value) => {
-    setCrmPriorities(current => current.map((priority, priorityIndex) => (
-      priorityIndex === index ? { ...priority, [field]: value } : priority
-    )));
-  };
-
-  const addStageConfig = () => {
-    setCrmStages(current => ([
-      ...current,
-      {
-        value: `stage_${Date.now()}`,
-        label: 'Novy stav',
-        color: 'bg-slate-100 text-slate-700 border-slate-200',
-        probability: 50,
-        is_closed: false,
-      },
-    ]));
-  };
-
-  const addPriorityConfig = () => {
-    setCrmPriorities(current => ([
-      ...current,
-      { value: `priority_${Date.now()}`, label: 'Nova priorita', tone: 'secondary' },
-    ]));
-  };
-
-  const resetCrmConfig = () => {
-    setCrmStages(normalizeStages(DEFAULT_STAGE_CONFIG));
-    setCrmPriorities(normalizePriorities(DEFAULT_PRIORITY_CONFIG));
-  };
-
-  const handleSaveCrmConfig = async () => {
-    if (!canAdminCrm) return;
-
-    setSavingConfig(true);
-
-    const stageRows = crmStages.map((stage, index) => ({
-      value: stage.value,
-      label: stage.label.trim() || stage.value,
-      color: stage.color || 'bg-slate-100 text-slate-700 border-slate-200',
-      probability: Math.min(100, Math.max(0, Number(stage.probability || 0))),
-      sort_order: (index + 1) * 10,
-      is_active: true,
-      is_closed: Boolean(stage.is_closed),
-    }));
-
-    const priorityRows = crmPriorities.map((priority, index) => ({
-      value: priority.value,
-      label: priority.label.trim() || priority.value,
-      tone: priority.tone || 'secondary',
-      sort_order: (index + 1) * 10,
-      is_active: true,
-    }));
-
-    const { error: stagesError } = await supabase
-      .from('crm_stage_definitions')
-      .upsert(stageRows, { onConflict: 'value' });
-
-    const { error: prioritiesError } = stagesError ? { error: null } : await supabase
-      .from('crm_priority_definitions')
-      .upsert(priorityRows, { onConflict: 'value' });
-
-    setSavingConfig(false);
-
-    const error = stagesError || prioritiesError;
-    if (error) {
+    setGeneratingDocument(true);
+    try {
+      const generationInput = { opportunity: selectedOpportunity, document, template };
+      if (format === 'pdf') {
+        downloadGeneratedDocumentPdf(generationInput);
+      } else if (format === 'html') {
+        downloadGeneratedDocumentHtml(generationInput);
+      } else {
+        await downloadGeneratedDocumentDocx(generationInput);
+      }
       toast({
-        title: 'Nastaveni CRM se nepodarilo ulozit',
+        title: 'Dokument vygenerovan',
+        description: `${template?.name ? `Sablona "${template.name}" byla vyplnena. ` : ''}Vystup ${format.toUpperCase()} byl pripraven ke stazeni.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Dokument se nepodarilo vygenerovat',
         description: error.message,
         variant: 'destructive',
       });
-      return;
+    } finally {
+      setGeneratingDocument(false);
     }
-
-    setCrmStages(normalizeStages(stageRows));
-    setCrmPriorities(normalizePriorities(priorityRows));
-    toast({ title: 'Nastaveni CRM ulozeno' });
-    setConfigDialogOpen(false);
-    fetchCrmData();
   };
 
   return (
@@ -935,9 +1285,11 @@ const CRM = () => {
                 Obnovit
               </Button>
               {canAdminCrm && (
-                <Button variant="outline" onClick={() => setConfigDialogOpen(true)}>
-                  <SlidersHorizontal className="mr-2 h-4 w-4" />
+                <Button asChild variant="outline">
+                  <Link to="/settings/crm">
+                    <Target className="mr-2 h-4 w-4" />
                   Nastaveni CRM
+                  </Link>
                 </Button>
               )}
               {canEditCrm && (
@@ -973,6 +1325,55 @@ const CRM = () => {
           <MetricCard icon={CircleDollarSign} title="Vazena pipeline" value={crmTablesReady ? formatCurrency(metrics.weightedPipeline) : '-'} description={`${metrics.contacts} kontaktu v projektech`} tone="success" />
         </div>
 
+        {opportunityId ? (
+          <div className="space-y-4">
+            <div className="flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <Button variant="ghost" className="mb-2 h-8 px-0 text-muted-foreground" onClick={() => navigate('/crm')}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Zpet na obchodni prehled
+                </Button>
+                <h2 className="truncate text-2xl font-semibold text-slate-950">
+                  {selectedOpportunity?.title || 'Obchodni pripad'}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Detail obchodniho pripadu, polozek, nabidek a objednavek.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {canEditCrm && selectedOpportunity && (
+                  <Button variant="outline" onClick={() => openOpportunityDialog(selectedOpportunity)}>
+                    Upravit pripad
+                  </Button>
+                )}
+                <Button variant="secondary" onClick={fetchCrmData} disabled={loading}>
+                  <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
+                  Obnovit
+                </Button>
+              </div>
+            </div>
+            <DealWorkspace
+              opportunity={selectedOpportunity}
+              documents={selectedOpportunityDocuments}
+              documentTemplates={documentTemplates}
+              selectedTemplateIds={selectedTemplateIds}
+              stages={crmStages}
+              priorities={crmPriorities}
+              canEdit={canEditCrm}
+              onEdit={openOpportunityDialog}
+              onCreateDocument={handleCreateCommercialDocument}
+              onGenerateDocument={handleGenerateCommercialDocument}
+              onTemplateChange={(type, templateId) => setSelectedTemplateIds((current) => ({
+                ...current,
+                [type]: templateId || 'default',
+              }))}
+              onUpdateOpportunity={handleInlineOpportunityUpdate}
+              creatingDocument={creatingDocument}
+              generatingDocument={generatingDocument}
+              updatingOpportunity={updatingOpportunity}
+            />
+          </div>
+        ) : (
         <Tabs defaultValue="pipeline" className="space-y-6">
           <TabsList className="w-full justify-start sm:w-auto">
             <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
@@ -982,98 +1383,140 @@ const CRM = () => {
           </TabsList>
 
           <TabsContent value="pipeline" className="space-y-6">
-            <Card className="overflow-hidden border-slate-200 shadow-sm">
-              <CardHeader className="border-b bg-white px-5 py-4">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                  <div>
-                    <CardTitle className="text-xl font-semibold text-slate-950">Obchodni pipeline</CardTitle>
-                    <CardDescription>Rizene faze od leadu po vyhranou nebo ztracenou prilezitost.</CardDescription>
+            <Card className="overflow-hidden border-slate-200 bg-slate-50/70 shadow-sm">
+              <CardHeader className="border-b bg-white px-4 py-4">
+                <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-muted-foreground">
+                      <Select value={sortMode} onValueChange={setSortMode}>
+                        <SelectTrigger className="h-8 w-[240px] rounded-full border-0 bg-slate-100 px-3 text-xs font-semibold shadow-none">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="updated">Seradit podle posledni zmeny</SelectItem>
+                          <SelectItem value="value_desc">Seradit podle hodnoty</SelectItem>
+                          <SelectItem value="close_date">Seradit podle odhadu uzavreni</SelectItem>
+                          <SelectItem value="probability_desc">Seradit podle pravdepodobnosti</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <CardTitle className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">Obchodni pripady</CardTitle>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative w-full sm:w-64">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={opportunityQuery}
+                        onChange={(event) => setOpportunityQuery(event.target.value)}
+                        placeholder="Hledat..."
+                        className="h-10 rounded-full bg-slate-50 pl-9"
+                      />
+                    </div>
+                    <div className="flex rounded-full border bg-white p-1 shadow-sm">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={opportunityView === 'kanban' ? 'default' : 'ghost'}
+                        className="h-8 rounded-full px-3"
+                        onClick={() => setOpportunityView('kanban')}
+                      >
+                        <LayoutGrid className="mr-2 h-4 w-4" />
+                        Kanban
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={opportunityView === 'table' ? 'default' : 'ghost'}
+                        className="h-8 rounded-full px-3"
+                        onClick={() => setOpportunityView('table')}
+                      >
+                        <List className="mr-2 h-4 w-4" />
+                        Tabulka
+                      </Button>
+                    </div>
                     <Select value={stageFilter} onValueChange={setStageFilter}>
-                      <SelectTrigger className="w-[180px] bg-white">
+                      <SelectTrigger className="h-10 w-[170px] rounded-full bg-white">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="open">Jen otevrene</SelectItem>
-                        <SelectItem value="all">Vsechny faze</SelectItem>
+                        <SelectItem value="open">Aktivni</SelectItem>
+                        <SelectItem value="all">Vsechny</SelectItem>
                         {crmStages.map((stage) => (
                           <SelectItem key={stage.value} value={stage.value}>{stage.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                      <SelectTrigger className="w-[160px] bg-white">
+                      <SelectTrigger className="h-10 w-[150px] rounded-full bg-white">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Vsechny priority</SelectItem>
+                        <SelectItem value="all">Priorita</SelectItem>
                         {crmPriorities.map((priority) => (
                           <SelectItem key={priority.value} value={priority.value}>{priority.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <Button variant="secondary" className="h-10 rounded-full">
+                      <Filter className="mr-2 h-4 w-4" />
+                      Filtrovani
+                    </Button>
+                    {canEditCrm && (
+                      <Button onClick={() => openOpportunityDialog()} disabled={!crmTablesReady} className="h-11 w-11 rounded-full p-0">
+                        <Plus className="h-5 w-5" />
+                      </Button>
+                    )}
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="grid gap-3 bg-slate-50/50 p-4 lg:grid-cols-3 xl:grid-cols-6">
-                {opportunitiesByStage.map((stage) => (
-                  <div key={stage.value} className="min-h-[220px] rounded-lg border bg-white p-3 shadow-sm">
-                    <div className="mb-3 flex items-center justify-between gap-2">
-                      <h3 className="text-sm font-semibold text-slate-900">{stage.label}</h3>
-                      <Badge variant="outline">{stage.opportunities.length}</Badge>
-                    </div>
-                    <div className="space-y-2">
-                      {stage.opportunities.slice(0, 6).map((opportunity) => (
-                        <button
-                          key={opportunity.id}
-                          type="button"
-                          onClick={() => setSelectedOpportunityId(opportunity.id)}
-                          className={cn(
-                            'w-full rounded-md border bg-white p-3 text-left shadow-sm transition hover:border-slate-400 hover:shadow-md',
-                            selectedOpportunity?.id === opportunity.id && 'border-slate-900 ring-2 ring-slate-200'
-                          )}
-                        >
-                          <div className="line-clamp-2 text-sm font-semibold text-slate-950">{opportunity.title}</div>
-                          <div className="mt-1 truncate text-xs text-muted-foreground">{opportunity.subject?.name || 'Bez subjektu'}</div>
-                          <div className="mt-3 flex items-center justify-between gap-2">
-                            <span className="text-xs font-medium">{formatCurrency(opportunity.value)}</span>
-                            <Badge variant={getPriority(opportunity.priority, crmPriorities)?.tone || 'secondary'} className="text-[10px]">
-                              {opportunity.probability || 0} %
-                            </Badge>
-                          </div>
-                          {opportunity.expected_close_date && (
-                            <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
-                              <CalendarClock className="h-3 w-3" />
-                              {formatDate(opportunity.expected_close_date)}
-                            </div>
-                          )}
-                          {opportunity.next_step && (
-                            <div className="mt-2 line-clamp-2 text-xs text-muted-foreground">{opportunity.next_step}</div>
-                          )}
-                        </button>
-                      ))}
-                      {stage.opportunities.length === 0 && (
-                        <div className="rounded-md border border-dashed bg-white/60 p-4 text-center text-xs text-muted-foreground">
-                          {crmTablesReady ? 'Zatim prazdne' : 'Ceka na CRM migraci'}
-                        </div>
-                      )}
-                    </div>
+
+                {(stageFilter !== 'open' || priorityFilter !== 'all' || opportunityQuery) && (
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">Filtrovano</Badge>
+                    {stageFilter !== 'open' && (
+                      <Badge variant="outline">Stav: {stageFilter === 'all' ? 'Vsechny' : getStage(stageFilter, crmStages).label}</Badge>
+                    )}
+                    {priorityFilter !== 'all' && (
+                      <Badge variant="outline">Priorita: {getPriority(priorityFilter, crmPriorities)?.label}</Badge>
+                    )}
+                    {opportunityQuery && <Badge variant="outline">Hledani: {opportunityQuery}</Badge>}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        setStageFilter('open');
+                        setPriorityFilter('all');
+                        setOpportunityQuery('');
+                      }}
+                    >
+                      Vycistit filtry
+                    </Button>
                   </div>
-                ))}
+                )}
+              </CardHeader>
+              <CardContent className="p-3">
+                {opportunityView === 'kanban' ? (
+                  <OpportunityBoard
+                    stages={opportunitiesByStage}
+                    priorities={crmPriorities}
+                    selectedOpportunity={selectedOpportunity}
+                    crmTablesReady={crmTablesReady}
+                    onSelectOpportunity={openOpportunityDetail}
+                    onMoveOpportunity={handleMoveOpportunity}
+                  />
+                ) : (
+                  <OpportunityTable
+                    opportunities={filteredOpportunities}
+                    stages={crmStages}
+                    priorities={crmPriorities}
+                    selectedOpportunity={selectedOpportunity}
+                    onSelectOpportunity={openOpportunityDetail}
+                  />
+                )}
               </CardContent>
             </Card>
-
-            <DealWorkspace
-              opportunity={selectedOpportunity}
-              documents={selectedOpportunityDocuments}
-              stages={crmStages}
-              priorities={crmPriorities}
-              canEdit={canEditCrm}
-              onEdit={openOpportunityDialog}
-              onCreateDocument={handleCreateCommercialDocument}
-              creatingDocument={creatingDocument}
-            />
           </TabsContent>
 
           <TabsContent value="subjects">
@@ -1271,96 +1714,7 @@ const CRM = () => {
             </div>
           </TabsContent>
         </Tabs>
-
-        <Dialog open={configDialogOpen} onOpenChange={setConfigDialogOpen}>
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>Nastaveni CRM stavů a priorit</DialogTitle>
-            </DialogHeader>
-            <div className="grid max-h-[70vh] gap-6 overflow-y-auto pr-1 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)]">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-slate-900">Stavy obchodniho pripadu</h3>
-                  <Button type="button" size="sm" variant="outline" onClick={addStageConfig}>Pridat stav</Button>
-                </div>
-                <div className="space-y-2">
-                  {crmStages.map((stage, index) => (
-                    <div key={stage.value} className="grid gap-2 rounded-lg border bg-slate-50 p-3 md:grid-cols-[minmax(120px,1fr)_90px_minmax(180px,1.2fr)_110px]">
-                      <Input
-                        value={stage.label}
-                        onChange={(event) => updateStageConfig(index, 'label', event.target.value)}
-                        placeholder="Nazev stavu"
-                      />
-                      <Input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={stage.probability}
-                        onChange={(event) => updateStageConfig(index, 'probability', event.target.value)}
-                      />
-                      <Select value={stage.color} onValueChange={(value) => updateStageConfig(index, 'color', value)}>
-                        <SelectTrigger className="bg-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="bg-slate-100 text-slate-700 border-slate-200">Neutral</SelectItem>
-                          <SelectItem value="bg-blue-100 text-blue-700 border-blue-200">Modra</SelectItem>
-                          <SelectItem value="bg-indigo-100 text-indigo-700 border-indigo-200">Indigo</SelectItem>
-                          <SelectItem value="bg-amber-100 text-amber-800 border-amber-200">Oranzova</SelectItem>
-                          <SelectItem value="bg-emerald-100 text-emerald-700 border-emerald-200">Zelena</SelectItem>
-                          <SelectItem value="bg-rose-100 text-rose-700 border-rose-200">Cervena</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Select value={stage.is_closed ? 'closed' : 'open'} onValueChange={(value) => updateStageConfig(index, 'is_closed', value === 'closed')}>
-                        <SelectTrigger className="bg-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="open">Otevreno</SelectItem>
-                          <SelectItem value="closed">Uzavreno</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-slate-900">Priority</h3>
-                  <Button type="button" size="sm" variant="outline" onClick={addPriorityConfig}>Pridat</Button>
-                </div>
-                <div className="space-y-2">
-                  {crmPriorities.map((priority, index) => (
-                    <div key={priority.value} className="grid gap-2 rounded-lg border bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_130px] lg:grid-cols-1">
-                      <Input
-                        value={priority.label}
-                        onChange={(event) => updatePriorityConfig(index, 'label', event.target.value)}
-                        placeholder="Nazev priority"
-                      />
-                      <Select value={priority.tone} onValueChange={(value) => updatePriorityConfig(index, 'tone', value)}>
-                        <SelectTrigger className="bg-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="secondary">Neutral</SelectItem>
-                          <SelectItem value="outline">Obrys</SelectItem>
-                          <SelectItem value="destructive">Vyrazna</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <DialogFooter className="gap-2 sm:justify-between">
-              <Button type="button" variant="ghost" onClick={resetCrmConfig} disabled={savingConfig}>Obnovit vychozi</Button>
-              <Button type="button" onClick={handleSaveCrmConfig} disabled={savingConfig}>
-                {savingConfig ? 'Ukladam...' : 'Ulozit nastaveni'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        )}
 
         <Dialog open={opportunityDialogOpen} onOpenChange={setOpportunityDialogOpen}>
           <DialogContent className="max-w-2xl">

@@ -43,6 +43,7 @@ import SettingsProfile from '@/components/SettingsProfile';
 import SettingsPortal from '@/components/SettingsPortal';
 import SettingsDictionaries from '@/components/SettingsDictionaries';
 import SettingsStorage from '@/components/SettingsStorage';
+import SettingsCRM from '@/components/SettingsCRM';
 import ProjectTemplatesSettings from '@/components/ProjectTemplatesSettings';
 import ProjectTemplatesPage from '@/components/ProjectTemplatesPage';
 import BackupMaintenance from '@/components/BackupMaintenance';
@@ -148,6 +149,7 @@ function AppContent() {
                 <Route path="/realizace/:realizaceId/orders/:orderId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
                 <Route path="/documents" element={<PrivateRoute module="documents"><Documents /></PrivateRoute>} />
                 <Route path="/crm" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                <Route path="/crm/:opportunityId" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
                 <Route path="/engineering" element={<PrivateRoute module="engineering"><Engineering /></PrivateRoute>} />
                 <Route path="/tasks" element={<PrivateRoute module="tasks"><Tasks /></PrivateRoute>} />
                 <Route path="/attendance" element={<PrivateRoute module="attendance"><Attendance /></PrivateRoute>} />
@@ -175,6 +177,7 @@ function AppContent() {
                   <Route path="portal" element={<PrivateRoute module="settings" level="can_admin"><SettingsPortal /></PrivateRoute>} />
                   <Route path="order-templates" element={<PrivateRoute module="settings" level="can_admin"><OrderTemplateManager /></PrivateRoute>} />
                   <Route path="dictionaries" element={<PrivateRoute module="settings" level="can_admin"><SettingsDictionaries /></PrivateRoute>} />
+                  <Route path="crm" element={<PrivateRoute module="settings" level="can_admin"><SettingsCRM /></PrivateRoute>} />
                   <Route path="storage" element={<PrivateRoute module="settings" level="can_admin"><SettingsStorage /></PrivateRoute>} />
                   <Route path="project-templates" element={<PrivateRoute module="settings" level="can_admin"><ProjectTemplatesSettings /></PrivateRoute>} />
                   <Route path="backup-maintenance" element={<ProtectedRoute requiredRole="admin"><BackupMaintenance /></ProtectedRoute>} />
