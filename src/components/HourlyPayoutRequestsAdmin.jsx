@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
-import { sendHourlyPayoutPaidEmail } from '@/lib/email';
+import { sendHourlyPayoutPaidEmail, sendPayoutApprovalEmail } from '@/lib/email';
 import { updateHourlyPayoutRequestStatus } from '@/lib/hourlyPayoutService';
 import { logPayoutAction } from '@/lib/payoutLogger';
 import { approveHourlyPayoutRequest } from '@/lib/PayoutApprovalService';
@@ -20,6 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import HourlyPayoutRequestDialog from './HourlyPayoutRequestDialog';
 import AdminHourlyPayoutApprovalDialog from './AdminHourlyPayoutApprovalDialog';
 import HourlyPayoutApprovalAuditLog from './HourlyPayoutApprovalAuditLog';
+import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
 
 const getStatusBadge = (status) => {
   switch (status) {
@@ -140,10 +141,35 @@ const HourlyPayoutRequestsAdmin = () => {
     const result = await approveHourlyPayoutRequest(requestId, adminNote, approvedWithoutInvoice);
     
     if (result.success) {
-      toast({ 
+      const memberName = approvalRequest?.members?.name || 'Pracovnik';
+      const amount = approvalRequest?.total_amount || 0;
+      const memberEmailResult = await sendPayoutApprovalEmail({
+        memberId: approvalRequest?.member_id,
+        amount,
+        approved_without_invoice: approvedWithoutInvoice
+      });
+      const adminEmailResult = await sendAdminPayoutNotification({
+        memberName,
+        amount,
+        action: 'Schvaleni hodinove zadosti'
+      });
+
+      if (!memberEmailResult.success || !adminEmailResult.success) {
+        console.error('[HourlyPayoutRequestsAdmin] Approval notification failed:', {
+          member: memberEmailResult.error,
+          admin: adminEmailResult.error
+        });
+        toast({
+          title: 'Notifikace se nepodarilo odeslat',
+          description: 'Zadost byla schvalena, ale emailovy krok selhal.',
+          variant: 'warning'
+        });
+      } else {
+        toast({ 
           title: "Schváleno", 
           description: "Žádost byla úspěšně schválena." 
-      });
+        });
+      }
       fetchRequests();
     } else {
       toast({ 

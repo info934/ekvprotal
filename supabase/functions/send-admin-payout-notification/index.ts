@@ -54,8 +54,14 @@ Deno.serve(async (req) => {
     });
 
     const data = await res.json();
+
     if (!res.ok) {
-      throw new Error(data?.message || data?.error || `Resend API error ${res.status}`);
+      console.error("Resend admin payout notification error:", data);
+      return jsonResponse({
+        success: false,
+        error: data?.message || data?.error || `Resend API error ${res.status}`,
+        data,
+      }, 502);
     }
 
     return jsonResponse({

@@ -359,11 +359,13 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
           console.log('[PayoutDialog] Sending creation email notification...');
           
           // FIXED: Fetch the newly created payout with explicit FK
-          const { data: newPayout } = await supabase
+          const { data: fetchedPayout } = savedPayout?.id ? await supabase
             .from('payouts')
             .select('*, members:members!payouts_member_id_fkey(name, email)')
-            .eq('id', savedPayout?.id)
-            .single();
+            .eq('id', savedPayout.id)
+            .single() : { data: null };
+
+          const newPayout = fetchedPayout || savedPayout;
 
           if (newPayout) {
             const emailResult = await sendPayoutCreatedEmail(newPayout);
