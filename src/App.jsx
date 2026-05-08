@@ -126,7 +126,7 @@ function AppContent() {
       {session ? (
         <>
           <Sidebar />
-          <main className="min-w-0 flex-1 overflow-x-hidden lg:ml-56 transition-all duration-300 print:ml-0 print:p-0">
+          <main className="min-w-0 flex-1 overflow-x-hidden transition-all duration-300 lg:ml-[var(--sidebar-width,16rem)] print:ml-0 print:p-0">
             <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />

@@ -4,19 +4,19 @@ import { cva } from 'class-variance-authority';
 import React from 'react';
 
 const buttonVariants = cva(
-	'inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+	'inline-flex items-center justify-center rounded-md border border-transparent text-sm font-medium leading-5 shadow-sm ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
 	{
 		variants: {
 			variant: {
-				default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+				default: 'border-primary bg-primary text-primary-foreground hover:bg-blue-700',
 				destructive:
-          'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+          'border-destructive bg-destructive text-destructive-foreground hover:bg-red-700',
 				outline:
-          'border border-input bg-background/50 hover:bg-accent hover:text-accent-foreground',
+          'border-input bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900',
 				secondary:
-          'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-				ghost: 'hover:bg-accent hover:text-accent-foreground',
-				link: 'text-primary underline-offset-4 hover:underline',
+          'border-secondary bg-secondary text-secondary-foreground hover:bg-slate-300',
+				ghost: 'border-transparent bg-transparent shadow-none hover:bg-slate-100 hover:text-slate-900',
+				link: 'border-transparent bg-transparent text-primary shadow-none underline-offset-4 hover:underline',
 			},
 			size: {
 				default: 'h-10 px-4 py-2',

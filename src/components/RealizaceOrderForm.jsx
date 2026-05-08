@@ -274,13 +274,17 @@ const RealizaceOrderForm = () => {
             ? (await supabase.from('realizace_orders').select('status').eq('id', orderId).single()).data.status 
             : 'nová';
 
-        const dataToSave = {
+        const baseDataToSave = {
             ...formData,
             items: normalizedItems,
             total_amount: normalizedItems.reduce((sum, item) => sum + Number(item.total_price || 0), 0),
             realizace_id: realizaceId,
             sent_to_emails: emails,
             status: andSend ? 'odeslána' : currentStatus,
+        };
+
+        const catalogDataToSave = {
+            ...baseDataToSave,
             item_links: normalizedItems
                 .filter(item => item.catalog_item_id)
                 .map((item, index) => ({ index, catalog_item_id: item.catalog_item_id })),
@@ -288,16 +292,17 @@ const RealizaceOrderForm = () => {
             offer_reference: formData.offer_reference || null,
         };
 
+        const dataToSave = catalogReady ? catalogDataToSave : baseDataToSave;
+
         const query = isEditing
             ? supabase.from('realizace_orders').update(dataToSave).eq('id', orderId)
             : supabase.from('realizace_orders').insert(dataToSave);
 
         let { error } = await query;
         if (error && isMissingCatalogError(error)) {
-            const { item_links, commercial_status, offer_reference, ...legacyDataToSave } = dataToSave;
             const legacyQuery = isEditing
-                ? supabase.from('realizace_orders').update(legacyDataToSave).eq('id', orderId)
-                : supabase.from('realizace_orders').insert(legacyDataToSave);
+                ? supabase.from('realizace_orders').update(baseDataToSave).eq('id', orderId)
+                : supabase.from('realizace_orders').insert(baseDataToSave);
             const legacyResult = await legacyQuery;
             error = legacyResult.error;
         }
