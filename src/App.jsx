@@ -8,6 +8,8 @@ import Projects from '@/components/Projects';
 import Documents from '@/components/Documents';
 import CRM from '@/components/CRM';
 import CRMCommercialDocuments from '@/components/CRMCommercialDocuments';
+import Products from '@/components/Products';
+import ProductForm from '@/components/ProductForm';
 import Engineering from '@/components/Engineering';
 import Payouts from '@/components/Payouts';
 import PayoutFormPage from '@/components/PayoutFormPage';
@@ -155,6 +157,9 @@ function AppContent() {
                 <Route path="/crm/orders" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />
                 <Route path="/crm/orders/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />
                 <Route path="/crm/:opportunityId" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                <Route path="/products" element={<PrivateRoute module="crm"><Products /></PrivateRoute>} />
+                <Route path="/products/new" element={<PrivateRoute module="crm" level="can_edit"><ProductForm /></PrivateRoute>} />
+                <Route path="/products/:productId/edit" element={<PrivateRoute module="crm" level="can_edit"><ProductForm /></PrivateRoute>} />
                 <Route path="/engineering" element={<PrivateRoute module="engineering"><Engineering /></PrivateRoute>} />
                 <Route path="/tasks" element={<PrivateRoute module="tasks"><Tasks /></PrivateRoute>} />
                 <Route path="/attendance" element={<PrivateRoute module="attendance"><Attendance /></PrivateRoute>} />

@@ -49,6 +49,14 @@ const isMissingCatalogError = (error) => {
         message.includes('commercial_status');
 };
 
+const isMissingStockSyncError = (error) => {
+    if (!error) return false;
+    const message = `${error.code || ''} ${error.message || ''}`.toLowerCase();
+    return ['42P01', '42883', 'PGRST202', 'PGRST204', 'PGRST205'].includes(error.code) ||
+        message.includes('sync_realizace_order_stock_movements') ||
+        message.includes('product_stock_movements');
+};
+
 const RealizaceOrderForm = () => {
     const { realizaceId, orderId } = useParams();
     const navigate = useNavigate();
@@ -238,6 +246,22 @@ const RealizaceOrderForm = () => {
         }
     };
 
+    const syncRealizaceStock = async (savedOrderId) => {
+        if (!savedOrderId || !catalogReady) return;
+
+        const { error } = await supabase.rpc('sync_realizace_order_stock_movements', {
+            p_order_id: savedOrderId,
+        });
+
+        if (error && !isMissingStockSyncError(error)) {
+            toast({
+                title: 'Objednavka ulozena, ale sklad se nepodarilo prepocitat',
+                description: error.message,
+                variant: 'destructive',
+            });
+        }
+    };
+
     const handleEmailAdd = () => {
         if (newEmail && !emails.includes(newEmail)) {
             setEmails([...emails, newEmail]);
@@ -271,7 +295,7 @@ const RealizaceOrderForm = () => {
         }
         
         const currentStatus = isEditing 
-            ? (await supabase.from('realizace_orders').select('status').eq('id', orderId).single()).data.status 
+            ? ((await supabase.from('realizace_orders').select('status').eq('id', orderId).single()).data?.status || 'nová')
             : 'nová';
 
         const baseDataToSave = {
@@ -295,15 +319,16 @@ const RealizaceOrderForm = () => {
         const dataToSave = catalogReady ? catalogDataToSave : baseDataToSave;
 
         const query = isEditing
-            ? supabase.from('realizace_orders').update(dataToSave).eq('id', orderId)
-            : supabase.from('realizace_orders').insert(dataToSave);
+            ? supabase.from('realizace_orders').update(dataToSave).eq('id', orderId).select('id').single()
+            : supabase.from('realizace_orders').insert(dataToSave).select('id').single();
 
-        let { error } = await query;
+        let { data: savedOrder, error } = await query;
         if (error && isMissingCatalogError(error)) {
             const legacyQuery = isEditing
-                ? supabase.from('realizace_orders').update(baseDataToSave).eq('id', orderId)
-                : supabase.from('realizace_orders').insert(baseDataToSave);
+                ? supabase.from('realizace_orders').update(baseDataToSave).eq('id', orderId).select('id').single()
+                : supabase.from('realizace_orders').insert(baseDataToSave).select('id').single();
             const legacyResult = await legacyQuery;
+            savedOrder = legacyResult.data;
             error = legacyResult.error;
         }
 
@@ -311,6 +336,7 @@ const RealizaceOrderForm = () => {
             toast({ title: 'Chyba při ukládání objednávky', variant: 'destructive', description: error.message });
         } else {
             await saveItemsToCatalog(normalizedItems);
+            await syncRealizaceStock(savedOrder?.id || orderId);
             toast({ title: `Objednávka ${isEditing ? 'upravena' : 'vytvořena'}` });
             navigate(`/realizace/${realizaceId}#orders`);
         }

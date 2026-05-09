@@ -38,6 +38,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -95,6 +96,7 @@ const initialOpportunityForm = {
   expected_close_date: '',
   next_step: '',
   description: '',
+  lost_reason: '',
 };
 
 const isMissingCrmTableError = (error) => {
@@ -123,6 +125,7 @@ const formatDate = (value) => {
 
 const createEmptyCrmItem = () => ({
   id: `new-${Date.now()}`,
+  catalog_item_id: null,
   code: '',
   name: '',
   description: '',
@@ -242,9 +245,12 @@ const DealWorkspace = ({
   priorities,
   onEdit,
   onCreateDocument,
+  onCreateProject,
+  onCreateRealization,
   onGenerateDocument,
   onGenerateOverview,
   onTemplateChange,
+  onStageChange,
   onUpdateOpportunity,
   onUpdateOpportunityItems,
   canEdit,
@@ -252,6 +258,36 @@ const DealWorkspace = ({
   generatingDocument,
   updatingOpportunity,
 }) => {
+  const [catalogProducts, setCatalogProducts] = useState([]);
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogLoading, setCatalogLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const fetchCatalogProducts = async () => {
+      setCatalogLoading(true);
+      const { data, error } = await supabase
+        .from('commercial_item_catalog')
+        .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      if (active && !error) {
+        setCatalogProducts(data || []);
+      }
+      if (active) {
+        setCatalogLoading(false);
+      }
+    };
+
+    fetchCatalogProducts();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   if (!opportunity) {
     return (
       <Card className="border-dashed bg-slate-50/70">
@@ -337,6 +373,32 @@ const DealWorkspace = ({
     onUpdateOpportunityItems?.(opportunity.id, opportunityItems.filter((item) => item.id !== itemId));
   };
 
+  const filteredCatalogProducts = catalogProducts
+    .filter((product) => {
+      const query = catalogQuery.trim().toLowerCase();
+      if (!query) return true;
+      return [product.code, product.name, product.description, product.category]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query));
+    })
+    .slice(0, 12);
+
+  const addCatalogProduct = (product) => {
+    const nextItem = {
+      ...createEmptyCrmItem(),
+      id: `new-${Date.now()}-${product.id}`,
+      catalog_item_id: product.id,
+      code: product.code || '',
+      name: product.name || 'Polozka',
+      description: product.description || '',
+      unit: product.unit || 'ks',
+      unit_price: Number(product.default_unit_price || 0),
+      vat_rate: Number(product.default_vat_rate || 21),
+    };
+    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, { ...nextItem, line_total: calculateCrmItemLineTotal(nextItem) }]);
+    setCatalogQuery('');
+  };
+
   return (
     <div className="space-y-5">
       <Card className="crm-panel">
@@ -355,33 +417,58 @@ const DealWorkspace = ({
                 <span className="font-semibold text-slate-700">{formatCurrency(value)}</span>
               </CardDescription>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {canEdit && (
-                <Button variant="outline" onClick={() => onEdit(opportunity)}>
-                  Upravit
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="shrink-0">
+                  <MoreHorizontal className="mr-2 h-4 w-4" />
+                  Akce
                 </Button>
-              )}
-              <Button variant="outline" onClick={() => onGenerateOverview?.('docx')} disabled={generatingDocument}>
-                <FileText className="mr-2 h-4 w-4" />
-                Overview DOCX
-              </Button>
-              <Button variant="outline" onClick={() => onGenerateOverview?.('pdf')} disabled={generatingDocument}>
-                Overview PDF
-              </Button>
-              <Button disabled variant="outline">
-                <Plus className="mr-2 h-4 w-4" />
-                Vlastni akce
-              </Button>
-              <Button variant="ghost" size="icon" disabled className="bg-slate-100">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Obchodni pripad</DropdownMenuLabel>
+                {canEdit && (
+                  <DropdownMenuItem onSelect={() => onEdit(opportunity)}>
+                    Upravit pripad
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem disabled={!canEdit || creatingDocument} onSelect={() => onCreateDocument?.('offer')}>
+                  Vytvorit nabidku
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={!canEdit || creatingDocument} onSelect={() => onCreateDocument?.('order')}>
+                  Vytvorit objednavku
+                </DropdownMenuItem>
+                {stage.value === 'won' && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Predat do vyroby</DropdownMenuLabel>
+                    <DropdownMenuItem disabled={!canEdit} onSelect={() => onCreateProject?.()}>
+                      Vytvorit projekt z OP
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={!canEdit} onSelect={() => onCreateRealization?.()}>
+                      Vytvorit realizaci z OP
+                    </DropdownMenuItem>
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Generovat overview</DropdownMenuLabel>
+                <DropdownMenuItem disabled={generatingDocument} onSelect={() => onGenerateOverview?.('docx')}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  DOCX
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={generatingDocument} onSelect={() => onGenerateOverview?.('pdf')}>
+                  PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={generatingDocument} onSelect={() => onGenerateOverview?.('html')}>
+                  HTML
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </CardHeader>
         <CardContent className="grid gap-5 bg-white p-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.65fr)]">
           <div className="space-y-5">
             <Tabs defaultValue="basic" className="space-y-4">
-              <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0">
+              <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg border bg-slate-100 p-1">
                 <TabsTrigger value="basic">Zakladni udaje</TabsTrigger>
                 <TabsTrigger value="commerce">Nabidky a objednavky</TabsTrigger>
                 <TabsTrigger value="history">Historie</TabsTrigger>
@@ -408,12 +495,7 @@ const DealWorkspace = ({
                       value={opportunity.stage}
                       disabled={!canEdit || updatingOpportunity}
                       onValueChange={(value) => {
-                        const nextStage = getStage(value, stages);
-                        onUpdateOpportunity?.(opportunity.id, {
-                          stage: value,
-                          probability: nextStage.probability,
-                          status: nextStage.is_closed ? 'closed' : 'open',
-                        });
+                        onStageChange?.(opportunity.id, value);
                       }}
                     >
                       <SelectTrigger className="bg-white">
@@ -494,6 +576,18 @@ const DealWorkspace = ({
                   </div>
                 </div>
 
+                {stage.value === 'lost' && (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950 shadow-sm">
+                    <h3 className="font-semibold">Duvod prohry</h3>
+                    <p className="mt-2 whitespace-pre-wrap text-rose-900">
+                      {opportunity.lost_reason || 'Duvod zatim neni vyplnen.'}
+                    </p>
+                    {opportunity.lost_at && (
+                      <p className="mt-2 text-xs text-rose-700">Uzavreno jako prohrane: {formatDate(opportunity.lost_at)}</p>
+                    )}
+                  </div>
+                )}
+
                 <div className="min-h-[150px] rounded-lg border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
                   <h3 className="text-sm font-semibold text-amber-900">Popis</h3>
                   <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">
@@ -529,6 +623,37 @@ const DealWorkspace = ({
           </div>
 
           <div className="space-y-4">
+            {stage.value === 'won' && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-700" />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-semibold text-emerald-950">Vyhrany obchodni pripad</h3>
+                    <p className="mt-1 text-sm text-emerald-800">
+                      Predvyplnte navazny projekt nebo realizaci z dat obchodniho pripadu. Vazba na OP zustane ulozena v zaznamu.
+                    </p>
+                    {opportunity.project_id && (
+                      <Button asChild variant="link" className="mt-2 h-auto p-0 text-emerald-800">
+                        <Link to={`/projects/${opportunity.project_id}`}>
+                          Otevrit navazany projekt
+                          <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                    )}
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <Button size="sm" onClick={() => onCreateProject?.()} disabled={!canEdit}>
+                        <Building2 className="mr-2 h-4 w-4" />
+                        Vytvorit projekt
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => onCreateRealization?.()} disabled={!canEdit}>
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                        Vytvorit realizaci
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="rounded-lg border bg-white p-5 text-center shadow-sm">
               <Paperclip className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
               <p className="text-sm font-medium text-muted-foreground">Zatim bez priloh</p>
@@ -572,7 +697,42 @@ const DealWorkspace = ({
             </CardTitle>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" disabled>Hromadne akce</Button>
-              <Button size="sm" onClick={addOpportunityItem} disabled={!canEdit || updatingOpportunity}>Pridat produkt</Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" disabled={!canEdit || updatingOpportunity}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Pridat z katalogu
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80">
+                  <DropdownMenuLabel>Produktovy katalog</DropdownMenuLabel>
+                  <div className="px-2 py-1.5">
+                    <Input
+                      value={catalogQuery}
+                      onChange={(event) => setCatalogQuery(event.target.value)}
+                      placeholder="Hledat produkt..."
+                      className="h-8"
+                    />
+                  </div>
+                  <DropdownMenuSeparator />
+                  {catalogLoading ? (
+                    <DropdownMenuItem disabled>Nacitam katalog...</DropdownMenuItem>
+                  ) : filteredCatalogProducts.length === 0 ? (
+                    <DropdownMenuItem disabled>Zadny produkt nenalezen</DropdownMenuItem>
+                  ) : filteredCatalogProducts.map((product) => (
+                    <DropdownMenuItem key={product.id} onSelect={() => addCatalogProduct(product)} className="flex flex-col items-start gap-0.5">
+                      <span className="font-medium">{product.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {product.code || '-'} - {formatCurrency(product.default_unit_price)}
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={addOpportunityItem}>
+                    Rucni polozka
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </CardHeader>
@@ -639,14 +799,18 @@ const DealWorkspace = ({
               <ShoppingCart className="h-4 w-4" />
               Nabidky / objednavky
             </CardTitle>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => onCreateDocument?.('offer')} disabled={!canEdit || creatingDocument}>
-                Pridat nabidku
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => onCreateDocument?.('order')} disabled={!canEdit || creatingDocument}>
-                Pridat objednavku
-              </Button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={!canEdit || creatingDocument}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Pridat dokument
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onSelect={() => onCreateDocument?.('offer')}>Nabidka</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onCreateDocument?.('order')}>Objednavka</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </CardHeader>
         <CardContent className="grid gap-4 p-5 xl:grid-cols-2">
@@ -950,6 +1114,9 @@ const CRM = () => {
   const [stageFilter, setStageFilter] = useState('open');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [selectedTemplateIds, setSelectedTemplateIds] = useState({ offer: 'default', order: 'default' });
+  const [lossDialogOpen, setLossDialogOpen] = useState(false);
+  const [pendingLostOpportunity, setPendingLostOpportunity] = useState(null);
+  const [lossReason, setLossReason] = useState('');
 
   const canEditCrm = hasPermission('crm', 'can_edit');
   const canAdminCrm = hasPermission('crm', 'can_admin');
@@ -981,7 +1148,7 @@ const CRM = () => {
         .limit(60),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, subject_id, project_id, subject:subject_id(id, name), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, subject_id, project_id, subject:subject_id(id, name), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
         .order('updated_at', { ascending: false }),
       supabase
         .from('crm_activities')
@@ -1078,10 +1245,17 @@ const CRM = () => {
     const activeRelations = projects.filter((project) => project.client || project.investor).length;
     const openOpportunities = opportunities.filter((opportunity) => opportunity.status === 'open' && !getStage(opportunity.stage, crmStages).is_closed);
     const wonOpportunities = opportunities.filter((opportunity) => getStage(opportunity.stage, crmStages).is_closed && Number(opportunity.probability || 0) === 100);
+    const lostOpportunities = opportunities.filter((opportunity) => opportunity.stage === 'lost' || (getStage(opportunity.stage, crmStages).is_closed && Number(opportunity.probability || 0) === 0));
     const pipelineValue = openOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
     const weightedPipeline = openOpportunities.reduce((sum, opportunity) => (
       sum + (Number(opportunity.value || 0) * (Number(opportunity.probability || 0) / 100))
     ), 0);
+    const wonValue = wonOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
+    const lostValue = lostOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
+    const closedCount = wonOpportunities.length + lostOpportunities.length;
+    const conversionRate = closedCount > 0 ? Math.round((wonOpportunities.length / closedCount) * 100) : 0;
+    const averageOpenValue = openOpportunities.length > 0 ? Math.round(pipelineValue / openOpportunities.length) : 0;
+    const expectedGrossProfit = Math.round(weightedPipeline * 0.28);
 
     return {
       subjects: subjects.length,
@@ -1092,8 +1266,14 @@ const CRM = () => {
       activeRelations,
       opportunities: openOpportunities.length,
       won: wonOpportunities.length,
+      lost: lostOpportunities.length,
       pipelineValue,
       weightedPipeline,
+      wonValue,
+      lostValue,
+      conversionRate,
+      averageOpenValue,
+      expectedGrossProfit,
       countsByType,
     };
   }, [subjects, projects, contacts, opportunities, crmStages]);
@@ -1199,6 +1379,23 @@ const CRM = () => {
     setUpdatingOpportunity(false);
 
     if (error) {
+      if (error.code === 'PGRST204' && ('lost_reason' in patch || 'lost_at' in patch)) {
+        const { lost_reason, lost_at, ...legacyPatch } = patch;
+        const { error: legacyError } = await supabase
+          .from('crm_opportunities')
+          .update(legacyPatch)
+          .eq('id', opportunityId);
+
+        if (!legacyError) {
+          toast({
+            title: 'Stav ulozen bez duvodu prohry',
+            description: 'Online databaze jeste nema sloupce lost_reason/lost_at. Aplikujte CRM migraci.',
+          });
+          fetchCrmData();
+          return;
+        }
+      }
+
       toast({
         title: 'Zmenu se nepodarilo ulozit',
         description: error.message,
@@ -1312,17 +1509,50 @@ const CRM = () => {
     setUpdatingOpportunity(false);
   }, [canEditCrm, commercialDocuments, fetchCrmData, toast, updateOpportunityState]);
 
-  const handleMoveOpportunity = useCallback((opportunityId, targetStageValue) => {
+  const requestOpportunityStageChange = useCallback((opportunityId, targetStageValue) => {
     const targetStage = getStage(targetStageValue, crmStages);
     const opportunity = opportunities.find((item) => item.id === opportunityId);
     if (!opportunity || opportunity.stage === targetStageValue) return;
+
+    if (targetStageValue === 'lost') {
+      setPendingLostOpportunity({ id: opportunityId, targetStageValue });
+      setLossReason(opportunity.lost_reason || '');
+      setLossDialogOpen(true);
+      return;
+    }
 
     handleInlineOpportunityUpdate(opportunityId, {
       stage: targetStageValue,
       probability: targetStage.probability,
       status: targetStage.is_closed ? 'closed' : 'open',
+      lost_reason: null,
+      lost_at: null,
     });
   }, [crmStages, handleInlineOpportunityUpdate, opportunities]);
+
+  const handleMoveOpportunity = useCallback((opportunityId, targetStageValue) => {
+    requestOpportunityStageChange(opportunityId, targetStageValue);
+  }, [requestOpportunityStageChange]);
+
+  const confirmLostOpportunity = useCallback(() => {
+    const reason = lossReason.trim();
+    if (!pendingLostOpportunity || !reason) {
+      toast({ title: 'Doplnte duvod prohry', variant: 'destructive' });
+      return;
+    }
+
+    const targetStage = getStage(pendingLostOpportunity.targetStageValue, crmStages);
+    handleInlineOpportunityUpdate(pendingLostOpportunity.id, {
+      stage: pendingLostOpportunity.targetStageValue,
+      probability: targetStage.probability,
+      status: 'closed',
+      lost_reason: reason,
+      lost_at: new Date().toISOString(),
+    });
+    setLossDialogOpen(false);
+    setPendingLostOpportunity(null);
+    setLossReason('');
+  }, [crmStages, handleInlineOpportunityUpdate, lossReason, pendingLostOpportunity, toast]);
 
   const upcomingActivities = useMemo(() => (
     activities.filter((activity) => activity.status !== 'done' && activity.status !== 'completed').slice(0, 8)
@@ -1355,6 +1585,7 @@ const CRM = () => {
         expected_close_date: opportunity.expected_close_date || '',
         next_step: opportunity.next_step || '',
         description: opportunity.description || '',
+        lost_reason: opportunity.lost_reason || '',
       });
     } else {
       setOpportunityForm(initialOpportunityForm);
@@ -1382,6 +1613,14 @@ const CRM = () => {
       return;
     }
 
+    if (opportunityForm.stage === 'lost' && !opportunityForm.lost_reason.trim()) {
+      toast({
+        title: 'Doplnte duvod prohry',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSavingOpportunity(true);
     const isNewOpportunity = !opportunityForm.id;
     const opportunityNumber = isNewOpportunity ? formatCrmNumber(crmNumbering, 'opportunity') : null;
@@ -1398,6 +1637,8 @@ const CRM = () => {
       expected_close_date: opportunityForm.expected_close_date || null,
       next_step: opportunityForm.next_step.trim() || null,
       description: opportunityForm.description.trim() || null,
+      lost_reason: opportunityForm.stage === 'lost' ? opportunityForm.lost_reason.trim() : null,
+      lost_at: opportunityForm.stage === 'lost' ? new Date().toISOString() : null,
       status: getStage(opportunityForm.stage, crmStages).is_closed ? 'closed' : 'open',
     };
 
@@ -1405,7 +1646,16 @@ const CRM = () => {
       ? supabase.from('crm_opportunities').update(payload).eq('id', opportunityForm.id)
       : supabase.from('crm_opportunities').insert(payload);
 
-    const { error } = await request;
+    let { error } = await request;
+
+    if (error && error.code === 'PGRST204' && ('lost_reason' in payload || 'lost_at' in payload)) {
+      const { lost_reason, lost_at, ...legacyPayload } = payload;
+      const legacyRequest = opportunityForm.id
+        ? supabase.from('crm_opportunities').update(legacyPayload).eq('id', opportunityForm.id)
+        : supabase.from('crm_opportunities').insert(legacyPayload);
+      const legacyResult = await legacyRequest;
+      error = legacyResult.error;
+    }
 
     if (error) {
       setSavingOpportunity(false);
@@ -1503,6 +1753,16 @@ const CRM = () => {
     toast({ title: type === 'offer' ? 'Nabidka vytvorena' : 'Objednavka vytvorena' });
     fetchCrmData();
   };
+
+  const handleCreateProjectFromOpportunity = useCallback(() => {
+    if (!selectedOpportunity) return;
+    navigate(`/projects/new?crmOpportunityId=${selectedOpportunity.id}`);
+  }, [navigate, selectedOpportunity]);
+
+  const handleCreateRealizationFromOpportunity = useCallback(() => {
+    if (!selectedOpportunity) return;
+    navigate(`/realizace/new?crmOpportunityId=${selectedOpportunity.id}`);
+  }, [navigate, selectedOpportunity]);
 
   const handleGenerateCommercialDocument = async (document, format = 'docx', template = null) => {
     if (!selectedOpportunity || !document) return;
@@ -1617,6 +1877,43 @@ const CRM = () => {
           <MetricCard icon={CircleDollarSign} title="Vazena pipeline" value={crmTablesReady ? formatCurrency(metrics.weightedPipeline) : '-'} description={`${metrics.contacts} kontaktu v projektech`} tone="success" />
         </div>
 
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardHeader className="border-b bg-white p-4">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="h-4 w-4 text-primary" />
+              Financni pohled CRM
+            </CardTitle>
+            <CardDescription>Souhrn pipeline, vyhranych a prohranych obchodnich pripadu.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Vyhrano</p>
+              <p className="mt-1 text-xl font-semibold text-emerald-700">{crmTablesReady ? formatCurrency(metrics.wonValue) : '-'}</p>
+              <p className="text-xs text-muted-foreground">{metrics.won} OP</p>
+            </div>
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Prohrano</p>
+              <p className="mt-1 text-xl font-semibold text-rose-700">{crmTablesReady ? formatCurrency(metrics.lostValue) : '-'}</p>
+              <p className="text-xs text-muted-foreground">{metrics.lost} OP</p>
+            </div>
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Konverze</p>
+              <p className="mt-1 text-xl font-semibold text-slate-950">{crmTablesReady ? `${metrics.conversionRate} %` : '-'}</p>
+              <p className="text-xs text-muted-foreground">vyhrane z uzavrenych</p>
+            </div>
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Prumer aktivni OP</p>
+              <p className="mt-1 text-xl font-semibold text-slate-950">{crmTablesReady ? formatCurrency(metrics.averageOpenValue) : '-'}</p>
+              <p className="text-xs text-muted-foreground">otevrena pipeline</p>
+            </div>
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Ocekavany hruby zisk</p>
+              <p className="mt-1 text-xl font-semibold text-primary">{crmTablesReady ? formatCurrency(metrics.expectedGrossProfit) : '-'}</p>
+              <p className="text-xs text-muted-foreground">orientacne 28 % z vazene pipeline</p>
+            </div>
+          </CardContent>
+        </Card>
+
         {opportunityId ? (
           <div className="space-y-4">
             <div className="flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
@@ -1654,12 +1951,15 @@ const CRM = () => {
               canEdit={canEditCrm}
               onEdit={openOpportunityDialog}
               onCreateDocument={handleCreateCommercialDocument}
+              onCreateProject={handleCreateProjectFromOpportunity}
+              onCreateRealization={handleCreateRealizationFromOpportunity}
               onGenerateDocument={handleGenerateCommercialDocument}
               onGenerateOverview={handleGenerateOpportunityOverview}
               onTemplateChange={(type, templateId) => setSelectedTemplateIds((current) => ({
                 ...current,
                 [type]: templateId || 'default',
               }))}
+              onStageChange={requestOpportunityStageChange}
               onUpdateOpportunity={handleInlineOpportunityUpdate}
               onUpdateOpportunityItems={handleOpportunityItemsUpdate}
               creatingDocument={creatingDocument}
@@ -1669,7 +1969,7 @@ const CRM = () => {
           </div>
         ) : (
         <Tabs defaultValue="pipeline" className="space-y-6">
-          <TabsList className="w-full justify-start sm:w-auto">
+          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg border bg-slate-100 p-1 sm:w-auto">
             <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
             <TabsTrigger value="subjects">Adresar</TabsTrigger>
             <TabsTrigger value="activities">Aktivity</TabsTrigger>
@@ -2134,6 +2434,19 @@ const CRM = () => {
                     rows={4}
                   />
                 </div>
+                {opportunityForm.stage === 'lost' && (
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="opportunity-lost-reason">Duvod prohry *</Label>
+                    <Textarea
+                      id="opportunity-lost-reason"
+                      value={opportunityForm.lost_reason}
+                      onChange={(event) => handleOpportunityChange('lost_reason', event.target.value)}
+                      rows={4}
+                      placeholder="Napr. cena, termin, konkurence, zrusena poptavka..."
+                      required
+                    />
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setOpportunityDialogOpen(false)}>
@@ -2144,6 +2457,47 @@ const CRM = () => {
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={lossDialogOpen}
+          onOpenChange={(open) => {
+            setLossDialogOpen(open);
+            if (!open) {
+              setPendingLostOpportunity(null);
+              setLossReason('');
+            }
+          }}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Uzavrit obchodni pripad jako prohrany</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
+                Pro prohrany obchodni pripad je potreba zapsat duvod. Pomuze to pozdeji vyhodnocovat, proc ztracime zakazky.
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="loss-reason">Duvod prohry *</Label>
+                <Textarea
+                  id="loss-reason"
+                  value={lossReason}
+                  onChange={(event) => setLossReason(event.target.value)}
+                  rows={5}
+                  placeholder="Napr. cena, termin, konkurence, zrusena poptavka..."
+                  autoFocus
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setLossDialogOpen(false)}>
+                Zrusit
+              </Button>
+              <Button type="button" variant="destructive" onClick={confirmLostOpportunity} disabled={!lossReason.trim()}>
+                Uzavrit jako prohrane
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

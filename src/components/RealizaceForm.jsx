@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { RealizationSchema } from '@/lib/validationSchemas';
@@ -24,11 +24,13 @@ import { ensureEntityFolder } from '@/lib/documentStorageService';
 
 const RealizaceForm = () => {
     const { realizaceId } = useParams();
+    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const { toast } = useToast();
     const { hasPermission, userRole } = useAuth();
 
     const isEditing = Boolean(realizaceId);
+    const sourceOpportunityId = !isEditing ? searchParams.get('crmOpportunityId') : null;
     // Strict role check
     const canEdit = hasPermission('realizace', 'can_edit') && userRole !== 'user';
     const canDelete = hasPermission('realizace', 'can_delete') && userRole !== 'user';
@@ -36,6 +38,7 @@ const RealizaceForm = () => {
     const [realizationData, setRealizationData] = useState(null);
     const [members, setMembers] = useState([]);
     const [realizationTypes, setRealizationTypes] = useState([]);
+    const [sourceOpportunity, setSourceOpportunity] = useState(null);
     const [loading, setLoading] = useState(true);
     const [teamEntries, setTeamEntries] = useState([{ member_id: '', share_type: '', share_value: '' }]);
     const [profitSharesLoading, setProfitSharesLoading] = useState(false);
@@ -202,13 +205,32 @@ const RealizaceForm = () => {
             } else {
                 setValue('status', 'Připravuje se');
                 setTeamEntries([{ member_id: '', share_type: '', share_value: '' }]);
+                if (sourceOpportunityId) {
+                    const { data: opportunity, error: opportunityError } = await supabase
+                        .from('crm_opportunities')
+                        .select('id, number, title, value, expected_close_date, description, subject_id, subject:subject_id(id, name)')
+                        .eq('id', sourceOpportunityId)
+                        .maybeSingle();
+
+                    if (opportunityError) throw opportunityError;
+                    if (opportunity) {
+                        setSourceOpportunity(opportunity);
+                        setValue('name', opportunity.title || '');
+                        setValue('investor_id', opportunity.subject_id || null);
+                        setValue('contract_amount', Number(opportunity.value || 1));
+                        setValue('budget', Math.round(Number(opportunity.value || 0) * 0.72));
+                        setValue('expected_total_cost', Math.round(Number(opportunity.value || 0) * 0.72));
+                        setValue('planned_end_date', opportunity.expected_close_date || '');
+                        setValue('status', 'Připravuje se');
+                    }
+                }
             }
         } catch (error) {
             toast({ title: 'Chyba při načítání dat', description: error.message, variant: 'destructive' });
         } finally {
             setLoading(false);
         }
-    }, [realizaceId, isEditing, setValue, toast, loadProfitShares]);
+    }, [realizaceId, isEditing, setValue, toast, loadProfitShares, sourceOpportunityId]);
 
     useEffect(() => {
         fetchData();
@@ -235,6 +257,7 @@ const RealizaceForm = () => {
         // Add team members to payload
         const memberIds = teamEntries.map(entry => entry.member_id).filter(Boolean);
         dataToSave.team_members = memberIds;
+        if (sourceOpportunityId) dataToSave.crm_opportunity_id = sourceOpportunityId;
 
         if (dataToSave.status === 'Dokončeno') {
             const percentTotal = teamEntries
@@ -262,9 +285,22 @@ const RealizaceForm = () => {
                 const { error } = await supabase.from('realizations').update(dataToSave).eq('id', realizaceId);
                 if (error) throw error;
             } else {
-                const { data: newRealization, error } = await supabase.from('realizations').insert(dataToSave).select().single();
+                let { data: newRealization, error } = await supabase.from('realizations').insert(dataToSave).select().single();
+                if (error && error.code === 'PGRST204' && sourceOpportunityId) {
+                    const { crm_opportunity_id, ...legacyData } = dataToSave;
+                    const legacyResult = await supabase.from('realizations').insert(legacyData).select().single();
+                    newRealization = legacyResult.data;
+                    error = legacyResult.error;
+                }
                 if (error) throw error;
                 targetId = newRealization.id;
+
+                if (sourceOpportunityId) {
+                    await supabase
+                        .from('crm_opportunities')
+                        .update({ realization_id: newRealization.id, updated_at: new Date().toISOString() })
+                        .eq('id', sourceOpportunityId);
+                }
 
                 try {
                     await ensureEntityFolder({
@@ -386,7 +422,24 @@ const RealizaceForm = () => {
                 </h1>
             </motion.div>
 
-            <form onSubmit={handleSubmit(onSubmit)}>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+                {sourceOpportunity && (
+                    <Card className="border-emerald-200 bg-emerald-50/80 shadow-sm">
+                        <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p className="text-sm font-semibold text-emerald-950">
+                                    Realizace bude vytvorena z obchodniho pripadu {sourceOpportunity.number || ''}
+                                </p>
+                                <p className="text-sm text-emerald-800">
+                                    {sourceOpportunity.title} {sourceOpportunity.subject?.name ? `- ${sourceOpportunity.subject.name}` : ''}
+                                </p>
+                            </div>
+                            <Button type="button" variant="outline" onClick={() => navigate(`/crm/${sourceOpportunity.id}`)}>
+                                Zpet na OP
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
                 <fieldset disabled={!canEdit || isSubmitting}>
                     <Card>
                         <CardHeader>

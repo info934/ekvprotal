@@ -5,6 +5,7 @@ import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -65,6 +66,7 @@ const formatDate = (value) => {
 
 const emptyItem = () => ({
   id: `new-${Date.now()}`,
+  catalog_item_id: null,
   code: '',
   name: '',
   description: '',
@@ -135,6 +137,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [selectedTemplateId, setSelectedTemplateId] = useState('default');
   const [numbering, setNumbering] = useState(() => normalizeCrmNumbering(Object.values(DEFAULT_CRM_NUMBERING)));
   const [query, setQuery] = useState('');
+  const [catalogProducts, setCatalogProducts] = useState([]);
+  const [catalogQuery, setCatalogQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -178,6 +182,14 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     setDocumentTemplates(templatesRes.error ? [] : (templatesRes.data || []));
     setNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
     setSelectedDocument(documentId ? normalizedDocuments.find((document) => document.id === documentId) || null : null);
+
+    const { data: catalogData, error: catalogError } = await supabase
+      .from('commercial_item_catalog')
+      .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active')
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+    setCatalogProducts(catalogError ? [] : (catalogData || []));
+
     setLoading(false);
   }, [config.title, documentId, toast, type]);
 
@@ -226,6 +238,37 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
   const addItem = () => {
     setSelectedDocument((current) => current ? { ...current, items: [...current.items, emptyItem()] } : current);
+  };
+
+  const filteredCatalogProducts = useMemo(() => {
+    const needle = catalogQuery.trim().toLowerCase();
+    return catalogProducts
+      .filter((product) => {
+        if (!needle) return true;
+        return [product.code, product.name, product.description, product.category]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(needle));
+      })
+      .slice(0, 14);
+  }, [catalogProducts, catalogQuery]);
+
+  const addCatalogItem = (product) => {
+    const nextItem = {
+      ...emptyItem(),
+      id: `new-${Date.now()}-${product.id}`,
+      catalog_item_id: product.id,
+      code: product.code || '',
+      name: product.name || 'Polozka',
+      description: product.description || '',
+      unit: product.unit || 'ks',
+      unit_price: Number(product.default_unit_price || 0),
+      vat_rate: Number(product.default_vat_rate || 21),
+    };
+    setSelectedDocument((current) => current ? {
+      ...current,
+      items: [...current.items, { ...nextItem, line_total: calculateLineTotal(nextItem) }],
+    } : current);
+    setCatalogQuery('');
   };
 
   const removeItem = (itemId) => {
@@ -444,32 +487,40 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           title={selectedDocument?.title || config.detailTitle}
           description={selectedDocument?.number || 'Nacitani detailu dokumentu'}
           actions={(
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" onClick={() => navigate(config.listPath)}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Zpet na seznam
               </Button>
-              <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                <SelectTrigger className="h-10 w-[210px] bg-white">
-                  <SelectValue placeholder="Sablona dokumentu" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="default">Vychozi sablona</SelectItem>
-                  {documentTemplates.map((template) => (
-                    <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button variant="outline" onClick={() => handleGenerateSelectedDocument('docx')} disabled={saving || !selectedDocument}>
-                <FileText className="mr-2 h-4 w-4" />
-                DOCX
-              </Button>
-              <Button variant="outline" onClick={() => handleGenerateSelectedDocument('pdf')} disabled={saving || !selectedDocument}>
-                PDF
-              </Button>
-              <Button variant="ghost" onClick={() => handleGenerateSelectedDocument('html')} disabled={saving || !selectedDocument}>
-                HTML
-              </Button>
+              <div className="flex items-center gap-2 rounded-md border bg-white p-1">
+                <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+                  <SelectTrigger className="h-9 w-[210px] border-0 bg-transparent shadow-none focus:ring-0">
+                    <SelectValue placeholder="Sablona dokumentu" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Vychozi sablona</SelectItem>
+                    {documentTemplates.map((template) => (
+                      <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="h-9" disabled={saving || !selectedDocument}>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Generovat
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuLabel>Vystup dokumentu</DropdownMenuLabel>
+                    <DropdownMenuItem onSelect={() => handleGenerateSelectedDocument('docx')}>DOCX</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => handleGenerateSelectedDocument('pdf')}>PDF</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => handleGenerateSelectedDocument('html')}>HTML</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem disabled>Vybrana sablona se pouzije automaticky</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
               <Button onClick={handleSaveDocument} disabled={!canEdit || saving || !selectedDocument}>
                 <Save className="mr-2 h-4 w-4" />
                 {saving ? 'Ukladam...' : 'Ulozit'}
@@ -568,10 +619,41 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                     <CardTitle>Polozkovy seznam</CardTitle>
                     <CardDescription>Polozky jsou spolecne pro obchodni pripad, pokud u dokumentu nevypnete synchronizaci.</CardDescription>
                   </div>
-                  <Button type="button" variant="outline" onClick={addItem} disabled={!canEdit || saving}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Pridat polozku
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="outline" disabled={!canEdit || saving}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Pridat z katalogu
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-80">
+                        <DropdownMenuLabel>Produktovy katalog</DropdownMenuLabel>
+                        <div className="px-2 py-1.5">
+                          <Input
+                            value={catalogQuery}
+                            onChange={(event) => setCatalogQuery(event.target.value)}
+                            placeholder="Hledat produkt..."
+                            className="h-8"
+                          />
+                        </div>
+                        <DropdownMenuSeparator />
+                        {filteredCatalogProducts.length === 0 ? (
+                          <DropdownMenuItem disabled>Zadny produkt nenalezen</DropdownMenuItem>
+                        ) : filteredCatalogProducts.map((product) => (
+                          <DropdownMenuItem key={product.id} onSelect={() => addCatalogItem(product)} className="flex flex-col items-start gap-0.5">
+                            <span className="font-medium">{product.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {product.code || '-'} - {formatCurrency(product.default_unit_price)}
+                            </span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button type="button" variant="secondary" onClick={addItem} disabled={!canEdit || saving}>
+                      Rucni polozka
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
