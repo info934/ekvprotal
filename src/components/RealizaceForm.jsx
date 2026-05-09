@@ -286,7 +286,7 @@ const RealizaceForm = () => {
                 if (error) throw error;
             } else {
                 let { data: newRealization, error } = await supabase.from('realizations').insert(dataToSave).select().single();
-                if (error && error.code === 'PGRST204' && sourceOpportunityId) {
+                if (error && ['42703', 'PGRST204'].includes(error.code) && sourceOpportunityId) {
                     const { crm_opportunity_id, ...legacyData } = dataToSave;
                     const legacyResult = await supabase.from('realizations').insert(legacyData).select().single();
                     newRealization = legacyResult.data;

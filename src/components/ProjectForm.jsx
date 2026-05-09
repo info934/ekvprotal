@@ -214,7 +214,7 @@ const ProjectForm = () => {
                 navigate(`/projects/${projectId}`);
             } else {
                 let { data: newProject, error } = await supabase.from('projects').insert(dataToSave).select().single();
-                if (error && error.code === 'PGRST204' && sourceOpportunityId) {
+                if (error && ['42703', 'PGRST204'].includes(error.code) && sourceOpportunityId) {
                     const { crm_opportunity_id, ...legacyData } = dataToSave;
                     const legacyResult = await supabase.from('projects').insert(legacyData).select().single();
                     newProject = legacyResult.data;

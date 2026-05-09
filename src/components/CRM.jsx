@@ -112,6 +112,13 @@ const isMissingCrmTableError = (error) => {
     message.includes('crm_commercial_document_items');
 };
 
+const isMissingColumnError = (error, columns = []) => {
+  if (!error) return false;
+  const message = `${error.code || ''} ${error.message || ''}`.toLowerCase();
+  return ['42703', 'PGRST204', 'PGRST205'].includes(error.code) &&
+    columns.some((column) => message.includes(String(column).toLowerCase()));
+};
+
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
   style: 'currency',
   currency: 'CZK',
@@ -1178,6 +1185,14 @@ const CRM = () => {
         .select('document_type, prefix, next_number, padding'),
     ]);
 
+    let effectiveOpportunitiesRes = opportunitiesRes;
+    if (isMissingColumnError(opportunitiesRes.error, ['lost_reason', 'lost_at', 'realization_id'])) {
+      effectiveOpportunitiesRes = await supabase
+        .from('crm_opportunities')
+        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, subject_id, project_id, subject:subject_id(id, name), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .order('updated_at', { ascending: false });
+    }
+
     const coreError = subjectsRes.error || projectsRes.error || contactsRes.error;
     if (coreError) {
       toast({
@@ -1191,8 +1206,8 @@ const CRM = () => {
       setContacts(contactsRes.data || []);
     }
 
-    if (opportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error) {
-      const crmError = opportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error;
+    if (effectiveOpportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error) {
+      const crmError = effectiveOpportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error;
       if (isMissingCrmTableError(crmError)) {
         setCrmTablesReady(false);
         setOpportunities([]);
@@ -1208,7 +1223,10 @@ const CRM = () => {
       }
     } else {
       setCrmTablesReady(true);
-      setOpportunities((opportunitiesRes.data || []).map((opportunity) => ({
+      setOpportunities((effectiveOpportunitiesRes.data || []).map((opportunity) => ({
+        lost_reason: null,
+        lost_at: null,
+        realization_id: null,
         ...opportunity,
         items: [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
       })));
@@ -1379,7 +1397,7 @@ const CRM = () => {
     setUpdatingOpportunity(false);
 
     if (error) {
-      if (error.code === 'PGRST204' && ('lost_reason' in patch || 'lost_at' in patch)) {
+      if (['42703', 'PGRST204'].includes(error.code) && ('lost_reason' in patch || 'lost_at' in patch)) {
         const { lost_reason, lost_at, ...legacyPatch } = patch;
         const { error: legacyError } = await supabase
           .from('crm_opportunities')
@@ -1648,7 +1666,7 @@ const CRM = () => {
 
     let { error } = await request;
 
-    if (error && error.code === 'PGRST204' && ('lost_reason' in payload || 'lost_at' in payload)) {
+    if (error && ['42703', 'PGRST204'].includes(error.code) && ('lost_reason' in payload || 'lost_at' in payload)) {
       const { lost_reason, lost_at, ...legacyPayload } = payload;
       const legacyRequest = opportunityForm.id
         ? supabase.from('crm_opportunities').update(legacyPayload).eq('id', opportunityForm.id)

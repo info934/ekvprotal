@@ -177,6 +177,16 @@ const ProductForm = () => {
     fetchUsageHistory();
 
     if (!isEditing) {
+      const { error: schemaCheckError } = await supabase
+        .from('commercial_item_catalog')
+        .select('id, sku')
+        .limit(1);
+      if (schemaCheckError) {
+        setProductSchemaReady(false);
+        setWarning('Online databaze jeste nema produktovou migraci. Novy produkt se ulozi jen do puvodniho katalogu bez skladu a datasheet poli.');
+      } else {
+        setProductSchemaReady(true);
+      }
       setForm(emptyProduct);
       setLoading(false);
       return;
@@ -306,7 +316,7 @@ const ProductForm = () => {
   };
 
   const uploadDatasheetForProduct = async (savedProduct) => {
-    if (!datasheetFile) return null;
+    if (!datasheetFile || !productSchemaReady) return null;
 
     const upload = await uploadProductDatasheet({
       file: datasheetFile,
@@ -390,9 +400,10 @@ const ProductForm = () => {
       source: 'manual',
     };
 
+    const returnColumns = productSchemaReady ? 'id, sku, code, name' : 'id, code, name';
     const request = isEditing
-      ? supabase.from('commercial_item_catalog').update(requestPayload).eq('id', productId).select('id, sku, code, name').single()
-      : supabase.from('commercial_item_catalog').insert(requestPayload).select('id, sku, code, name').single();
+      ? supabase.from('commercial_item_catalog').update(requestPayload).eq('id', productId).select(returnColumns).single()
+      : supabase.from('commercial_item_catalog').insert(requestPayload).select(returnColumns).single();
 
     const { data, error } = await request;
 
