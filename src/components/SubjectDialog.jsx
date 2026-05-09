@@ -1,209 +1,261 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog } from '@/components/ui/dialog';
 import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Edit2, Loader2, Plus, Search } from 'lucide-react';
 import { fetchJsonWithTimeout } from '@/lib/http';
 
+const emptySubject = {
+  name: '',
+  subject_kind: 'company',
+  birth_date: '',
+  ico: '',
+  dic: '',
+  address: '',
+  legal_form: '',
+  contact_person: '',
+  email: '',
+  phone: '',
+  note: '',
+  type_id: '',
+  region: '',
+};
+
+const subjectKindLabels = {
+  person: 'Fyzicka osoba',
+  entrepreneur: 'Podnikatel / OSVC',
+  company: 'Firma',
+};
+
 const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
-    const { toast } = useToast();
-    const [formData, setFormData] = useState({
-        name: '',
-        ico: '',
-        dic: '',
-        address: '',
-        legal_form: '',
-        contact_person: '',
-        email: '',
-        phone: '',
-        note: '',
-        type_id: '',
-        region: '',
-    });
-    const [subjectTypes, setSubjectTypes] = useState([]);
-    const [isSaving, setIsSaving] = useState(false);
-    const [isFetchingAres, setIsFetchingAres] = useState(false);
-    
-    useEffect(() => {
-        const fetchSubjectTypes = async () => {
-            const { data, error } = await supabase.from('subject_types').select('*');
-            if (!error) {
-                setSubjectTypes(data);
-                if (!subject && data.length > 0) {
-                  setFormData(prev => ({...prev, type_id: data[0].id}));
-                }
-            }
-        };
+  const { toast } = useToast();
+  const [formData, setFormData] = useState(emptySubject);
+  const [subjectTypes, setSubjectTypes] = useState([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isFetchingAres, setIsFetchingAres] = useState(false);
 
-        if (isOpen) {
-          fetchSubjectTypes();
-          if (subject) {
-              setFormData({
-                  name: subject.name || '',
-                  ico: subject.ico || '',
-                  dic: subject.dic || '',
-                  address: subject.address || '',
-                  legal_form: subject.legal_form || '',
-                  contact_person: subject.contact_person || '',
-                  email: subject.email || '',
-                  phone: subject.phone || '',
-                  note: subject.note || '',
-                  type_id: subject.type_id || (subjectTypes.length > 0 ? subjectTypes[0].id : ''),
-                  region: subject.region || '',
-              });
-          } else {
-              setFormData({
-                  name: '',
-                  ico: '',
-                  dic: '',
-                  address: '',
-                  legal_form: '',
-                  contact_person: '',
-                  email: '',
-                  phone: '',
-                  note: '',
-                  type_id: subjectTypes.length > 0 ? subjectTypes[0].id : '',
-                  region: '',
-              });
-          }
-        }
-    }, [subject, isOpen, subjectTypes.length]);
-
-    const handleFetchFromAres = async () => {
-        if (!formData.ico) {
-            toast({ title: 'Zadejte IČO pro vyhledání.', variant: 'destructive' });
-            return;
-        }
-        setIsFetchingAres(true);
-        try {
-            const data = await fetchJsonWithTimeout(
-                `https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/${formData.ico}`,
-                {
-                    headers: { 'accept': 'application/json' }
-                },
-                { timeoutMs: 8000 }
-            );
-            
-            setFormData(prev => ({
-                ...prev,
-                name: data.obchodniJmeno || prev.name,
-                dic: data.dic || prev.dic,
-                address: data.sidlo?.textovaAdresa || prev.address,
-                legal_form: data.pravniForma ? `Kód ${data.pravniForma}` : prev.legal_form,
-                region: data.sidlo?.nazevKraje || prev.region,
-            }));
-
-            toast({ title: '✅ Data z ARES úspěšně načtena!' });
-
-        } catch (error) {
-            console.error("ARES fetch error:", error);
-            const message = error.message === 'Request timeout' 
-                ? 'Vypršel časový limit pro požadavek na ARES.' 
-                : error.message;
-            toast({ title: 'Chyba při načítání z ARES', description: message, variant: 'destructive' });
-        } finally {
-            setIsFetchingAres(false);
-        }
+  useEffect(() => {
+    const fetchSubjectTypes = async () => {
+      const { data, error } = await supabase.from('subject_types').select('*').order('name');
+      if (!error) {
+        setSubjectTypes(data || []);
+      }
     };
 
+    if (isOpen) fetchSubjectTypes();
+  }, [isOpen]);
 
-    const handleChange = (e) => {
-        const { id, value } = e.target;
-        setFormData(prev => ({ ...prev, [id]: value }));
+  useEffect(() => {
+    if (!isOpen) return;
+    const fallbackTypeId = subjectTypes[0]?.id || '';
+    if (subject) {
+      setFormData({
+        ...emptySubject,
+        ...subject,
+        subject_kind: subject.subject_kind || (subject.ico ? 'company' : 'person'),
+        birth_date: subject.birth_date || '',
+        type_id: subject.type_id || fallbackTypeId,
+      });
+    } else {
+      setFormData({ ...emptySubject, type_id: fallbackTypeId });
+    }
+  }, [subject, isOpen, subjectTypes]);
+
+  const handleFetchFromAres = async () => {
+    if (!formData.ico) {
+      toast({ title: 'Zadejte ICO pro vyhledani.', variant: 'destructive' });
+      return;
+    }
+    setIsFetchingAres(true);
+    try {
+      const data = await fetchJsonWithTimeout(
+        `https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/${formData.ico}`,
+        { headers: { accept: 'application/json' } },
+        { timeoutMs: 8000 }
+      );
+
+      setFormData((current) => ({
+        ...current,
+        subject_kind: current.subject_kind === 'person' ? 'entrepreneur' : current.subject_kind,
+        name: data.obchodniJmeno || current.name,
+        dic: data.dic || current.dic,
+        address: data.sidlo?.textovaAdresa || current.address,
+        legal_form: data.pravniForma ? `Kod ${data.pravniForma}` : current.legal_form,
+        region: data.sidlo?.nazevKraje || current.region,
+      }));
+
+      toast({ title: 'Data z ARES nactena' });
+    } catch (error) {
+      const message = error.message === 'Request timeout'
+        ? 'Vyprsel casovy limit pro pozadavek na ARES.'
+        : error.message;
+      toast({ title: 'Chyba pri nacitani z ARES', description: message, variant: 'destructive' });
+    } finally {
+      setIsFetchingAres(false);
+    }
+  };
+
+  const handleChange = (field, value) => {
+    setFormData((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!formData.name.trim()) {
+      toast({ title: 'Doplnte nazev nebo jmeno subjektu.', variant: 'destructive' });
+      return;
+    }
+    if (formData.subject_kind !== 'person' && !formData.ico.trim()) {
+      toast({ title: 'U firem a podnikatelu je ICO povinne.', variant: 'destructive' });
+      return;
+    }
+
+    const payload = {
+      ...formData,
+      name: formData.name.trim(),
+      ico: formData.subject_kind === 'person' ? null : (formData.ico.trim() || null),
+      dic: formData.subject_kind === 'person' ? null : (formData.dic.trim() || null),
+      birth_date: formData.subject_kind === 'person' ? (formData.birth_date || null) : null,
+      type_id: formData.type_id || null,
     };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setIsSaving(true);
-        await onSave(formData);
-        setIsSaving(false);
-    };
+    setIsSaving(true);
+    try {
+      await onSave(payload);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-    return (
-        <Dialog open={isOpen} onOpenChange={onClose}>
-            <FormDialogContent size="md">
-                <FormDialogHeader
-                    icon={subject ? Edit2 : Plus}
-                    title={subject ? 'Upravit subjekt' : 'Vytvořit nový subjekt'}
-                    description="Zadejte informace o subjektu. Pro urychlení můžete načíst data z ARES pomocí IČO."
-                />
-                <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <FormDialogBody className="space-y-4">
-                    <div className="flex items-end gap-2">
-                        <div className="flex-grow">
-                            <Label htmlFor="ico">IČO *</Label>
-                            <Input id="ico" value={formData.ico} onChange={handleChange} required disabled={!!subject}/>
-                        </div>
-                        <Button type="button" onClick={handleFetchFromAres} disabled={isFetchingAres || !!subject} className="min-w-[120px]">
-                            {isFetchingAres ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
-                            Načíst
-                        </Button>
-                    </div>
+  const isPerson = formData.subject_kind === 'person';
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <Label htmlFor="name">Název subjektu *</Label>
-                            <Input id="name" value={formData.name} onChange={handleChange} required />
-                        </div>
-                        <div>
-                            <Label htmlFor="dic">DIČ</Label>
-                            <Input id="dic" value={formData.dic} onChange={handleChange} />
-                        </div>
-                    </div>
-                    <div>
-                        <Label htmlFor="address">Adresa</Label>
-                        <Input id="address" value={formData.address} onChange={handleChange} />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         <div>
-                            <Label htmlFor="type_id">Typ subjektu *</Label>
-                            <select
-                                id="type_id"
-                                value={formData.type_id}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-700"
-                                required
-                            >
-                                {subjectTypes.map(type => (
-                                    <option key={type.id} value={type.id}>{type.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                           <Label htmlFor="region">Kraj</Label>
-                           <Input id="region" value={formData.region} onChange={handleChange} />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         <div>
-                            <Label htmlFor="contact_person">Kontaktní osoba</Label>
-                            <Input id="contact_person" value={formData.contact_person} onChange={handleChange} />
-                        </div>
-                        <div>
-                            <Label htmlFor="email">Kontaktní e-mail</Label>
-                            <Input id="email" type="email" value={formData.email} onChange={handleChange} />
-                        </div>
-                    </div>
-                     <div>
-                        <Label htmlFor="phone">Kontaktní telefon</Label>
-                        <Input id="phone" type="tel" value={formData.phone} onChange={handleChange} />
-                    </div>
-                    
-                  </FormDialogBody>
-                    <FormDialogFooter>
-                        <Button type="button" variant="outline" onClick={onClose}>Zrušit</Button>
-                        <Button type="submit" disabled={isSaving}>
-                            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Uložit'}
-                        </Button>
-                    </FormDialogFooter>
-                </form>
-            </FormDialogContent>
-        </Dialog>
-    );
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <FormDialogContent size="lg">
+        <FormDialogHeader
+          icon={subject ? Edit2 : Plus}
+          title={subject ? 'Upravit subjekt' : 'Vytvorit novy subjekt'}
+          description="Subjekt muze byt fyzicka osoba, podnikatel nebo firma. Pole se prizpusobi zvolenemu typu."
+        />
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <FormDialogBody className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Druh subjektu</Label>
+                <Select value={formData.subject_kind} onValueChange={(value) => handleChange('subject_kind', value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(subjectKindLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="type_id">Typ v adresari</Label>
+                <Select value={formData.type_id || 'none'} onValueChange={(value) => handleChange('type_id', value === 'none' ? '' : value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Vyberte typ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Bez typu</SelectItem>
+                    {subjectTypes.map((type) => (
+                      <SelectItem key={type.id} value={type.id}>{type.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {!isPerson && (
+              <div className="flex items-end gap-2">
+                <div className="flex-grow space-y-2">
+                  <Label htmlFor="ico">ICO *</Label>
+                  <Input id="ico" value={formData.ico || ''} onChange={(event) => handleChange('ico', event.target.value)} required={!isPerson} disabled={!!subject} />
+                </div>
+                <Button type="button" onClick={handleFetchFromAres} disabled={isFetchingAres || !!subject} className="min-w-[120px]">
+                  {isFetchingAres ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                  Nacist
+                </Button>
+              </div>
+            )}
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="name">{isPerson ? 'Jmeno a prijmeni *' : 'Nazev subjektu *'}</Label>
+                <Input id="name" value={formData.name || ''} onChange={(event) => handleChange('name', event.target.value)} required />
+              </div>
+              {isPerson ? (
+                <div className="space-y-2">
+                  <Label htmlFor="birth_date">Datum narozeni</Label>
+                  <Input id="birth_date" type="date" value={formData.birth_date || ''} onChange={(event) => handleChange('birth_date', event.target.value)} />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="dic">DIC</Label>
+                  <Input id="dic" value={formData.dic || ''} onChange={(event) => handleChange('dic', event.target.value)} />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="address">Adresa</Label>
+              <Input id="address" value={formData.address || ''} onChange={(event) => handleChange('address', event.target.value)} />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {!isPerson && (
+                <div className="space-y-2">
+                  <Label htmlFor="legal_form">Pravni forma</Label>
+                  <Input id="legal_form" value={formData.legal_form || ''} onChange={(event) => handleChange('legal_form', event.target.value)} />
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="region">Kraj</Label>
+                <Input id="region" value={formData.region || ''} onChange={(event) => handleChange('region', event.target.value)} />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="contact_person">Kontaktni osoba</Label>
+                <Input id="contact_person" value={formData.contact_person || ''} onChange={(event) => handleChange('contact_person', event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Kontaktni e-mail</Label>
+                <Input id="email" type="email" value={formData.email || ''} onChange={(event) => handleChange('email', event.target.value)} />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="phone">Kontaktni telefon</Label>
+                <Input id="phone" type="tel" value={formData.phone || ''} onChange={(event) => handleChange('phone', event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="note">Poznamka</Label>
+                <Textarea id="note" value={formData.note || ''} onChange={(event) => handleChange('note', event.target.value)} rows={2} />
+              </div>
+            </div>
+          </FormDialogBody>
+          <FormDialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Zrusit</Button>
+            <Button type="submit" disabled={isSaving}>
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Ulozit'}
+            </Button>
+          </FormDialogFooter>
+        </form>
+      </FormDialogContent>
+    </Dialog>
+  );
 };
 
 export default SubjectDialog;

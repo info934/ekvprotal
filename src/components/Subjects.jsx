@@ -30,15 +30,41 @@ const subjectTypeConfig = {
   other: { label: 'Ostatní', icon: User2, color: 'text-slate-700', surface: 'bg-slate-50 ring-slate-100', badgeClass: 'bg-slate-50 text-slate-700 border-slate-200' },
 };
 
+const subjectKindConfig = {
+  person: { label: 'Fyzicka osoba', icon: User2, badgeClass: 'bg-sky-50 text-sky-700 border-sky-200' },
+  entrepreneur: { label: 'Podnikatel', icon: Factory, badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' },
+  company: { label: 'Firma', icon: Building, badgeClass: 'bg-slate-50 text-slate-700 border-slate-200' },
+};
+
 const allColumns = {
   name: { label: 'Název subjektu', default: true },
   ico: { label: 'IČO', default: true },
+  subject_kind: { label: 'Druh', default: true },
+  birth_date: { label: 'Datum narozeni', default: false },
   type: { label: 'Typ', default: true },
   contact_person: { label: 'Kontaktní osoba', default: true },
   email: { label: 'Email', default: false },
   phone: { label: 'Telefon', default: false },
   address: { label: 'Adresa', default: false },
   region: { label: 'Region', default: false },
+};
+
+const getSubjectKind = (subject) => subject.subject_kind || (subject.ico ? 'company' : 'person');
+
+const formatDate = (value) => {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
+};
+
+const SubjectKindBadge = ({ kind }) => {
+  const config = subjectKindConfig[kind] || subjectKindConfig.company;
+  const Icon = config.icon;
+  return (
+    <Badge variant="outline" className={cn("inline-flex items-center gap-1 whitespace-nowrap", config.badgeClass)}>
+      <Icon className="h-3 w-3" />
+      {config.label}
+    </Badge>
+  );
 };
 
 const SubjectTypeBadge = ({ typeName }) => {
@@ -116,6 +142,7 @@ const SubjectCard = ({ subject }) => {
   const handleCardClick = () => navigate(`/subjects/${subject.id}`);
   const config = subjectTypeConfig[subject.subject_types?.name] || subjectTypeConfig['other'];
   const Icon = config.icon;
+  const subjectKind = getSubjectKind(subject);
 
   return (
     <motion.div
@@ -138,9 +165,18 @@ const SubjectCard = ({ subject }) => {
             </div>
           )}
         </div>
-        <SubjectTypeBadge typeName={subject.subject_types?.name} />
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <SubjectKindBadge kind={subjectKind} />
+          <SubjectTypeBadge typeName={subject.subject_types?.name} />
+        </div>
       </div>
       <div className="space-y-2.5 text-sm">
+        {subjectKind === 'person' && subject.birth_date && (
+          <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+            <User2 className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Nar. {formatDate(subject.birth_date)}</span>
+          </div>
+        )}
         {subject.contact_person && (
           <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
             <User2 className="h-3.5 w-3.5 shrink-0" />
@@ -248,7 +284,13 @@ const SubjectTable = ({ subjects, visibleColumns, sortConfig, requestSort, onSel
                         </div>
                       </TableCell>
                     )}
-                    {visibleColumns.ico && <TableCell className="text-sm">{subject.ico}</TableCell>}
+                    {visibleColumns.ico && <TableCell className="text-sm">{subject.ico || '-'}</TableCell>}
+                    {visibleColumns.subject_kind && (
+                      <TableCell>
+                        <SubjectKindBadge kind={getSubjectKind(subject)} />
+                      </TableCell>
+                    )}
+                    {visibleColumns.birth_date && <TableCell className="text-sm">{formatDate(subject.birth_date)}</TableCell>}
                     {visibleColumns.type && (
                       <TableCell>
                         <SubjectTypeBadge typeName={subject.subject_types?.name} />
@@ -320,6 +362,7 @@ const Subjects = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [subjectKindFilter, setSubjectKindFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [contactFilter, setContactFilter] = useState('all');
   const [view, setView] = useState('table'); // 'kanban' or 'table'
@@ -414,10 +457,12 @@ const Subjects = () => {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedSubjects(new Set());
-  }, [searchTerm, typeFilter, contactFilter, sortConfig]);
+  }, [searchTerm, subjectKindFilter, typeFilter, contactFilter, sortConfig]);
 
   const filteredSubjects = subjects.filter(subject => {
     const lowerSearch = searchTerm.toLowerCase();
+    const kind = getSubjectKind(subject);
+    const kindMatch = subjectKindFilter === 'all' || kind === subjectKindFilter;
     const typeMatch = typeFilter === 'all' || subject.subject_types?.name === typeFilter;
     const hasContact = Boolean(subject.email || subject.phone || subject.contact_person);
     const contactMatch =
@@ -426,12 +471,14 @@ const Subjects = () => {
       (contactFilter === 'missing' && !hasContact);
     const searchMatch =
       subject.name.toLowerCase().includes(lowerSearch) ||
+      (subjectKindConfig[kind]?.label.toLowerCase().includes(lowerSearch)) ||
       (subject.ico && subject.ico.toLowerCase().includes(lowerSearch)) ||
+      (subject.birth_date && subject.birth_date.toLowerCase().includes(lowerSearch)) ||
       (subject.contact_person && subject.contact_person.toLowerCase().includes(lowerSearch)) ||
       (subject.email && subject.email.toLowerCase().includes(lowerSearch)) ||
       (subject.phone && subject.phone.toLowerCase().includes(lowerSearch)) ||
       (subject.address && subject.address.toLowerCase().includes(lowerSearch));
-    return typeMatch && contactMatch && searchMatch;
+    return kindMatch && typeMatch && contactMatch && searchMatch;
   });
 
   const sortedSubjects = React.useMemo(() => {
@@ -441,6 +488,7 @@ const Subjects = () => {
         let aValue = a[sortConfig.key];
         let bValue = b[sortConfig.key];
         if (sortConfig.key === 'type') { aValue = a.subject_types?.name; bValue = b.subject_types?.name; }
+        if (sortConfig.key === 'subject_kind') { aValue = getSubjectKind(a); bValue = getSubjectKind(b); }
 
         if (aValue == null) return 1;
         if (bValue == null) return -1;
@@ -468,7 +516,15 @@ const Subjects = () => {
 
   const subjectsWithoutContact = subjects.length - subjectsWithContact;
 
-  const hasActiveFilters = searchTerm.trim() !== '' || typeFilter !== 'all' || contactFilter !== 'all';
+  const subjectKindCounts = React.useMemo(() => {
+    return subjects.reduce((acc, subject) => {
+      const kind = getSubjectKind(subject);
+      acc[kind] = (acc[kind] || 0) + 1;
+      return acc;
+    }, {});
+  }, [subjects]);
+
+  const hasActiveFilters = searchTerm.trim() !== '' || subjectKindFilter !== 'all' || typeFilter !== 'all' || contactFilter !== 'all';
 
   const requestSort = (key) => {
     let direction = 'ascending';
@@ -518,8 +574,11 @@ const Subjects = () => {
   const exportToXLSX = () => {
     const dataToExport = sortedSubjects.map(s => {
       let row = {};
+      const kind = getSubjectKind(s);
       if (visibleColumns.name) row['Název subjektu'] = s.name;
       if (visibleColumns.ico) row['IČO'] = s.ico;
+      if (visibleColumns.subject_kind) row['Druh'] = subjectKindConfig[kind]?.label || '-';
+      if (visibleColumns.birth_date) row['Datum narozeni'] = formatDate(s.birth_date);
       if (visibleColumns.type) row['Typ'] = s.subject_types?.name || '-';
       if (visibleColumns.contact_person) row['Kontaktní osoba'] = s.contact_person || '-';
       if (visibleColumns.email) row['Email'] = s.email || '-';
@@ -576,8 +635,9 @@ const Subjects = () => {
             title="Celkem"
             value={subjects.length}
             description={`${sortedSubjects.length} po filtrech`}
-            active={typeFilter === 'all' && contactFilter === 'all'}
+            active={subjectKindFilter === 'all' && typeFilter === 'all' && contactFilter === 'all'}
             onClick={() => {
+              setSubjectKindFilter('all');
               setTypeFilter('all');
               setContactFilter('all');
             }}
@@ -598,6 +658,17 @@ const Subjects = () => {
             active={contactFilter === 'missing'}
             onClick={() => setContactFilter(contactFilter === 'missing' ? 'all' : 'missing')}
           />
+          {Object.entries(subjectKindConfig).map(([kindKey, { label, icon }]) => (
+            <DirectoryMetricCard
+              key={kindKey}
+              icon={icon}
+              title={label}
+              value={subjectKindCounts[kindKey] || 0}
+              description="druh subjektu"
+              active={subjectKindFilter === kindKey}
+              onClick={() => setSubjectKindFilter(subjectKindFilter === kindKey ? 'all' : kindKey)}
+            />
+          ))}
           {Object.keys(subjectTypeConfig).map((typeKey) => (
             <SubjectSummaryCard
               key={typeKey}
@@ -621,6 +692,17 @@ const Subjects = () => {
               <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center xl:w-auto xl:justify-end">
                 <div className="flex min-w-0 items-center gap-2">
                   <Filter className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <Select value={subjectKindFilter} onValueChange={(value) => setSubjectKindFilter(value)}>
+                    <SelectTrigger className="w-full bg-white sm:w-44">
+                      <SelectValue placeholder="Druh subjektu" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Vsechny druhy</SelectItem>
+                      {Object.entries(subjectKindConfig).map(([key, { label }]) => (
+                        <SelectItem key={key} value={key}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value)}>
                     <SelectTrigger className="w-full bg-white sm:w-48">
                       <SelectValue placeholder="Filtrovat dle typu" />
@@ -659,6 +741,7 @@ const Subjects = () => {
                     size="sm"
                     onClick={() => {
                       setSearchTerm('');
+                      setSubjectKindFilter('all');
                       setTypeFilter('all');
                       setContactFilter('all');
                     }}

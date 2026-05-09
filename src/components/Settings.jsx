@@ -1,38 +1,52 @@
 import React from 'react';
 import { NavLink, useLocation, Outlet } from 'react-router-dom';
-import { Settings as SettingsIcon, Users, Key, ShoppingCart, User, BookOpen, FileText, Database, ChevronRight, SlidersHorizontal, Cloud } from 'lucide-react';
+import {
+  Settings as SettingsIcon,
+  Users,
+  Key,
+  ShoppingCart,
+  User,
+  BookOpen,
+  FileText,
+  Database,
+  ChevronRight,
+  SlidersHorizontal,
+  Cloud,
+  Target,
+} from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PageHeader from '@/components/ui/page-header';
 import { cn } from '@/lib/utils';
 
 const settingsNav = [
   {
-    label: 'Účet',
+    label: 'Ucet',
     items: [
-      { name: 'Můj profil', description: 'Osobní údaje a zabezpečení', href: '/settings/profile', icon: User, requiredPermission: 'can_read' },
+      { name: 'Muj profil', description: 'Osobni udaje a zabezpeceni', href: '/settings/profile', icon: User, requiredPermission: 'can_read' },
     ],
   },
   {
-    label: 'Přístupy',
+    label: 'Pristupy',
     items: [
-      { name: 'Uživatelé', description: 'Účty a přístupové role', href: '/settings/users', icon: Users, requiredPermission: 'can_admin' },
-      { name: 'Přístupové role', description: 'Práva účtů k modulům aplikace', href: '/settings/permissions', icon: Key, requiredPermission: 'can_admin' },
+      { name: 'Uzivatele', description: 'Ucty a pristupove role', href: '/settings/users', icon: Users, requiredPermission: 'can_admin' },
+      { name: 'Pristupove role', description: 'Prava uctu k modulum aplikace', href: '/settings/permissions', icon: Key, requiredPermission: 'can_admin' },
     ],
   },
   {
     label: 'Konfigurace',
     items: [
-      { name: 'Číselníky', description: 'Centrální hodnoty pro formuláře', href: '/settings/dictionaries', icon: BookOpen, requiredPermission: 'can_admin' },
-      { name: 'Šablony projektů', description: 'Výchozí struktury projektů', href: '/settings/project-templates', icon: FileText, requiredPermission: 'can_admin' },
-      { name: 'Šablony objednávek', description: 'Texty a proměnné objednávek', href: '/settings/order-templates', icon: ShoppingCart, requiredPermission: 'can_admin' },
-      { name: 'Úložiště dokumentů', description: 'Supabase, SharePoint nebo Google Drive', href: '/settings/storage', icon: Cloud, requiredPermission: 'can_admin' },
+      { name: 'Ciselniky', description: 'Centralni hodnoty pro formulare', href: '/settings/dictionaries', icon: BookOpen, requiredPermission: 'can_admin' },
+      { name: 'Sablony projektu', description: 'Vychozi struktury projektu', href: '/settings/project-templates', icon: FileText, requiredPermission: 'can_admin' },
+      { name: 'Sablony dokumentu', description: 'HTML a DOCX sablony vystupu', href: '/settings/order-templates', icon: ShoppingCart, requiredPermission: 'can_admin' },
+      { name: 'CRM', description: 'Stavy, priority, sablony a cislovani', href: '/settings/crm', icon: Target, requiredPermission: 'can_admin' },
+      { name: 'Uloziste dokumentu', description: 'Supabase, SharePoint nebo Google Drive', href: '/settings/storage', icon: Cloud, requiredPermission: 'can_admin' },
     ],
   },
   {
-    label: 'Systém',
+    label: 'System',
     items: [
-      { name: 'Nastavení portálu', description: 'Globální hodnoty aplikace', href: '/settings/portal', icon: SlidersHorizontal, requiredPermission: 'can_admin' },
-      { name: 'Zálohování a údržba', description: 'Servisní operace portálu', href: '/settings/backup-maintenance', icon: Database, requiredPermission: 'can_admin' },
+      { name: 'Nastaveni portalu', description: 'Globalni hodnoty aplikace', href: '/settings/portal', icon: SlidersHorizontal, requiredPermission: 'can_admin' },
+      { name: 'Zalohovani a udrzba', description: 'Servisni operace portalu', href: '/settings/backup-maintenance', icon: Database, requiredPermission: 'can_admin' },
     ],
   },
 ];
@@ -52,12 +66,12 @@ const Settings = () => {
     <div className="space-y-6">
       <PageHeader
         icon={SettingsIcon}
-        title="Nastavení"
-        description="Správa profilu, oprávnění, šablon a systémových nastavení."
+        title="Nastaveni"
+        description="Sprava profilu, opravneni, sablon a systemovych nastaveni."
       />
       <header className="hidden">
         <SettingsIcon className="w-8 h-8" />
-        <h1 className="text-3xl font-bold">Nastavení</h1>
+        <h1 className="text-3xl font-bold">Nastaveni</h1>
       </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -70,47 +84,47 @@ const Settings = () => {
                 </div>
                 <div className="space-y-1">
                   {group.items.map((item) => (
-                <NavLink
-                  key={item.name}
-                  to={item.href}
-                  end={item.href === '/settings'}
-                  className={({ isActive }) => {
-                    const realIsActive = (isRootSettings && item.href === '/settings/profile') || isActive;
-                    return cn(
-                      'group flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors',
-                      realIsActive
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-slate-700 hover:bg-slate-100'
-                    );
-                  }}
-                >
-                  {({ isActive }) => {
-                    const realIsActive = (isRootSettings && item.href === '/settings/profile') || isActive;
-                    return (
-                      <>
-                        <span className={cn(
-                          'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                          realIsActive ? 'bg-white/15' : 'bg-slate-100 text-slate-600 group-hover:bg-white'
-                        )}>
-                          <item.icon className="h-4 w-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block font-semibold leading-5">{item.name}</span>
-                          <span className={cn(
-                            'block truncate text-xs leading-4',
-                            realIsActive ? 'text-primary-foreground/75' : 'text-muted-foreground'
-                          )}>
-                            {item.description}
-                          </span>
-                        </span>
-                        <ChevronRight className={cn(
-                          'h-4 w-4 shrink-0',
-                          realIsActive ? 'text-primary-foreground/80' : 'text-muted-foreground'
-                        )} />
-                      </>
-                    );
-                  }}
-                </NavLink>
+                    <NavLink
+                      key={item.name}
+                      to={item.href}
+                      end={item.href === '/settings'}
+                      className={({ isActive }) => {
+                        const realIsActive = (isRootSettings && item.href === '/settings/profile') || isActive;
+                        return cn(
+                          'group flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors',
+                          realIsActive
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-slate-700 hover:bg-slate-100'
+                        );
+                      }}
+                    >
+                      {({ isActive }) => {
+                        const realIsActive = (isRootSettings && item.href === '/settings/profile') || isActive;
+                        return (
+                          <>
+                            <span className={cn(
+                              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                              realIsActive ? 'bg-white/15' : 'bg-slate-100 text-slate-600 group-hover:bg-white'
+                            )}>
+                              <item.icon className="h-4 w-4" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block font-semibold leading-5">{item.name}</span>
+                              <span className={cn(
+                                'block truncate text-xs leading-4',
+                                realIsActive ? 'text-primary-foreground/75' : 'text-muted-foreground'
+                              )}>
+                                {item.description}
+                              </span>
+                            </span>
+                            <ChevronRight className={cn(
+                              'h-4 w-4 shrink-0',
+                              realIsActive ? 'text-primary-foreground/80' : 'text-muted-foreground'
+                            )} />
+                          </>
+                        );
+                      }}
+                    </NavLink>
                   ))}
                 </div>
               </div>

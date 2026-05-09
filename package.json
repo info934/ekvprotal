@@ -55,6 +55,7 @@
     "clsx": "^2.0.0",
     "cmdk": "^1.0.4",
     "date-fns": "^2.30.0",
+    "docx": "^9.6.1",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^10.16.4",
     "html2canvas": "^1.4.1",
