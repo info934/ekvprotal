@@ -93,6 +93,8 @@ const NAV_GROUPS = [
         module: 'crm',
         children: [
           { icon: BarChart, label: 'Pipeline', path: '/crm', module: 'crm' },
+          { icon: FileText, label: 'Nabidky', path: '/crm/offers', module: 'crm' },
+          { icon: ClipboardList, label: 'Objednavky', path: '/crm/orders', module: 'crm' },
           { icon: Building, label: 'Subjekty', path: '/subjects', module: 'subjects' },
           { icon: FileText, label: 'Dokumenty', path: '/documents', module: 'documents' },
         ],

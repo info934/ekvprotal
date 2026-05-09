@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
+import { DEFAULT_CRM_NUMBERING, normalizeCrmNumbering } from '@/lib/crmNumbering';
 
 const DEFAULT_STAGE_CONFIG = [
   { value: 'lead', label: 'Lead', color: 'bg-slate-100 text-slate-700 border-slate-200', probability: 10, sort_order: 10, is_active: true, is_closed: false },
@@ -49,6 +50,7 @@ const SettingsCRM = () => {
   const { toast } = useToast();
   const [crmStages, setCrmStages] = useState(() => normalizeStages(DEFAULT_STAGE_CONFIG));
   const [crmPriorities, setCrmPriorities] = useState(() => normalizePriorities(DEFAULT_PRIORITY_CONFIG));
+  const [crmNumbering, setCrmNumbering] = useState(() => normalizeCrmNumbering(Object.values(DEFAULT_CRM_NUMBERING)));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -61,7 +63,7 @@ const SettingsCRM = () => {
     }
 
     setLoading(true);
-    const [stagesRes, prioritiesRes] = await Promise.all([
+    const [stagesRes, prioritiesRes, numberingRes] = await Promise.all([
       supabase
         .from('crm_stage_definitions')
         .select('value, label, color, probability, sort_order, is_active, is_closed')
@@ -72,6 +74,10 @@ const SettingsCRM = () => {
         .select('value, label, tone, sort_order, is_active')
         .eq('is_active', true)
         .order('sort_order', { ascending: true }),
+      supabase
+        .from('crm_numbering_settings')
+        .select('document_type, prefix, next_number, padding')
+        .in('document_type', ['opportunity', 'offer', 'order']),
     ]);
 
     const error = stagesRes.error || prioritiesRes.error;
@@ -84,6 +90,7 @@ const SettingsCRM = () => {
     } else {
       setCrmStages(normalizeStages(stagesRes.data));
       setCrmPriorities(normalizePriorities(prioritiesRes.data));
+      setCrmNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
     }
     setLoading(false);
   }, [canAdmin, toast]);
@@ -126,6 +133,16 @@ const SettingsCRM = () => {
     ]));
   };
 
+  const updateNumberingConfig = (type, field, value) => {
+    setCrmNumbering((current) => ({
+      ...current,
+      [type]: {
+        ...current[type],
+        [field]: field === 'prefix' ? value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') : Number(value || 1),
+      },
+    }));
+  };
+
   const resetCrmConfig = () => {
     setCrmStages(normalizeStages(DEFAULT_STAGE_CONFIG));
     setCrmPriorities(normalizePriorities(DEFAULT_PRIORITY_CONFIG));
@@ -154,6 +171,13 @@ const SettingsCRM = () => {
       is_active: true,
     }));
 
+    const numberingRows = Object.values(crmNumbering).map((config) => ({
+      document_type: config.document_type,
+      prefix: String(config.prefix || '').trim().toUpperCase() || DEFAULT_CRM_NUMBERING[config.document_type]?.prefix || 'DOC',
+      next_number: Math.max(1, Number(config.next_number || 1)),
+      padding: Math.max(2, Number(config.padding || 3)),
+    }));
+
     const { error: stagesError } = await supabase
       .from('crm_stage_definitions')
       .upsert(stageRows, { onConflict: 'value' });
@@ -162,9 +186,13 @@ const SettingsCRM = () => {
       .from('crm_priority_definitions')
       .upsert(priorityRows, { onConflict: 'value' });
 
+    const { error: numberingError } = (stagesError || prioritiesError) ? { error: null } : await supabase
+      .from('crm_numbering_settings')
+      .upsert(numberingRows, { onConflict: 'document_type' });
+
     setSaving(false);
 
-    const error = stagesError || prioritiesError;
+    const error = stagesError || prioritiesError || numberingError;
     if (error) {
       toast({
         title: 'CRM nastaveni se nepodarilo ulozit',
@@ -176,6 +204,7 @@ const SettingsCRM = () => {
 
     setCrmStages(normalizeStages(stageRows));
     setCrmPriorities(normalizePriorities(priorityRows));
+    setCrmNumbering(normalizeCrmNumbering(numberingRows));
     toast({ title: 'CRM nastaveni ulozeno' });
     fetchCrmConfig();
   };
@@ -195,6 +224,43 @@ const SettingsCRM = () => {
           <AlertDescription>Tuto cast nastaveni muze menit pouze administrator.</AlertDescription>
         </Alert>
       )}
+
+      <Card>
+        <CardHeader className="border-b bg-slate-50/70">
+          <CardTitle>Cislovani CRM dokumentu</CardTitle>
+          <CardDescription>Prefixy a dalsi cislo pro obchodni pripady, nabidky a objednavky.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+          {Object.values(crmNumbering).map((config) => (
+            <div key={config.document_type} className="rounded-lg border bg-white p-3 shadow-sm">
+              <div className="mb-3">
+                <div className="text-sm font-semibold text-slate-900">{config.label}</div>
+                <div className="text-xs text-muted-foreground">Priklad: {config.prefix}-26-{String(config.next_number || 1).padStart(Number(config.padding || 3), '0')}</div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Prefix</Label>
+                  <Input
+                    value={config.prefix}
+                    onChange={(event) => updateNumberingConfig(config.document_type, 'prefix', event.target.value)}
+                    disabled={loading || saving || !canAdmin}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Dalsi cislo</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={config.next_number}
+                    onChange={(event) => updateNumberingConfig(config.document_type, 'next_number', event.target.value)}
+                    disabled={loading || saving || !canAdmin}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="gap-4 border-b bg-slate-50/70">

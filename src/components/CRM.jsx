@@ -27,6 +27,7 @@ import {
   Search,
   ShoppingCart,
   Target,
+  Trash2,
   Users,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
@@ -49,6 +50,7 @@ import {
   downloadGeneratedDocumentHtml,
   downloadGeneratedDocumentPdf,
 } from '@/lib/documentGenerationService';
+import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering } from '@/lib/crmNumbering';
 import { cn } from '@/lib/utils';
 
 const subjectTypeLabels = {
@@ -114,6 +116,62 @@ const formatDate = (value) => {
   return new Intl.DateTimeFormat('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
 };
 
+const createEmptyCrmItem = () => ({
+  id: `new-${Date.now()}`,
+  code: '',
+  name: '',
+  description: '',
+  quantity: 1,
+  unit: 'ks',
+  unit_price: 0,
+  discount_percent: 0,
+  vat_rate: 21,
+  line_total: 0,
+  sort_order: 0,
+});
+
+const calculateCrmItemLineTotal = (item) => {
+  const quantity = Number(item.quantity || 0);
+  const price = Number(item.unit_price || 0);
+  const discount = Math.min(100, Math.max(0, Number(item.discount_percent || 0)));
+  return Math.round(quantity * price * (1 - (discount / 100)) * 100) / 100;
+};
+
+const calculateCrmItemTotals = (items = []) => {
+  const total = items.reduce((sum, item) => sum + calculateCrmItemLineTotal(item), 0);
+  const taxTotal = items.reduce((sum, item) => sum + (calculateCrmItemLineTotal(item) * (Number(item.vat_rate || 0) / 100)), 0);
+  return {
+    subtotal: total,
+    discount_total: 0,
+    tax_total: Math.round(taxTotal * 100) / 100,
+    total,
+  };
+};
+
+const buildCrmOpportunityItemPayload = (item, opportunityId, index) => ({
+  opportunity_id: opportunityId,
+  catalog_item_id: item.catalog_item_id || null,
+  code: item.code || null,
+  name: item.name?.trim() || 'Polozka',
+  description: item.description || null,
+  quantity: Number(item.quantity || 0),
+  unit: item.unit || 'ks',
+  unit_price: Number(item.unit_price || 0),
+  discount_percent: Number(item.discount_percent || 0),
+  vat_rate: Number(item.vat_rate || 0),
+  line_total: calculateCrmItemLineTotal(item),
+  sort_order: (index + 1) * 10,
+});
+
+const buildCrmDocumentItemPayload = (item, documentId, index) => {
+  const payload = buildCrmOpportunityItemPayload(item, null, index);
+  delete payload.opportunity_id;
+  return {
+    ...payload,
+    document_id: documentId,
+  };
+};
+
 const getStage = (value, stages = DEFAULT_STAGE_CONFIG) => stages.find((stage) => stage.value === value) || stages[0];
 
 const getPriority = (value, priorities = DEFAULT_PRIORITY_CONFIG) => (
@@ -151,10 +209,10 @@ const normalizePriorities = (priorities) => (
 );
 
 const MetricCard = ({ icon: Icon, title, value, description, tone = 'default' }) => (
-  <Card className="overflow-hidden">
+  <Card className="overflow-hidden border-slate-200 shadow-sm">
     <CardContent className="flex items-center gap-4 p-4">
       <div className={cn(
-        'flex h-11 w-11 shrink-0 items-center justify-center rounded-md ring-1',
+        'flex h-10 w-10 shrink-0 items-center justify-center rounded-md ring-1',
         tone === 'success' ? 'bg-emerald-50 text-emerald-700 ring-emerald-100' :
           tone === 'warning' ? 'bg-amber-50 text-amber-700 ring-amber-100' :
             'bg-primary/10 text-primary ring-primary/10'
@@ -163,7 +221,7 @@ const MetricCard = ({ icon: Icon, title, value, description, tone = 'default' })
       </div>
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-muted-foreground">{title}</p>
-        <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+        <p className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{value}</p>
         {description && <p className="mt-1 truncate text-xs text-muted-foreground">{description}</p>}
       </div>
     </CardContent>
@@ -182,6 +240,7 @@ const DealWorkspace = ({
   onGenerateDocument,
   onTemplateChange,
   onUpdateOpportunity,
+  onUpdateOpportunityItems,
   canEdit,
   creatingDocument,
   generatingDocument,
@@ -206,42 +265,80 @@ const DealWorkspace = ({
   const value = Number(opportunity.value || 0);
   const expectedCosts = Math.round(value * 0.72);
   const expectedProfit = value - expectedCosts;
-  const primaryDocument = documents[0] || null;
   const offerDocuments = documents.filter((document) => document.type === 'offer');
   const orderDocuments = documents.filter((document) => document.type === 'order');
-  const primaryItems = primaryDocument?.items || [];
-  const productRows = primaryItems.length > 0 ? primaryItems.map((item) => ({
+  const opportunityItems = [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+  const productRows = opportunityItems.length > 0 ? opportunityItems.map((item) => ({
+    id: item.id,
     code: item.code || '-',
     name: item.name,
-    standardPrice: Number(item.unit_price || 0),
-    salePrice: Number(item.unit_price || 0),
+    unit: item.unit || 'ks',
+    unitPrice: Number(item.unit_price || 0),
     quantity: Number(item.quantity || 0),
     discount: Number(item.discount_percent || 0),
-    total: Number(item.line_total || 0),
+    vatRate: Number(item.vat_rate || 0),
+    total: calculateCrmItemLineTotal(item),
   })) : [
     {
+      id: 'fallback',
       code: 'CRM-001',
       name: opportunity.title,
-      standardPrice: value,
-      salePrice: value,
+      unit: 'ks',
+      unitPrice: value,
       quantity: 1,
       discount: 0,
+      vatRate: 21,
       total: value,
     },
   ];
-  const subtotal = primaryDocument ? Number(primaryDocument.subtotal || 0) : value;
-  const discountTotal = primaryDocument ? Number(primaryDocument.discount_total || 0) : 0;
-  const total = primaryDocument ? Number(primaryDocument.total || 0) : value;
-  const taxValue = primaryDocument ? Number(primaryDocument.total || 0) + Number(primaryDocument.tax_total || 0) : Math.round(value * 1.21);
+  const itemTotals = calculateCrmItemTotals(opportunityItems.length > 0 ? opportunityItems : productRows.map((item) => ({
+    ...item,
+    unit_price: item.unitPrice,
+    discount_percent: item.discount,
+    vat_rate: item.vatRate,
+  })));
+  const subtotal = itemTotals.subtotal;
+  const discountTotal = itemTotals.discount_total;
+  const total = itemTotals.total;
+  const taxValue = itemTotals.total + itemTotals.tax_total;
+
+  const updateOpportunityItem = (itemId, field, nextValue) => {
+    const baseItems = opportunityItems.length > 0 ? opportunityItems : [{
+      ...createEmptyCrmItem(),
+      id: 'fallback',
+      code: 'CRM-001',
+      name: opportunity.title,
+      unit_price: value,
+      line_total: value,
+    }];
+
+    const nextItems = baseItems.map((item) => {
+      if (item.id !== itemId) return item;
+      const valueToStore = ['quantity', 'unit_price', 'discount_percent', 'vat_rate'].includes(field)
+        ? Number(nextValue || 0)
+        : nextValue;
+      const next = { ...item, [field]: valueToStore };
+      return { ...next, line_total: calculateCrmItemLineTotal(next) };
+    });
+    onUpdateOpportunityItems?.(opportunity.id, nextItems);
+  };
+
+  const addOpportunityItem = () => {
+    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, createEmptyCrmItem()]);
+  };
+
+  const removeOpportunityItem = (itemId) => {
+    onUpdateOpportunityItems?.(opportunity.id, opportunityItems.filter((item) => item.id !== itemId));
+  };
 
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden border-slate-200 shadow-sm">
-        <CardHeader className="border-b bg-white px-5 py-4">
+      <Card className="crm-panel">
+        <CardHeader className="crm-panel-header">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Obchodni pripad {opportunity.subject?.name ? `- ${opportunity.subject.name}` : ''}
+                Obchodni pripad {opportunity.number || ''} {opportunity.subject?.name ? `- ${opportunity.subject.name}` : ''}
               </div>
               <CardTitle className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">
                 {opportunity.title}
@@ -258,17 +355,17 @@ const DealWorkspace = ({
                   Upravit
                 </Button>
               )}
-              <Button disabled className="rounded-full bg-slate-900 hover:bg-slate-800">
+              <Button disabled variant="outline">
                 <Plus className="mr-2 h-4 w-4" />
                 Vlastni akce
               </Button>
-              <Button variant="ghost" size="icon" disabled className="rounded-full bg-slate-100">
+              <Button variant="ghost" size="icon" disabled className="bg-slate-100">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-5 bg-slate-50/50 p-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+        <CardContent className="grid gap-5 bg-white p-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.65fr)]">
           <div className="space-y-5">
             <Tabs defaultValue="basic" className="space-y-4">
               <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0">
@@ -453,49 +550,67 @@ const DealWorkspace = ({
         </CardContent>
       </Card>
 
-      <Card className="overflow-hidden border-slate-200 shadow-sm">
-        <CardHeader className="border-b bg-slate-900 px-5 py-3 text-white">
+      <Card className="crm-panel">
+        <CardHeader className="crm-panel-header">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
               <Package className="h-4 w-4" />
               Produkty ({productRows.length})
             </CardTitle>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" size="sm" className="rounded-full" disabled>Hromadne akce</Button>
-              <Button variant="secondary" size="sm" className="rounded-full" disabled={!primaryDocument}>Pridat produkty</Button>
+              <Button variant="outline" size="sm" disabled>Hromadne akce</Button>
+              <Button size="sm" onClick={addOpportunityItem} disabled={!canEdit || updatingOpportunity}>Pridat produkt</Button>
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="crm-table-wrap">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Kod</TableHead>
                   <TableHead>Nazev</TableHead>
-                  <TableHead className="text-right">Standardni cena</TableHead>
-                  <TableHead className="text-right">Prodejni cena</TableHead>
+                  <TableHead className="text-right">Jedn. cena</TableHead>
                   <TableHead className="text-right">Mnozstvi</TableHead>
+                  <TableHead>MJ</TableHead>
                   <TableHead className="text-right">Sleva %</TableHead>
                   <TableHead className="text-right">Cena celkem</TableHead>
+                  <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {productRows.map((item) => (
-                  <TableRow key={item.code}>
-                    <TableCell className="font-medium text-primary">{item.code}</TableCell>
-                    <TableCell className="min-w-[260px]">{item.name}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(item.standardPrice)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(item.salePrice)}</TableCell>
-                    <TableCell className="text-right">{item.quantity}</TableCell>
-                    <TableCell className="text-right">{item.discount.toFixed(2)} %</TableCell>
+                  <TableRow key={item.id || item.code}>
+                    <TableCell className="min-w-[120px]">
+                      <Input value={item.code === '-' ? '' : item.code} onChange={(event) => updateOpportunityItem(item.id, 'code', event.target.value)} disabled={!canEdit || updatingOpportunity} />
+                    </TableCell>
+                    <TableCell className="min-w-[320px]">
+                      <Input value={item.name} onChange={(event) => updateOpportunityItem(item.id, 'name', event.target.value)} disabled={!canEdit || updatingOpportunity} />
+                    </TableCell>
+                    <TableCell className="min-w-[130px]">
+                      <Input className="text-right" type="number" value={item.unitPrice} onChange={(event) => updateOpportunityItem(item.id, 'unit_price', event.target.value)} disabled={!canEdit || updatingOpportunity} />
+                    </TableCell>
+                    <TableCell className="min-w-[110px]">
+                      <Input className="text-right" type="number" value={item.quantity} onChange={(event) => updateOpportunityItem(item.id, 'quantity', event.target.value)} disabled={!canEdit || updatingOpportunity} />
+                    </TableCell>
+                    <TableCell className="min-w-[90px]">
+                      <Input value={item.unit} onChange={(event) => updateOpportunityItem(item.id, 'unit', event.target.value)} disabled={!canEdit || updatingOpportunity} />
+                    </TableCell>
+                    <TableCell className="min-w-[110px]">
+                      <Input className="text-right" type="number" value={item.discount} onChange={(event) => updateOpportunityItem(item.id, 'discount_percent', event.target.value)} disabled={!canEdit || updatingOpportunity} />
+                    </TableCell>
                     <TableCell className="text-right font-semibold">{formatCurrency(item.total)}</TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" onClick={() => removeOpportunityItem(item.id)} disabled={!canEdit || updatingOpportunity || item.id === 'fallback'}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
-          <div className="grid gap-2 border-t bg-slate-50 p-5 text-sm md:ml-auto md:w-[420px]">
+          <div className="grid gap-2 border-t bg-slate-50 p-5 text-sm md:ml-auto md:w-[480px]">
             <div className="flex justify-between"><span>Cena celkem pred slevou</span><strong>{formatCurrency(subtotal)}</strong></div>
             <div className="flex justify-between"><span>Celkova sleva</span><strong>{formatCurrency(discountTotal)}</strong></div>
             <div className="flex justify-between text-base"><span>Konecna cena</span><strong>{formatCurrency(total)}</strong></div>
@@ -504,18 +619,18 @@ const DealWorkspace = ({
         </CardContent>
       </Card>
 
-      <Card className="overflow-hidden border-slate-200 shadow-sm">
-        <CardHeader className="border-b bg-slate-900 px-5 py-3 text-white">
+      <Card className="crm-panel">
+        <CardHeader className="crm-panel-header">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
               <ShoppingCart className="h-4 w-4" />
               Nabidky / objednavky
             </CardTitle>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" size="sm" className="rounded-full" onClick={() => onCreateDocument?.('offer')} disabled={!canEdit || creatingDocument}>
+              <Button variant="outline" size="sm" onClick={() => onCreateDocument?.('offer')} disabled={!canEdit || creatingDocument}>
                 Pridat nabidku
               </Button>
-              <Button variant="secondary" size="sm" className="rounded-full" onClick={() => onCreateDocument?.('order')} disabled={!canEdit || creatingDocument}>
+              <Button variant="outline" size="sm" onClick={() => onCreateDocument?.('order')} disabled={!canEdit || creatingDocument}>
                 Pridat objednavku
               </Button>
             </div>
@@ -575,8 +690,14 @@ const DealWorkspace = ({
                         <div key={document.id} className="grid gap-2 p-4 text-sm sm:grid-cols-[minmax(0,1fr)_130px]">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-semibold text-slate-950">{document.number || '-'}</span>
+                              <Link
+                                to={document.type === 'order' ? `/crm/orders/${document.id}` : `/crm/offers/${document.id}`}
+                                className="font-semibold text-slate-950 hover:text-primary hover:underline"
+                              >
+                                {document.number || '-'}
+                              </Link>
                               <Badge variant="outline">{document.status}</Badge>
+                              {document.sync_items === false && <Badge variant="secondary">sync vypnuty</Badge>}
                             </div>
                             <div className="mt-1 truncate text-muted-foreground">{document.title}</div>
                             <div className="mt-2 text-xs text-muted-foreground">{formatDate(document.issue_date)} - {document.items?.length || 0} polozek</div>
@@ -636,7 +757,7 @@ const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesRe
         return (
           <section
             key={stage.value}
-            className="min-h-[340px] rounded-lg bg-slate-100/70 p-2"
+            className="min-h-[340px] rounded-md border border-slate-200 bg-slate-50 p-2"
             onDragOver={(event) => {
               event.preventDefault();
               event.currentTarget.classList.add('ring-2', 'ring-primary/30');
@@ -651,7 +772,7 @@ const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesRe
               if (opportunityId) onMoveOpportunity?.(opportunityId, stage.value);
             }}
           >
-            <div className={cn('mb-2 rounded-md border px-3 py-2', stage.color)}>
+            <div className={cn('mb-2 rounded-md border px-3 py-2 shadow-sm', stage.color)}>
               <div className="flex items-center justify-between gap-2">
                 <h3 className="truncate text-xs font-bold uppercase">{stage.label}</h3>
                 <button type="button" className="text-base leading-none opacity-70" aria-label={`Pridat do stavu ${stage.label}`}>
@@ -677,8 +798,8 @@ const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesRe
                     }}
                     onClick={() => onSelectOpportunity(opportunity.id)}
                     className={cn(
-                      'group w-full rounded-md border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md',
-                      selectedOpportunity?.id === opportunity.id && 'border-slate-900 ring-2 ring-slate-200'
+                      'group w-full rounded-md border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md',
+                      selectedOpportunity?.id === opportunity.id && 'border-primary ring-2 ring-primary/15'
                     )}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -797,6 +918,7 @@ const CRM = () => {
   const [activities, setActivities] = useState([]);
   const [commercialDocuments, setCommercialDocuments] = useState([]);
   const [documentTemplates, setDocumentTemplates] = useState([]);
+  const [crmNumbering, setCrmNumbering] = useState(() => normalizeCrmNumbering(Object.values(DEFAULT_CRM_NUMBERING)));
   const [crmTablesReady, setCrmTablesReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [savingOpportunity, setSavingOpportunity] = useState(false);
@@ -829,7 +951,7 @@ const CRM = () => {
   const fetchCrmData = useCallback(async () => {
     setLoading(true);
 
-    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, commercialDocumentsRes, stagesRes, prioritiesRes, templatesRes] = await Promise.all([
+    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, commercialDocumentsRes, stagesRes, prioritiesRes, templatesRes, numberingRes] = await Promise.all([
       supabase
         .from('subjects')
         .select('id, name, ico, email, phone, contact_person, created_at, subject_types(name)')
@@ -846,7 +968,7 @@ const CRM = () => {
         .limit(60),
       supabase
         .from('crm_opportunities')
-        .select('id, title, stage, status, priority, value, probability, expected_close_date, next_step, description, subject_id, project_id, subject:subject_id(id, name), project:project_id(id, name, code), owner:owner_member_id(id, name)')
+        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, subject_id, project_id, subject:subject_id(id, name), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
         .order('updated_at', { ascending: false }),
       supabase
         .from('crm_activities')
@@ -855,7 +977,7 @@ const CRM = () => {
         .limit(20),
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, items:crm_commercial_document_items(id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, items:crm_commercial_document_items(id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
         .order('created_at', { ascending: false }),
       supabase
         .from('crm_stage_definitions')
@@ -871,6 +993,9 @@ const CRM = () => {
         .from('order_templates')
         .select('id, name, description, content, created_at')
         .order('created_at', { ascending: false }),
+      supabase
+        .from('crm_numbering_settings')
+        .select('document_type, prefix, next_number, padding'),
     ]);
 
     const coreError = subjectsRes.error || projectsRes.error || contactsRes.error;
@@ -903,7 +1028,10 @@ const CRM = () => {
       }
     } else {
       setCrmTablesReady(true);
-      setOpportunities(opportunitiesRes.data || []);
+      setOpportunities((opportunitiesRes.data || []).map((opportunity) => ({
+        ...opportunity,
+        items: [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
+      })));
       setActivities(activitiesRes.data || []);
       setCommercialDocuments((commercialDocumentsRes.data || []).map((document) => ({
         ...document,
@@ -918,6 +1046,7 @@ const CRM = () => {
     } else {
       setDocumentTemplates(templatesRes.data || []);
     }
+    setCrmNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
 
     setLoading(false);
   }, [toast]);
@@ -1066,6 +1195,110 @@ const CRM = () => {
     }
   }, [canEditCrm, fetchCrmData, toast, updateOpportunityState]);
 
+  const handleOpportunityItemsUpdate = useCallback(async (opportunityId, nextItems) => {
+    if (!canEditCrm || !opportunityId) return;
+
+    const normalizedItems = nextItems.map((item, index) => ({
+      ...item,
+      sort_order: (index + 1) * 10,
+      line_total: calculateCrmItemLineTotal(item),
+    }));
+    const totals = calculateCrmItemTotals(normalizedItems);
+
+    updateOpportunityState(opportunityId, {
+      items: normalizedItems,
+      value: totals.total,
+    });
+    setUpdatingOpportunity(true);
+
+    const { error: deleteError } = await supabase
+      .from('crm_opportunity_items')
+      .delete()
+      .eq('opportunity_id', opportunityId);
+
+    if (deleteError) {
+      setUpdatingOpportunity(false);
+      toast({ title: 'Polozky OP se nepodarilo ulozit', description: deleteError.message, variant: 'destructive' });
+      fetchCrmData();
+      return;
+    }
+
+    const opportunityItemRows = normalizedItems.map((item, index) => buildCrmOpportunityItemPayload(item, opportunityId, index));
+    if (opportunityItemRows.length > 0) {
+      const { error: insertError } = await supabase
+        .from('crm_opportunity_items')
+        .insert(opportunityItemRows);
+
+      if (insertError) {
+        setUpdatingOpportunity(false);
+        toast({ title: 'Polozky OP se nepodarilo ulozit', description: insertError.message, variant: 'destructive' });
+        fetchCrmData();
+        return;
+      }
+    }
+
+    const { error: opportunityError } = await supabase
+      .from('crm_opportunities')
+      .update({ value: totals.total, updated_at: new Date().toISOString() })
+      .eq('id', opportunityId);
+
+    if (opportunityError) {
+      setUpdatingOpportunity(false);
+      toast({ title: 'Hodnota OP se nepodarila ulozit', description: opportunityError.message, variant: 'destructive' });
+      fetchCrmData();
+      return;
+    }
+
+    const syncedDocuments = commercialDocuments.filter((document) => (
+      document.opportunity_id === opportunityId &&
+      (document.sync_items ?? true)
+    ));
+
+    for (const document of syncedDocuments) {
+      const { error: deleteDocumentItemsError } = await supabase
+        .from('crm_commercial_document_items')
+        .delete()
+        .eq('document_id', document.id);
+      if (deleteDocumentItemsError) {
+        setUpdatingOpportunity(false);
+        toast({ title: 'Synchronizace dokumentu selhala', description: deleteDocumentItemsError.message, variant: 'destructive' });
+        fetchCrmData();
+        return;
+      }
+
+      const documentItemRows = normalizedItems.map((item, index) => buildCrmDocumentItemPayload(item, document.id, index));
+      if (documentItemRows.length > 0) {
+        const { error: insertDocumentItemsError } = await supabase
+          .from('crm_commercial_document_items')
+          .insert(documentItemRows);
+        if (insertDocumentItemsError) {
+          setUpdatingOpportunity(false);
+          toast({ title: 'Synchronizace dokumentu selhala', description: insertDocumentItemsError.message, variant: 'destructive' });
+          fetchCrmData();
+          return;
+        }
+      }
+
+      const { error: updateDocumentError } = await supabase
+        .from('crm_commercial_documents')
+        .update({ ...totals, updated_at: new Date().toISOString() })
+        .eq('id', document.id);
+      if (updateDocumentError) {
+        setUpdatingOpportunity(false);
+        toast({ title: 'Synchronizace dokumentu selhala', description: updateDocumentError.message, variant: 'destructive' });
+        fetchCrmData();
+        return;
+      }
+    }
+
+    setCommercialDocuments((current) => current.map((document) => (
+      document.opportunity_id === opportunityId && (document.sync_items ?? true)
+        ? { ...document, ...totals, items: normalizedItems.map((item, index) => ({ ...item, sort_order: (index + 1) * 10 })) }
+        : document
+    )));
+    setUpdatingOpportunity(false);
+  }, [canEditCrm, commercialDocuments, fetchCrmData, toast, updateOpportunityState]);
+
   const handleMoveOpportunity = useCallback((opportunityId, targetStageValue) => {
     const targetStage = getStage(targetStageValue, crmStages);
     const opportunity = opportunities.find((item) => item.id === opportunityId);
@@ -1137,7 +1370,10 @@ const CRM = () => {
     }
 
     setSavingOpportunity(true);
+    const isNewOpportunity = !opportunityForm.id;
+    const opportunityNumber = isNewOpportunity ? formatCrmNumber(crmNumbering, 'opportunity') : null;
     const payload = {
+      ...(opportunityNumber ? { number: opportunityNumber } : {}),
       title: opportunityForm.title.trim(),
       subject_id: opportunityForm.subject_id,
       project_id: opportunityForm.project_id || null,
@@ -1158,9 +1394,8 @@ const CRM = () => {
 
     const { error } = await request;
 
-    setSavingOpportunity(false);
-
     if (error) {
+      setSavingOpportunity(false);
       toast({
         title: 'Prilezitost se nepodarilo ulozit',
         description: error.message,
@@ -1169,6 +1404,14 @@ const CRM = () => {
       return;
     }
 
+    if (isNewOpportunity) {
+      await supabase
+        .from('crm_numbering_settings')
+        .update({ next_number: Number(crmNumbering.opportunity?.next_number || 1) + 1, updated_at: new Date().toISOString() })
+        .eq('document_type', 'opportunity');
+    }
+
+    setSavingOpportunity(false);
     toast({ title: opportunityForm.id ? 'CRM prilezitost aktualizovana' : 'CRM prilezitost ulozena' });
     setOpportunityDialogOpen(false);
     fetchCrmData();
@@ -1180,10 +1423,16 @@ const CRM = () => {
     setCreatingDocument(true);
 
     const baseValue = Number(selectedOpportunity.value || 0);
+    const sourceItems = selectedOpportunity.items?.length ? selectedOpportunity.items : [{
+      ...createEmptyCrmItem(),
+      code: 'CRM-001',
+      name: selectedOpportunity.title,
+      unit_price: baseValue,
+      line_total: baseValue,
+    }];
+    const totals = calculateCrmItemTotals(sourceItems);
     const vatRate = 21;
-    const taxTotal = Math.round(baseValue * (vatRate / 100));
-    const prefix = type === 'offer' ? 'NAB' : 'OBJ';
-    const number = `${prefix}-${new Date().getFullYear()}-${String(selectedOpportunityDocuments.length + 1).padStart(3, '0')}`;
+    const number = formatCrmNumber(crmNumbering, type);
 
     const { data: documentData, error: documentError } = await supabase
       .from('crm_commercial_documents')
@@ -1194,11 +1443,12 @@ const CRM = () => {
         status: 'draft',
         number,
         title: `${type === 'offer' ? 'Nabidka' : 'Objednavka'} - ${selectedOpportunity.title}`,
-        subtotal: baseValue,
-        discount_total: 0,
-        tax_total: taxTotal,
-        total: baseValue,
+        subtotal: totals.subtotal,
+        discount_total: totals.discount_total,
+        tax_total: totals.tax_total,
+        total: totals.total,
         notes: selectedOpportunity.description || null,
+        sync_items: true,
       })
       .select('id')
       .single();
@@ -1213,24 +1463,16 @@ const CRM = () => {
       return;
     }
 
-    const { error: itemError } = await supabase
-      .from('crm_commercial_document_items')
-      .insert({
-        document_id: documentData.id,
-        code: 'CRM-001',
-        name: selectedOpportunity.title,
-        quantity: 1,
-        unit: 'ks',
-        unit_price: baseValue,
-        discount_percent: 0,
-        vat_rate: vatRate,
-        line_total: baseValue,
-        sort_order: 1,
-      });
-
-    setCreatingDocument(false);
+    const documentItems = sourceItems.map((item, index) => buildCrmDocumentItemPayload({
+      ...item,
+      vat_rate: item.vat_rate ?? vatRate,
+    }, documentData.id, index));
+    const { error: itemError } = documentItems.length > 0
+      ? await supabase.from('crm_commercial_document_items').insert(documentItems)
+      : { error: null };
 
     if (itemError) {
+      setCreatingDocument(false);
       toast({
         title: 'Polozka dokumentu se nepodarila vytvorit',
         description: itemError.message,
@@ -1239,6 +1481,12 @@ const CRM = () => {
       return;
     }
 
+    await supabase
+      .from('crm_numbering_settings')
+      .update({ next_number: Number(crmNumbering[type]?.next_number || 1) + 1, updated_at: new Date().toISOString() })
+      .eq('document_type', type);
+
+    setCreatingDocument(false);
     toast({ title: type === 'offer' ? 'Nabidka vytvorena' : 'Objednavka vytvorena' });
     fetchCrmData();
   };
@@ -1272,7 +1520,7 @@ const CRM = () => {
   };
 
   return (
-    <div className="app-page">
+    <div className="app-page-wide">
       <div className="space-y-6">
         <PageHeader
           icon={Contact}
@@ -1368,6 +1616,7 @@ const CRM = () => {
                 [type]: templateId || 'default',
               }))}
               onUpdateOpportunity={handleInlineOpportunityUpdate}
+              onUpdateOpportunityItems={handleOpportunityItemsUpdate}
               creatingDocument={creatingDocument}
               generatingDocument={generatingDocument}
               updatingOpportunity={updatingOpportunity}
@@ -1383,13 +1632,13 @@ const CRM = () => {
           </TabsList>
 
           <TabsContent value="pipeline" className="space-y-6">
-            <Card className="overflow-hidden border-slate-200 bg-slate-50/70 shadow-sm">
-              <CardHeader className="border-b bg-white px-4 py-4">
+            <Card className="crm-panel">
+              <CardHeader className="crm-panel-header">
                 <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-muted-foreground">
                       <Select value={sortMode} onValueChange={setSortMode}>
-                        <SelectTrigger className="h-8 w-[240px] rounded-full border-0 bg-slate-100 px-3 text-xs font-semibold shadow-none">
+                        <SelectTrigger className="h-9 w-[250px] bg-white text-xs font-semibold">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1410,15 +1659,15 @@ const CRM = () => {
                         value={opportunityQuery}
                         onChange={(event) => setOpportunityQuery(event.target.value)}
                         placeholder="Hledat..."
-                        className="h-10 rounded-full bg-slate-50 pl-9"
+                        className="h-9 bg-white pl-9"
                       />
                     </div>
-                    <div className="flex rounded-full border bg-white p-1 shadow-sm">
+                    <div className="flex rounded-md border bg-white p-1 shadow-sm">
                       <Button
                         type="button"
                         size="sm"
                         variant={opportunityView === 'kanban' ? 'default' : 'ghost'}
-                        className="h-8 rounded-full px-3"
+                        className="h-8 px-3"
                         onClick={() => setOpportunityView('kanban')}
                       >
                         <LayoutGrid className="mr-2 h-4 w-4" />
@@ -1428,7 +1677,7 @@ const CRM = () => {
                         type="button"
                         size="sm"
                         variant={opportunityView === 'table' ? 'default' : 'ghost'}
-                        className="h-8 rounded-full px-3"
+                        className="h-8 px-3"
                         onClick={() => setOpportunityView('table')}
                       >
                         <List className="mr-2 h-4 w-4" />
@@ -1436,7 +1685,7 @@ const CRM = () => {
                       </Button>
                     </div>
                     <Select value={stageFilter} onValueChange={setStageFilter}>
-                      <SelectTrigger className="h-10 w-[170px] rounded-full bg-white">
+                      <SelectTrigger className="h-9 w-[170px] bg-white">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1448,7 +1697,7 @@ const CRM = () => {
                       </SelectContent>
                     </Select>
                     <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                      <SelectTrigger className="h-10 w-[150px] rounded-full bg-white">
+                      <SelectTrigger className="h-9 w-[150px] bg-white">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1458,12 +1707,12 @@ const CRM = () => {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button variant="secondary" className="h-10 rounded-full">
+                    <Button variant="outline" className="h-9">
                       <Filter className="mr-2 h-4 w-4" />
                       Filtrovani
                     </Button>
                     {canEditCrm && (
-                      <Button onClick={() => openOpportunityDialog()} disabled={!crmTablesReady} className="h-11 w-11 rounded-full p-0">
+                      <Button onClick={() => openOpportunityDialog()} disabled={!crmTablesReady} className="h-9 w-9 p-0">
                         <Plus className="h-5 w-5" />
                       </Button>
                     )}
@@ -1496,7 +1745,7 @@ const CRM = () => {
                   </div>
                 )}
               </CardHeader>
-              <CardContent className="p-3">
+              <CardContent className="p-3 sm:p-4">
                 {opportunityView === 'kanban' ? (
                   <OpportunityBoard
                     stages={opportunitiesByStage}
@@ -1521,7 +1770,7 @@ const CRM = () => {
 
           <TabsContent value="subjects">
             <Card className="min-w-0">
-              <CardHeader className="border-b bg-slate-50/70">
+              <CardHeader className="crm-panel-header">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <CardTitle>Adresar CRM</CardTitle>
@@ -1594,7 +1843,7 @@ const CRM = () => {
           <TabsContent value="activities">
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
               <Card>
-                <CardHeader className="border-b bg-slate-50/70">
+                <CardHeader className="crm-panel-header">
                   <CardTitle>Nasledujici aktivity</CardTitle>
                   <CardDescription>Ukoly, schuzky a follow-upy navazane na CRM.</CardDescription>
                 </CardHeader>
@@ -1623,7 +1872,7 @@ const CRM = () => {
               </Card>
 
               <Card>
-                <CardHeader className="border-b bg-slate-50/70">
+                <CardHeader className="crm-panel-header">
                   <CardTitle className="flex items-center gap-2">
                     <BarChart3 className="h-5 w-5 text-primary" />
                     Typy subjektu
@@ -1654,7 +1903,7 @@ const CRM = () => {
           <TabsContent value="relations">
             <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
               <Card>
-                <CardHeader className="border-b bg-slate-50/70">
+                <CardHeader className="crm-panel-header">
                   <CardTitle>Posledni obchodni vazby</CardTitle>
                   <CardDescription>Projekty s klientem nebo investorem.</CardDescription>
                 </CardHeader>
@@ -1684,7 +1933,7 @@ const CRM = () => {
               </Card>
 
               <Card>
-                <CardHeader className="border-b bg-slate-50/70">
+                <CardHeader className="crm-panel-header">
                   <CardTitle>Projektove kontakty</CardTitle>
                   <CardDescription>Osoby pouzitelne pro obchodni historii a follow-upy.</CardDescription>
                 </CardHeader>

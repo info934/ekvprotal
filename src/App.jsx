@@ -7,6 +7,7 @@ import Dashboard from '@/components/Dashboard';
 import Projects from '@/components/Projects';
 import Documents from '@/components/Documents';
 import CRM from '@/components/CRM';
+import CRMCommercialDocuments from '@/components/CRMCommercialDocuments';
 import Engineering from '@/components/Engineering';
 import Payouts from '@/components/Payouts';
 import PayoutFormPage from '@/components/PayoutFormPage';
@@ -149,6 +150,10 @@ function AppContent() {
                 <Route path="/realizace/:realizaceId/orders/:orderId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
                 <Route path="/documents" element={<PrivateRoute module="documents"><Documents /></PrivateRoute>} />
                 <Route path="/crm" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                <Route path="/crm/offers" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
+                <Route path="/crm/offers/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
+                <Route path="/crm/orders" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />
+                <Route path="/crm/orders/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />
                 <Route path="/crm/:opportunityId" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
                 <Route path="/engineering" element={<PrivateRoute module="engineering"><Engineering /></PrivateRoute>} />
                 <Route path="/tasks" element={<PrivateRoute module="tasks"><Tasks /></PrivateRoute>} />
