@@ -13,6 +13,7 @@ import {
   CircleDollarSign,
   Contact,
   ExternalLink,
+  FileText,
   Filter,
   LayoutGrid,
   List,
@@ -31,6 +32,7 @@ import {
   Users,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
+import SubjectSelect from '@/components/SubjectSelect';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -49,6 +51,9 @@ import {
   downloadGeneratedDocumentDocx,
   downloadGeneratedDocumentHtml,
   downloadGeneratedDocumentPdf,
+  downloadOpportunityOverviewDocx,
+  downloadOpportunityOverviewHtml,
+  downloadOpportunityOverviewPdf,
 } from '@/lib/documentGenerationService';
 import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering } from '@/lib/crmNumbering';
 import { cn } from '@/lib/utils';
@@ -238,6 +243,7 @@ const DealWorkspace = ({
   onEdit,
   onCreateDocument,
   onGenerateDocument,
+  onGenerateOverview,
   onTemplateChange,
   onUpdateOpportunity,
   onUpdateOpportunityItems,
@@ -355,6 +361,13 @@ const DealWorkspace = ({
                   Upravit
                 </Button>
               )}
+              <Button variant="outline" onClick={() => onGenerateOverview?.('docx')} disabled={generatingDocument}>
+                <FileText className="mr-2 h-4 w-4" />
+                Overview DOCX
+              </Button>
+              <Button variant="outline" onClick={() => onGenerateOverview?.('pdf')} disabled={generatingDocument}>
+                Overview PDF
+              </Button>
               <Button disabled variant="outline">
                 <Plus className="mr-2 h-4 w-4" />
                 Vlastni akce
@@ -1519,6 +1532,37 @@ const CRM = () => {
     }
   };
 
+  const handleGenerateOpportunityOverview = async (format = 'docx') => {
+    if (!selectedOpportunity) return;
+
+    setGeneratingDocument(true);
+    try {
+      const generationInput = {
+        opportunity: selectedOpportunity,
+        documents: selectedOpportunityDocuments,
+      };
+      if (format === 'pdf') {
+        downloadOpportunityOverviewPdf(generationInput);
+      } else if (format === 'html') {
+        downloadOpportunityOverviewHtml(generationInput);
+      } else {
+        await downloadOpportunityOverviewDocx(generationInput);
+      }
+      toast({
+        title: 'Overview obchodniho pripadu vygenerovan',
+        description: `Vystup ${format.toUpperCase()} byl pripraven ke stazeni.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Overview se nepodarilo vygenerovat',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setGeneratingDocument(false);
+    }
+  };
+
   return (
     <div className="app-page-wide">
       <div className="space-y-6">
@@ -1611,6 +1655,7 @@ const CRM = () => {
               onEdit={openOpportunityDialog}
               onCreateDocument={handleCreateCommercialDocument}
               onGenerateDocument={handleGenerateCommercialDocument}
+              onGenerateOverview={handleGenerateOpportunityOverview}
               onTemplateChange={(type, templateId) => setSelectedTemplateIds((current) => ({
                 ...current,
                 [type]: templateId || 'default',
@@ -1983,17 +2028,16 @@ const CRM = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Subjekt *</Label>
-                  <Select value={opportunityForm.subject_id} onValueChange={(value) => handleOpportunityChange('subject_id', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Vyberte subjekt" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {subjects.map((subject) => (
-                        <SelectItem key={subject.id} value={subject.id}>{subject.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SubjectSelect
+                    label="Subjekt *"
+                    value={opportunityForm.subject_id}
+                    onChange={(value) => handleOpportunityChange('subject_id', value || '')}
+                    onCreated={(subject) => {
+                      setSubjects((current) => [...current, subject].sort((a, b) => a.name.localeCompare(b.name)));
+                      handleOpportunityChange('subject_id', subject.id);
+                    }}
+                    placeholder="Vyberte nebo vytvorte subjekt"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Navazany projekt</Label>

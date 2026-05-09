@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { DEFAULT_CRM_NUMBERING, normalizeCrmNumbering } from '@/lib/crmNumbering';
+import OrderTemplateManager from '@/components/OrderTemplateManager';
 
 const DEFAULT_STAGE_CONFIG = [
   { value: 'lead', label: 'Lead', color: 'bg-slate-100 text-slate-700 border-slate-200', probability: 10, sort_order: 10, is_active: true, is_closed: false },
@@ -369,6 +370,8 @@ const SettingsCRM = () => {
           ))}
         </CardContent>
       </Card>
+
+      <OrderTemplateManager embedded />
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
         <Button type="button" variant="ghost" onClick={resetCrmConfig} disabled={loading || saving || !canAdmin}>

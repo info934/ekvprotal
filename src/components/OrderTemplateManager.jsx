@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import PageHeader from '@/components/ui/page-header';
 
-const OrderTemplateManager = () => {
+const OrderTemplateManager = ({ embedded = false }) => {
     const { toast } = useToast();
     const [templates, setTemplates] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -69,6 +69,7 @@ const OrderTemplateManager = () => {
 
     return (
         <div className="space-y-6">
+            {!embedded && (
             <PageHeader
                 icon={ShoppingCart}
                 title="Šablony objednávek"
@@ -79,6 +80,7 @@ const OrderTemplateManager = () => {
                     </Button>
                 }
             />
+            )}
 
             <Card className="overflow-hidden">
                 <CardHeader className="gap-4 border-b bg-slate-50/60">
@@ -90,6 +92,7 @@ const OrderTemplateManager = () => {
                             </div>
                             <p className="text-sm text-muted-foreground">Šablony používají zástupné symboly pro dodavatele, položky a částky.</p>
                         </div>
+                        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
                         <div className="relative w-full lg:w-80">
                             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                             <Input
@@ -98,6 +101,10 @@ const OrderTemplateManager = () => {
                                 placeholder="Hledat šablonu..."
                                 className="pl-8"
                             />
+                        </div>
+                        <Button onClick={() => { setEditingTemplate(null); setIsDialogOpen(true); }} className="w-full sm:w-auto">
+                            <Plus className="w-4 h-4 mr-2" /> Nova sablona
+                        </Button>
                         </div>
                     </div>
                 </CardHeader>

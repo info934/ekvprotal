@@ -37,8 +37,8 @@ const settingsNav = [
     items: [
       { name: 'Ciselniky', description: 'Centralni hodnoty pro formulare', href: '/settings/dictionaries', icon: BookOpen, requiredPermission: 'can_admin' },
       { name: 'Sablony projektu', description: 'Vychozi struktury projektu', href: '/settings/project-templates', icon: FileText, requiredPermission: 'can_admin' },
-      { name: 'Sablony objednavek', description: 'Texty a promenne objednavek', href: '/settings/order-templates', icon: ShoppingCart, requiredPermission: 'can_admin' },
-      { name: 'CRM', description: 'Stavy, priority, prefixy a cislovani', href: '/settings/crm', icon: Target, requiredPermission: 'can_admin' },
+      { name: 'Sablony dokumentu', description: 'HTML a DOCX sablony vystupu', href: '/settings/order-templates', icon: ShoppingCart, requiredPermission: 'can_admin' },
+      { name: 'CRM', description: 'Stavy, priority, sablony a cislovani', href: '/settings/crm', icon: Target, requiredPermission: 'can_admin' },
       { name: 'Uloziste dokumentu', description: 'Supabase, SharePoint nebo Google Drive', href: '/settings/storage', icon: Cloud, requiredPermission: 'can_admin' },
     ],
   },

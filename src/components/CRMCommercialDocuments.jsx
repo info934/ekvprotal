@@ -12,9 +12,15 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import SubjectSelect from '@/components/SubjectSelect';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering } from '@/lib/crmNumbering';
+import {
+  downloadGeneratedDocumentDocx,
+  downloadGeneratedDocumentHtml,
+  downloadGeneratedDocumentPdf,
+} from '@/lib/documentGenerationService';
 import { cn } from '@/lib/utils';
 
 const documentTypeConfig = {
@@ -125,6 +131,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [documents, setDocuments] = useState([]);
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [opportunities, setOpportunities] = useState([]);
+  const [documentTemplates, setDocumentTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('default');
   const [numbering, setNumbering] = useState(() => normalizeCrmNumbering(Object.values(DEFAULT_CRM_NUMBERING)));
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -132,10 +140,10 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [documentsRes, opportunitiesRes, numberingRes] = await Promise.all([
+    const [documentsRes, opportunitiesRes, numberingRes, templatesRes] = await Promise.all([
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
         .eq('type', type)
         .order('created_at', { ascending: false }),
       supabase
@@ -145,6 +153,11 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       supabase
         .from('crm_numbering_settings')
         .select('document_type, prefix, next_number, padding'),
+      supabase
+        .from('order_templates')
+        .select('id, name, content')
+        .eq('is_active', true)
+        .order('name'),
     ]);
 
     const error = documentsRes.error || opportunitiesRes.error;
@@ -162,6 +175,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     }));
     setDocuments(normalizedDocuments);
     setOpportunities(opportunitiesRes.data || []);
+    setDocumentTemplates(templatesRes.error ? [] : (templatesRes.data || []));
     setNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
     setSelectedDocument(documentId ? normalizedDocuments.find((document) => document.id === documentId) || null : null);
     setLoading(false);
@@ -177,6 +191,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     return documents.filter((document) => [
       document.number,
       document.title,
+      document.subject?.name,
       document.opportunity?.number,
       document.opportunity?.title,
       document.opportunity?.subject?.name,
@@ -185,6 +200,14 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
   const updateSelectedDocument = (field, value) => {
     setSelectedDocument((current) => current ? { ...current, [field]: value } : current);
+  };
+
+  const updateSelectedDocumentSubject = (subjectId, subject = null) => {
+    setSelectedDocument((current) => current ? {
+      ...current,
+      subject_id: subjectId,
+      subject: subjectId ? (subject || current.subject) : null,
+    } : current);
   };
 
   const updateItem = (itemId, field, value) => {
@@ -261,6 +284,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         issue_date: selectedDocument.issue_date || new Date().toISOString().slice(0, 10),
         valid_until: selectedDocument.valid_until || null,
         notes: selectedDocument.notes || null,
+        subject_id: selectedDocument.subject_id || null,
         sync_items: selectedDocument.sync_items ?? true,
         ...totals,
         updated_at: new Date().toISOString(),
@@ -374,6 +398,43 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     navigate(config.detailPath(data.id));
   };
 
+  const handleGenerateSelectedDocument = async (format = 'docx') => {
+    if (!selectedDocument) return;
+    setSaving(true);
+    try {
+      const template = documentTemplates.find((item) => item.id === selectedTemplateId) || null;
+      const generationInput = {
+        document: selectedDocument,
+        opportunity: {
+          ...selectedDocument.opportunity,
+          subject: selectedDocument.subject || selectedDocument.opportunity?.subject,
+        },
+        template,
+      };
+
+      if (format === 'pdf') {
+        downloadGeneratedDocumentPdf(generationInput);
+      } else if (format === 'html') {
+        downloadGeneratedDocumentHtml(generationInput);
+      } else {
+        await downloadGeneratedDocumentDocx(generationInput);
+      }
+
+      toast({
+        title: 'Dokument vygenerovan',
+        description: `${template?.name ? `Sablona "${template.name}" byla vyplnena. ` : ''}Vystup ${format.toUpperCase()} byl pripraven ke stazeni.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Dokument se nepodarilo vygenerovat',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (documentId) {
     const totalWithTax = Number(selectedDocument?.total || 0) + Number(selectedDocument?.tax_total || 0);
     return (
@@ -387,6 +448,27 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               <Button variant="outline" onClick={() => navigate(config.listPath)}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Zpet na seznam
+              </Button>
+              <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+                <SelectTrigger className="h-10 w-[210px] bg-white">
+                  <SelectValue placeholder="Sablona dokumentu" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Vychozi sablona</SelectItem>
+                  {documentTemplates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={() => handleGenerateSelectedDocument('docx')} disabled={saving || !selectedDocument}>
+                <FileText className="mr-2 h-4 w-4" />
+                DOCX
+              </Button>
+              <Button variant="outline" onClick={() => handleGenerateSelectedDocument('pdf')} disabled={saving || !selectedDocument}>
+                PDF
+              </Button>
+              <Button variant="ghost" onClick={() => handleGenerateSelectedDocument('html')} disabled={saving || !selectedDocument}>
+                HTML
               </Button>
               <Button onClick={handleSaveDocument} disabled={!canEdit || saving || !selectedDocument}>
                 <Save className="mr-2 h-4 w-4" />
@@ -432,8 +514,14 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Klient</Label>
-                  <div className="rounded-md border bg-white px-3 py-2 text-sm">{selectedDocument.opportunity?.subject?.name || '-'}</div>
+                  <SubjectSelect
+                    label="Subjekt dokumentu"
+                    value={selectedDocument.subject_id || ''}
+                    onChange={(value, subject) => updateSelectedDocumentSubject(value || null, subject)}
+                    onCreated={(subject) => updateSelectedDocumentSubject(subject.id, subject)}
+                    placeholder="Vyberte nebo vytvorte subjekt"
+                    disabled={!canEdit || saving}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Vystaveno</Label>
@@ -589,7 +677,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   <TableRow key={document.id} className="cursor-pointer" onClick={() => navigate(config.detailPath(document.id))}>
                     <TableCell className="font-semibold text-slate-950">{document.number || '-'}</TableCell>
                     <TableCell className="max-w-[360px] truncate">{document.title}</TableCell>
-                    <TableCell className="font-medium">{document.opportunity?.subject?.name || '-'}</TableCell>
+                    <TableCell className="font-medium">{document.subject?.name || document.opportunity?.subject?.name || '-'}</TableCell>
                     <TableCell>
                       <span className="text-muted-foreground">{document.opportunity?.number || 'OP'}</span>
                       <span className="ml-1">{document.opportunity?.title || ''}</span>
