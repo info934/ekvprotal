@@ -3,15 +3,15 @@ import { cn } from '@/lib/utils';
 
 const PageHeader = ({ icon: Icon, title, description, actions, meta, className }) => {
   return (
-    <header className={cn("flex min-w-0 flex-col gap-4 rounded-md border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-5", className)}>
+    <header className={cn("flex min-w-0 flex-col gap-4 border-b border-slate-200/90 bg-white/90 px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-5", className)}>
       <div className="flex min-w-0 items-start gap-3">
         {Icon && (
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-primary/10 bg-primary/10 text-primary">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10 text-primary shadow-inner">
             <Icon className="h-5 w-5" />
           </div>
         )}
         <div className="min-w-0">
-          <h1 className="break-words text-2xl font-semibold tracking-tight text-slate-950 sm:text-[1.75rem]">
+          <h1 className="break-words text-2xl font-semibold tracking-tight text-slate-950 sm:text-[1.65rem]">
             {title}
           </h1>
           {description && (

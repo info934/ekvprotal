@@ -384,7 +384,7 @@ const RealizaceForm = () => {
     // If user somehow gets here without permission
     if (!canEdit) {
         return (
-            <div className="max-w-4xl mx-auto p-4 text-center">
+            <div className="app-page-wide text-center">
                 <Card>
                     <CardHeader>
                         <CardTitle>Přístup odepřen</CardTitle>
@@ -401,7 +401,7 @@ const RealizaceForm = () => {
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-4">
+        <div className="app-page-wide">
             <PageHeader
                 icon={HardHat}
                 title={isEditing ? 'Upravit realizaci' : 'Nová realizace'}

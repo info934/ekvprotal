@@ -57,8 +57,8 @@ const BackupMaintenance = lazy(() => import('@/components/BackupMaintenance'));
 
 const PageLoader = () => (
   <div className="flex min-h-[50vh] w-full items-center justify-center p-8">
-    <div className="text-center">
-      <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-b-2 border-primary" />
+    <div className="rounded-lg border border-slate-200/90 bg-white px-8 py-7 text-center shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
+      <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-b-primary" />
       <p className="font-medium text-slate-700">Načítání modulu...</p>
     </div>
   </div>
@@ -101,12 +101,12 @@ function AppContent() {
   if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
-        <div className="text-center max-w-md px-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <div className="max-w-md rounded-lg border border-slate-200/90 bg-white px-8 py-7 text-center shadow-[0_16px_42px_rgba(15,23,42,0.10)]">
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-b-primary"></div>
           <p className="text-xl font-semibold text-foreground">Načítání...</p>
           <p className="text-muted-foreground">Chvilku strpení, připravujeme portál.</p>
           {loadingTimeout && (
-            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm animate-in fade-in slide-in-from-bottom-4">
+            <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm animate-in fade-in slide-in-from-bottom-4">
               <p className="text-sm text-yellow-800 font-medium mb-3">
                 Načítání trvá déle než obvykle. Pokud problém přetrvává, může být zaseknutá relace.
               </p>
@@ -163,6 +163,7 @@ function AppContent() {
                   <Route path="/realizace/:realizaceId/orders/:orderId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
                   <Route path="/documents" element={<PrivateRoute module="documents"><Documents /></PrivateRoute>} />
                   <Route path="/crm" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                  <Route path="/crm/opportunities" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
                   <Route path="/crm/offers" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
                   <Route path="/crm/offers/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
                   <Route path="/crm/orders" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />

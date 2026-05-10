@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -46,6 +46,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import { ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import {
@@ -224,10 +225,10 @@ const normalizePriorities = (priorities) => (
 );
 
 const MetricCard = ({ icon: Icon, title, value, description, tone = 'default' }) => (
-  <Card className="overflow-hidden border-slate-200 bg-white shadow-sm">
+  <Card className="overflow-hidden rounded-lg border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
     <CardContent className="flex items-center gap-4 p-4">
       <div className={cn(
-        'flex h-10 w-10 shrink-0 items-center justify-center rounded-md border',
+        'flex h-11 w-11 shrink-0 items-center justify-center rounded-full border',
         tone === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' :
           tone === 'warning' ? 'border-amber-100 bg-amber-50 text-amber-700' :
             'border-primary/10 bg-primary/10 text-primary'
@@ -236,7 +237,7 @@ const MetricCard = ({ icon: Icon, title, value, description, tone = 'default' })
       </div>
       <div className="min-w-0">
         <p className="truncate text-xs font-semibold uppercase tracking-normal text-slate-500">{title}</p>
-        <p className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{value}</p>
+        <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
         {description && <p className="mt-1 truncate text-xs text-slate-500">{description}</p>}
       </div>
     </CardContent>
@@ -254,6 +255,7 @@ const DealWorkspace = ({
   onCreateDocument,
   onCreateProject,
   onCreateRealization,
+  onBack,
   onGenerateDocument,
   onGenerateOverview,
   onTemplateChange,
@@ -412,6 +414,12 @@ const DealWorkspace = ({
         <CardHeader className="crm-panel-header">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
+              {onBack && (
+                <Button variant="ghost" className="mb-2 h-8 px-0 text-muted-foreground" onClick={onBack}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Zpět na obchodní případy
+                </Button>
+              )}
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Obchodní případ {opportunity.number || ''} {opportunity.subject?.name ? `- ${opportunity.subject.name}` : ''}
               </div>
@@ -935,13 +943,13 @@ const DealWorkspace = ({
 
 const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesReady, onSelectOpportunity, onMoveOpportunity }) => (
   <div className="overflow-x-auto pb-2">
-    <div className="grid min-w-[1180px] gap-3 xl:grid-cols-6">
+    <div className="grid min-w-[1280px] gap-3 xl:grid-cols-6">
       {stages.map((stage) => {
         const total = stage.opportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
         return (
           <section
             key={stage.value}
-            className="min-h-[360px] rounded-md border border-slate-200 bg-slate-50/70 p-2.5 transition-colors"
+            className="min-h-[420px] rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 transition-colors"
             onDragOver={(event) => {
               event.preventDefault();
               event.currentTarget.classList.add('ring-2', 'ring-primary/30');
@@ -956,7 +964,7 @@ const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesRe
               if (opportunityId) onMoveOpportunity?.(opportunityId, stage.value);
             }}
           >
-            <div className={cn('mb-2 rounded-md border px-3 py-2 shadow-sm', stage.color)}>
+            <div className={cn('mb-2 rounded-lg border px-3 py-2 shadow-sm', stage.color)}>
               <div className="flex items-center justify-between gap-2">
                 <h3 className="truncate text-xs font-bold uppercase">{stage.label}</h3>
                 <button type="button" className="text-base leading-none opacity-70 transition hover:opacity-100" aria-label={`Přidat do stavu ${stage.label}`}>
@@ -982,7 +990,7 @@ const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesRe
                     }}
                     onClick={() => onSelectOpportunity(opportunity.id)}
                     className={cn(
-                      'group w-full rounded-md border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:bg-blue-50/20 hover:shadow-md',
+                      'group w-full rounded-lg border border-slate-200 bg-white p-3 text-left shadow-[0_8px_22px_rgba(15,23,42,0.04)] transition hover:border-primary/30 hover:bg-blue-50/20 hover:shadow-md',
                       selectedOpportunity?.id === opportunity.id && 'border-primary ring-2 ring-primary/15'
                     )}
                   >
@@ -1025,75 +1033,400 @@ const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesRe
   </div>
 );
 
-const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportunity, onSelectOpportunity }) => (
-  <div className="overflow-x-auto">
+const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportunity, onSelectOpportunity }) => {
+  const columns = useMemo(() => [
+    { id: 'select', label: 'Výběr', hideable: false },
+    { id: 'code', label: 'Kód' },
+    { id: 'title', label: 'Předmět' },
+    { id: 'client', label: 'Klient' },
+    { id: 'type', label: 'Typ obchodu' },
+    { id: 'stage', label: 'Stav' },
+    { id: 'activity', label: 'Naplánovaná aktivita' },
+    { id: 'value', label: 'Konečná cena' },
+    { id: 'priority', label: 'Priorita' },
+    { id: 'actions', label: 'Akce', hideable: false },
+  ], []);
+  const {
+    columns: managedColumns,
+    visibility,
+    moveColumn,
+    toggleColumn,
+    resetColumns,
+  } = useManagedColumns('ekv-table-crm-opportunities', columns);
+  const visibleColumns = managedColumns.filter((column) => visibility[column.id] !== false);
+  const tableHeadClasses = {
+    select: 'w-10',
+    code: 'min-w-[120px]',
+    title: 'min-w-[280px]',
+    client: 'min-w-[220px]',
+    type: 'min-w-[150px]',
+    stage: 'min-w-[180px]',
+    activity: 'min-w-[220px]',
+    value: 'min-w-[150px] text-right',
+    priority: 'min-w-[130px]',
+    actions: 'w-12 text-right',
+  };
+  const tableCellClasses = {
+    select: 'w-10',
+    code: 'font-semibold text-slate-900',
+    client: 'font-medium',
+    type: 'text-muted-foreground',
+    activity: 'text-muted-foreground',
+    value: 'text-right font-semibold',
+    actions: 'text-right',
+  };
+  const renderOpportunityCell = (columnId, opportunity, index) => {
+    const stage = getStage(opportunity.stage, stages);
+    const priority = getPriority(opportunity.priority, priorities);
+
+    switch (columnId) {
+      case 'select':
+        return <span className="block h-4 w-4 rounded border border-slate-300 bg-white" />;
+      case 'code':
+        return `OP-${String(index + 1).padStart(3, '0')}`;
+      case 'title':
+        return (
+          <>
+            <div className="font-semibold text-slate-800">{opportunity.title}</div>
+            {opportunity.project?.code && <div className="text-xs text-muted-foreground">{opportunity.project.code}</div>}
+          </>
+        );
+      case 'client':
+        return opportunity.subject?.name || '-';
+      case 'type':
+        return opportunity.project ? 'EKV - Project' : 'EKV - FVE';
+      case 'stage':
+        return (
+          <div className="flex items-center gap-2">
+            <span className="h-6 w-1 rounded-full bg-primary" />
+            <Badge className={cn('border', stage.color)}>{stage.label}</Badge>
+          </div>
+        );
+      case 'activity':
+        return opportunity.next_step || 'bez aktivity';
+      case 'value':
+        return formatCurrency(opportunity.value);
+      case 'priority':
+        return <Badge variant={priority?.tone || 'secondary'}>{priority?.label || '-'}</Badge>;
+      case 'actions':
+        return (
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(event) => event.stopPropagation()}>
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+  <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <div className="flex min-w-[1180px] items-center gap-2 bg-gradient-to-r from-blue-700 to-sky-600 px-4 py-2 text-sm font-semibold text-white">
+      <span>Obchodní případy</span>
+      <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{opportunities.length}</span>
+      <ManagedTableToolbar
+        className="ml-auto text-slate-700"
+        columns={managedColumns}
+        visibility={visibility}
+        onMoveColumn={moveColumn}
+        onToggleColumn={toggleColumn}
+        onReset={resetColumns}
+      />
+    </div>
     <Table>
       <TableHeader>
         <TableRow className="bg-slate-50">
-          <TableHead className="w-10"><CheckSquare2 className="h-4 w-4 text-muted-foreground" /></TableHead>
-          <TableHead className="min-w-[120px]">Kód</TableHead>
-          <TableHead className="min-w-[280px]">Předmět</TableHead>
-          <TableHead className="min-w-[220px]">Klient</TableHead>
-          <TableHead className="min-w-[150px]">Typ obchodu</TableHead>
-          <TableHead className="min-w-[180px]">Stav</TableHead>
-          <TableHead className="min-w-[220px]">Naplánovaná aktivita</TableHead>
-          <TableHead className="min-w-[150px] text-right">Konečná cena</TableHead>
-          <TableHead className="min-w-[130px]">Priorita</TableHead>
-          <TableHead className="w-12 text-right">Akce</TableHead>
+          {visibleColumns.map((column) => (
+            <TableHead key={column.id} className={tableHeadClasses[column.id]}>
+              {column.id === 'select' ? <CheckSquare2 className="h-4 w-4 text-muted-foreground" /> : column.label}
+            </TableHead>
+          ))}
         </TableRow>
       </TableHeader>
       <TableBody>
         {opportunities.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={10} className="h-28 text-center text-muted-foreground">
+            <TableCell colSpan={visibleColumns.length} className="h-28 text-center text-muted-foreground">
               Žádný obchodní případ neodpovídá filtru.
             </TableCell>
           </TableRow>
-        ) : opportunities.map((opportunity, index) => {
-          const stage = getStage(opportunity.stage, stages);
-          const priority = getPriority(opportunity.priority, priorities);
-          return (
+        ) : opportunities.map((opportunity, index) => (
             <TableRow
               key={opportunity.id}
               onClick={() => onSelectOpportunity(opportunity.id)}
               className={cn('cursor-pointer bg-white hover:bg-blue-50/35', selectedOpportunity?.id === opportunity.id && 'bg-blue-50')}
             >
-              <TableCell>
-                <span className="block h-4 w-4 rounded border border-slate-300 bg-white" />
-              </TableCell>
-              <TableCell className="font-semibold text-slate-900">OP-{String(index + 1).padStart(3, '0')}</TableCell>
-              <TableCell>
-                <div className="font-semibold text-slate-800">{opportunity.title}</div>
-                {opportunity.project?.code && <div className="text-xs text-muted-foreground">{opportunity.project.code}</div>}
-              </TableCell>
-              <TableCell className="font-medium">{opportunity.subject?.name || '-'}</TableCell>
-              <TableCell className="text-muted-foreground">{opportunity.project ? 'EKV - Project' : 'EKV - FVE'}</TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <span className="h-6 w-1 rounded-full bg-primary" />
-                  <Badge className={stage.color}>{stage.label}</Badge>
-                </div>
-              </TableCell>
-              <TableCell className="text-muted-foreground">{opportunity.next_step || 'bez aktivity'}</TableCell>
-              <TableCell className="text-right font-semibold">{formatCurrency(opportunity.value)}</TableCell>
-              <TableCell><Badge variant={priority?.tone || 'secondary'}>{priority?.label || '-'}</Badge></TableCell>
-              <TableCell className="text-right">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(event) => event.stopPropagation()}>
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </TableCell>
+              {visibleColumns.map((column) => (
+                <TableCell key={column.id} className={tableCellClasses[column.id]}>
+                  {renderOpportunityCell(column.id, opportunity, index)}
+                </TableCell>
+              ))}
             </TableRow>
-          );
-        })}
+        ))}
       </TableBody>
     </Table>
   </div>
-);
+  );
+};
+
+const CrmDashboardInsights = ({
+  metrics,
+  stages,
+  opportunities,
+  commercialDocuments,
+  upcomingActivities,
+  onOpenOpportunity,
+}) => {
+  const stageRows = stages
+    .map((stage) => {
+      const stageOpportunities = opportunities.filter((opportunity) => opportunity.stage === stage.value);
+      const value = stageOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
+      const share = metrics.pipelineValue > 0 ? Math.round((value / metrics.pipelineValue) * 100) : 0;
+      return { ...stage, count: stageOpportunities.length, value, share };
+    })
+    .filter((stage) => stage.count > 0 || !stage.is_closed);
+
+  const openOpportunities = opportunities.filter((opportunity) => {
+    const stage = getStage(opportunity.stage, stages);
+    return opportunity.status === 'open' && !stage.is_closed;
+  });
+
+  const topOpportunities = [...openOpportunities]
+    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
+    .slice(0, 5);
+
+  const now = new Date();
+  const soonLimit = new Date(now);
+  soonLimit.setDate(soonLimit.getDate() + 30);
+  const closingSoon = openOpportunities
+    .filter((opportunity) => {
+      if (!opportunity.expected_close_date) return false;
+      const closeDate = new Date(opportunity.expected_close_date);
+      return closeDate >= now && closeDate <= soonLimit;
+    })
+    .sort((a, b) => new Date(a.expected_close_date) - new Date(b.expected_close_date))
+    .slice(0, 5);
+
+  const withoutNextStep = openOpportunities
+    .filter((opportunity) => !opportunity.next_step)
+    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
+    .slice(0, 5);
+
+  const offers = commercialDocuments.filter((document) => document.type === 'offer');
+  const orders = commercialDocuments.filter((document) => document.type === 'order');
+  const documentStats = [
+    {
+      label: 'Nabidky',
+      count: offers.length,
+      value: offers.reduce((sum, document) => sum + Number(document.total || 0), 0),
+      icon: FileText,
+      tone: 'text-blue-700 bg-blue-50 border-blue-100',
+    },
+    {
+      label: 'Objednavky',
+      count: orders.length,
+      value: orders.reduce((sum, document) => sum + Number(document.total || 0), 0),
+      icon: ShoppingCart,
+      tone: 'text-emerald-700 bg-emerald-50 border-emerald-100',
+    },
+  ];
+
+  return (
+    <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.75fr)]">
+      <div className="grid gap-5 xl:grid-cols-3">
+        <Card className="crm-panel xl:col-span-2">
+          <CardHeader className="crm-panel-header">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="h-4 w-4 text-primary" />
+              Pipeline podle stavu
+            </CardTitle>
+            <CardDescription>Rychly pohled na rozlozeni aktivnich obchodnich pripadu.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 p-4">
+            {stageRows.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">Zatim nejsou zadne obchodni pripady.</div>
+            ) : stageRows.map((stage) => (
+              <div key={stage.value} className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-slate-950">{stage.label}</div>
+                    <div className="text-xs text-muted-foreground">{stage.count} OP</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold text-slate-950">{formatCurrency(stage.value)}</div>
+                    <div className="text-xs text-muted-foreground">{stage.share} % pipeline</div>
+                  </div>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(stage.share, stage.count ? 4 : 0)}%` }} />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-5">
+          {documentStats.map((stat) => {
+            const Icon = stat.icon;
+            return (
+              <Card key={stat.label} className="crm-panel">
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className={cn('flex h-11 w-11 items-center justify-center rounded-full border', stat.tone)}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{stat.label}</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-950">{stat.count}</p>
+                    <p className="truncate text-xs text-muted-foreground">{formatCurrency(stat.value)}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+          <Card className="crm-panel">
+            <CardContent className="flex items-center gap-4 p-4">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full border border-amber-100 bg-amber-50 text-amber-700">
+                <Percent className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase text-muted-foreground">Konverze</p>
+                <p className="mt-1 text-2xl font-semibold text-slate-950">{metrics.conversionRate} %</p>
+                <p className="truncate text-xs text-muted-foreground">{metrics.won} vyhrano / {metrics.lost} prohrano</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="crm-panel xl:col-span-3">
+          <CardHeader className="crm-panel-header">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Target className="h-4 w-4 text-primary" />
+              Nejvetsi otevrene prilezitosti
+            </CardTitle>
+            <CardDescription>Obchody s nejvyssi hodnotou, ktere maji vliv na pipeline.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Obchodni pripad</TableHead>
+                    <TableHead>Klient</TableHead>
+                    <TableHead>Stav</TableHead>
+                    <TableHead>Odhad uzavreni</TableHead>
+                    <TableHead className="text-right">Hodnota</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {topOpportunities.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">Zatim zadne otevrene prilezitosti.</TableCell>
+                    </TableRow>
+                  ) : topOpportunities.map((opportunity) => {
+                    const stage = getStage(opportunity.stage, stages);
+                    return (
+                      <TableRow key={opportunity.id} className="cursor-pointer" onClick={() => onOpenOpportunity(opportunity.id)}>
+                        <TableCell>
+                          <div className="font-semibold text-slate-950">{opportunity.title}</div>
+                          <div className="text-xs text-muted-foreground">{opportunity.number || opportunity.project?.code || '-'}</div>
+                        </TableCell>
+                        <TableCell className="font-medium">{opportunity.subject?.name || '-'}</TableCell>
+                        <TableCell><Badge className={cn('border', stage.color)}>{stage.label}</Badge></TableCell>
+                        <TableCell>{formatDate(opportunity.expected_close_date)}</TableCell>
+                        <TableCell className="text-right font-semibold">{formatCurrency(opportunity.value)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-5 content-start">
+        <Card className="crm-panel">
+          <CardHeader className="crm-panel-header">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarClock className="h-4 w-4 text-primary" />
+              Uzavreni do 30 dnu
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y p-0">
+            {closingSoon.length === 0 ? (
+              <div className="p-5 text-sm text-muted-foreground">Zadne blizke uzavreni.</div>
+            ) : closingSoon.map((opportunity) => (
+              <button
+                key={opportunity.id}
+                type="button"
+                onClick={() => onOpenOpportunity(opportunity.id)}
+                className="block w-full p-4 text-left transition hover:bg-slate-50"
+              >
+                <div className="font-semibold text-slate-950">{opportunity.title}</div>
+                <div className="mt-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                  <span className="truncate">{opportunity.subject?.name || '-'}</span>
+                  <span>{formatDate(opportunity.expected_close_date)}</span>
+                </div>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className="crm-panel">
+          <CardHeader className="crm-panel-header">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Clock className="h-4 w-4 text-primary" />
+              Bez dalsiho kroku
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y p-0">
+            {withoutNextStep.length === 0 ? (
+              <div className="p-5 text-sm text-muted-foreground">Vsechny hlavni OP maji dalsi krok.</div>
+            ) : withoutNextStep.map((opportunity) => (
+              <button
+                key={opportunity.id}
+                type="button"
+                onClick={() => onOpenOpportunity(opportunity.id)}
+                className="block w-full p-4 text-left transition hover:bg-slate-50"
+              >
+                <div className="font-semibold text-slate-950">{opportunity.title}</div>
+                <div className="mt-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                  <span className="truncate">{opportunity.subject?.name || '-'}</span>
+                  <span>{formatCurrency(opportunity.value)}</span>
+                </div>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className="crm-panel">
+          <CardHeader className="crm-panel-header">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+              Nejblizsi aktivity
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y p-0">
+            {upcomingActivities.length === 0 ? (
+              <div className="p-5 text-sm text-muted-foreground">Zadne planovane CRM aktivity.</div>
+            ) : upcomingActivities.slice(0, 5).map((activity) => (
+              <div key={activity.id} className="p-4">
+                <div className="font-semibold text-slate-950">{activity.title}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{formatDate(activity.due_at)}</div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+};
 
 const CRM = () => {
   const { toast } = useToast();
   const { hasPermission, memberId } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { opportunityId } = useParams();
   const [subjects, setSubjects] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -1127,6 +1460,10 @@ const CRM = () => {
 
   const canEditCrm = hasPermission('crm', 'can_edit');
   const canAdminCrm = hasPermission('crm', 'can_admin');
+  const isCreatingOpportunityPage = opportunityId === 'new';
+  const isOpportunityListPage = location.pathname === '/crm/opportunities';
+  const isCrmDashboardPage = location.pathname === '/crm';
+  const displayedOpportunityView = isOpportunityListPage ? 'table' : 'kanban';
 
   useEffect(() => {
     localStorage.setItem(CRM_CONFIG_STORAGE_KEY, JSON.stringify({
@@ -1134,6 +1471,13 @@ const CRM = () => {
       priorities: crmPriorities,
     }));
   }, [crmPriorities, crmStages]);
+
+  useEffect(() => {
+    if (isCreatingOpportunityPage) {
+      setOpportunityForm(initialOpportunityForm);
+      setSelectedOpportunityId(null);
+    }
+  }, [isCreatingOpportunityPage]);
 
   const fetchCrmData = useCallback(async () => {
     setLoading(true);
@@ -1695,6 +2039,10 @@ const CRM = () => {
     setSavingOpportunity(false);
     toast({ title: opportunityForm.id ? 'CRM příležitost aktualizována' : 'CRM příležitost uložena' });
     setOpportunityDialogOpen(false);
+    if (isCreatingOpportunityPage && isNewOpportunity) {
+      navigate('/crm');
+      return;
+    }
     fetchCrmData();
   };
 
@@ -1862,8 +2210,8 @@ const CRM = () => {
                   </Link>
                 </Button>
               )}
-              {canEditCrm && (
-                <Button onClick={() => openOpportunityDialog()} disabled={!crmTablesReady}>
+              {canEditCrm && !isCreatingOpportunityPage && (
+                <Button onClick={() => navigate('/crm/new')} disabled={!crmTablesReady}>
                   <Plus className="mr-2 h-4 w-4" />
                   Nová příležitost
                 </Button>
@@ -1888,6 +2236,8 @@ const CRM = () => {
           </Alert>
         )}
 
+        {isCrmDashboardPage && (
+          <>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard icon={Building2} title="Subjekty celkem" value={metrics.subjects} description="Zákazníci, dodavatelé, investoři a úřady" />
           <MetricCard icon={Users} title="Zákazníci" value={metrics.customers} description={`${metrics.investors} investorů, ${metrics.suppliers} dodavatelů`} />
@@ -1932,33 +2282,208 @@ const CRM = () => {
           </CardContent>
         </Card>
 
-        {opportunityId ? (
-          <div className="space-y-4">
+        <CrmDashboardInsights
+          metrics={metrics}
+          stages={crmStages}
+          opportunities={opportunities}
+          commercialDocuments={commercialDocuments}
+          upcomingActivities={upcomingActivities}
+          onOpenOpportunity={openOpportunityDetail}
+        />
+          </>
+        )}
+
+        {isCreatingOpportunityPage ? (
+          <div className="space-y-5">
             <div className="crm-panel flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <Button variant="ghost" className="mb-2 h-8 px-0 text-muted-foreground" onClick={() => navigate('/crm')}>
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Zpět na obchodní přehled
                 </Button>
-                <h2 className="truncate text-2xl font-semibold text-slate-950">
-                  {selectedOpportunity?.title || 'Obchodní případ'}
-                </h2>
+                <h2 className="text-2xl font-semibold text-slate-950">Nový obchodní případ</h2>
                 <p className="text-sm text-muted-foreground">
-                  Detail obchodního případu, položek, nabídek a objednávek.
+                  Založení OP ve stejné full-width stránce jako nový projekt. Po uložení se vrátíte na CRM přehled.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                {canEditCrm && selectedOpportunity && (
-                  <Button variant="outline" onClick={() => openOpportunityDialog(selectedOpportunity)}>
-                    Upravit případ
-                  </Button>
-                )}
-                <Button variant="secondary" onClick={fetchCrmData} disabled={loading}>
-                  <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
-                  Obnovit
+                <Button type="button" variant="outline" onClick={() => navigate('/crm')}>
+                  Zrušit
+                </Button>
+                <Button type="submit" form="crm-opportunity-page-form" disabled={savingOpportunity || !crmTablesReady}>
+                  {savingOpportunity ? 'Ukládám...' : 'Uložit obchodní případ'}
                 </Button>
               </div>
             </div>
+
+            <form id="crm-opportunity-page-form" onSubmit={handleSaveOpportunity} className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <Card className="crm-panel">
+                <CardHeader className="crm-panel-header">
+                  <CardTitle>Základní údaje</CardTitle>
+                  <CardDescription>Klient, fáze, hodnota a další obchodní parametry.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 p-5 md:grid-cols-2">
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="opportunity-page-title">Název *</Label>
+                    <Input
+                      id="opportunity-page-title"
+                      value={opportunityForm.title}
+                      onChange={(event) => handleOpportunityChange('title', event.target.value)}
+                      placeholder="Např. FVE - RD Páteče"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <SubjectSelect
+                      label="Subjekt *"
+                      value={opportunityForm.subject_id}
+                      onChange={(value) => handleOpportunityChange('subject_id', value || '')}
+                      onCreated={(subject) => {
+                        setSubjects((current) => [...current, subject].sort((a, b) => a.name.localeCompare(b.name)));
+                        handleOpportunityChange('subject_id', subject.id);
+                      }}
+                      placeholder="Vyberte nebo vytvořte subjekt"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Navázaný projekt</Label>
+                    <Select value={opportunityForm.project_id || 'none'} onValueChange={(value) => handleOpportunityChange('project_id', value === 'none' ? '' : value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Volitelně" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Bez projektu</SelectItem>
+                        {projects.map((project) => (
+                          <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Fáze</Label>
+                    <Select value={opportunityForm.stage} onValueChange={(value) => handleOpportunityChange('stage', value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {crmStages.map((stage) => (
+                          <SelectItem key={stage.value} value={stage.value}>{stage.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Priorita</Label>
+                    <Select value={opportunityForm.priority} onValueChange={(value) => handleOpportunityChange('priority', value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {crmPriorities.map((priority) => (
+                          <SelectItem key={priority.value} value={priority.value}>{priority.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="opportunity-page-value">Hodnota</Label>
+                    <Input
+                      id="opportunity-page-value"
+                      type="number"
+                      min="0"
+                      value={opportunityForm.value}
+                      onChange={(event) => handleOpportunityChange('value', event.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="opportunity-page-probability">Pravděpodobnost (%)</Label>
+                    <Input
+                      id="opportunity-page-probability"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={opportunityForm.probability}
+                      onChange={(event) => handleOpportunityChange('probability', event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="opportunity-page-close-date">Očekávané uzavření</Label>
+                    <Input
+                      id="opportunity-page-close-date"
+                      type="date"
+                      value={opportunityForm.expected_close_date}
+                      onChange={(event) => handleOpportunityChange('expected_close_date', event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Stav</Label>
+                    <div className={cn('rounded-md border px-3 py-2 text-sm', getStage(opportunityForm.stage, crmStages).color)}>
+                      {getStage(opportunityForm.stage, crmStages).is_closed ? 'Uzavřeno' : 'Otevřeno'} · {getPriority(opportunityForm.priority, crmPriorities)?.label}
+                    </div>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="opportunity-page-next-step">Další krok</Label>
+                    <Input
+                      id="opportunity-page-next-step"
+                      value={opportunityForm.next_step}
+                      onChange={(event) => handleOpportunityChange('next_step', event.target.value)}
+                      placeholder="Např. zavolat klientovi, poslat podklady..."
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="opportunity-page-description">Poznámka</Label>
+                    <Textarea
+                      id="opportunity-page-description"
+                      value={opportunityForm.description}
+                      onChange={(event) => handleOpportunityChange('description', event.target.value)}
+                      rows={6}
+                    />
+                  </div>
+                  {opportunityForm.stage === 'lost' && (
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="opportunity-page-lost-reason">Důvod prohry *</Label>
+                      <Textarea
+                        id="opportunity-page-lost-reason"
+                        value={opportunityForm.lost_reason}
+                        onChange={(event) => handleOpportunityChange('lost_reason', event.target.value)}
+                        rows={4}
+                        placeholder="Např. cena, termín, konkurence, zrušená poptávka..."
+                        required
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="space-y-5">
+                <Card className="crm-panel">
+                  <CardHeader className="crm-panel-header">
+                    <CardTitle>Souhrn</CardTitle>
+                    <CardDescription>Kontrola před uložením.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 p-5">
+                    <div className={cn('rounded-lg border p-4', getStage(opportunityForm.stage, crmStages).color)}>
+                      <div className="text-sm font-semibold">{getStage(opportunityForm.stage, crmStages).label}</div>
+                      <div className="mt-1 text-xs opacity-80">{opportunityForm.probability || 0} % pravděpodobnost</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs font-semibold uppercase text-slate-500">Hodnota OP</div>
+                      <div className="mt-1 text-2xl font-semibold text-slate-950">{formatCurrency(Number(opportunityForm.value || 0))}</div>
+                    </div>
+                    <Button type="submit" className="w-full" disabled={savingOpportunity || !crmTablesReady}>
+                      {savingOpportunity ? 'Ukládám...' : 'Uložit obchodní případ'}
+                    </Button>
+                    <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/crm')}>
+                      Zrušit
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            </form>
+          </div>
+        ) : opportunityId ? (
+          <div className="space-y-4">
             <DealWorkspace
               opportunity={selectedOpportunity}
               documents={selectedOpportunityDocuments}
@@ -1971,6 +2496,7 @@ const CRM = () => {
               onCreateDocument={handleCreateCommercialDocument}
               onCreateProject={handleCreateProjectFromOpportunity}
               onCreateRealization={handleCreateRealizationFromOpportunity}
+              onBack={() => navigate('/crm/opportunities')}
               onGenerateDocument={handleGenerateCommercialDocument}
               onGenerateOverview={handleGenerateOpportunityOverview}
               onTemplateChange={(type, templateId) => setSelectedTemplateIds((current) => ({
@@ -1987,7 +2513,7 @@ const CRM = () => {
           </div>
         ) : (
         <Tabs defaultValue="pipeline" className="space-y-5">
-          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-md border bg-slate-100 p-1 sm:w-auto">
+          <TabsList className="hidden h-auto w-full justify-start gap-1 overflow-x-auto rounded-md border bg-slate-100 p-1 sm:w-auto">
             <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
             <TabsTrigger value="subjects">Adresář</TabsTrigger>
             <TabsTrigger value="activities">Aktivity</TabsTrigger>
@@ -2012,7 +2538,9 @@ const CRM = () => {
                         </SelectContent>
                       </Select>
                     </div>
-                    <CardTitle className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Obchodní případy</CardTitle>
+                    <CardTitle className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                      {isOpportunityListPage ? 'Obchodní případy' : 'Obchodní nástěnka'}
+                    </CardTitle>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -2025,7 +2553,7 @@ const CRM = () => {
                         className="h-9 bg-white pl-9"
                       />
                     </div>
-                    <div className="flex rounded-md border bg-white p-1 shadow-sm">
+                    <div className="hidden rounded-md border bg-white p-1 shadow-sm">
                       <Button
                         type="button"
                         size="sm"
@@ -2075,7 +2603,7 @@ const CRM = () => {
                       Filtrování
                     </Button>
                     {canEditCrm && (
-                      <Button onClick={() => openOpportunityDialog()} disabled={!crmTablesReady} className="h-9 w-9 p-0">
+                      <Button onClick={() => navigate('/crm/new')} disabled={!crmTablesReady} className="h-9 w-9 p-0">
                         <Plus className="h-5 w-5" />
                       </Button>
                     )}
@@ -2109,7 +2637,7 @@ const CRM = () => {
                 )}
               </CardHeader>
               <CardContent className="p-3 sm:p-4">
-                {opportunityView === 'kanban' ? (
+                {displayedOpportunityView === 'kanban' ? (
                   <OpportunityBoard
                     stages={opportunitiesByStage}
                     priorities={crmPriorities}

@@ -73,7 +73,7 @@ const ProjectTemplatesPage = () => {
     };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="app-page-wide">
             <PageHeader
                 icon={Copy}
                 title="Šablony projektů"

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import { MemoBadge } from '@/components/ui/memo-badge';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import PageHeader from '@/components/ui/page-header';
@@ -50,6 +51,33 @@ const Realizace = () => {
     // Restricted access for 'user' role
     const canEdit = hasPermission('realizace', 'can_edit') && userRole !== 'user';
     const canDelete = hasPermission('realizace', 'can_admin') && userRole !== 'user';
+    const realizationTableColumns = useMemo(() => [
+        { id: 'name', label: 'Název', hideable: false },
+        { id: 'investor', label: 'Investor' },
+        { id: 'type', label: 'Typ' },
+        { id: 'status', label: 'Stav' },
+        { id: 'start', label: 'Start' },
+        { id: 'lead', label: 'Vedoucí' },
+        canViewAmounts && { id: 'contract', label: 'Smlouva' },
+        { id: 'actions', label: 'Akce', hideable: false },
+    ].filter(Boolean), [canViewAmounts]);
+    const realizationManagedTable = useManagedColumns('ekv-table-realizace', realizationTableColumns);
+    const realizationVisibleColumns = realizationManagedTable.visibleColumns;
+    const realizationHeadClasses = {
+        name: 'min-w-[280px]',
+        investor: 'min-w-[220px]',
+        type: 'min-w-[140px]',
+        status: 'min-w-[160px]',
+        start: 'min-w-[120px]',
+        lead: 'min-w-[180px]',
+        contract: 'min-w-[140px] text-right',
+        actions: 'w-24 text-right',
+    };
+    const realizationCellClasses = {
+        name: 'max-w-[280px] truncate font-medium',
+        contract: 'text-right font-medium',
+        actions: 'text-right',
+    };
 
     const fetchRealizations = useCallback(async () => {
         setLoading(true);
@@ -163,6 +191,56 @@ const Realizace = () => {
                 </DropdownMenuContent>
             </DropdownMenu>
         );
+    };
+
+    const renderRealizationTableCell = (r, columnId) => {
+        switch (columnId) {
+            case 'name':
+                return r.name;
+            case 'investor':
+                return r.investor?.name || '-';
+            case 'type':
+                return r.type || '-';
+            case 'status':
+                return renderStatusMenu(r);
+            case 'start':
+                return formatDateShort(r.start_date);
+            case 'lead':
+                return r.lead_person?.name || '-';
+            case 'contract':
+                return <FinancialValueGuard value={formatCurrency(r.contract_amount)} />;
+            case 'actions':
+                return (
+                    <div className="flex justify-end gap-2" onClick={e => e.stopPropagation()}>
+                        {canEdit && (
+                            <Button variant="ghost" size="icon" onClick={() => navigate(`/realizace/${r.id}/edit`)}>
+                                <Edit2 className="w-4 h-4" />
+                            </Button>
+                        )}
+                        {canDelete && (
+                            <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600">
+                                        <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Smazat realizaci?</AlertDialogTitle>
+                                        <AlertDialogDescription>Tato akce je nevratná.</AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleDelete(r.id)} className="bg-destructive">Smazat</AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        )}
+                    </div>
+                );
+            default:
+                return null;
+        }
     };
 
     const handleDragStart = (event, realizationId) => {
@@ -288,69 +366,37 @@ const Realizace = () => {
             {loading ? (
                 <div className="text-center py-12 text-muted-foreground">Načítání dat...</div>
             ) : viewMode === 'table' ? (
-                <div className="rounded-md border bg-white">
+                <div className="space-y-3">
+                    <div className="flex justify-end">
+                        <ManagedTableToolbar
+                            columns={realizationManagedTable.columns}
+                            visibility={realizationManagedTable.visibility}
+                            onMoveColumn={realizationManagedTable.moveColumn}
+                            onToggleColumn={realizationManagedTable.toggleColumn}
+                            onReset={realizationManagedTable.resetColumns}
+                        />
+                    </div>
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Název</TableHead>
-                                <TableHead>Investor</TableHead>
-                                <TableHead>Typ</TableHead>
-                                <TableHead>Stav</TableHead>
-                                <TableHead>Start</TableHead>
-                                <TableHead>Vedoucí</TableHead>
-                                {canViewAmounts && <TableHead className="text-right">Smlouva</TableHead>}
-                                <TableHead className="text-right">Akce</TableHead>
+                                {realizationVisibleColumns.map((column) => (
+                                    <TableHead key={column.id} className={realizationHeadClasses[column.id]}>{column.label}</TableHead>
+                                ))}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {filteredRealizations.length === 0 ? (
-                                <TableRow><TableCell colSpan={canViewAmounts ? 8 : 7} className="text-center py-8 text-muted-foreground">Žádné realizace nenalezeny</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={realizationVisibleColumns.length} className="text-center py-8 text-muted-foreground">Žádné realizace nenalezeny</TableCell></TableRow>
                             ) : (
-                                filteredRealizations.map(r => {
-                                    return (
-                                        <TableRow key={r.id} className="cursor-pointer hover:bg-slate-50" onClick={() => navigate(`/realizace/${r.id}`)}>
-                                            <TableCell className="font-medium truncate max-w-[280px]" title={r.name}>{r.name}</TableCell>
-                                            <TableCell>{r.investor?.name || '-'}</TableCell>
-                                            <TableCell>{r.type || '-'}</TableCell>
-                                            <TableCell>{renderStatusMenu(r)}</TableCell>
-                                            <TableCell>{formatDateShort(r.start_date)}</TableCell>
-                                            <TableCell>{r.lead_person?.name || '-'}</TableCell>
-                                            {canViewAmounts && (
-                                                <TableCell className="text-right font-medium">
-                                                    <FinancialValueGuard value={formatCurrency(r.contract_amount)} />
-                                                </TableCell>
-                                            )}
-                                            <TableCell className="text-right">
-                                                <div className="flex justify-end gap-2" onClick={e => e.stopPropagation()}>
-                                                    {canEdit && (
-                                                        <Button variant="ghost" size="icon" onClick={() => navigate(`/realizace/${r.id}/edit`)}>
-                                                            <Edit2 className="w-4 h-4" />
-                                                        </Button>
-                                                    )}
-                                                    {canDelete && (
-                                                        <AlertDialog>
-                                                            <AlertDialogTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600">
-                                                                    <Trash2 className="w-4 h-4" />
-                                                                </Button>
-                                                            </AlertDialogTrigger>
-                                                            <AlertDialogContent>
-                                                                <AlertDialogHeader>
-                                                                    <AlertDialogTitle>Smazat realizaci?</AlertDialogTitle>
-                                                                    <AlertDialogDescription>Tato akce je nevratná.</AlertDialogDescription>
-                                                                </AlertDialogHeader>
-                                                                <AlertDialogFooter>
-                                                                    <AlertDialogCancel>Zrušit</AlertDialogCancel>
-                                                                    <AlertDialogAction onClick={() => handleDelete(r.id)} className="bg-destructive">Smazat</AlertDialogAction>
-                                                                </AlertDialogFooter>
-                                                            </AlertDialogContent>
-                                                        </AlertDialog>
-                                                    )}
-                                                </div>
+                                filteredRealizations.map(r => (
+                                    <TableRow key={r.id} className="cursor-pointer" onClick={() => navigate(`/realizace/${r.id}`)}>
+                                        {realizationVisibleColumns.map((column) => (
+                                            <TableCell key={column.id} className={realizationCellClasses[column.id]} title={column.id === 'name' ? r.name : undefined}>
+                                                {renderRealizationTableCell(r, column.id)}
                                             </TableCell>
-                                        </TableRow>
-                                    );
-                                })
+                                        ))}
+                                    </TableRow>
+                                ))
                             )}
                         </TableBody>
                     </Table>
