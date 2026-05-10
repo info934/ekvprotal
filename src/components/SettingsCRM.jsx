@@ -472,7 +472,7 @@ const SettingsCRM = () => {
                 />
               </div>
               <div className="flex items-end justify-end">
-                <Button type="button" variant="ghost" size="icon" onClick={() => removeProductField(index)} disabled={loading || saving || !canAdmin}>
+                <Button type="button" variant="ghost" size="icon" aria-label={`Odebrat produktove pole ${field.label || field.field_key || index + 1}`} onClick={() => removeProductField(index)} disabled={loading || saving || !canAdmin}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>

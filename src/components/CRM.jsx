@@ -60,28 +60,28 @@ import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering } from '@
 import { cn } from '@/lib/utils';
 
 const subjectTypeLabels = {
-  customer: 'Zakaznici',
-  supplier: 'Dodavatele',
-  investor: 'Investori',
-  authority: 'Urady',
-  other: 'Ostatni',
+  customer: 'Zákazníci',
+  supplier: 'Dodavatelé',
+  investor: 'Investoři',
+  authority: 'Úřady',
+  other: 'Ostatní',
 };
 
 const CRM_CONFIG_STORAGE_KEY = 'ekv-crm-config';
 
 const DEFAULT_STAGE_CONFIG = [
   { value: 'lead', label: 'Lead', color: 'bg-slate-100 text-slate-700 border-slate-200', probability: 10, is_closed: false },
-  { value: 'qualified', label: 'Kvalifikovano', color: 'bg-blue-100 text-blue-700 border-blue-200', probability: 25, is_closed: false },
-  { value: 'proposal', label: 'Nabidka', color: 'bg-indigo-100 text-indigo-700 border-indigo-200', probability: 45, is_closed: false },
-  { value: 'negotiation', label: 'Jednani', color: 'bg-amber-100 text-amber-800 border-amber-200', probability: 70, is_closed: false },
-  { value: 'won', label: 'Vyhrano', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', probability: 100, is_closed: true },
+  { value: 'qualified', label: 'Kvalifikováno', color: 'bg-blue-100 text-blue-700 border-blue-200', probability: 25, is_closed: false },
+  { value: 'proposal', label: 'Nabídka', color: 'bg-indigo-100 text-indigo-700 border-indigo-200', probability: 45, is_closed: false },
+  { value: 'negotiation', label: 'Jednání', color: 'bg-amber-100 text-amber-800 border-amber-200', probability: 70, is_closed: false },
+  { value: 'won', label: 'Vyhráno', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', probability: 100, is_closed: true },
   { value: 'lost', label: 'Ztraceno', color: 'bg-rose-100 text-rose-700 border-rose-200', probability: 0, is_closed: true },
 ];
 
 const DEFAULT_PRIORITY_CONFIG = [
-  { value: 'low', label: 'Nizka', tone: 'secondary' },
-  { value: 'medium', label: 'Stredni', tone: 'outline' },
-  { value: 'high', label: 'Vysoka', tone: 'destructive' },
+  { value: 'low', label: 'Nízká', tone: 'secondary' },
+  { value: 'medium', label: 'Střední', tone: 'outline' },
+  { value: 'high', label: 'Vysoká', tone: 'destructive' },
 ];
 
 const initialOpportunityForm = {
@@ -167,7 +167,7 @@ const buildCrmOpportunityItemPayload = (item, opportunityId, index) => ({
   opportunity_id: opportunityId,
   catalog_item_id: item.catalog_item_id || null,
   code: item.code || null,
-  name: item.name?.trim() || 'Polozka',
+  name: item.name?.trim() || 'Položka',
   description: item.description || null,
   quantity: Number(item.quantity || 0),
   unit: item.unit || 'ks',
@@ -224,20 +224,20 @@ const normalizePriorities = (priorities) => (
 );
 
 const MetricCard = ({ icon: Icon, title, value, description, tone = 'default' }) => (
-  <Card className="overflow-hidden border-slate-200 shadow-sm">
+  <Card className="overflow-hidden border-slate-200 bg-white shadow-sm">
     <CardContent className="flex items-center gap-4 p-4">
       <div className={cn(
-        'flex h-10 w-10 shrink-0 items-center justify-center rounded-md ring-1',
-        tone === 'success' ? 'bg-emerald-50 text-emerald-700 ring-emerald-100' :
-          tone === 'warning' ? 'bg-amber-50 text-amber-700 ring-amber-100' :
-            'bg-primary/10 text-primary ring-primary/10'
+        'flex h-10 w-10 shrink-0 items-center justify-center rounded-md border',
+        tone === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' :
+          tone === 'warning' ? 'border-amber-100 bg-amber-50 text-amber-700' :
+            'border-primary/10 bg-primary/10 text-primary'
       )}>
         <Icon className="h-5 w-5" />
       </div>
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-muted-foreground">{title}</p>
+        <p className="truncate text-xs font-semibold uppercase tracking-normal text-slate-500">{title}</p>
         <p className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{value}</p>
-        {description && <p className="mt-1 truncate text-xs text-muted-foreground">{description}</p>}
+        {description && <p className="mt-1 truncate text-xs text-slate-500">{description}</p>}
       </div>
     </CardContent>
   </Card>
@@ -300,7 +300,7 @@ const DealWorkspace = ({
       <Card className="border-dashed bg-slate-50/70">
         <CardContent className="flex min-h-[220px] flex-col items-center justify-center p-8 text-center">
           <Target className="mb-3 h-10 w-10 text-muted-foreground" />
-          <h3 className="text-lg font-semibold text-slate-950">Vyberte obchodni pripad</h3>
+          <h3 className="text-lg font-semibold text-slate-950">Vyberte obchodní případ</h3>
           <p className="mt-1 max-w-md text-sm text-muted-foreground">
             Kliknutim na kartu v pipeline se zde zobrazi detail pro pripravu produktu, nabidky a objednavky.
           </p>
@@ -413,7 +413,7 @@ const DealWorkspace = ({
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Obchodni pripad {opportunity.number || ''} {opportunity.subject?.name ? `- ${opportunity.subject.name}` : ''}
+                Obchodní případ {opportunity.number || ''} {opportunity.subject?.name ? `- ${opportunity.subject.name}` : ''}
               </div>
               <CardTitle className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">
                 {opportunity.title}
@@ -432,10 +432,10 @@ const DealWorkspace = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Obchodni pripad</DropdownMenuLabel>
+                <DropdownMenuLabel>Obchodní případ</DropdownMenuLabel>
                 {canEdit && (
                   <DropdownMenuItem onSelect={() => onEdit(opportunity)}>
-                    Upravit pripad
+                    Upravit případ
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem disabled={!canEdit || creatingDocument} onSelect={() => onCreateDocument?.('offer')}>
@@ -534,7 +534,7 @@ const DealWorkspace = ({
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <div className="flex items-center justify-between text-sm">
-                      <Label>Pravdepodobnost</Label>
+                      <Label>Pravděpodobnost</Label>
                       <span className="font-semibold text-slate-950">{opportunity.probability || 0} %</span>
                     </div>
                     <Input
@@ -552,11 +552,11 @@ const DealWorkspace = ({
                 </div>
 
                 <div className="rounded-lg border bg-white p-4 shadow-sm">
-                  <h3 className="mb-4 text-sm font-semibold text-slate-800">Hodnota obchodniho pripadu</h3>
+                  <h3 className="mb-4 text-sm font-semibold text-slate-800">Hodnota obchodního případu</h3>
                   <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
                     <div className="space-y-3 text-sm">
                       <div className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2">
-                        <span className="text-muted-foreground">Konecna cena</span>
+                        <span className="text-muted-foreground">Konečná cena</span>
                         <Input
                           type="number"
                           min="0"
@@ -585,9 +585,9 @@ const DealWorkspace = ({
 
                 {stage.value === 'lost' && (
                   <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950 shadow-sm">
-                    <h3 className="font-semibold">Duvod prohry</h3>
+                    <h3 className="font-semibold">Důvod prohry</h3>
                     <p className="mt-2 whitespace-pre-wrap text-rose-900">
-                      {opportunity.lost_reason || 'Duvod zatim neni vyplnen.'}
+                      {opportunity.lost_reason || 'Důvod zatím není vyplněn.'}
                     </p>
                     {opportunity.lost_at && (
                       <p className="mt-2 text-xs text-rose-700">Uzavreno jako prohrane: {formatDate(opportunity.lost_at)}</p>
@@ -609,14 +609,14 @@ const DealWorkspace = ({
                       <h3 className="text-sm font-semibold text-slate-900">Nabidky</h3>
                       <Badge variant="outline">{offerDocuments.length}</Badge>
                     </div>
-                    <p className="mt-2 text-sm text-muted-foreground">Nabidkove dokumenty jsou navazane na tento obchodni pripad a sdili polozky s obchodnim rozpoctem.</p>
+                    <p className="mt-2 text-sm text-muted-foreground">Nabídkové dokumenty jsou navázané na tento obchodní případ a sdílí položky s obchodním rozpočtem.</p>
                   </div>
                   <div className="rounded-lg border bg-white p-4 shadow-sm">
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-semibold text-slate-900">Objednavky</h3>
                       <Badge variant="outline">{orderDocuments.length}</Badge>
                     </div>
-                    <p className="mt-2 text-sm text-muted-foreground">Objednavky navazuji na stejny obchodni pripad a lze je vytvaret ze stejneho polozkoveho zakladu.</p>
+                    <p className="mt-2 text-sm text-muted-foreground">Objednávky navazují na stejný obchodní případ a lze je vytvářet ze stejného položkového základu.</p>
                   </div>
                 </div>
               </TabsContent>
@@ -635,9 +635,9 @@ const DealWorkspace = ({
                 <div className="flex items-start gap-3">
                   <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-700" />
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-semibold text-emerald-950">Vyhrany obchodni pripad</h3>
+                    <h3 className="text-sm font-semibold text-emerald-950">Vyhraný obchodní případ</h3>
                     <p className="mt-1 text-sm text-emerald-800">
-                      Predvyplnte navazny projekt nebo realizaci z dat obchodniho pripadu. Vazba na OP zustane ulozena v zaznamu.
+                      Předvyplňte navazující projekt nebo realizaci z dat obchodního případu. Vazba na OP zůstane uložená v záznamu.
                     </p>
                     {opportunity.project_id && (
                       <Button asChild variant="link" className="mt-2 h-auto p-0 text-emerald-800">
@@ -725,7 +725,7 @@ const DealWorkspace = ({
                   {catalogLoading ? (
                     <DropdownMenuItem disabled>Nacitam katalog...</DropdownMenuItem>
                   ) : filteredCatalogProducts.length === 0 ? (
-                    <DropdownMenuItem disabled>Zadny produkt nenalezen</DropdownMenuItem>
+                    <DropdownMenuItem disabled>Žádný produkt nenalezen</DropdownMenuItem>
                   ) : filteredCatalogProducts.map((product) => (
                     <DropdownMenuItem key={product.id} onSelect={() => addCatalogProduct(product)} className="flex flex-col items-start gap-0.5">
                       <span className="font-medium">{product.name}</span>
@@ -749,7 +749,7 @@ const DealWorkspace = ({
               <TableHeader>
                 <TableRow>
                   <TableHead>Kod</TableHead>
-                  <TableHead>Nazev</TableHead>
+                  <TableHead>Název</TableHead>
                   <TableHead className="text-right">Jedn. cena</TableHead>
                   <TableHead className="text-right">Mnozstvi</TableHead>
                   <TableHead>MJ</TableHead>
@@ -793,7 +793,7 @@ const DealWorkspace = ({
           <div className="grid gap-2 border-t bg-slate-50 p-5 text-sm md:ml-auto md:w-[480px]">
             <div className="flex justify-between"><span>Cena celkem pred slevou</span><strong>{formatCurrency(subtotal)}</strong></div>
             <div className="flex justify-between"><span>Celkova sleva</span><strong>{formatCurrency(discountTotal)}</strong></div>
-            <div className="flex justify-between text-base"><span>Konecna cena</span><strong>{formatCurrency(total)}</strong></div>
+            <div className="flex justify-between text-base"><span>Konečná cena</span><strong>{formatCurrency(total)}</strong></div>
             <div className="flex justify-between text-muted-foreground"><span>Celkem s dani</span><strong>{formatCurrency(taxValue)}</strong></div>
           </div>
         </CardContent>
@@ -941,7 +941,7 @@ const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesRe
         return (
           <section
             key={stage.value}
-            className="min-h-[340px] rounded-md border border-slate-200 bg-slate-50 p-2"
+            className="min-h-[360px] rounded-md border border-slate-200 bg-slate-50/70 p-2.5 transition-colors"
             onDragOver={(event) => {
               event.preventDefault();
               event.currentTarget.classList.add('ring-2', 'ring-primary/30');
@@ -959,7 +959,7 @@ const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesRe
             <div className={cn('mb-2 rounded-md border px-3 py-2 shadow-sm', stage.color)}>
               <div className="flex items-center justify-between gap-2">
                 <h3 className="truncate text-xs font-bold uppercase">{stage.label}</h3>
-                <button type="button" className="text-base leading-none opacity-70" aria-label={`Pridat do stavu ${stage.label}`}>
+                <button type="button" className="text-base leading-none opacity-70 transition hover:opacity-100" aria-label={`Přidat do stavu ${stage.label}`}>
                   +
                 </button>
               </div>
@@ -982,7 +982,7 @@ const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesRe
                     }}
                     onClick={() => onSelectOpportunity(opportunity.id)}
                     className={cn(
-                      'group w-full rounded-md border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md',
+                      'group w-full rounded-md border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:bg-blue-50/20 hover:shadow-md',
                       selectedOpportunity?.id === opportunity.id && 'border-primary ring-2 ring-primary/15'
                     )}
                   >
@@ -1014,7 +1014,7 @@ const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesRe
               })}
               {stage.opportunities.length === 0 && (
                 <div className="rounded-md border border-dashed bg-white/70 p-4 text-center text-xs text-muted-foreground">
-                  {crmTablesReady ? 'Zatim prazdne' : 'Ceka na CRM migraci'}
+                  {crmTablesReady ? 'Zatím prázdné' : 'Čeká na CRM migraci'}
                 </div>
               )}
             </div>
@@ -1031,13 +1031,13 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
       <TableHeader>
         <TableRow className="bg-slate-50">
           <TableHead className="w-10"><CheckSquare2 className="h-4 w-4 text-muted-foreground" /></TableHead>
-          <TableHead className="min-w-[120px]">Kod</TableHead>
-          <TableHead className="min-w-[280px]">Predmet</TableHead>
+          <TableHead className="min-w-[120px]">Kód</TableHead>
+          <TableHead className="min-w-[280px]">Předmět</TableHead>
           <TableHead className="min-w-[220px]">Klient</TableHead>
           <TableHead className="min-w-[150px]">Typ obchodu</TableHead>
           <TableHead className="min-w-[180px]">Stav</TableHead>
-          <TableHead className="min-w-[220px]">Naplanovana aktivita</TableHead>
-          <TableHead className="min-w-[150px] text-right">Konecna cena</TableHead>
+          <TableHead className="min-w-[220px]">Naplánovaná aktivita</TableHead>
+          <TableHead className="min-w-[150px] text-right">Konečná cena</TableHead>
           <TableHead className="min-w-[130px]">Priorita</TableHead>
           <TableHead className="w-12 text-right">Akce</TableHead>
         </TableRow>
@@ -1046,7 +1046,7 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
         {opportunities.length === 0 ? (
           <TableRow>
             <TableCell colSpan={10} className="h-28 text-center text-muted-foreground">
-              Zadny obchodni pripad neodpovida filtru.
+              Žádný obchodní případ neodpovídá filtru.
             </TableCell>
           </TableRow>
         ) : opportunities.map((opportunity, index) => {
@@ -1056,7 +1056,7 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
             <TableRow
               key={opportunity.id}
               onClick={() => onSelectOpportunity(opportunity.id)}
-              className={cn('cursor-pointer bg-white hover:bg-slate-50', selectedOpportunity?.id === opportunity.id && 'bg-slate-50')}
+              className={cn('cursor-pointer bg-white hover:bg-blue-50/35', selectedOpportunity?.id === opportunity.id && 'bg-blue-50')}
             >
               <TableCell>
                 <span className="block h-4 w-4 rounded border border-slate-300 bg-white" />
@@ -1196,7 +1196,7 @@ const CRM = () => {
     const coreError = subjectsRes.error || projectsRes.error || contactsRes.error;
     if (coreError) {
       toast({
-        title: 'CRM data se nepodarilo nacist',
+        title: 'CRM data se nepodařilo načíst',
         description: coreError.message,
         variant: 'destructive',
       });
@@ -1216,7 +1216,7 @@ const CRM = () => {
       } else {
         setCrmTablesReady(true);
         toast({
-          title: 'Pipeline CRM se nepodarilo nacist',
+          title: 'Pipeline CRM se nepodařilo načíst',
           description: crmError.message,
           variant: 'destructive',
         });
@@ -1406,7 +1406,7 @@ const CRM = () => {
 
         if (!legacyError) {
           toast({
-            title: 'Stav ulozen bez duvodu prohry',
+            title: 'Stav uložen bez důvodu prohry',
             description: 'Online databaze jeste nema sloupce lost_reason/lost_at. Aplikujte CRM migraci.',
           });
           fetchCrmData();
@@ -1415,7 +1415,7 @@ const CRM = () => {
       }
 
       toast({
-        title: 'Zmenu se nepodarilo ulozit',
+        title: 'Změnu se nepodařilo uložit',
         description: error.message,
         variant: 'destructive',
       });
@@ -1446,7 +1446,7 @@ const CRM = () => {
 
     if (deleteError) {
       setUpdatingOpportunity(false);
-      toast({ title: 'Polozky OP se nepodarilo ulozit', description: deleteError.message, variant: 'destructive' });
+      toast({ title: 'Položky OP se nepodařilo uložit', description: deleteError.message, variant: 'destructive' });
       fetchCrmData();
       return;
     }
@@ -1459,7 +1459,7 @@ const CRM = () => {
 
       if (insertError) {
         setUpdatingOpportunity(false);
-        toast({ title: 'Polozky OP se nepodarilo ulozit', description: insertError.message, variant: 'destructive' });
+        toast({ title: 'Položky OP se nepodařilo uložit', description: insertError.message, variant: 'destructive' });
         fetchCrmData();
         return;
       }
@@ -1472,7 +1472,7 @@ const CRM = () => {
 
     if (opportunityError) {
       setUpdatingOpportunity(false);
-      toast({ title: 'Hodnota OP se nepodarila ulozit', description: opportunityError.message, variant: 'destructive' });
+      toast({ title: 'Hodnotu OP se nepodařilo uložit', description: opportunityError.message, variant: 'destructive' });
       fetchCrmData();
       return;
     }
@@ -1555,7 +1555,7 @@ const CRM = () => {
   const confirmLostOpportunity = useCallback(() => {
     const reason = lossReason.trim();
     if (!pendingLostOpportunity || !reason) {
-      toast({ title: 'Doplnte duvod prohry', variant: 'destructive' });
+      toast({ title: 'Doplňte důvod prohry', variant: 'destructive' });
       return;
     }
 
@@ -1625,7 +1625,7 @@ const CRM = () => {
 
     if (!opportunityForm.title.trim() || !opportunityForm.subject_id) {
       toast({
-        title: 'Doplnte nazev a subjekt',
+        title: 'Doplňte název a subjekt',
         variant: 'destructive',
       });
       return;
@@ -1633,7 +1633,7 @@ const CRM = () => {
 
     if (opportunityForm.stage === 'lost' && !opportunityForm.lost_reason.trim()) {
       toast({
-        title: 'Doplnte duvod prohry',
+        title: 'Doplňte důvod prohry',
         variant: 'destructive',
       });
       return;
@@ -1678,7 +1678,7 @@ const CRM = () => {
     if (error) {
       setSavingOpportunity(false);
       toast({
-        title: 'Prilezitost se nepodarilo ulozit',
+        title: 'Příležitost se nepodařilo uložit',
         description: error.message,
         variant: 'destructive',
       });
@@ -1693,7 +1693,7 @@ const CRM = () => {
     }
 
     setSavingOpportunity(false);
-    toast({ title: opportunityForm.id ? 'CRM prilezitost aktualizovana' : 'CRM prilezitost ulozena' });
+    toast({ title: opportunityForm.id ? 'CRM příležitost aktualizována' : 'CRM příležitost uložena' });
     setOpportunityDialogOpen(false);
     fetchCrmData();
   };
@@ -1737,7 +1737,7 @@ const CRM = () => {
     if (documentError) {
       setCreatingDocument(false);
       toast({
-        title: 'Dokument se nepodarilo vytvorit',
+        title: 'Dokument se nepodařilo vytvořit',
         description: documentError.message,
         variant: 'destructive',
       });
@@ -1796,12 +1796,12 @@ const CRM = () => {
         await downloadGeneratedDocumentDocx(generationInput);
       }
       toast({
-        title: 'Dokument vygenerovan',
-        description: `${template?.name ? `Sablona "${template.name}" byla vyplnena. ` : ''}Vystup ${format.toUpperCase()} byl pripraven ke stazeni.`,
+        title: 'Dokument vygenerován',
+        description: `${template?.name ? `Šablona "${template.name}" byla vyplněna. ` : ''}Výstup ${format.toUpperCase()} byl připraven ke stažení.`,
       });
     } catch (error) {
       toast({
-        title: 'Dokument se nepodarilo vygenerovat',
+        title: 'Dokument se nepodařilo vygenerovat',
         description: error.message,
         variant: 'destructive',
       });
@@ -1827,12 +1827,12 @@ const CRM = () => {
         await downloadOpportunityOverviewDocx(generationInput);
       }
       toast({
-        title: 'Overview obchodniho pripadu vygenerovan',
-        description: `Vystup ${format.toUpperCase()} byl pripraven ke stazeni.`,
+        title: 'Přehled obchodního případu vygenerován',
+        description: `Výstup ${format.toUpperCase()} byl připraven ke stažení.`,
       });
     } catch (error) {
       toast({
-        title: 'Overview se nepodarilo vygenerovat',
+        title: 'Přehled se nepodařilo vygenerovat',
         description: error.message,
         variant: 'destructive',
       });
@@ -1843,11 +1843,11 @@ const CRM = () => {
 
   return (
     <div className="app-page-wide">
-      <div className="space-y-6">
+      <div className="space-y-5">
         <PageHeader
           icon={Contact}
           title="CRM"
-          description="Obchodni vrstva nad subjekty, kontakty, projekty a pripravenou pipeline."
+          description="Obchodní vrstva nad subjekty, kontakty, projekty a připravenou pipeline."
           actions={
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={fetchCrmData} disabled={loading}>
@@ -1858,20 +1858,20 @@ const CRM = () => {
                 <Button asChild variant="outline">
                   <Link to="/settings/crm">
                     <Target className="mr-2 h-4 w-4" />
-                  Nastaveni CRM
+                  Nastavení CRM
                   </Link>
                 </Button>
               )}
               {canEditCrm && (
                 <Button onClick={() => openOpportunityDialog()} disabled={!crmTablesReady}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Nova prilezitost
+                  Nová příležitost
                 </Button>
               )}
               <Button asChild variant="secondary">
                 <Link to="/subjects">
                   <Building2 className="mr-2 h-4 w-4" />
-                  Adresar subjektu
+                  Adresář subjektů
                 </Link>
               </Button>
             </div>
@@ -1881,76 +1881,76 @@ const CRM = () => {
         {!crmTablesReady && (
           <Alert className="border-amber-200 bg-amber-50 text-amber-950">
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>CRM pipeline ceka na databazove migrace</AlertTitle>
+            <AlertTitle>CRM pipeline čeká na databázové migrace</AlertTitle>
             <AlertDescription>
-              Adresar subjektu a kontakty funguji. Prilezitosti, aktivity a editace pipeline se odemknou po aplikaci CRM migraci na databazi.
+              Adresář subjektů a kontakty fungují. Příležitosti, aktivity a editace pipeline se odemknou po aplikaci CRM migrací na databázi.
             </AlertDescription>
           </Alert>
         )}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard icon={Building2} title="Subjekty celkem" value={metrics.subjects} description="Zakaznici, dodavatele, investori a urady" />
-          <MetricCard icon={Users} title="Zakaznici" value={metrics.customers} description={`${metrics.investors} investoru, ${metrics.suppliers} dodavatelu`} />
-          <MetricCard icon={Target} title="Otevrene prilezitosti" value={crmTablesReady ? metrics.opportunities : '-'} description={crmTablesReady ? formatCurrency(metrics.pipelineValue) : 'Ceka na migraci'} tone="warning" />
-          <MetricCard icon={CircleDollarSign} title="Vazena pipeline" value={crmTablesReady ? formatCurrency(metrics.weightedPipeline) : '-'} description={`${metrics.contacts} kontaktu v projektech`} tone="success" />
+          <MetricCard icon={Building2} title="Subjekty celkem" value={metrics.subjects} description="Zákazníci, dodavatelé, investoři a úřady" />
+          <MetricCard icon={Users} title="Zákazníci" value={metrics.customers} description={`${metrics.investors} investorů, ${metrics.suppliers} dodavatelů`} />
+          <MetricCard icon={Target} title="Otevřené příležitosti" value={crmTablesReady ? metrics.opportunities : '-'} description={crmTablesReady ? formatCurrency(metrics.pipelineValue) : 'Čeká na migraci'} tone="warning" />
+          <MetricCard icon={CircleDollarSign} title="Vážená pipeline" value={crmTablesReady ? formatCurrency(metrics.weightedPipeline) : '-'} description={`${metrics.contacts} kontaktů v projektech`} tone="success" />
         </div>
 
-        <Card className="border-slate-200 bg-white shadow-sm">
-          <CardHeader className="border-b bg-white p-4">
+        <Card className="crm-panel">
+          <CardHeader className="crm-panel-header">
             <CardTitle className="flex items-center gap-2 text-base">
               <BarChart3 className="h-4 w-4 text-primary" />
-              Financni pohled CRM
+              Finanční pohled CRM
             </CardTitle>
-            <CardDescription>Souhrn pipeline, vyhranych a prohranych obchodnich pripadu.</CardDescription>
+            <CardDescription>Souhrn pipeline, vyhraných a prohraných obchodních případů.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
-            <div className="rounded-lg border bg-slate-50 p-3">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">Vyhrano</p>
+            <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Vyhráno</p>
               <p className="mt-1 text-xl font-semibold text-emerald-700">{crmTablesReady ? formatCurrency(metrics.wonValue) : '-'}</p>
               <p className="text-xs text-muted-foreground">{metrics.won} OP</p>
             </div>
-            <div className="rounded-lg border bg-slate-50 p-3">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">Prohrano</p>
+            <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Prohráno</p>
               <p className="mt-1 text-xl font-semibold text-rose-700">{crmTablesReady ? formatCurrency(metrics.lostValue) : '-'}</p>
               <p className="text-xs text-muted-foreground">{metrics.lost} OP</p>
             </div>
-            <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
               <p className="text-xs font-semibold uppercase text-muted-foreground">Konverze</p>
               <p className="mt-1 text-xl font-semibold text-slate-950">{crmTablesReady ? `${metrics.conversionRate} %` : '-'}</p>
-              <p className="text-xs text-muted-foreground">vyhrane z uzavrenych</p>
+              <p className="text-xs text-muted-foreground">vyhrané z uzavřených</p>
             </div>
-            <div className="rounded-lg border bg-slate-50 p-3">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">Prumer aktivni OP</p>
+            <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Průměr aktivní OP</p>
               <p className="mt-1 text-xl font-semibold text-slate-950">{crmTablesReady ? formatCurrency(metrics.averageOpenValue) : '-'}</p>
-              <p className="text-xs text-muted-foreground">otevrena pipeline</p>
+              <p className="text-xs text-muted-foreground">otevřená pipeline</p>
             </div>
-            <div className="rounded-lg border bg-slate-50 p-3">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">Ocekavany hruby zisk</p>
+            <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Očekávaný hrubý zisk</p>
               <p className="mt-1 text-xl font-semibold text-primary">{crmTablesReady ? formatCurrency(metrics.expectedGrossProfit) : '-'}</p>
-              <p className="text-xs text-muted-foreground">orientacne 28 % z vazene pipeline</p>
+              <p className="text-xs text-muted-foreground">orientačně 28 % z vážené pipeline</p>
             </div>
           </CardContent>
         </Card>
 
         {opportunityId ? (
           <div className="space-y-4">
-            <div className="flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+            <div className="crm-panel flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <Button variant="ghost" className="mb-2 h-8 px-0 text-muted-foreground" onClick={() => navigate('/crm')}>
                   <ArrowLeft className="mr-2 h-4 w-4" />
-                  Zpet na obchodni prehled
+                  Zpět na obchodní přehled
                 </Button>
                 <h2 className="truncate text-2xl font-semibold text-slate-950">
-                  {selectedOpportunity?.title || 'Obchodni pripad'}
+                  {selectedOpportunity?.title || 'Obchodní případ'}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  Detail obchodniho pripadu, polozek, nabidek a objednavek.
+                  Detail obchodního případu, položek, nabídek a objednávek.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {canEditCrm && selectedOpportunity && (
                   <Button variant="outline" onClick={() => openOpportunityDialog(selectedOpportunity)}>
-                    Upravit pripad
+                    Upravit případ
                   </Button>
                 )}
                 <Button variant="secondary" onClick={fetchCrmData} disabled={loading}>
@@ -1986,15 +1986,15 @@ const CRM = () => {
             />
           </div>
         ) : (
-        <Tabs defaultValue="pipeline" className="space-y-6">
-          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg border bg-slate-100 p-1 sm:w-auto">
+        <Tabs defaultValue="pipeline" className="space-y-5">
+          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-md border bg-slate-100 p-1 sm:w-auto">
             <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
-            <TabsTrigger value="subjects">Adresar</TabsTrigger>
+            <TabsTrigger value="subjects">Adresář</TabsTrigger>
             <TabsTrigger value="activities">Aktivity</TabsTrigger>
             <TabsTrigger value="relations">Vazby</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="pipeline" className="space-y-6">
+          <TabsContent value="pipeline" className="space-y-5">
             <Card className="crm-panel">
               <CardHeader className="crm-panel-header">
                 <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
@@ -2005,14 +2005,14 @@ const CRM = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="updated">Seradit podle posledni zmeny</SelectItem>
-                          <SelectItem value="value_desc">Seradit podle hodnoty</SelectItem>
-                          <SelectItem value="close_date">Seradit podle odhadu uzavreni</SelectItem>
-                          <SelectItem value="probability_desc">Seradit podle pravdepodobnosti</SelectItem>
+                          <SelectItem value="updated">Seřadit podle poslední změny</SelectItem>
+                          <SelectItem value="value_desc">Seřadit podle hodnoty</SelectItem>
+                          <SelectItem value="close_date">Seřadit podle odhadu uzavření</SelectItem>
+                          <SelectItem value="probability_desc">Seřadit podle pravděpodobnosti</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                    <CardTitle className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">Obchodni pripady</CardTitle>
+                    <CardTitle className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Obchodní případy</CardTitle>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -2052,8 +2052,8 @@ const CRM = () => {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="open">Aktivni</SelectItem>
-                        <SelectItem value="all">Vsechny</SelectItem>
+                        <SelectItem value="open">Aktivní</SelectItem>
+                        <SelectItem value="all">Všechny</SelectItem>
                         {crmStages.map((stage) => (
                           <SelectItem key={stage.value} value={stage.value}>{stage.label}</SelectItem>
                         ))}
@@ -2072,7 +2072,7 @@ const CRM = () => {
                     </Select>
                     <Button variant="outline" className="h-9">
                       <Filter className="mr-2 h-4 w-4" />
-                      Filtrovani
+                      Filtrování
                     </Button>
                     {canEditCrm && (
                       <Button onClick={() => openOpportunityDialog()} disabled={!crmTablesReady} className="h-9 w-9 p-0">
@@ -2084,14 +2084,14 @@ const CRM = () => {
 
                 {(stageFilter !== 'open' || priorityFilter !== 'all' || opportunityQuery) && (
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">Filtrovano</Badge>
+                    <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">Filtrováno</Badge>
                     {stageFilter !== 'open' && (
-                      <Badge variant="outline">Stav: {stageFilter === 'all' ? 'Vsechny' : getStage(stageFilter, crmStages).label}</Badge>
+                      <Badge variant="outline">Stav: {stageFilter === 'all' ? 'Všechny' : getStage(stageFilter, crmStages).label}</Badge>
                     )}
                     {priorityFilter !== 'all' && (
                       <Badge variant="outline">Priorita: {getPriority(priorityFilter, crmPriorities)?.label}</Badge>
                     )}
-                    {opportunityQuery && <Badge variant="outline">Hledani: {opportunityQuery}</Badge>}
+                    {opportunityQuery && <Badge variant="outline">Hledání: {opportunityQuery}</Badge>}
                     <Button
                       type="button"
                       variant="ghost"
@@ -2103,7 +2103,7 @@ const CRM = () => {
                         setOpportunityQuery('');
                       }}
                     >
-                      Vycistit filtry
+                      Vyčistit filtry
                     </Button>
                   </div>
                 )}
@@ -2132,19 +2132,19 @@ const CRM = () => {
           </TabsContent>
 
           <TabsContent value="subjects">
-            <Card className="min-w-0">
+            <Card className="crm-panel min-w-0">
               <CardHeader className="crm-panel-header">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <CardTitle>Adresar CRM</CardTitle>
-                    <CardDescription>Rychly obchodni pohled na subjekty, ktere uz v systemu existuji.</CardDescription>
+                    <CardTitle>Adresář CRM</CardTitle>
+                    <CardDescription>Rychlý obchodní pohled na subjekty, které už v systému existují.</CardDescription>
                   </div>
                   <div className="relative w-full lg:w-80">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Hledat subjekt, ICO, kontakt..."
+                      placeholder="Hledat subjekt, IČO, kontakt..."
                       className="pl-9"
                     />
                   </div>
@@ -2165,11 +2165,11 @@ const CRM = () => {
                     <TableBody>
                       {loading ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">Nacitani CRM dat...</TableCell>
+                          <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">Načítání CRM dat...</TableCell>
                         </TableRow>
                       ) : filteredSubjects.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">Zadny subjekt neodpovida filtru.</TableCell>
+                          <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">Žádný subjekt neodpovídá filtru.</TableCell>
                         </TableRow>
                       ) : (
                         filteredSubjects.map((subject) => {
@@ -2178,7 +2178,7 @@ const CRM = () => {
                             <TableRow key={subject.id}>
                               <TableCell>
                                 <div className="font-semibold text-slate-950">{subject.name}</div>
-                                {subject.ico && <div className="text-xs text-muted-foreground">ICO {subject.ico}</div>}
+                                {subject.ico && <div className="text-xs text-muted-foreground">IČO {subject.ico}</div>}
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline">{subjectTypeLabels[type] || subjectTypeLabels.other}</Badge>
@@ -2204,17 +2204,17 @@ const CRM = () => {
           </TabsContent>
 
           <TabsContent value="activities">
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-              <Card>
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+              <Card className="crm-panel">
                 <CardHeader className="crm-panel-header">
-                  <CardTitle>Nasledujici aktivity</CardTitle>
-                  <CardDescription>Ukoly, schuzky a follow-upy navazane na CRM.</CardDescription>
+                  <CardTitle>Následující aktivity</CardTitle>
+                  <CardDescription>Úkoly, schůzky a follow-upy navázané na CRM.</CardDescription>
                 </CardHeader>
                 <CardContent className="divide-y p-0">
                   {!crmTablesReady ? (
-                    <div className="p-6 text-sm text-muted-foreground">Aktivity se zobrazi po nasazeni CRM migraci.</div>
+                    <div className="p-6 text-sm text-muted-foreground">Aktivity se zobrazí po nasazení CRM migrací.</div>
                   ) : upcomingActivities.length === 0 ? (
-                    <div className="p-6 text-sm text-muted-foreground">Zadne planovane CRM aktivity.</div>
+                    <div className="p-6 text-sm text-muted-foreground">Žádné plánované CRM aktivity.</div>
                   ) : (
                     upcomingActivities.map((activity) => (
                       <div key={activity.id} className="flex items-start gap-3 p-4">
@@ -2234,20 +2234,20 @@ const CRM = () => {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="crm-panel">
                 <CardHeader className="crm-panel-header">
                   <CardTitle className="flex items-center gap-2">
                     <BarChart3 className="h-5 w-5 text-primary" />
-                    Typy subjektu
+                    Typy subjektů
                   </CardTitle>
-                  <CardDescription>Zaklad segmentace pro obchod a kampane.</CardDescription>
+                  <CardDescription>Základ segmentace pro obchod a kampaně.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 p-4">
                   {Object.entries(subjectTypeLabels).map(([type, label]) => {
                     const count = metrics.countsByType[type] || 0;
                     const share = metrics.subjects ? Math.round((count / metrics.subjects) * 100) : 0;
                     return (
-                      <div key={type} className="rounded-lg border p-3">
+                      <div key={type} className="rounded-md border border-slate-200 bg-white p-3">
                         <div className="mb-2 flex items-center justify-between text-sm">
                           <span className="font-medium">{label}</span>
                           <span className="text-muted-foreground">{count} ({share} %)</span>
@@ -2264,15 +2264,15 @@ const CRM = () => {
           </TabsContent>
 
           <TabsContent value="relations">
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-              <Card>
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <Card className="crm-panel">
                 <CardHeader className="crm-panel-header">
-                  <CardTitle>Posledni obchodni vazby</CardTitle>
+                  <CardTitle>Poslední obchodní vazby</CardTitle>
                   <CardDescription>Projekty s klientem nebo investorem.</CardDescription>
                 </CardHeader>
                 <CardContent className="divide-y p-0">
                   {projects.length === 0 ? (
-                    <div className="p-6 text-sm text-muted-foreground">Zadne projekty k zobrazeni.</div>
+                    <div className="p-6 text-sm text-muted-foreground">Žádné projekty k zobrazení.</div>
                   ) : (
                     projects.slice(0, 9).map((project) => (
                       <motion.div key={project.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="p-4">
@@ -2281,7 +2281,7 @@ const CRM = () => {
                             <Link to={`/projects/${project.id}`} className="font-semibold text-slate-950 hover:text-primary">
                               {project.name}
                             </Link>
-                            <p className="truncate text-xs text-muted-foreground">{project.code || project.status || 'Bez kodu'}</p>
+                            <p className="truncate text-xs text-muted-foreground">{project.code || project.status || 'Bez kódu'}</p>
                           </div>
                           <Badge variant="secondary">{project.status || 'stav'}</Badge>
                         </div>
@@ -2295,14 +2295,14 @@ const CRM = () => {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="crm-panel">
                 <CardHeader className="crm-panel-header">
-                  <CardTitle>Projektove kontakty</CardTitle>
-                  <CardDescription>Osoby pouzitelne pro obchodni historii a follow-upy.</CardDescription>
+                  <CardTitle>Projektové kontakty</CardTitle>
+                  <CardDescription>Osoby použitelné pro obchodní historii a follow-upy.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 p-4 md:grid-cols-2">
                   {contacts.slice(0, 12).map((contact) => (
-                    <div key={contact.id} className="rounded-lg border bg-white p-4">
+                    <div key={contact.id} className="rounded-md border border-slate-200 bg-white p-4">
                       <div className="font-semibold text-slate-950">{contact.name}</div>
                       <div className="text-sm text-muted-foreground">{contact.role || contact.projects?.name || 'Kontakt'}</div>
                       <div className="mt-3 space-y-1 text-sm text-muted-foreground">
@@ -2317,8 +2317,8 @@ const CRM = () => {
                     </div>
                   ))}
                   {contacts.length === 0 && (
-                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground md:col-span-2">
-                      Zadne projektove kontakty k zobrazeni.
+                    <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground md:col-span-2">
+                      Žádné projektové kontakty k zobrazení.
                     </div>
                   )}
                 </CardContent>
@@ -2331,17 +2331,17 @@ const CRM = () => {
         <Dialog open={opportunityDialogOpen} onOpenChange={setOpportunityDialogOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{opportunityForm.id ? 'Upravit CRM prilezitost' : 'Nova CRM prilezitost'}</DialogTitle>
+              <DialogTitle>{opportunityForm.id ? 'Upravit CRM příležitost' : 'Nová CRM příležitost'}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSaveOpportunity} className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="opportunity-title">Nazev *</Label>
+                  <Label htmlFor="opportunity-title">Název *</Label>
                   <Input
                     id="opportunity-title"
                     value={opportunityForm.title}
                     onChange={(event) => handleOpportunityChange('title', event.target.value)}
-                    placeholder="Napr. Nova projektova poptavka"
+                    placeholder="Např. nová projektová poptávka"
                     required
                   />
                 </div>
@@ -2354,14 +2354,14 @@ const CRM = () => {
                       setSubjects((current) => [...current, subject].sort((a, b) => a.name.localeCompare(b.name)));
                       handleOpportunityChange('subject_id', subject.id);
                     }}
-                    placeholder="Vyberte nebo vytvorte subjekt"
+                    placeholder="Vyberte nebo vytvořte subjekt"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Navazany projekt</Label>
+                  <Label>Navázaný projekt</Label>
                   <Select value={opportunityForm.project_id || 'none'} onValueChange={(value) => handleOpportunityChange('project_id', value === 'none' ? '' : value)}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Volitelne" />
+                      <SelectValue placeholder="Volitelně" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Bez projektu</SelectItem>
@@ -2372,7 +2372,7 @@ const CRM = () => {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Faze</Label>
+                  <Label>Fáze</Label>
                   <Select value={opportunityForm.stage} onValueChange={(value) => handleOpportunityChange('stage', value)}>
                     <SelectTrigger>
                       <SelectValue />
@@ -2409,7 +2409,7 @@ const CRM = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="opportunity-probability">Pravdepodobnost (%)</Label>
+                  <Label htmlFor="opportunity-probability">Pravděpodobnost (%)</Label>
                   <Input
                     id="opportunity-probability"
                     type="number"
@@ -2420,7 +2420,7 @@ const CRM = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="opportunity-close-date">Ocekavane uzavreni</Label>
+                  <Label htmlFor="opportunity-close-date">Očekávané uzavření</Label>
                   <Input
                     id="opportunity-close-date"
                     type="date"
@@ -2431,20 +2431,20 @@ const CRM = () => {
                 <div className="space-y-2">
                   <Label>Stav</Label>
                   <div className={cn('rounded-md border px-3 py-2 text-sm', getStage(opportunityForm.stage, crmStages).color)}>
-                    {getStage(opportunityForm.stage, crmStages).is_closed ? 'Uzavreno' : 'Otevreno'} · {getPriority(opportunityForm.priority, crmPriorities)?.label}
+                    {getStage(opportunityForm.stage, crmStages).is_closed ? 'Uzavřeno' : 'Otevřeno'} · {getPriority(opportunityForm.priority, crmPriorities)?.label}
                   </div>
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="opportunity-next-step">Dalsi krok</Label>
+                  <Label htmlFor="opportunity-next-step">Další krok</Label>
                   <Input
                     id="opportunity-next-step"
                     value={opportunityForm.next_step}
                     onChange={(event) => handleOpportunityChange('next_step', event.target.value)}
-                    placeholder="Napr. Zavolat klientovi, poslat podklady..."
+                    placeholder="Např. zavolat klientovi, poslat podklady..."
                   />
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="opportunity-description">Poznamka</Label>
+                  <Label htmlFor="opportunity-description">Poznámka</Label>
                   <Textarea
                     id="opportunity-description"
                     value={opportunityForm.description}
@@ -2454,13 +2454,13 @@ const CRM = () => {
                 </div>
                 {opportunityForm.stage === 'lost' && (
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="opportunity-lost-reason">Duvod prohry *</Label>
+                    <Label htmlFor="opportunity-lost-reason">Důvod prohry *</Label>
                     <Textarea
                       id="opportunity-lost-reason"
                       value={opportunityForm.lost_reason}
                       onChange={(event) => handleOpportunityChange('lost_reason', event.target.value)}
                       rows={4}
-                      placeholder="Napr. cena, termin, konkurence, zrusena poptavka..."
+                      placeholder="Např. cena, termín, konkurence, zrušená poptávka..."
                       required
                     />
                   </div>
@@ -2468,10 +2468,10 @@ const CRM = () => {
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setOpportunityDialogOpen(false)}>
-                  Zrusit
+                  Zrušit
                 </Button>
                 <Button type="submit" disabled={savingOpportunity || !crmTablesReady}>
-                  {savingOpportunity ? 'Ukladam...' : (opportunityForm.id ? 'Ulozit zmeny' : 'Ulozit prilezitost')}
+                  {savingOpportunity ? 'Ukládám...' : (opportunityForm.id ? 'Uložit změny' : 'Uložit příležitost')}
                 </Button>
               </DialogFooter>
             </form>
@@ -2490,30 +2490,30 @@ const CRM = () => {
         >
           <DialogContent className="max-w-xl">
             <DialogHeader>
-              <DialogTitle>Uzavrit obchodni pripad jako prohrany</DialogTitle>
+              <DialogTitle>Uzavřít obchodní případ jako prohraný</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
-                Pro prohrany obchodni pripad je potreba zapsat duvod. Pomuze to pozdeji vyhodnocovat, proc ztracime zakazky.
+                Pro prohraný obchodní případ je potřeba zapsat důvod. Pomůže to později vyhodnocovat, proč ztrácíme zakázky.
               </div>
               <div className="space-y-2">
-                <Label htmlFor="loss-reason">Duvod prohry *</Label>
+                <Label htmlFor="loss-reason">Důvod prohry *</Label>
                 <Textarea
                   id="loss-reason"
                   value={lossReason}
                   onChange={(event) => setLossReason(event.target.value)}
                   rows={5}
-                  placeholder="Napr. cena, termin, konkurence, zrusena poptavka..."
+                  placeholder="Např. cena, termín, konkurence, zrušená poptávka..."
                   autoFocus
                 />
               </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setLossDialogOpen(false)}>
-                Zrusit
+                Zrušit
               </Button>
               <Button type="button" variant="destructive" onClick={confirmLostOpportunity} disabled={!lossReason.trim()}>
-                Uzavrit jako prohrane
+                Uzavřít jako prohrané
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -284,7 +284,7 @@ const UserManagement = () => {
                                 ) : (
                                     <div className="flex min-w-0 items-center gap-2">
                                         <p className="truncate text-lg font-semibold">{user.user_metadata?.full_name || 'Beze jména'}</p>
-                                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setEditingUser(user.id)} disabled={!isAdmin}>
+                                        <Button variant="ghost" size="icon" aria-label={`Upravit uzivatele ${user.email || user.id}`} className="h-7 w-7 shrink-0" onClick={() => setEditingUser(user.id)} disabled={!isAdmin}>
                                             <Edit className="w-3.5 h-3.5"/>
                                         </Button>
                                     </div>

@@ -326,7 +326,7 @@ const SubjectTable = ({ subjects, visibleColumns, sortConfig, requestSort, onSel
                     <TableCell onClick={(e) => e.stopPropagation()} className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Akce pro subjekt ${subject.name || 'bez nazvu'}`}>
                             <MoreHorizontal className="w-4 h-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -751,7 +751,7 @@ const Subjects = () => {
                 )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon">
+                    <Button variant="outline" size="icon" aria-label="Nastaveni zobrazeni subjektu">
                       <Settings className="w-5 h-5" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -865,7 +865,7 @@ const Subjects = () => {
               </Select>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1}>
+              <Button variant="outline" size="sm" aria-label="Predchozi stranka" onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1}>
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               <div className="flex max-w-full items-center gap-1 overflow-x-auto">
@@ -881,7 +881,7 @@ const Subjects = () => {
                   </Button>
                 ))}
               </div>
-              <Button variant="outline" size="sm" onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages}>
+              <Button variant="outline" size="sm" aria-label="Dalsi stranka" onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages}>
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>

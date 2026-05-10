@@ -1,81 +1,140 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  DollarSign, TrendingUp, AlertCircle, CheckCircle, GanttChartSquare,
-  PiggyBank, BarChart, Wallet, Wrench, Clock, Banknote,
-  PieChart, ClipboardList, Briefcase, Home, Package, FilePieChart,
-  MinusCircle, ArrowRight, Activity, CalendarClock, ShieldAlert
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Banknote,
+  BarChart3,
+  Briefcase,
+  CalendarClock,
+  CheckCircle,
+  CircleDollarSign,
+  ClipboardList,
+  FileText,
+  GanttChartSquare,
+  Home,
+  Package,
+  PiggyBank,
+  RefreshCw,
+  ShieldAlert,
+  ShoppingCart,
+  Target,
+  Timer,
+  Users,
+  Wrench,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import PageHeader from '@/components/ui/page-header';
-import { supabase } from '@/lib/customSupabaseClient';
-import ProjectGanttChart from '@/components/ProjectGanttChart';
-import RealizationGanttChart from '@/components/RealizationGanttChart';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PortalStatusChart from '@/components/PortalStatusChart';
 import ProjectStatusChart from '@/components/ProjectStatusChart';
+import ProjectGanttChart from '@/components/ProjectGanttChart';
+import RealizationGanttChart from '@/components/RealizationGanttChart';
 import { PendingApprovalsWidget } from '@/components/DashboardWidgets';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/lib/customSupabaseClient';
 import { cn, formatCurrency } from '@/lib/utils';
 
-// Helper component for uniform stat cards
-const StatCard = ({ title, value, icon: Icon, colorClass, subtext, trend }) => (
-  <Card>
-    <CardContent className="p-6 flex items-center justify-between space-x-4">
-      <div className="flex flex-col gap-1">
-        <span className="text-sm font-medium text-muted-foreground tracking-tight">{title}</span>
-        <span className={cn("text-2xl font-bold tracking-tight", colorClass)}>
-          {value}
-        </span>
-        {subtext && <span className="text-xs text-muted-foreground">{subtext}</span>}
-      </div>
-      <div className={cn("p-3 rounded-full bg-current/10", colorClass)}>
-        <Icon className={cn("w-6 h-6", colorClass)} />
-      </div>
-    </CardContent>
-  </Card>
-);
+const today = new Date();
+today.setHours(0, 0, 0, 0);
 
-const EngineeringActivityCard = ({ activity }) => {
-  const statusConfig = {
-    new: { icon: AlertCircle, variant: 'secondary', label: 'Nová', bg: 'bg-blue-50 text-blue-700' },
-    in_progress: { icon: Clock, variant: 'default', label: 'V řešení', bg: 'bg-orange-50 text-orange-700' },
-    done: { icon: CheckCircle, variant: 'outline', label: 'Hotovo', bg: 'bg-green-50 text-green-700' },
+const isOpenStatus = (status) => {
+  const value = String(status || '').toLowerCase();
+  return !['done', 'completed', 'complete', 'finished', 'closed', 'archived', 'cancelled', 'canceled', 'paid'].includes(value);
+};
+
+const isOverdue = (date) => {
+  if (!date) return false;
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value < today;
+};
+
+const formatDate = (date) => {
+  if (!date) return 'Bez termínu';
+  return new Intl.DateTimeFormat('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(date));
+};
+
+const safeArray = (result) => (result?.error ? [] : (result?.data || []));
+
+const DashboardMetric = ({ icon: Icon, label, value, detail, tone = 'blue', to }) => {
+  const tones = {
+    blue: 'border-blue-100 bg-blue-50 text-blue-700',
+    emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+    amber: 'border-amber-100 bg-amber-50 text-amber-700',
+    rose: 'border-rose-100 bg-rose-50 text-rose-700',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700',
   };
 
-  const config = statusConfig[activity.status] || statusConfig.new;
+  const content = (
+    <Card className="crm-panel h-full transition-colors hover:border-primary/30">
+      <CardContent className="flex h-full items-center justify-between gap-4 p-4">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-semibold uppercase tracking-normal text-slate-500">{label}</p>
+          <p className="mt-1 truncate text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+          {detail && <p className="mt-1 truncate text-xs text-slate-500">{detail}</p>}
+        </div>
+        <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-md border', tones[tone])}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  return to ? <Link to={to} className="block h-full">{content}</Link> : content;
+};
+
+const SectionHeader = ({ icon: Icon, title, description, action }) => (
+  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-w-0">
+      <div className="flex items-center gap-2">
+        {Icon && <Icon className="h-4 w-4 text-primary" />}
+        <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+      </div>
+      {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
+    </div>
+    {action}
+  </div>
+);
+
+const WorkItem = ({ title, subtitle, meta, to, tone = 'slate' }) => {
+  const tones = {
+    slate: 'bg-slate-100 text-slate-700',
+    amber: 'bg-amber-100 text-amber-800',
+    rose: 'bg-rose-100 text-rose-700',
+    emerald: 'bg-emerald-100 text-emerald-700',
+    blue: 'bg-blue-100 text-blue-700',
+  };
 
   return (
-    <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-slate-50 transition-colors group">
-      <div className="flex items-start gap-4">
-        <div className={cn("p-2 rounded-full shrink-0 mt-1", config.bg)}>
-          <config.icon className="w-4 h-4" />
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium leading-none text-slate-900 group-hover:text-primary transition-colors">
-            {activity.subject}
-          </p>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{activity.projects?.name}</span>
-            <span>•</span>
-            <Badge variant="outline" className={cn("text-[10px] px-1.5 h-5 font-normal border-0", config.bg)}>
-              {config.label}
-            </Badge>
-          </div>
-        </div>
+    <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-3 transition-colors hover:border-primary/30 hover:bg-blue-50/30">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-slate-950">{title}</p>
+        <p className="mt-1 truncate text-xs text-slate-500">{subtitle}</p>
       </div>
-      <Button asChild variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 p-0">
-        <Link to={`/projects/${activity.project_id}`}>
-          <ArrowRight className="w-4 h-4" />
-        </Link>
-      </Button>
+      <div className="flex shrink-0 items-center gap-2">
+        {meta && <Badge className={cn('border-0 text-xs', tones[tone])}>{meta}</Badge>}
+        {to && (
+          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+            <Link to={to} aria-label={`Otevřít ${title}`}>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        )}
+      </div>
     </div>
   );
-}
+};
+
+const EmptyBlock = ({ text }) => (
+  <div className="rounded-md border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center text-sm text-slate-500">
+    {text}
+  </div>
+);
 
 const UserFinancials = ({ memberId }) => {
   const { toast } = useToast();
@@ -85,32 +144,27 @@ const UserFinancials = ({ memberId }) => {
 
   useEffect(() => {
     let mounted = true;
-    if (!memberId) {
+    if (!memberId || isPrivateMode) {
       setLoading(false);
-      return;
+      return undefined;
     }
 
     const fetchUserFinancials = async () => {
       try {
-        if (mounted) setLoading(true);
+        setLoading(true);
         const { data, error } = await supabase.rpc('get_user_financials', { p_member_id: memberId });
-
         if (error) throw error;
-
-        if (mounted && data && data.length > 0) {
-          const result = data[0];
+        const result = data?.[0] || {};
+        if (mounted) {
           setStats({
             totalReward: Math.round(result.total_reward || 0),
             toPayOut: Math.round((result.total_reward || 0) - (result.total_paid || 0)),
             available: Math.round(result.available_to_payout || 0),
-            paid: Math.round(result.total_paid || 0)
+            paid: Math.round(result.total_paid || 0),
           });
         }
       } catch (error) {
-        console.error('Error fetching user financials:', error);
-        if (mounted) {
-          toast({ title: 'Chyba', description: 'Nepodařilo se načíst finance.', variant: 'destructive' });
-        }
+        if (mounted) toast({ title: 'Finance se nepodařilo načíst', description: error.message, variant: 'destructive' });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -118,491 +172,576 @@ const UserFinancials = ({ memberId }) => {
 
     fetchUserFinancials();
     return () => { mounted = false; };
-  }, [memberId]);
+  }, [memberId, isPrivateMode, toast]);
 
-  // Completely hide in Private Mode
   if (isPrivateMode) return null;
-
-  if (loading) return <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-pulse"><div className="h-32 bg-slate-100 rounded-xl" /><div className="h-32 bg-slate-100 rounded-xl" /><div className="h-32 bg-slate-100 rounded-xl" /></div>;
+  if (loading) return <div className="h-28 rounded-md bg-slate-100 animate-pulse" />;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <StatCard
-        title="Dostupné k vyplacení"
-        value={formatCurrency(stats.available)}
-        icon={Banknote}
-        colorClass="text-green-600"
-      />
-      <StatCard
-        title="Zbývá k vyplacení"
-        value={formatCurrency(stats.toPayOut)}
-        icon={DollarSign}
-        colorClass="text-blue-600"
-      />
-      <StatCard
-        title="Celkem vyplaceno"
-        value={formatCurrency(stats.paid)}
-        icon={DollarSign}
-        colorClass="text-slate-600"
-      />
+    <div className="grid gap-3 md:grid-cols-3">
+      <DashboardMetric icon={Banknote} label="Dostupné k vyplacení" value={formatCurrency(stats.available)} tone="emerald" to="/payouts" />
+      <DashboardMetric icon={CircleDollarSign} label="Zbývá k vyplacení" value={formatCurrency(stats.toPayOut)} tone="blue" to="/payouts" />
+      <DashboardMetric icon={PiggyBank} label="Celkem vyplaceno" value={formatCurrency(stats.paid)} tone="slate" to="/payouts" />
     </div>
   );
 };
 
-const AdminFinancials = () => {
-  const { toast } = useToast();
+const AdminFinancials = ({ companyFinance, approvals }) => {
   const { isPrivateMode } = useAuth();
-  const [profits, setProfits] = useState({ realized: 0, potential: 0, totalOverhead: 0, totalProjectValue: 0, unallocatedBudget: 0 });
-  const [overheadSummary, setOverheadSummary] = useState({ allocated: 0, accounted: 0 });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    const fetchAdminData = async () => {
-      try {
-        if (mounted) setLoading(true);
-        const [financialsRes, overheadRes] = await Promise.all([
-          supabase.rpc('get_company_financials'),
-          supabase.rpc('get_overhead_summary')
-        ]);
-
-        if (financialsRes.error) throw financialsRes.error;
-        if (overheadRes.error) throw overheadRes.error;
-
-        if (mounted && financialsRes.data && financialsRes.data.length > 0) {
-          const result = financialsRes.data[0];
-          setProfits({
-            realized: Math.round(result.realized_profit || 0),
-            potential: Math.round(result.potential_profit || 0),
-            totalOverhead: Math.round(result.total_overhead || 0),
-            totalProjectValue: Math.round(result.total_project_value || 0),
-            unallocatedBudget: Math.round(result.unallocated_budget || 0),
-          });
-        }
-
-        if (mounted && overheadRes.data && overheadRes.data.length > 0) {
-          const result = overheadRes.data[0];
-          setOverheadSummary({
-            allocated: Math.round(result.total_allocated_overhead || 0),
-            accounted: Math.round(result.total_accounted_overhead || 0)
-          });
-        }
-      } catch (error) {
-        console.error('Error fetching company financials:', error);
-        if (mounted) toast({ title: 'Chyba', description: 'Chyba načítání dat firmy.', variant: 'destructive' });
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    fetchAdminData();
-    return () => { mounted = false; };
-  }, []);
-
-  // Completely hide in Private Mode
   if (isPrivateMode) return null;
 
-  if (loading) return <div className="h-64 bg-slate-100 rounded-xl animate-pulse"></div>;
-
-  const overheadDifference = overheadSummary.allocated - overheadSummary.accounted;
+  const overheadDifference = companyFinance.overheadAllocated - companyFinance.overheadAccounted;
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Realizovaný zisk"
-          value={formatCurrency(profits.realized)}
-          icon={DollarSign}
-          colorClass="text-green-600"
-        />
-        <StatCard
-          title="Potenciální zisk"
-          value={formatCurrency(profits.potential)}
-          icon={DollarSign}
-          colorClass="text-blue-600"
-        />
-        <StatCard
-          title="Celková hodnota"
-          value={formatCurrency(profits.totalProjectValue)}
-          icon={DollarSign}
-          colorClass="text-cyan-600"
-        />
-        <StatCard
-          title="Nerozdělený budget"
-          value={formatCurrency(profits.unallocatedBudget)}
-          icon={DollarSign}
-          colorClass="text-rose-600"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <Card className="h-full">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                <FilePieChart className="w-5 h-5 text-slate-500" />
-                Režie a náklady
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-blue-50 rounded-full text-blue-600">
-                    <CheckCircle className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Alokované režie</p>
-                    <p className="text-xl font-bold text-slate-900">{formatCurrency(overheadSummary.allocated)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-green-50 rounded-full text-green-600">
-                    <DollarSign className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Zaúčtované režie</p>
-                    <p className="text-xl font-bold text-slate-900">{formatCurrency(overheadSummary.accounted)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className={cn("p-3 rounded-full", overheadDifference >= 0 ? "bg-slate-100 text-slate-600" : "bg-red-50 text-red-600")}>
-                    <MinusCircle className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Rozdíl (Bilance)</p>
-                    <p className={cn("text-xl font-bold", overheadDifference < 0 && "text-red-600")}>
-                      {formatCurrency(overheadDifference)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-        <div className="lg:col-span-1">
-          <PendingApprovalsWidget />
-        </div>
-      </div>
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <DashboardMetric icon={CircleDollarSign} label="Realizovaný zisk" value={formatCurrency(companyFinance.realizedProfit)} tone="emerald" to="/reports" />
+      <DashboardMetric icon={TrendingIcon} label="Potenciální zisk" value={formatCurrency(companyFinance.potentialProfit)} tone="blue" to="/reports" />
+      <DashboardMetric icon={Briefcase} label="Hodnota projektů" value={formatCurrency(companyFinance.totalProjectValue)} tone="slate" to="/projects" />
+      <DashboardMetric icon={FileText} label="Režie bilance" value={formatCurrency(overheadDifference)} tone={overheadDifference < 0 ? 'rose' : 'amber'} to="/overhead-costs" />
+      <DashboardMetric icon={AlertTriangle} label="Ke schválení" value={approvals} detail="výplaty a docházka" tone={approvals > 0 ? 'rose' : 'emerald'} to="/payouts" />
     </div>
   );
-}
+};
+
+const TrendingIcon = (props) => <BarChart3 {...props} />;
 
 const Dashboard = () => {
   const { isSuperUser, memberId, isPrivateMode } = useAuth();
   const { toast } = useToast();
-  const [userProjects, setUserProjects] = useState([]);
-  const [allProjects, setAllProjects] = useState([]);
-  const [realizations, setRealizations] = useState([]);
-  const [tasks, setTasks] = useState([]);
-  const [pendingActivitiesList, setPendingActivitiesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState('month');
+  const [data, setData] = useState({
+    userProjects: [],
+    projects: [],
+    realizations: [],
+    tasks: [],
+    engineering: [],
+    payouts: [],
+    attendanceSubmissions: [],
+    opportunities: [],
+    commercialDocuments: [],
+    products: [],
+    documents: [],
+    companyFinance: {
+      realizedProfit: 0,
+      potentialProfit: 0,
+      totalProjectValue: 0,
+      unallocatedBudget: 0,
+      overheadAllocated: 0,
+      overheadAccounted: 0,
+    },
+  });
+
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    try {
+      const next = {
+        userProjects: [],
+        projects: [],
+        realizations: [],
+        tasks: [],
+        engineering: [],
+        payouts: [],
+        attendanceSubmissions: [],
+        opportunities: [],
+        commercialDocuments: [],
+        products: [],
+        documents: [],
+        companyFinance: data.companyFinance,
+      };
+
+      const commonQueries = [
+        supabase.from('payouts').select('id, amount, status, request_date, member:members!payouts_member_id_fkey(name)').eq('status', 'pending').order('request_date', { ascending: true }).limit(20),
+        supabase.from('attendance_submissions').select('id, total_hours, status, month_date, member:members!attendance_submissions_member_id_fkey(name)').eq('status', 'submitted').order('submitted_at', { ascending: true }).limit(20),
+        supabase.from('crm_opportunities').select('id, number, title, value, probability, stage, expected_close_date, created_at, subject:subject_id(name)').order('created_at', { ascending: false }).limit(100),
+        supabase.from('crm_commercial_documents').select('id, type, status, title, number, total, valid_until, created_at').order('created_at', { ascending: false }).limit(100),
+        supabase.from('commercial_item_catalog').select('id, code, name, category, is_active').limit(500),
+        supabase.from('documents').select('id, name, created_at').order('created_at', { ascending: false }).limit(50),
+      ];
+
+      const [
+        payoutsRes,
+        attendanceRes,
+        opportunitiesRes,
+        commercialDocumentsRes,
+        productsRes,
+        documentsRes,
+      ] = await Promise.all(commonQueries);
+
+      next.payouts = safeArray(payoutsRes);
+      next.attendanceSubmissions = safeArray(attendanceRes);
+      next.opportunities = safeArray(opportunitiesRes);
+      next.commercialDocuments = safeArray(commercialDocumentsRes);
+      next.products = safeArray(productsRes);
+      next.documents = safeArray(documentsRes);
+
+      if (memberId) {
+        const [userProjectsRes, userTasksRes, userActivitiesRes, userRealizationsRes] = await Promise.all([
+          supabase.rpc('get_user_projects', { p_member_id: memberId }),
+          supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').eq('member_id', memberId).order('end_date', { ascending: true }).limit(100),
+          supabase.rpc('get_user_activities', { p_member_id: memberId }),
+          supabase.from('realizations').select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, team_members').contains('team_members', [memberId]).order('created_at', { ascending: false }).limit(100),
+        ]);
+        next.userProjects = safeArray(userProjectsRes);
+        next.tasks = safeArray(userTasksRes);
+        next.engineering = safeArray(userActivitiesRes);
+        next.realizations = safeArray(userRealizationsRes);
+      }
+
+      if (isSuperUser) {
+        const [
+          projectsRes,
+          realizationsRes,
+          tasksRes,
+          engineeringRes,
+          companyFinanceRes,
+          overheadRes,
+        ] = await Promise.all([
+          supabase.from('projects').select('id, name, code, status, start_date, completion_date, created_at, price').order('created_at', { ascending: false }).limit(500),
+          supabase.from('realizations').select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, contract_amount').order('created_at', { ascending: false }).limit(500),
+          supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').order('end_date', { ascending: true }).limit(200),
+          supabase.from('engineering_activities').select('id, subject, status, project_id, end_date, projects(name)').neq('status', 'done').order('end_date', { ascending: true }).limit(12),
+          supabase.rpc('get_company_financials'),
+          supabase.rpc('get_overhead_summary'),
+        ]);
+
+        next.projects = safeArray(projectsRes);
+        next.realizations = safeArray(realizationsRes);
+        next.tasks = safeArray(tasksRes);
+        next.engineering = safeArray(engineeringRes);
+
+        const finance = safeArray(companyFinanceRes)[0] || {};
+        const overhead = safeArray(overheadRes)[0] || {};
+        next.companyFinance = {
+          realizedProfit: Math.round(finance.realized_profit || 0),
+          potentialProfit: Math.round(finance.potential_profit || 0),
+          totalProjectValue: Math.round(finance.total_project_value || 0),
+          unallocatedBudget: Math.round(finance.unallocated_budget || 0),
+          overheadAllocated: Math.round(overhead.total_allocated_overhead || 0),
+          overheadAccounted: Math.round(overhead.total_accounted_overhead || 0),
+        };
+      }
+
+      setData(next);
+    } catch (error) {
+      toast({ title: 'Dashboard se nepodařilo načíst', description: error.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    let mounted = true;
-    const fetchData = async () => {
-      try {
-        if (mounted) setLoading(true);
-
-        // Fetch data based on role
-        if (memberId) {
-          const [userProjectsRes, tasksRes, activitiesRes] = await Promise.all([
-            supabase.rpc('get_user_projects', { p_member_id: memberId }),
-            supabase.from('project_tasks').select('id, name, status, start_date, end_date').eq('member_id', memberId),
-            supabase.rpc('get_user_activities', { p_member_id: memberId })
-          ]);
-
-          if (userProjectsRes.error) throw userProjectsRes.error;
-          if (mounted) setUserProjects(userProjectsRes.data || []);
-
-          if (tasksRes.error) throw tasksRes.error;
-          if (mounted) setTasks(tasksRes.data || []);
-
-          if (activitiesRes.error) throw activitiesRes.error;
-          if (mounted) setPendingActivitiesList(activitiesRes.data || []);
-
-          // Fetch user realizations (filter by team member)
-          const { data: realData, error: realError } = await supabase
-            .from('realizations')
-            .select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, team_members')
-            .contains('team_members', [memberId])
-            .order('created_at', { ascending: false });
-
-          if (realError && realError.code !== 'PGRST116') console.error(realError);
-          if (mounted) setRealizations(realData || []);
-        }
-
-        if (isSuperUser) {
-          const { data: allProjectsData, error: allProjectsError } = await supabase
-            .from('projects')
-            .select('id, name, code, status, start_date, completion_date, created_at')
-            .order('code');
-
-          if (allProjectsError) throw allProjectsError;
-          if (mounted) setAllProjects(allProjectsData || []);
-
-          // Fetch all realizations for admin
-          const { data: allRealizations, error: allRealError } = await supabase
-            .from('realizations')
-            .select('id, name, status, start_date, planned_end_date, actual_end_date, created_at')
-            .order('created_at', { ascending: false });
-
-          if (allRealError) throw allRealError;
-          if (mounted) setRealizations(allRealizations || []);
-
-          if ((!memberId || (mounted && pendingActivitiesList.length === 0))) {
-            const { data: activitiesData, error: activitiesError } = await supabase
-              .from('engineering_activities')
-              .select('id, subject, status, project_id, projects(name)')
-              .neq('status', 'done')
-              .order('end_date', { ascending: true })
-              .limit(5);
-            if (activitiesError) throw activitiesError;
-            if (mounted) setPendingActivitiesList(activitiesData || []);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        if (mounted) toast({ title: 'Chyba', description: 'Nepodařilo se načíst data.', variant: 'destructive' });
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    fetchData();
-    return () => { mounted = false; };
+    fetchDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperUser, memberId]);
+
+  const summary = useMemo(() => {
+    const visibleProjects = isSuperUser ? data.projects : data.userProjects;
+    const activeProjects = visibleProjects.filter((project) => isOpenStatus(project.status));
+    const activeRealizations = data.realizations.filter((realization) => isOpenStatus(realization.status));
+    const openTasks = data.tasks.filter((task) => isOpenStatus(task.status));
+    const overdueTasks = openTasks.filter((task) => isOverdue(task.end_date));
+    const activeEngineering = data.engineering.filter((item) => isOpenStatus(item.status));
+    const overdueEngineering = activeEngineering.filter((item) => isOverdue(item.end_date));
+    const openOpportunities = data.opportunities.filter((opportunity) => !['won', 'lost'].includes(String(opportunity.stage || '').toLowerCase()));
+    const pipelineValue = openOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
+    const weightedPipeline = openOpportunities.reduce((sum, opportunity) => {
+      const probability = Number(opportunity.probability ?? 0) / 100;
+      return sum + Number(opportunity.value || 0) * probability;
+    }, 0);
+    const offers = data.commercialDocuments.filter((document) => document.type === 'offer');
+    const orders = data.commercialDocuments.filter((document) => document.type === 'order');
+    const pendingApprovals = data.payouts.length + data.attendanceSubmissions.length;
+    const activeProducts = data.products.filter((product) => product.is_active !== false);
+
+    return {
+      visibleProjects,
+      activeProjects,
+      activeRealizations,
+      openTasks,
+      overdueTasks,
+      activeEngineering,
+      overdueEngineering,
+      openOpportunities,
+      pipelineValue,
+      weightedPipeline,
+      offers,
+      orders,
+      pendingApprovals,
+      activeProducts,
+    };
+  }, [data, isSuperUser]);
+
+  const attentionItems = useMemo(() => {
+    const items = [];
+
+    summary.overdueTasks.slice(0, 3).forEach((task) => {
+      items.push({
+        title: task.name,
+        subtitle: task.project?.name || 'Úkol bez projektu',
+        meta: formatDate(task.end_date),
+        tone: 'rose',
+        to: '/tasks',
+      });
+    });
+
+    summary.overdueEngineering.slice(0, 3).forEach((activity) => {
+      items.push({
+        title: activity.subject,
+        subtitle: activity.projects?.name || 'Inženýring',
+        meta: formatDate(activity.end_date),
+        tone: 'amber',
+        to: '/engineering',
+      });
+    });
+
+    data.payouts.slice(0, 2).forEach((payout) => {
+      items.push({
+        title: payout.member?.name || 'Žádost o výplatu',
+        subtitle: `Čeká na schválení: ${formatCurrency(payout.amount)}`,
+        meta: 'Výplata',
+        tone: 'rose',
+        to: '/payouts',
+      });
+    });
+
+    data.attendanceSubmissions.slice(0, 2).forEach((attendance) => {
+      items.push({
+        title: attendance.member?.name || 'Docházka',
+        subtitle: `${Number(attendance.total_hours || 0).toFixed(1)} h za ${formatDate(attendance.month_date)}`,
+        meta: 'Docházka',
+        tone: 'amber',
+        to: '/attendance',
+      });
+    });
+
+    summary.openOpportunities
+      .filter((opportunity) => opportunity.expected_close_date)
+      .sort((a, b) => new Date(a.expected_close_date) - new Date(b.expected_close_date))
+      .slice(0, 2)
+      .forEach((opportunity) => {
+        items.push({
+          title: opportunity.title || opportunity.number || 'Obchodní případ',
+          subtitle: opportunity.subject?.name || 'CRM příležitost',
+          meta: formatDate(opportunity.expected_close_date),
+          tone: isOverdue(opportunity.expected_close_date) ? 'rose' : 'blue',
+          to: '/crm',
+        });
+      });
+
+    return items.slice(0, 8);
+  }, [data.attendanceSubmissions, data.payouts, summary.openOpportunities, summary.overdueEngineering, summary.overdueTasks]);
+
+  const moduleTiles = [
+    {
+      title: 'CRM',
+      description: `${summary.openOpportunities.length} otevřených OP, váženě ${formatCurrency(summary.weightedPipeline)}`,
+      icon: Target,
+      to: '/crm',
+      tone: 'blue',
+    },
+    {
+      title: 'Projekce',
+      description: `${summary.activeProjects.length} aktivních projektů`,
+      icon: Briefcase,
+      to: '/projects',
+      tone: 'slate',
+    },
+    {
+      title: 'Realizace',
+      description: `${summary.activeRealizations.length} aktivních realizací`,
+      icon: Wrench,
+      to: '/realizace',
+      tone: 'amber',
+    },
+    {
+      title: 'Úkoly',
+      description: `${summary.openTasks.length} otevřených, ${summary.overdueTasks.length} po termínu`,
+      icon: ClipboardList,
+      to: '/tasks',
+      tone: summary.overdueTasks.length ? 'rose' : 'emerald',
+    },
+    {
+      title: 'Nabídky',
+      description: `${summary.offers.length} záznamů v CRM`,
+      icon: FileText,
+      to: '/crm/offers',
+      tone: 'blue',
+    },
+    {
+      title: 'Objednávky',
+      description: `${summary.orders.length} záznamů v CRM`,
+      icon: ShoppingCart,
+      to: '/crm/orders',
+      tone: 'emerald',
+    },
+    {
+      title: 'Produkty',
+      description: `${summary.activeProducts.length} aktivních položek`,
+      icon: Package,
+      to: '/products',
+      tone: 'slate',
+    },
+    {
+      title: 'Dokumenty',
+      description: `${data.documents.length} posledních dokumentů v přehledu`,
+      icon: FileText,
+      to: '/documents',
+      tone: 'slate',
+    },
+  ];
 
   if (loading) {
     return (
-      <div className="app-page-wide">
-        <div className="h-12 w-48 bg-slate-100 rounded-lg animate-pulse mb-8" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="h-32 bg-slate-100 rounded-xl animate-pulse" />
-          <div className="h-32 bg-slate-100 rounded-xl animate-pulse" />
-          <div className="h-32 bg-slate-100 rounded-xl animate-pulse" />
+      <div className="app-page-wide space-y-5">
+        <div className="h-20 rounded-md bg-slate-100 animate-pulse" />
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="h-28 rounded-md bg-slate-100 animate-pulse" />
+          <div className="h-28 rounded-md bg-slate-100 animate-pulse" />
+          <div className="h-28 rounded-md bg-slate-100 animate-pulse" />
+          <div className="h-28 rounded-md bg-slate-100 animate-pulse" />
         </div>
-        <div className="h-96 bg-slate-100 rounded-xl animate-pulse" />
+        <div className="h-96 rounded-md bg-slate-100 animate-pulse" />
       </div>
     );
   }
 
   return (
     <div className="app-page-wide animate-in fade-in duration-500">
-      <PageHeader
-        icon={Home}
-        title="Přehled"
-        description="Vítejte zpět, zde je souhrn aktuálního dění v systému."
-        actions={
-          <Badge variant="outline" className="px-3 py-1 text-sm font-normal">
-            {new Date().toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </Badge>
-        }
-      />
-      <div className="hidden">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-            <Home className="w-8 h-8 text-slate-800" />
-            Přehled
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Vítejte zpět, zde je souhrn aktuálního dění v systému.
-          </p>
-        </div>
-        <div className="hidden sm:block text-right">
-          <Badge variant="outline" className="px-3 py-1 text-sm font-normal">
-            {new Date().toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </Badge>
-        </div>
-      </div>
+      <div className="space-y-5">
+        <PageHeader
+          icon={Home}
+          title="Přehled portálu"
+          description="Jedno místo pro obchod, projekci, realizace, finance, úkoly a provozní upozornění."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="px-3 py-1 text-sm font-normal">
+                {new Date().toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </Badge>
+              <Button variant="outline" onClick={fetchDashboardData} disabled={loading}>
+                <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
+                Obnovit
+              </Button>
+            </div>
+          }
+        />
 
-      {isPrivateMode && (
-        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg flex items-center gap-3">
-          <ShieldAlert className="w-5 h-5 shrink-0" />
-          <div>
-            <p className="font-semibold text-sm">Privátní mód je aktivní</p>
-            <p className="text-xs opacity-90">Všechna finanční data jsou skryta. Pro zobrazení financí vypněte privátní mód v uživatelském menu.</p>
-          </div>
-        </div>
-      )}
-
-      {isSuperUser ? (
-        <Tabs defaultValue={isPrivateMode ? "projects" : "financials"} className="space-y-6">
-          <div className="flex items-center justify-between">
-            <TabsList>
-              {!isPrivateMode && <TabsTrigger value="financials">Finance</TabsTrigger>}
-              <TabsTrigger value="projects">Projekty & Stav</TabsTrigger>
-              <TabsTrigger value="schedules">Harmonogramy</TabsTrigger>
-            </TabsList>
-          </div>
-
-          {!isPrivateMode && (
-            <TabsContent value="financials" className="space-y-6 mt-0">
-              <AdminFinancials />
-              <div className="grid grid-cols-1 gap-6">
-                <Card className="h-full">
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Activity className="w-5 h-5 text-slate-500" /> Moje Finance
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <UserFinancials memberId={memberId} />
-                    </div>
-                  </CardContent>
-                </Card>
+        {isPrivateMode && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold">Privátní mód je aktivní</p>
+                <p className="mt-1 text-xs">Finanční data jsou skryta. Pro zobrazení financí vypněte privátní mód v uživatelském menu.</p>
               </div>
-            </TabsContent>
-          )}
+            </div>
+          </div>
+        )}
 
-          <TabsContent value="projects" className="space-y-6 mt-0">
-            <PortalStatusChart />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Inženýrské činnosti</CardTitle>
-                  <CardDescription>Nedokončené úkoly napříč projekty</CardDescription>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <DashboardMetric icon={Target} label="CRM pipeline" value={formatCurrency(summary.pipelineValue)} detail={`${summary.openOpportunities.length} otevřených OP`} tone="blue" to="/crm" />
+          <DashboardMetric icon={Briefcase} label="Aktivní projekce" value={summary.activeProjects.length} detail={`${summary.visibleProjects.length} projektů celkem`} tone="slate" to="/projects" />
+          <DashboardMetric icon={Wrench} label="Aktivní realizace" value={summary.activeRealizations.length} detail="stav realizací a harmonogram" tone="amber" to="/realizace" />
+          <DashboardMetric icon={AlertTriangle} label="Vyžaduje pozornost" value={attentionItems.length} detail={`${summary.pendingApprovals} schválení, ${summary.overdueTasks.length} úkolů po termínu`} tone={attentionItems.length ? 'rose' : 'emerald'} />
+        </div>
+
+        {!isPrivateMode && (
+          <div className="space-y-3">
+            {isSuperUser && <AdminFinancials companyFinance={data.companyFinance} approvals={summary.pendingApprovals} />}
+            {!isSuperUser && <UserFinancials memberId={memberId} />}
+          </div>
+        )}
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+          <Card className="crm-panel">
+            <CardHeader className="crm-panel-header">
+              <SectionHeader
+                icon={BarChart3}
+                title="Stav napříč portálem"
+                description="Rychlé vstupy do hlavních modulů a nejdůležitější ukazatele."
+              />
+            </CardHeader>
+            <CardContent className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+              {moduleTiles.map((tile) => (
+                <Link
+                  key={tile.title}
+                  to={tile.to}
+                  className="group rounded-md border border-slate-200 bg-white p-4 transition-colors hover:border-primary/30 hover:bg-blue-50/30"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className={cn(
+                      'flex h-10 w-10 items-center justify-center rounded-md border',
+                      tile.tone === 'rose' && 'border-rose-100 bg-rose-50 text-rose-700',
+                      tile.tone === 'amber' && 'border-amber-100 bg-amber-50 text-amber-700',
+                      tile.tone === 'emerald' && 'border-emerald-100 bg-emerald-50 text-emerald-700',
+                      tile.tone === 'blue' && 'border-blue-100 bg-blue-50 text-blue-700',
+                      tile.tone === 'slate' && 'border-slate-200 bg-slate-50 text-slate-700',
+                    )}>
+                      <tile.icon className="h-5 w-5" />
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+                  </div>
+                  <h3 className="mt-4 text-sm font-semibold text-slate-950">{tile.title}</h3>
+                  <p className="mt-1 text-sm text-slate-500">{tile.description}</p>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card className="crm-panel">
+            <CardHeader className="crm-panel-header">
+              <SectionHeader
+                icon={Timer}
+                title="Co řešit teď"
+                description="Termíny, schválení a obchodní případy, které mohou blokovat další práci."
+                action={<Button asChild variant="outline" size="sm"><Link to="/tasks">Všechny úkoly</Link></Button>}
+              />
+            </CardHeader>
+            <CardContent className="space-y-2 p-4">
+              {attentionItems.length > 0 ? (
+                attentionItems.map((item, index) => <WorkItem key={`${item.title}-${index}`} {...item} />)
+              ) : (
+                <EmptyBlock text="Aktuálně není nic kritického k řešení." />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <Tabs defaultValue="operations" className="space-y-5">
+          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-md border bg-slate-100 p-1 sm:w-auto">
+            <TabsTrigger value="operations">Operativa</TabsTrigger>
+            {!isPrivateMode && <TabsTrigger value="finance">Finance</TabsTrigger>}
+            <TabsTrigger value="schedules">Harmonogramy</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="operations" className="space-y-5">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <Card className="crm-panel">
+                <CardHeader className="crm-panel-header">
+                  <SectionHeader
+                    icon={Activity}
+                    title="Stav projektů a úkolů"
+                    description="Souhrnný stav práce v portálu."
+                  />
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  {pendingActivitiesList.length > 0 ? (
-                    pendingActivitiesList.map(activity => <EngineeringActivityCard key={activity.id} activity={activity} />)
-                  ) : (
-                    <p className="text-sm text-muted-foreground py-4 text-center">Všechny činnosti jsou hotové.</p>
-                  )}
-                  <Button variant="link" asChild className="px-0 pt-2 text-primary">
-                    <Link to="/engineering">Přejít na inženýring &rarr;</Link>
-                  </Button>
+                <CardContent className="p-4">
+                  <ProjectStatusChart projects={summary.visibleProjects} tasks={data.tasks} />
                 </CardContent>
               </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Moje Úkoly</CardTitle>
-                  <CardDescription>Přehled stavu vašich úkolů</CardDescription>
+
+              <Card className="crm-panel">
+                <CardHeader className="crm-panel-header">
+                  <SectionHeader
+                    icon={Wrench}
+                    title="Inženýring a provoz"
+                    description="Aktivní činnosti a poslední blokery."
+                    action={<Button asChild variant="outline" size="sm"><Link to="/engineering">Otevřít</Link></Button>}
+                  />
                 </CardHeader>
-                <CardContent>
-                  <ProjectStatusChart tasks={tasks} />
+                <CardContent className="space-y-2 p-4">
+                  {summary.activeEngineering.length > 0 ? (
+                    summary.activeEngineering.slice(0, 6).map((activity) => (
+                      <WorkItem
+                        key={activity.id}
+                        title={activity.subject}
+                        subtitle={activity.projects?.name || 'Bez projektu'}
+                        meta={activity.status || 'aktivní'}
+                        tone={isOverdue(activity.end_date) ? 'rose' : 'blue'}
+                        to="/engineering"
+                      />
+                    ))
+                  ) : (
+                    <EmptyBlock text="Žádné aktivní inženýrské činnosti." />
+                  )}
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
 
-          <TabsContent value="schedules" className="space-y-6 mt-0">
-            <div className="grid grid-cols-1 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <GanttChartSquare className="w-5 h-5 text-indigo-600" />
-                    Harmonogram Projektů
-                  </CardTitle>
-                  <CardDescription>Časová osa všech projektů</CardDescription>
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.65fr)]">
+              <Card className="crm-panel">
+                <CardHeader className="crm-panel-header">
+                  <SectionHeader
+                    icon={Users}
+                    title="Portálový stav"
+                    description="Rozložení projektů a úkolů podle stavů."
+                  />
                 </CardHeader>
-                <CardContent>
-                  <ProjectGanttChart projects={allProjects} zoom={zoom} onZoomChange={setZoom} />
+                <CardContent className="p-4">
+                  <PortalStatusChart />
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <CalendarClock className="w-5 h-5 text-orange-600" />
-                    Harmonogram Realizací
-                  </CardTitle>
-                  <CardDescription>Časová osa aktivních realizací</CardDescription>
+              <PendingApprovalsWidget />
+            </div>
+          </TabsContent>
+
+          {!isPrivateMode && (
+            <TabsContent value="finance" className="space-y-5">
+              {isSuperUser ? (
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.65fr)]">
+                  <Card className="crm-panel">
+                    <CardHeader className="crm-panel-header">
+                      <SectionHeader
+                        icon={CircleDollarSign}
+                        title="Finanční souhrn firmy"
+                        description="Zisk, režie a obchodní pipeline na jednom místě."
+                      />
+                    </CardHeader>
+                    <CardContent className="space-y-4 p-4">
+                      <AdminFinancials companyFinance={data.companyFinance} approvals={summary.pendingApprovals} />
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <DashboardMetric icon={Target} label="Pipeline celkem" value={formatCurrency(summary.pipelineValue)} detail="otevřené obchodní případy" tone="blue" to="/crm" />
+                        <DashboardMetric icon={BarChart3} label="Vážená pipeline" value={formatCurrency(summary.weightedPipeline)} detail="hodnota dle pravděpodobnosti" tone="emerald" to="/crm" />
+                        <DashboardMetric icon={ShoppingCart} label="Nabídky / objednávky" value={`${summary.offers.length} / ${summary.orders.length}`} detail="CRM dokumenty" tone="slate" to="/crm/offers" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <PendingApprovalsWidget />
+                </div>
+              ) : (
+                <Card className="crm-panel">
+                  <CardHeader className="crm-panel-header">
+                    <SectionHeader icon={Banknote} title="Moje finance" description="Osobní přehled výplat." />
+                  </CardHeader>
+                  <CardContent className="p-4">
+                    <UserFinancials memberId={memberId} />
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          )}
+
+          <TabsContent value="schedules" className="space-y-5">
+            <div className="grid gap-5">
+              <Card className="crm-panel">
+                <CardHeader className="crm-panel-header">
+                  <SectionHeader
+                    icon={GanttChartSquare}
+                    title="Harmonogram projektů"
+                    description="Časová osa projekční práce."
+                  />
                 </CardHeader>
-                <CardContent>
-                  <RealizationGanttChart realizations={realizations} zoom={zoom} onZoomChange={setZoom} />
+                <CardContent className="p-4">
+                  <ProjectGanttChart projects={summary.visibleProjects} zoom={zoom} onZoomChange={setZoom} />
+                </CardContent>
+              </Card>
+
+              <Card className="crm-panel">
+                <CardHeader className="crm-panel-header">
+                  <SectionHeader
+                    icon={CalendarClock}
+                    title="Harmonogram realizací"
+                    description="Aktivní realizace a jejich plánované termíny."
+                  />
+                </CardHeader>
+                <CardContent className="p-4">
+                  <RealizationGanttChart realizations={data.realizations} zoom={zoom} onZoomChange={setZoom} />
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
         </Tabs>
-      ) : (
-        /* USER VIEW */
-        <div className="space-y-6">
-          <UserFinancials memberId={memberId} />
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="h-full">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <PieChart className="w-5 h-5 text-purple-600" />
-                    Projekty
-                  </CardTitle>
-                </div>
-                <CardDescription>Stav přiřazených projektů</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ProjectStatusChart projects={userProjects} />
-              </CardContent>
-            </Card>
-
-            <Card className="h-full">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <ClipboardList className="w-5 h-5 text-blue-600" />
-                    Úkoly
-                  </CardTitle>
-                </div>
-                <CardDescription>Stav přiřazených úkolů</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ProjectStatusChart tasks={tasks} />
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-2">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <GanttChartSquare className="w-5 h-5 text-purple-600" />
-                  Harmonogramy
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <Tabs defaultValue="projects" className="w-full">
-                  <TabsList className="w-full justify-start mb-4">
-                    <TabsTrigger value="projects">Projekty</TabsTrigger>
-                    <TabsTrigger value="realizations">Realizace</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="projects" className="mt-0">
-                    <ProjectGanttChart projects={userProjects} zoom={zoom} onZoomChange={setZoom} />
-                  </TabsContent>
-                  <TabsContent value="realizations" className="mt-0">
-                    <RealizationGanttChart realizations={realizations} zoom={zoom} onZoomChange={setZoom} />
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Wrench className="w-5 h-5 text-orange-500" />
-                  Inženýring
-                </CardTitle>
-                <CardDescription>Probíhající činnosti</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {pendingActivitiesList.length > 0 ? (
-                  pendingActivitiesList.map(activity => <EngineeringActivityCard key={activity.id} activity={activity} />)
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground text-sm">
-                    <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                    Žádné aktivní činnosti
-                  </div>
-                )}
-                <Button variant="outline" size="sm" asChild className="w-full mt-4">
-                  <Link to="/engineering">Zobrazit vše</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 };

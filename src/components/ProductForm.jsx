@@ -103,7 +103,7 @@ const ProductForm = () => {
       supabase
         .from('realizace_orders')
         .select('id, realizace_id, order_number, commercial_status, total_amount, items, item_links')
-        .contains('item_links', [{ catalog_item_id: productId }])
+        .filter('item_links', 'cs', JSON.stringify([{ catalog_item_id: productId }]))
         .order('created_at', { ascending: false }),
     ]);
 
@@ -266,19 +266,19 @@ const ProductForm = () => {
     }));
   };
 
-  const renderProductFieldInput = (field) => {
+  const renderProductFieldInput = (field, inputId) => {
     const value = form.metadata?.[field.field_key] ?? '';
     const disabled = saving || !canEdit;
 
     if (field.field_type === 'textarea') {
-      return <Textarea value={value} onChange={(event) => updateMetadata(field.field_key, event.target.value)} disabled={disabled} placeholder={field.ai_hint || undefined} />;
+      return <Textarea id={inputId} value={value} onChange={(event) => updateMetadata(field.field_key, event.target.value)} disabled={disabled} placeholder={field.ai_hint || undefined} />;
     }
 
     if (field.field_type === 'boolean') {
       return (
         <div className="flex h-10 items-center justify-between rounded-md border px-3">
           <span className="text-sm text-muted-foreground">{value ? 'Ano' : 'Ne'}</span>
-          <Switch checked={Boolean(value)} onCheckedChange={(checked) => updateMetadata(field.field_key, checked)} disabled={disabled} />
+          <Switch id={inputId} checked={Boolean(value)} onCheckedChange={(checked) => updateMetadata(field.field_key, checked)} disabled={disabled} />
         </div>
       );
     }
@@ -287,7 +287,7 @@ const ProductForm = () => {
       const options = Array.isArray(field.options) ? field.options : [];
       return (
         <Select value={String(value || '')} onValueChange={(nextValue) => updateMetadata(field.field_key, nextValue)} disabled={disabled}>
-          <SelectTrigger>
+          <SelectTrigger id={inputId}>
             <SelectValue placeholder="Vyberte hodnotu" />
           </SelectTrigger>
           <SelectContent>
@@ -304,6 +304,7 @@ const ProductForm = () => {
     return (
       <div className="flex gap-2">
         <Input
+          id={inputId}
           type={field.field_type === 'number' ? 'number' : field.field_type === 'date' ? 'date' : 'text'}
           value={value}
           onChange={(event) => updateMetadata(field.field_key, field.field_type === 'number' ? normalizeNumber(event.target.value) : event.target.value)}
@@ -471,12 +472,13 @@ const ProductForm = () => {
               </CardHeader>
               <CardContent className="grid gap-4 p-5 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Nazev</Label>
-                  <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={loading || saving || !canEdit} />
+                  <Label htmlFor="product-name">Nazev</Label>
+                  <Input id="product-name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Unikatni kod produktu</Label>
+                  <Label htmlFor="product-sku">Unikatni kod produktu</Label>
                   <Input
+                    id="product-sku"
                     value={form.sku || form.code || ''}
                     onChange={(event) => setForm({ ...form, sku: event.target.value.toUpperCase(), code: event.target.value.toUpperCase() })}
                     disabled={loading || saving || !canEdit}
@@ -486,9 +488,9 @@ const ProductForm = () => {
                   <p className="text-xs text-muted-foreground">Kod musi byt jedinecny. Pouziva se v nabidkach, objednavkach a historii.</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Typ</Label>
+                  <Label htmlFor="product-type">Typ</Label>
                   <Select value={form.product_type} onValueChange={(value) => setForm({ ...form, product_type: value })} disabled={loading || saving || !canEdit}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="product-type"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="service">Sluzba</SelectItem>
                       <SelectItem value="manufactured">Vyrobek / sklad</SelectItem>
@@ -496,40 +498,40 @@ const ProductForm = () => {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Kategorie</Label>
-                  <Input value={form.category || ''} onChange={(event) => setForm({ ...form, category: event.target.value })} disabled={loading || saving || !canEdit} />
+                  <Label htmlFor="product-category">Kategorie</Label>
+                  <Input id="product-category" value={form.category || ''} onChange={(event) => setForm({ ...form, category: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label>MJ</Label>
-                  <Input value={form.unit || ''} onChange={(event) => setForm({ ...form, unit: event.target.value })} disabled={loading || saving || !canEdit} />
+                  <Label htmlFor="product-unit">MJ</Label>
+                  <Input id="product-unit" value={form.unit || ''} onChange={(event) => setForm({ ...form, unit: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Mena</Label>
-                  <Input value={form.currency || 'CZK'} onChange={(event) => setForm({ ...form, currency: event.target.value.toUpperCase() })} disabled={loading || saving || !canEdit} />
+                  <Label htmlFor="product-currency">Mena</Label>
+                  <Input id="product-currency" value={form.currency || 'CZK'} onChange={(event) => setForm({ ...form, currency: event.target.value.toUpperCase() })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Prodejni cena</Label>
-                  <Input type="number" value={form.default_unit_price ?? 0} onChange={(event) => setForm({ ...form, default_unit_price: event.target.value })} disabled={loading || saving || !canEdit} />
+                  <Label htmlFor="product-sales-price">Prodejni cena</Label>
+                  <Input id="product-sales-price" type="number" value={form.default_unit_price ?? 0} onChange={(event) => setForm({ ...form, default_unit_price: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Nakupni cena</Label>
-                  <Input type="number" value={form.purchase_price ?? 0} onChange={(event) => setForm({ ...form, purchase_price: event.target.value })} disabled={loading || saving || !canEdit} />
+                  <Label htmlFor="product-purchase-price">Nakupni cena</Label>
+                  <Input id="product-purchase-price" type="number" value={form.purchase_price ?? 0} onChange={(event) => setForm({ ...form, purchase_price: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label>DPH %</Label>
-                  <Input type="number" value={form.default_vat_rate ?? 21} onChange={(event) => setForm({ ...form, default_vat_rate: event.target.value })} disabled={loading || saving || !canEdit} />
+                  <Label htmlFor="product-vat-rate">DPH %</Label>
+                  <Input id="product-vat-rate" type="number" value={form.default_vat_rate ?? 21} onChange={(event) => setForm({ ...form, default_vat_rate: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Platnost od</Label>
-                  <Input type="date" value={form.valid_from || ''} onChange={(event) => setForm({ ...form, valid_from: event.target.value })} disabled={loading || saving || !canEdit || !productSchemaReady} />
+                  <Label htmlFor="product-valid-from">Platnost od</Label>
+                  <Input id="product-valid-from" type="date" value={form.valid_from || ''} onChange={(event) => setForm({ ...form, valid_from: event.target.value })} disabled={loading || saving || !canEdit || !productSchemaReady} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Platnost do</Label>
-                  <Input type="date" value={form.valid_until || ''} onChange={(event) => setForm({ ...form, valid_until: event.target.value })} disabled={loading || saving || !canEdit || !productSchemaReady} />
+                  <Label htmlFor="product-valid-until">Platnost do</Label>
+                  <Input id="product-valid-until" type="date" value={form.valid_until || ''} onChange={(event) => setForm({ ...form, valid_until: event.target.value })} disabled={loading || saving || !canEdit || !productSchemaReady} />
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label>Popis</Label>
-                  <Textarea value={form.description || ''} onChange={(event) => setForm({ ...form, description: event.target.value })} disabled={loading || saving || !canEdit} />
+                  <Label htmlFor="product-description">Popis</Label>
+                  <Textarea id="product-description" value={form.description || ''} onChange={(event) => setForm({ ...form, description: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
               </CardContent>
             </Card>
@@ -547,8 +549,8 @@ const ProductForm = () => {
                       <div className="grid gap-4 md:grid-cols-2">
                         {fields.map((field) => (
                           <div key={field.field_key} className="space-y-2">
-                            <Label>{field.label}{field.is_required && <span className="ml-1 text-rose-600">*</span>}</Label>
-                            {renderProductFieldInput(field)}
+                            <Label htmlFor={`product-meta-${field.field_key}`}>{field.label}{field.is_required && <span className="ml-1 text-rose-600">*</span>}</Label>
+                            {renderProductFieldInput(field, `product-meta-${field.field_key}`)}
                             {field.ai_hint && <p className="text-[11px] text-muted-foreground">{field.ai_hint}</p>}
                           </div>
                         ))}
@@ -626,8 +628,9 @@ const ProductForm = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Soubor datasheetu</Label>
+                    <Label htmlFor="product-datasheet-file">Soubor datasheetu</Label>
                     <Input
+                      id="product-datasheet-file"
                       type="file"
                       accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
                       onChange={(event) => setDatasheetFile(event.target.files?.[0] || null)}
@@ -641,7 +644,7 @@ const ProductForm = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Uloziste</Label>
+                    <Label htmlFor="product-datasheet-storage">Uloziste</Label>
                     <Select
                       value={form.datasheet_storage_connection_id || 'manual-sharepoint'}
                       onValueChange={(value) => {
@@ -654,7 +657,7 @@ const ProductForm = () => {
                       }}
                       disabled={loading || saving || !canEdit || !productSchemaReady}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id="product-datasheet-storage">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -669,8 +672,9 @@ const ProductForm = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Nazev souboru</Label>
+                    <Label htmlFor="product-datasheet-file-name">Nazev souboru</Label>
                     <Input
+                      id="product-datasheet-file-name"
                       value={form.datasheet_file_name || ''}
                       onChange={(event) => setForm({ ...form, datasheet_file_name: event.target.value })}
                       disabled={loading || saving || !canEdit || !productSchemaReady}
@@ -678,24 +682,26 @@ const ProductForm = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Odkaz na datasheet</Label>
+                    <Label htmlFor="product-datasheet-url">Odkaz na datasheet</Label>
                     <div className="flex gap-2">
                       <Input
+                        id="product-datasheet-url"
                         value={form.datasheet_external_web_url || ''}
                         onChange={(event) => setForm({ ...form, datasheet_external_web_url: event.target.value })}
                         disabled={loading || saving || !canEdit || !productSchemaReady}
                         placeholder="https://..."
                       />
                       {form.datasheet_external_web_url && (
-                        <Button type="button" variant="outline" size="icon" onClick={() => window.open(form.datasheet_external_web_url, '_blank', 'noopener,noreferrer')}>
+                        <Button type="button" variant="outline" size="icon" aria-label="Otevrit datasheet" onClick={() => window.open(form.datasheet_external_web_url, '_blank', 'noopener,noreferrer')}>
                           <ExternalLink className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Externi ID souboru</Label>
+                    <Label htmlFor="product-datasheet-external-id">Externi ID souboru</Label>
                     <Input
+                      id="product-datasheet-external-id"
                       value={form.datasheet_external_file_id || ''}
                       onChange={(event) => setForm({ ...form, datasheet_external_file_id: event.target.value })}
                       disabled={loading || saving || !canEdit || !productSchemaReady}
@@ -703,8 +709,9 @@ const ProductForm = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>URL nahledu / obrazku</Label>
+                    <Label htmlFor="product-preview-url">URL nahledu / obrazku</Label>
                     <Input
+                      id="product-preview-url"
                       value={form.datasheet_preview_image_url || form.image_url || ''}
                       onChange={(event) => setForm({ ...form, datasheet_preview_image_url: event.target.value, image_url: event.target.value })}
                       disabled={loading || saving || !canEdit || !productSchemaReady}
@@ -738,19 +745,19 @@ const ProductForm = () => {
                 {form.product_type === 'manufactured' ? (
                   <>
                     <div className="space-y-2">
-                      <Label>Minimalni sklad</Label>
-                      <Input type="number" value={form.stock_min_qty ?? ''} onChange={(event) => setForm({ ...form, stock_min_qty: event.target.value })} disabled={loading || saving || !canEdit} />
+                      <Label htmlFor="product-stock-min-qty">Minimalni sklad</Label>
+                      <Input id="product-stock-min-qty" type="number" value={form.stock_min_qty ?? ''} onChange={(event) => setForm({ ...form, stock_min_qty: event.target.value })} disabled={loading || saving || !canEdit} />
                     </div>
                     <div className="space-y-2">
-                      <Label>Skladova lokace</Label>
-                      <Input value={form.warehouse_location || ''} onChange={(event) => setForm({ ...form, warehouse_location: event.target.value })} disabled={loading || saving || !canEdit} />
+                      <Label htmlFor="product-warehouse-location">Skladova lokace</Label>
+                      <Input id="product-warehouse-location" value={form.warehouse_location || ''} onChange={(event) => setForm({ ...form, warehouse_location: event.target.value })} disabled={loading || saving || !canEdit} />
                     </div>
                     <div className="flex items-center justify-between rounded-md border p-3">
                       <div>
-                        <Label>Povolit minusovy sklad</Label>
+                        <Label htmlFor="product-allow-backorder">Povolit minusovy sklad</Label>
                         <p className="text-xs text-muted-foreground">Pouzije se pro budouci kontrolu objednavek a rezervaci.</p>
                       </div>
-                      <Switch checked={Boolean(form.allow_backorder)} onCheckedChange={(checked) => setForm({ ...form, allow_backorder: checked })} disabled={loading || saving || !canEdit} />
+                      <Switch id="product-allow-backorder" checked={Boolean(form.allow_backorder)} onCheckedChange={(checked) => setForm({ ...form, allow_backorder: checked })} disabled={loading || saving || !canEdit} />
                     </div>
                   </>
                 ) : (
@@ -766,10 +773,10 @@ const ProductForm = () => {
               <CardContent className="p-5">
                 <div className="flex items-center justify-between rounded-md border p-3">
                   <div>
-                    <Label>Aktivni produkt</Label>
+                    <Label htmlFor="product-is-active">Aktivni produkt</Label>
                     <p className="text-xs text-muted-foreground">Neaktivni produkty zustanou v historii, ale nenabizi se pro nove polozky.</p>
                   </div>
-                  <Switch checked={Boolean(form.is_active)} onCheckedChange={(checked) => setForm({ ...form, is_active: checked })} disabled={loading || saving || !canEdit} />
+                  <Switch id="product-is-active" checked={Boolean(form.is_active)} onCheckedChange={(checked) => setForm({ ...form, is_active: checked })} disabled={loading || saving || !canEdit} />
                 </div>
               </CardContent>
             </Card>

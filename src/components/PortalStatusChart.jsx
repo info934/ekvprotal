@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
-import { Briefcase, Wrench, ListTodo, BarChart } from 'lucide-react';
+import { Briefcase, Wrench, ListTodo } from 'lucide-react';
 
 const projectStatusConfig = {
   nabidka: { label: 'Nabídka', color: '#f59e0b' },
@@ -14,10 +14,10 @@ const projectStatusConfig = {
 const engineeringStatusConfig = {
   new: { label: 'Nové', color: '#3b82f6' },
   in_progress: { label: 'V řešení', color: '#f97316' },
-  waiting_for_input: { label: 'Čeká na podklady', color: '#facc15' }, // Added color for consistency
-  waiting_for_approval: { label: 'Čeká na schválení', color: '#a855f7' }, // Added with purple color
+  waiting_for_input: { label: 'Čeká na podklady', color: '#facc15' },
+  waiting_for_approval: { label: 'Čeká na schválení', color: '#a855f7' },
   done: { label: 'Hotovo', color: '#22c55e' },
-  rejected: { label: 'Zamítnuto', color: '#ef4444' }, // Added color for consistency
+  rejected: { label: 'Zamítnuto', color: '#ef4444' },
 };
 
 const taskStatusConfig = {
@@ -29,7 +29,7 @@ const taskStatusConfig = {
 const DonutChart = ({ data, total }) => {
   let accumulatedPercentage = 0;
   return (
-    <div className="relative w-36 h-36">
+    <div className="relative h-32 w-32">
       <svg viewBox="0 0 36 36" className="w-full h-full">
         <motion.circle
           cx="18" cy="18" r="15.915"
@@ -57,7 +57,7 @@ const DonutChart = ({ data, total }) => {
         })}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="text-3xl font-bold text-slate-800">{total}</span>
+        <span className="text-2xl font-semibold text-slate-950">{total}</span>
         <span className="text-xs text-muted-foreground">Celkem</span>
       </div>
     </div>
@@ -69,8 +69,12 @@ const ChartSection = ({ title, icon: Icon, data, total }) => {
     if (total === 0) return null;
 
     return (
-        <div className="flex flex-col items-center gap-4 bg-white/60 p-4 rounded-lg">
-            <h3 className="text-lg font-semibold text-slate-700 flex items-center gap-2"><Icon className="w-5 h-5"/>{title}</h3>
+        <div className="rounded-md border border-slate-200 bg-white p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Icon className="h-4 w-4 text-primary"/>{title}</h3>
+              <span className="text-xs font-medium text-slate-500">{total} celkem</span>
+            </div>
+            <div className="flex flex-col items-center gap-4">
             <DonutChart data={data} total={total} />
             <div className="w-full space-y-2 text-sm">
                 {data.map((item, index) => (
@@ -82,6 +86,7 @@ const ChartSection = ({ title, icon: Icon, data, total }) => {
                         <span className="font-bold">{item.count}</span>
                     </div>
                 ))}
+            </div>
             </div>
         </div>
     );
@@ -145,19 +150,15 @@ const PortalStatusChart = () => {
   }, []);
 
   if (loading) {
-    return <div className="text-center py-8">Načítání stavových grafů...</div>;
+    return <div className="rounded-md border border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">Načítání stavových grafů...</div>;
   }
 
   return (
     <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass-effect rounded-xl p-6"
+        className="space-y-4"
     >
-        <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800">
-            <BarChart className="w-5 h-5 text-purple-600" />
-            Aktuální stav portálu
-        </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
            <ChartSection title="Projekty" icon={Briefcase} data={chartData.projects} total={totals.projects} />
            <ChartSection title="Inženýring" icon={Wrench} data={chartData.engineering} total={totals.engineering} />

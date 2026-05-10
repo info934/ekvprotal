@@ -4,8 +4,8 @@
 
 @layer base {
   :root {
-    --background: 210 17% 98%;
-    --foreground: 210 11% 15%;
+    --background: 210 30% 98%;
+    --foreground: 215 28% 13%;
     
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
@@ -13,26 +13,32 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
     
-    --primary: 216 98% 52%; /* Bootstrap primary */
+    --primary: 216 98% 52%;
     --primary-foreground: 0 0% 100%;
     
-    --secondary: 210 14% 89%;
+    --secondary: 214 22% 92%;
     --secondary-foreground: 210 11% 15%;
     
-    --muted: 210 16% 93%;
-    --muted-foreground: 210 9% 31%;
+    --muted: 214 28% 94%;
+    --muted-foreground: 215 15% 42%;
     
-    --accent: 210 16% 93%;
+    --accent: 214 28% 94%;
     --accent-foreground: 210 11% 15%;
     
-    --destructive: 0 84% 60%; /* Red */
+    --destructive: 354 70% 54%;
     --destructive-foreground: 210 40% 98%;
     
-    --border: 210 14% 83%;
-    --input: 210 14% 83%;
+    --border: 214 22% 86%;
+    --input: 214 22% 82%;
     --ring: 216 98% 52%;
     
     --radius: 0.375rem;
+    --ekv-success: 152 69% 31%;
+    --ekv-warning: 45 100% 51%;
+    --ekv-danger: 354 70% 54%;
+    --ekv-info: 190 90% 50%;
+    --ekv-surface-subtle: 214 31% 96%;
+    --ekv-sidebar: 210 33% 96%;
   }
 
   .dark {
@@ -84,8 +90,11 @@
     @apply bg-background text-foreground;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     overflow-x: hidden;
-    font-size: 0.95rem;
+    font-size: 0.9375rem;
     line-height: 1.5;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   img,
@@ -106,11 +115,11 @@
   }
 
   .app-page {
-    @apply mx-auto w-full max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8;
+    @apply mx-auto w-full max-w-7xl space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6;
   }
 
   .app-page-wide {
-    @apply mx-auto w-full max-w-none space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8;
+    @apply mx-auto w-full max-w-none space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6;
   }
 
   .crm-panel {
@@ -118,7 +127,7 @@
   }
 
   .crm-panel-header {
-    @apply border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-5;
+    @apply border-b border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-5;
   }
 
   .crm-table-wrap {
@@ -130,19 +139,43 @@
   }
 
   .app-surface {
-    @apply rounded-md border bg-card text-card-foreground shadow-sm;
+    @apply rounded-md border border-slate-200 bg-card text-card-foreground shadow-sm;
   }
 
   .bootstrap-panel {
-    @apply rounded-md border bg-white shadow-sm;
+    @apply rounded-md border border-slate-200 bg-white shadow-sm;
   }
 
   .bootstrap-panel-header {
-    @apply border-b bg-slate-50 px-4 py-3 font-semibold text-slate-900;
+    @apply border-b border-slate-200 bg-slate-50/90 px-4 py-3 font-semibold text-slate-900;
   }
 
   .bootstrap-toolbar {
-    @apply flex flex-wrap items-center gap-2 rounded-md border bg-white p-3 shadow-sm;
+    @apply flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-3 shadow-sm;
+  }
+
+  .bootstrap-muted-panel {
+    @apply rounded-md border border-slate-200 bg-slate-50/70;
+  }
+
+  .bootstrap-page-title {
+    @apply text-2xl font-semibold tracking-tight text-slate-950 sm:text-[1.75rem];
+  }
+
+  .bootstrap-help-text {
+    @apply text-sm leading-5 text-slate-600;
+  }
+
+  .bootstrap-kpi {
+    @apply rounded-md border border-slate-200 bg-white p-4 shadow-sm;
+  }
+
+  .bootstrap-kpi-label {
+    @apply text-xs font-semibold uppercase tracking-normal text-slate-500;
+  }
+
+  .bootstrap-kpi-value {
+    @apply mt-1 text-2xl font-semibold tracking-normal text-slate-950;
   }
 
   .no-scrollbar {
