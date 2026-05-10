@@ -49,7 +49,7 @@ const Card = ({ children, className, ...props }) => <div className={cn("rounded-
 const CardContent = ({ children, className, ...props }) => <div className={cn("p-6 pt-0", className)} {...props}>{children}</div>;
 
 const StatCard = ({ icon: Icon, title, value, subtitle, color = "text-blue-600", bg = "bg-blue-50", className, ...props }) => (
-  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4, shadow: "lg" }} className={cn("bg-white border rounded-xl p-6 transition-all duration-200 shadow-sm", className)} {...props}>
+  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4 }} className={cn("bg-white border rounded-xl p-6 transition-all duration-200 shadow-sm hover:shadow-lg", className)} {...props}>
     <div className="flex items-start justify-between mb-4">
       <div className="space-y-1.5"><h3 className="font-medium text-sm text-muted-foreground">{title}</h3><p className="text-2xl font-bold tracking-tight text-slate-900">{value}</p></div>
       <div className={cn("p-3 rounded-lg", bg, color)}><Icon className="w-5 h-5" /></div>

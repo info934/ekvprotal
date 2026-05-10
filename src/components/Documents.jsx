@@ -157,7 +157,7 @@ const Documents = () => {
           const { error: fallbackError } = await supabase.from('documents').insert(basePayload);
           if (!fallbackError) {
             fetchDocuments();
-            toast({ title: "✅ Dokument úspěšně nahrán!" });
+            toast({ title: "Dokument úspěšně nahrán" });
             return;
           }
         }
@@ -168,7 +168,7 @@ const Documents = () => {
     }
     
     fetchDocuments();
-    toast({ title: "✅ Dokument úspěšně nahrán!" });
+    toast({ title: "Dokument úspěšně nahrán" });
 };
 
   const openAddDocumentDialog = () => {
@@ -213,7 +213,7 @@ const Documents = () => {
         }
       </motion.div>
 
-      <div className="glass-effect rounded-xl p-6">
+      <div className="crm-panel p-4 sm:p-5">
         <div className="mb-6 flex flex-wrap gap-4">
           <div className="relative flex-grow">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -222,12 +222,12 @@ const Documents = () => {
               placeholder="Hledat dokumenty..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+              className="h-10 w-full rounded-md border border-slate-200 bg-white py-2 pl-10 pr-4 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
           </div>
           <div className="flex-grow sm:flex-grow-0">
              <Select value={selectedProject || 'all'} onValueChange={(value) => setSelectedProject(value === 'all' ? undefined : value)}>
-                <SelectTrigger className="w-full sm:w-64 h-full bg-white">
+                <SelectTrigger className="h-10 w-full bg-white sm:w-64">
                     <SelectValue placeholder="Všechny projekty" />
                 </SelectTrigger>
                 <SelectContent>

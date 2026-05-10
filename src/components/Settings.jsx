@@ -20,33 +20,33 @@ import { cn } from '@/lib/utils';
 
 const settingsNav = [
   {
-    label: 'Ucet',
+    label: 'Účet',
     items: [
-      { name: 'Muj profil', description: 'Osobni udaje a zabezpeceni', href: '/settings/profile', icon: User, requiredPermission: 'can_read' },
+      { name: 'Můj profil', description: 'Osobní údaje a zabezpečení', href: '/settings/profile', icon: User, requiredPermission: 'can_read' },
     ],
   },
   {
-    label: 'Pristupy',
+    label: 'Přístupy',
     items: [
-      { name: 'Uzivatele', description: 'Ucty a pristupove role', href: '/settings/users', icon: Users, requiredPermission: 'can_admin' },
-      { name: 'Pristupove role', description: 'Prava uctu k modulum aplikace', href: '/settings/permissions', icon: Key, requiredPermission: 'can_admin' },
+      { name: 'Uživatelé', description: 'Účty a přístupové role', href: '/settings/users', icon: Users, requiredPermission: 'can_admin' },
+      { name: 'Přístupové role', description: 'Práva účtů k modulům aplikace', href: '/settings/permissions', icon: Key, requiredPermission: 'can_admin' },
     ],
   },
   {
     label: 'Konfigurace',
     items: [
-      { name: 'Ciselniky', description: 'Centralni hodnoty pro formulare', href: '/settings/dictionaries', icon: BookOpen, requiredPermission: 'can_admin' },
-      { name: 'Sablony projektu', description: 'Vychozi struktury projektu', href: '/settings/project-templates', icon: FileText, requiredPermission: 'can_admin' },
-      { name: 'Sablony dokumentu', description: 'HTML a DOCX sablony vystupu', href: '/settings/order-templates', icon: ShoppingCart, requiredPermission: 'can_admin' },
-      { name: 'CRM', description: 'Stavy, priority, sablony a cislovani', href: '/settings/crm', icon: Target, requiredPermission: 'can_admin' },
-      { name: 'Uloziste dokumentu', description: 'Supabase, SharePoint nebo Google Drive', href: '/settings/storage', icon: Cloud, requiredPermission: 'can_admin' },
+      { name: 'Číselníky', description: 'Centrální hodnoty pro formuláře', href: '/settings/dictionaries', icon: BookOpen, requiredPermission: 'can_admin' },
+      { name: 'Šablony projektu', description: 'Výchozí struktury projektu', href: '/settings/project-templates', icon: FileText, requiredPermission: 'can_admin' },
+      { name: 'Šablony dokumentů', description: 'HTML a DOCX šablony výstupů', href: '/settings/order-templates', icon: ShoppingCart, requiredPermission: 'can_admin' },
+      { name: 'CRM', description: 'Stavy, priority, šablony a číslování', href: '/settings/crm', icon: Target, requiredPermission: 'can_admin' },
+      { name: 'Úložiště dokumentů', description: 'Supabase, SharePoint nebo Google Drive', href: '/settings/storage', icon: Cloud, requiredPermission: 'can_admin' },
     ],
   },
   {
-    label: 'System',
+    label: 'Systém',
     items: [
-      { name: 'Nastaveni portalu', description: 'Globalni hodnoty aplikace', href: '/settings/portal', icon: SlidersHorizontal, requiredPermission: 'can_admin' },
-      { name: 'Zalohovani a udrzba', description: 'Servisni operace portalu', href: '/settings/backup-maintenance', icon: Database, requiredPermission: 'can_admin' },
+      { name: 'Nastavení portálu', description: 'Globální hodnoty aplikace', href: '/settings/portal', icon: SlidersHorizontal, requiredPermission: 'can_admin' },
+      { name: 'Zálohování a údržba', description: 'Servisní operace portálu', href: '/settings/backup-maintenance', icon: Database, requiredPermission: 'can_admin' },
     ],
   },
 ];
@@ -66,12 +66,12 @@ const Settings = () => {
     <div className="space-y-6">
       <PageHeader
         icon={SettingsIcon}
-        title="Nastaveni"
-        description="Sprava profilu, opravneni, sablon a systemovych nastaveni."
+        title="Nastavení"
+        description="Správa profilu, oprávnění, šablon a systémových nastavení."
       />
       <header className="hidden">
         <SettingsIcon className="w-8 h-8" />
-        <h1 className="text-3xl font-bold">Nastaveni</h1>
+        <h1 className="text-3xl font-bold">Nastavení</h1>
       </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">

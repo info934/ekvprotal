@@ -1,0 +1,790 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, ExternalLink, FileText, Image, Package, Save, UploadCloud } from 'lucide-react';
+import PageHeader from '@/components/ui/page-header';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { supabase } from '@/lib/customSupabaseClient';
+import { uploadProductDatasheet } from '@/lib/documentStorageService';
+
+const emptyProduct = {
+  id: null,
+  sku: '',
+  code: '',
+  name: '',
+  description: '',
+  category: '',
+  unit: 'ks',
+  product_type: 'service',
+  default_unit_price: 0,
+  default_vat_rate: 21,
+  purchase_price: 0,
+  currency: 'CZK',
+  stock_min_qty: '',
+  warehouse_location: '',
+  allow_backorder: false,
+  valid_from: '',
+  valid_until: '',
+  datasheet_storage_provider: 'sharepoint',
+  datasheet_storage_connection_id: '',
+  datasheet_external_file_id: '',
+  datasheet_external_web_url: '',
+  datasheet_file_name: '',
+  datasheet_preview_image_url: '',
+  datasheet_storage_metadata: {},
+  image_url: '',
+  is_active: true,
+  metadata: {},
+};
+
+const normalizeNumber = (value) => {
+  if (value === '' || value === null || value === undefined) return null;
+  return Number(String(value).replace(',', '.')) || 0;
+};
+
+const groupProductFields = (fields = []) => fields.reduce((acc, field) => {
+  const group = field.field_group || 'Technicke parametry';
+  return { ...acc, [group]: [...(acc[group] || []), field] };
+}, {});
+
+const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
+  style: 'currency',
+  currency: 'CZK',
+  maximumFractionDigits: 0,
+}).format(Number(value || 0));
+
+const ProductForm = () => {
+  const { productId } = useParams();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { user, hasPermission } = useAuth();
+  const canEdit = hasPermission('crm', 'can_edit') || hasPermission('realizace', 'can_edit') || hasPermission('settings', 'can_admin');
+  const isEditing = Boolean(productId);
+
+  const [form, setForm] = useState(emptyProduct);
+  const [productFields, setProductFields] = useState([]);
+  const [usageHistory, setUsageHistory] = useState([]);
+  const [storageConnections, setStorageConnections] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [datasheetFile, setDatasheetFile] = useState(null);
+  const [productSchemaReady, setProductSchemaReady] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [warning, setWarning] = useState('');
+
+  const groupedProductFields = useMemo(() => groupProductFields(productFields), [productFields]);
+
+  const fetchUsageHistory = useCallback(async () => {
+    if (!productId) {
+      setUsageHistory([]);
+      return;
+    }
+
+    setHistoryLoading(true);
+    const [opportunityItemsRes, documentItemsRes, realizaceOrdersRes] = await Promise.all([
+      supabase
+        .from('crm_opportunity_items')
+        .select('id, opportunity_id, code, name, quantity, unit, unit_price, line_total, opportunity:opportunity_id(id, number, title, subject:subject_id(id, name))')
+        .eq('catalog_item_id', productId)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('crm_commercial_document_items')
+        .select('id, document_id, code, name, quantity, unit, unit_price, line_total, document:document_id(id, number, title, type, subject:subject_id(id, name), opportunity:opportunity_id(id, number, title))')
+        .eq('catalog_item_id', productId)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('realizace_orders')
+        .select('id, realizace_id, order_number, commercial_status, total_amount, items, item_links')
+        .filter('item_links', 'cs', JSON.stringify([{ catalog_item_id: productId }]))
+        .order('created_at', { ascending: false }),
+    ]);
+
+    const opportunityRows = (opportunityItemsRes.data || []).map((item) => ({
+      id: `op-${item.id}`,
+      type: 'Obchodni pripad',
+      number: item.opportunity?.number || 'OP',
+      title: item.opportunity?.title || item.name,
+      subject: item.opportunity?.subject?.name || '-',
+      quantity: item.quantity,
+      unit: item.unit,
+      total: item.line_total,
+      href: item.opportunity_id ? `/crm/${item.opportunity_id}` : '/crm',
+    }));
+
+    const documentRows = (documentItemsRes.data || []).map((item) => ({
+      id: `doc-${item.id}`,
+      type: item.document?.type === 'order' ? 'Objednavka' : 'Nabidka',
+      number: item.document?.number || '-',
+      title: item.document?.title || item.name,
+      subject: item.document?.subject?.name || item.document?.opportunity?.title || '-',
+      quantity: item.quantity,
+      unit: item.unit,
+      total: item.line_total,
+      href: item.document?.type === 'order' ? `/crm/orders/${item.document_id}` : `/crm/offers/${item.document_id}`,
+    }));
+
+    const realizaceRows = (realizaceOrdersRes.data || []).flatMap((order) => {
+      const links = Array.isArray(order.item_links) ? order.item_links : [];
+      const items = Array.isArray(order.items) ? order.items : [];
+
+      return links
+        .filter((link) => link.catalog_item_id === productId)
+        .map((link, rowIndex) => {
+          const item = items[Number(link.index)] || {};
+          return {
+            id: `realizace-${order.id}-${rowIndex}`,
+            type: 'Realizace',
+            number: order.order_number || 'Realizace',
+            title: item.description || order.order_number || 'Polozka realizace',
+            subject: order.commercial_status === 'offer' ? 'Nabidka v realizaci' : 'Objednavka v realizaci',
+            quantity: item.quantity,
+            unit: item.unit,
+            total: item.total_price || order.total_amount,
+            href: order.realizace_id ? `/realizace/${order.realizace_id}#orders` : '/realizace',
+          };
+        });
+    });
+
+    setUsageHistory([...opportunityRows, ...documentRows, ...realizaceRows]);
+    setHistoryLoading(false);
+  }, [productId]);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setWarning('');
+
+    const { data: fieldData } = await supabase
+      .from('product_field_definitions')
+      .select('field_key, label, field_type, field_group, unit, options, ai_hint, is_required, sort_order')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+    setProductFields(fieldData || []);
+
+    const { data: storageData } = await supabase
+      .from('document_storage_connections')
+      .select('id, provider, name, status, is_default')
+      .in('provider', ['sharepoint', 'google_drive', 'supabase'])
+      .order('is_default', { ascending: false });
+    setStorageConnections(storageData || []);
+    fetchUsageHistory();
+
+    if (!isEditing) {
+      const { error: schemaCheckError } = await supabase
+        .from('commercial_item_catalog')
+        .select('id, sku')
+        .limit(1);
+      if (schemaCheckError) {
+        setProductSchemaReady(false);
+        setWarning('Online databaze jeste nema produktovou migraci. Novy produkt se ulozi jen do puvodniho katalogu bez skladu a datasheet poli.');
+      } else {
+        setProductSchemaReady(true);
+      }
+      setForm(emptyProduct);
+      setLoading(false);
+      return;
+    }
+
+    let { data, error } = await supabase
+      .from('commercial_item_catalog')
+      .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, currency, stock_min_qty, warehouse_location, allow_backorder, valid_from, valid_until, datasheet_storage_provider, datasheet_storage_connection_id, datasheet_external_file_id, datasheet_external_web_url, datasheet_file_name, datasheet_preview_image_url, datasheet_storage_metadata, image_url, is_active, archived_at, metadata')
+      .eq('id', productId)
+      .single();
+
+    if (error) {
+      const fallback = await supabase
+        .from('commercial_item_catalog')
+        .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active, metadata')
+        .eq('id', productId)
+        .single();
+
+      if (fallback.error) {
+        toast({ title: 'Produkt se nepodarilo nacist', description: fallback.error.message, variant: 'destructive' });
+        setLoading(false);
+        return;
+      }
+
+      data = {
+        ...fallback.data,
+        sku: fallback.data.code || '',
+        product_type: 'service',
+        purchase_price: 0,
+        currency: 'CZK',
+        stock_min_qty: '',
+        warehouse_location: '',
+        allow_backorder: false,
+        valid_from: '',
+        valid_until: '',
+        datasheet_storage_provider: 'sharepoint',
+        datasheet_storage_connection_id: '',
+        datasheet_external_file_id: '',
+        datasheet_external_web_url: '',
+        datasheet_file_name: '',
+        datasheet_preview_image_url: '',
+        datasheet_storage_metadata: {},
+        image_url: '',
+        archived_at: null,
+      };
+      setProductSchemaReady(false);
+      setWarning('Online databaze jeste nema produktovou migraci. Ulozi se jen zakladni katalogova pole.');
+    } else {
+      setProductSchemaReady(true);
+    }
+
+    setForm({
+      ...emptyProduct,
+      ...data,
+      metadata: data.metadata || {},
+      valid_from: data.valid_from || '',
+      valid_until: data.valid_until || '',
+      datasheet_storage_connection_id: data.datasheet_storage_connection_id || '',
+      datasheet_storage_metadata: data.datasheet_storage_metadata || {},
+      stock_min_qty: data.stock_min_qty ?? '',
+      warehouse_location: data.warehouse_location || '',
+    });
+    setLoading(false);
+  }, [fetchUsageHistory, isEditing, productId, toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const updateMetadata = (fieldKey, value) => {
+    setForm((current) => ({
+      ...current,
+      metadata: {
+        ...(current.metadata || {}),
+        [fieldKey]: value,
+      },
+    }));
+  };
+
+  const renderProductFieldInput = (field, inputId) => {
+    const value = form.metadata?.[field.field_key] ?? '';
+    const disabled = saving || !canEdit;
+
+    if (field.field_type === 'textarea') {
+      return <Textarea id={inputId} value={value} onChange={(event) => updateMetadata(field.field_key, event.target.value)} disabled={disabled} placeholder={field.ai_hint || undefined} />;
+    }
+
+    if (field.field_type === 'boolean') {
+      return (
+        <div className="flex h-10 items-center justify-between rounded-md border px-3">
+          <span className="text-sm text-muted-foreground">{value ? 'Ano' : 'Ne'}</span>
+          <Switch id={inputId} checked={Boolean(value)} onCheckedChange={(checked) => updateMetadata(field.field_key, checked)} disabled={disabled} />
+        </div>
+      );
+    }
+
+    if (field.field_type === 'select') {
+      const options = Array.isArray(field.options) ? field.options : [];
+      return (
+        <Select value={String(value || '')} onValueChange={(nextValue) => updateMetadata(field.field_key, nextValue)} disabled={disabled}>
+          <SelectTrigger id={inputId}>
+            <SelectValue placeholder="Vyberte hodnotu" />
+          </SelectTrigger>
+          <SelectContent>
+            {options.length === 0 ? (
+              <SelectItem value="__empty" disabled>Bez definovanych moznosti</SelectItem>
+            ) : options.map((option) => (
+              <SelectItem key={option} value={option}>{option}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    }
+
+    return (
+      <div className="flex gap-2">
+        <Input
+          id={inputId}
+          type={field.field_type === 'number' ? 'number' : field.field_type === 'date' ? 'date' : 'text'}
+          value={value}
+          onChange={(event) => updateMetadata(field.field_key, field.field_type === 'number' ? normalizeNumber(event.target.value) : event.target.value)}
+          disabled={disabled}
+          placeholder={field.ai_hint || undefined}
+        />
+        {field.unit && <div className="flex min-w-12 items-center justify-center rounded-md border bg-slate-50 px-2 text-sm text-muted-foreground">{field.unit}</div>}
+      </div>
+    );
+  };
+
+  const uploadDatasheetForProduct = async (savedProduct) => {
+    if (!datasheetFile || !productSchemaReady) return null;
+
+    const upload = await uploadProductDatasheet({
+      file: datasheetFile,
+      product: {
+        id: savedProduct.id,
+        sku: savedProduct.sku || form.sku,
+        code: savedProduct.code || form.code,
+        name: savedProduct.name || form.name,
+      },
+      connectionId: form.datasheet_storage_connection_id || null,
+    });
+
+    const { error } = await supabase
+      .from('commercial_item_catalog')
+      .update(upload.storageFields)
+      .eq('id', savedProduct.id);
+
+    if (error) throw error;
+    return upload;
+  };
+
+  const saveProduct = async () => {
+    if (!canEdit) return;
+    if (!form.name.trim()) {
+      toast({ title: 'Doplnte nazev produktu', variant: 'destructive' });
+      return;
+    }
+    const normalizedCode = (form.sku || form.code || '').trim();
+    if (!normalizedCode) {
+      toast({ title: 'Doplnte unikatni kod produktu', variant: 'destructive' });
+      return;
+    }
+    if (form.valid_from && form.valid_until && form.valid_from > form.valid_until) {
+      toast({ title: 'Platnost od nemuze byt pozdeji nez platnost do', variant: 'destructive' });
+      return;
+    }
+
+    setSaving(true);
+    const payload = {
+      sku: normalizedCode,
+      code: normalizedCode,
+      name: form.name.trim(),
+      description: form.description || null,
+      category: form.category || null,
+      unit: form.unit || 'ks',
+      product_type: form.product_type || 'service',
+      default_unit_price: normalizeNumber(form.default_unit_price) || 0,
+      default_vat_rate: normalizeNumber(form.default_vat_rate) || 0,
+      purchase_price: normalizeNumber(form.purchase_price) || 0,
+      currency: form.currency || 'CZK',
+      stock_min_qty: form.product_type === 'manufactured' ? normalizeNumber(form.stock_min_qty) : null,
+      warehouse_location: form.product_type === 'manufactured' ? (form.warehouse_location || null) : null,
+      allow_backorder: Boolean(form.allow_backorder),
+      valid_from: form.valid_from || null,
+      valid_until: form.valid_until || null,
+      datasheet_storage_provider: form.datasheet_storage_provider || 'sharepoint',
+      datasheet_storage_connection_id: form.datasheet_storage_connection_id || null,
+      datasheet_external_file_id: form.datasheet_external_file_id || null,
+      datasheet_external_web_url: form.datasheet_external_web_url || null,
+      datasheet_file_name: form.datasheet_file_name || null,
+      datasheet_preview_image_url: form.datasheet_preview_image_url || null,
+      datasheet_storage_metadata: form.datasheet_storage_metadata || {},
+      image_url: form.image_url || form.datasheet_preview_image_url || null,
+      is_active: Boolean(form.is_active),
+      metadata: form.metadata || {},
+      archived_at: form.is_active ? null : (form.archived_at || new Date().toISOString()),
+      updated_by: user?.id || null,
+      source: 'manual',
+    };
+
+    const requestPayload = productSchemaReady ? payload : {
+      code: payload.code,
+      name: payload.name,
+      description: payload.description,
+      category: payload.category,
+      unit: payload.unit,
+      default_unit_price: payload.default_unit_price,
+      default_vat_rate: payload.default_vat_rate,
+      metadata: payload.metadata,
+      is_active: payload.is_active,
+      source: 'manual',
+    };
+
+    const returnColumns = productSchemaReady ? 'id, sku, code, name' : 'id, code, name';
+    const request = isEditing
+      ? supabase.from('commercial_item_catalog').update(requestPayload).eq('id', productId).select(returnColumns).single()
+      : supabase.from('commercial_item_catalog').insert(requestPayload).select(returnColumns).single();
+
+    const { data, error } = await request;
+
+    if (error) {
+      setSaving(false);
+      toast({ title: 'Produkt se nepodarilo ulozit', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const upload = await uploadDatasheetForProduct(data);
+      if (upload) {
+        toast({ title: 'Produkt ulozen a datasheet nahran', description: upload.provider === 'sharepoint' ? 'Soubor byl propojen pres SharePoint uloziste.' : 'Soubor byl ulozen do nakonfigurovaneho uloziste.' });
+      } else {
+        toast({ title: 'Produkt ulozen' });
+      }
+      setDatasheetFile(null);
+    } catch (uploadError) {
+      toast({
+        title: 'Produkt ulozen, ale datasheet se nepodarilo nahrat',
+        description: uploadError.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
+    }
+
+    navigate(`/products/${data.id}/edit`);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6">
+      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5">
+        <PageHeader
+          icon={Package}
+          title={isEditing ? 'Upravit produkt' : 'Novy produkt'}
+          description={isEditing ? (form.sku || form.code || form.name || 'Produktovy katalog') : 'Zalozeni katalogove polozky pro CRM, nabidky, objednavky a realizace.'}
+          actions={(
+            <>
+              <Button variant="outline" onClick={() => navigate('/products')}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Zpet na produkty
+              </Button>
+              <Button onClick={saveProduct} disabled={loading || saving || !canEdit}>
+                <Save className="mr-2 h-4 w-4" />
+                {saving ? 'Ukladam...' : 'Ulozit produkt'}
+              </Button>
+            </>
+          )}
+        />
+
+        {warning && (
+          <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+            <AlertTitle>Omezene ulozeni</AlertTitle>
+            <AlertDescription>{warning}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-5">
+            <Card>
+              <CardHeader className="border-b bg-white">
+                <CardTitle>Zakladni udaje</CardTitle>
+                <CardDescription>Identifikace produktu a prodejni parametry.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 p-5 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="product-name">Nazev</Label>
+                  <Input id="product-name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={loading || saving || !canEdit} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-sku">Unikatni kod produktu</Label>
+                  <Input
+                    id="product-sku"
+                    value={form.sku || form.code || ''}
+                    onChange={(event) => setForm({ ...form, sku: event.target.value.toUpperCase(), code: event.target.value.toUpperCase() })}
+                    disabled={loading || saving || !canEdit}
+                    className="font-mono"
+                    placeholder="NAPR. FVEPANEL-001"
+                  />
+                  <p className="text-xs text-muted-foreground">Kod musi byt jedinecny. Pouziva se v nabidkach, objednavkach a historii.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-type">Typ</Label>
+                  <Select value={form.product_type} onValueChange={(value) => setForm({ ...form, product_type: value })} disabled={loading || saving || !canEdit}>
+                    <SelectTrigger id="product-type"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="service">Sluzba</SelectItem>
+                      <SelectItem value="manufactured">Vyrobek / sklad</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-category">Kategorie</Label>
+                  <Input id="product-category" value={form.category || ''} onChange={(event) => setForm({ ...form, category: event.target.value })} disabled={loading || saving || !canEdit} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-unit">MJ</Label>
+                  <Input id="product-unit" value={form.unit || ''} onChange={(event) => setForm({ ...form, unit: event.target.value })} disabled={loading || saving || !canEdit} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-currency">Mena</Label>
+                  <Input id="product-currency" value={form.currency || 'CZK'} onChange={(event) => setForm({ ...form, currency: event.target.value.toUpperCase() })} disabled={loading || saving || !canEdit} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-sales-price">Prodejni cena</Label>
+                  <Input id="product-sales-price" type="number" value={form.default_unit_price ?? 0} onChange={(event) => setForm({ ...form, default_unit_price: event.target.value })} disabled={loading || saving || !canEdit} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-purchase-price">Nakupni cena</Label>
+                  <Input id="product-purchase-price" type="number" value={form.purchase_price ?? 0} onChange={(event) => setForm({ ...form, purchase_price: event.target.value })} disabled={loading || saving || !canEdit} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-vat-rate">DPH %</Label>
+                  <Input id="product-vat-rate" type="number" value={form.default_vat_rate ?? 21} onChange={(event) => setForm({ ...form, default_vat_rate: event.target.value })} disabled={loading || saving || !canEdit} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-valid-from">Platnost od</Label>
+                  <Input id="product-valid-from" type="date" value={form.valid_from || ''} onChange={(event) => setForm({ ...form, valid_from: event.target.value })} disabled={loading || saving || !canEdit || !productSchemaReady} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-valid-until">Platnost do</Label>
+                  <Input id="product-valid-until" type="date" value={form.valid_until || ''} onChange={(event) => setForm({ ...form, valid_until: event.target.value })} disabled={loading || saving || !canEdit || !productSchemaReady} />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="product-description">Popis</Label>
+                  <Textarea id="product-description" value={form.description || ''} onChange={(event) => setForm({ ...form, description: event.target.value })} disabled={loading || saving || !canEdit} />
+                </div>
+              </CardContent>
+            </Card>
+
+            {Object.keys(groupedProductFields).length > 0 && (
+              <Card>
+                <CardHeader className="border-b bg-white">
+                  <CardTitle>Volitelna produktova pole</CardTitle>
+                  <CardDescription>Pole definovana v nastaveni CRM. Pozdeji je bude mozne predvyplnit z datasheetu pomoci AI.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 p-5">
+                  {Object.entries(groupedProductFields).map(([groupName, fields]) => (
+                    <div key={groupName} className="space-y-3 rounded-lg border bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{groupName}</div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {fields.map((field) => (
+                          <div key={field.field_key} className="space-y-2">
+                            <Label htmlFor={`product-meta-${field.field_key}`}>{field.label}{field.is_required && <span className="ml-1 text-rose-600">*</span>}</Label>
+                            {renderProductFieldInput(field, `product-meta-${field.field_key}`)}
+                            {field.ai_hint && <p className="text-[11px] text-muted-foreground">{field.ai_hint}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          <div className="space-y-5">
+            {isEditing && (
+              <Card>
+                <CardHeader className="border-b bg-white">
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Historie pouziti
+                  </CardTitle>
+                  <CardDescription>Kde byl produkt pouzit v CRM a v realizacnich objednavkach.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {historyLoading ? (
+                    <div className="p-5 text-sm text-muted-foreground">Nacitam historii...</div>
+                  ) : usageHistory.length === 0 ? (
+                    <div className="p-5 text-sm text-muted-foreground">Produkt zatim neni pouzit v CRM ani v realizacich.</div>
+                  ) : (
+                    <div className="divide-y">
+                      {usageHistory.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => navigate(item.href)}
+                          className="grid w-full gap-2 px-5 py-3 text-left text-sm transition-colors hover:bg-slate-50"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-semibold text-slate-950">{item.number}</span>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{item.type}</span>
+                          </div>
+                          <div className="line-clamp-1 text-muted-foreground">{item.title}</div>
+                          <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                            <span>{item.subject}</span>
+                            <span>{Number(item.quantity || 0)} {item.unit || 'ks'} / {formatCurrency(item.total)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {form.product_type === 'manufactured' && (
+              <Card>
+                <CardHeader className="border-b bg-white">
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Datasheet
+                  </CardTitle>
+                  <CardDescription>Pripraveno pro SharePoint nebo jine externi uloziste. Upload se aktivuje po finalni konfiguraci storage.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 p-5">
+                  <div className="rounded-lg border border-dashed bg-slate-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                        <UploadCloud className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-slate-950">Upload bude napojen na externi uloziste</div>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Vyberte PDF nebo obrazek datasheetu. Po ulozeni produktu se soubor nahraje pres nakonfigurovane uloziste a ulozi se vazba na produkt.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="product-datasheet-file">Soubor datasheetu</Label>
+                    <Input
+                      id="product-datasheet-file"
+                      type="file"
+                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                      onChange={(event) => setDatasheetFile(event.target.files?.[0] || null)}
+                      disabled={loading || saving || !canEdit || !productSchemaReady}
+                    />
+                    {datasheetFile && (
+                      <p className="text-xs text-muted-foreground">
+                        Pripraveno k nahrani: {datasheetFile.name}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="product-datasheet-storage">Uloziste</Label>
+                    <Select
+                      value={form.datasheet_storage_connection_id || 'manual-sharepoint'}
+                      onValueChange={(value) => {
+                        const connection = storageConnections.find((item) => item.id === value);
+                        setForm({
+                          ...form,
+                          datasheet_storage_connection_id: value === 'manual-sharepoint' ? '' : value,
+                          datasheet_storage_provider: connection?.provider || 'sharepoint',
+                        });
+                      }}
+                      disabled={loading || saving || !canEdit || !productSchemaReady}
+                    >
+                      <SelectTrigger id="product-datasheet-storage">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="manual-sharepoint">SharePoint - bude nastaveno</SelectItem>
+                        {storageConnections.map((connection) => (
+                          <SelectItem key={connection.id} value={connection.id}>
+                            {connection.name} ({connection.provider})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="product-datasheet-file-name">Nazev souboru</Label>
+                    <Input
+                      id="product-datasheet-file-name"
+                      value={form.datasheet_file_name || ''}
+                      onChange={(event) => setForm({ ...form, datasheet_file_name: event.target.value })}
+                      disabled={loading || saving || !canEdit || !productSchemaReady}
+                      placeholder="datasheet.pdf"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="product-datasheet-url">Odkaz na datasheet</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="product-datasheet-url"
+                        value={form.datasheet_external_web_url || ''}
+                        onChange={(event) => setForm({ ...form, datasheet_external_web_url: event.target.value })}
+                        disabled={loading || saving || !canEdit || !productSchemaReady}
+                        placeholder="https://..."
+                      />
+                      {form.datasheet_external_web_url && (
+                        <Button type="button" variant="outline" size="icon" aria-label="Otevrit datasheet" onClick={() => window.open(form.datasheet_external_web_url, '_blank', 'noopener,noreferrer')}>
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="product-datasheet-external-id">Externi ID souboru</Label>
+                    <Input
+                      id="product-datasheet-external-id"
+                      value={form.datasheet_external_file_id || ''}
+                      onChange={(event) => setForm({ ...form, datasheet_external_file_id: event.target.value })}
+                      disabled={loading || saving || !canEdit || !productSchemaReady}
+                      placeholder="SharePoint driveItem id"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="product-preview-url">URL nahledu / obrazku</Label>
+                    <Input
+                      id="product-preview-url"
+                      value={form.datasheet_preview_image_url || form.image_url || ''}
+                      onChange={(event) => setForm({ ...form, datasheet_preview_image_url: event.target.value, image_url: event.target.value })}
+                      disabled={loading || saving || !canEdit || !productSchemaReady}
+                      placeholder="https://..."
+                    />
+                  </div>
+                  {(form.datasheet_preview_image_url || form.image_url) ? (
+                    <div className="overflow-hidden rounded-lg border bg-white">
+                      <img
+                        src={form.datasheet_preview_image_url || form.image_url}
+                        alt="Nahled datasheetu"
+                        className="h-44 w-full object-contain bg-slate-50"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-36 items-center justify-center rounded-lg border border-dashed bg-slate-50 text-sm text-muted-foreground">
+                      <Image className="mr-2 h-4 w-4" />
+                      Bez nahledu
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            <Card>
+              <CardHeader className="border-b bg-white">
+                <CardTitle>Sklad</CardTitle>
+                <CardDescription>Zobrazuje se pro skladove produkty.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 p-5">
+                {form.product_type === 'manufactured' ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="product-stock-min-qty">Minimalni sklad</Label>
+                      <Input id="product-stock-min-qty" type="number" value={form.stock_min_qty ?? ''} onChange={(event) => setForm({ ...form, stock_min_qty: event.target.value })} disabled={loading || saving || !canEdit} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="product-warehouse-location">Skladova lokace</Label>
+                      <Input id="product-warehouse-location" value={form.warehouse_location || ''} onChange={(event) => setForm({ ...form, warehouse_location: event.target.value })} disabled={loading || saving || !canEdit} />
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border p-3">
+                      <div>
+                        <Label htmlFor="product-allow-backorder">Povolit minusovy sklad</Label>
+                        <p className="text-xs text-muted-foreground">Pouzije se pro budouci kontrolu objednavek a rezervaci.</p>
+                      </div>
+                      <Switch id="product-allow-backorder" checked={Boolean(form.allow_backorder)} onCheckedChange={(checked) => setForm({ ...form, allow_backorder: checked })} disabled={loading || saving || !canEdit} />
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">Skladove parametry se pouzivaji jen pro typ Vyrobek / sklad.</div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="border-b bg-white">
+                <CardTitle>Stav</CardTitle>
+              </CardHeader>
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div>
+                    <Label htmlFor="product-is-active">Aktivni produkt</Label>
+                    <p className="text-xs text-muted-foreground">Neaktivni produkty zustanou v historii, ale nenabizi se pro nove polozky.</p>
+                  </div>
+                  <Switch id="product-is-active" checked={Boolean(form.is_active)} onCheckedChange={(checked) => setForm({ ...form, is_active: checked })} disabled={loading || saving || !canEdit} />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ProductForm;

@@ -3,19 +3,19 @@ import { cn } from '@/lib/utils';
 
 const PageHeader = ({ icon: Icon, title, description, actions, meta, className }) => {
   return (
-    <header className={cn("flex min-w-0 flex-col gap-4 rounded-lg border border-slate-200/80 bg-white/75 p-4 shadow-sm backdrop-blur sm:flex-row sm:items-start sm:justify-between sm:p-5", className)}>
+    <header className={cn("flex min-w-0 flex-col gap-4 rounded-md border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-5", className)}>
       <div className="flex min-w-0 items-start gap-3">
         {Icon && (
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary ring-1 ring-primary/10">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-primary/10 bg-primary/10 text-primary">
             <Icon className="h-5 w-5" />
           </div>
         )}
         <div className="min-w-0">
-          <h1 className="break-words text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
+          <h1 className="break-words text-2xl font-semibold tracking-tight text-slate-950 sm:text-[1.75rem]">
             {title}
           </h1>
           {description && (
-            <p className="mt-1 max-w-2xl text-wrap text-sm text-muted-foreground sm:text-base">
+            <p className="mt-1 max-w-2xl text-wrap text-sm leading-5 text-slate-600">
               {description}
             </p>
           )}

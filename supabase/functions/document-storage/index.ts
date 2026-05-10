@@ -12,7 +12,7 @@ const jsonResponse = (body: Record<string, unknown>, status = 200) => new Respon
 
 const missingIntegrationResponse = (provider: string) => jsonResponse({
   success: false,
-  error: `${provider} integration is not configured yet. Add OAuth secrets and implement the provider client in document-storage Edge Function.`,
+  error: `${provider} integration is not configured yet. Add OAuth secrets, target drive configuration, and provider upload client in document-storage Edge Function.`,
 }, 501);
 
 Deno.serve(async (req: Request) => {
@@ -40,6 +40,10 @@ Deno.serve(async (req: Request) => {
 
     if (!['sharepoint', 'google_drive'].includes(provider)) {
       return jsonResponse({ success: false, error: 'Unsupported storage provider.' }, 400);
+    }
+
+    if (body.entityType && !['project', 'realizace', 'product'].includes(String(body.entityType))) {
+      return jsonResponse({ success: false, error: 'Unsupported entity type for document storage.' }, 400);
     }
 
     return missingIntegrationResponse(provider);

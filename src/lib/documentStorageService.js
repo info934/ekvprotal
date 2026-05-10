@@ -2,6 +2,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 
 const PROJECT_BUCKET = 'project-files';
 const INVOICE_BUCKET = 'invoices';
+const PRODUCT_DATASHEET_FOLDER = 'product-datasheets';
 
 const MISSING_STORAGE_CONFIG_CODES = new Set(['42P01', '42703', 'PGRST116', 'PGRST204', 'PGRST205']);
 
@@ -50,7 +51,7 @@ export const getDefaultStorageConnection = async () => {
 };
 
 export const buildEntityFolderPath = ({ entityType, entityId, code, name }) => {
-  const root = entityType === 'realizace' ? 'realizace' : 'projects';
+  const root = entityType === 'realizace' ? 'realizace' : entityType === 'product' ? 'products' : 'projects';
   const label = [code, name].filter(Boolean).join(' - ');
   return `${root}/${sanitizePathSegment(label || entityId)}`;
 };
@@ -222,6 +223,110 @@ export const uploadProjectDocument = async ({ file, project, documentName }) => 
       external_parent_id: data.parentId || folder.externalFolderId,
       external_web_url: data.webUrl,
       storage_metadata: data.metadata || {},
+    },
+  };
+};
+
+const fileToBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(',')[1]);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+
+const getStorageConnectionById = async (connectionId) => {
+  if (!connectionId) return null;
+
+  const { data, error } = await supabase
+    .from('document_storage_connections')
+    .select('*')
+    .eq('id', connectionId)
+    .maybeSingle();
+
+  if (error) {
+    if (isStorageConfigMissingError(error)) return null;
+    throw error;
+  }
+
+  return data;
+};
+
+export const uploadProductDatasheet = async ({ file, product, connectionId }) => {
+  const selectedConnection = await getStorageConnectionById(connectionId);
+  const connection = selectedConnection || await getDefaultStorageConnection();
+
+  const folder = await ensureEntityFolder({
+    entityType: 'product',
+    entityId: product.id,
+    code: product.sku || product.code,
+    name: product.name,
+    connection,
+  });
+
+  if (connection.provider === 'supabase') {
+    const fileExt = file.name.split('.').pop();
+    const safeName = sanitizePathSegment(file.name.replace(/\.[^.]+$/, ''));
+    const filePath = `${PRODUCT_DATASHEET_FOLDER}/${product.id}/${safeName}_${Date.now()}.${fileExt}`;
+    const { error } = await supabase.storage.from(PROJECT_BUCKET).upload(filePath, file);
+
+    if (error) throw error;
+
+    return {
+      provider: 'supabase',
+      connectionId: connection.id,
+      fileName: file.name,
+      filePath,
+      storageFields: {
+        datasheet_storage_provider: 'supabase',
+        datasheet_storage_connection_id: connection.id,
+        datasheet_external_file_id: filePath,
+        datasheet_external_web_url: null,
+        datasheet_file_name: file.name,
+        datasheet_storage_metadata: {
+          bucket: PROJECT_BUCKET,
+          folderPath: folder.folderPath,
+          filePath,
+        },
+      },
+    };
+  }
+
+  const { data, error } = await supabase.functions.invoke('document-storage', {
+    body: {
+      action: 'uploadFile',
+      connectionId: connection.id,
+      provider: connection.provider,
+      entityType: 'product',
+      entityId: product.id,
+      folderId: folder.externalFolderId,
+      folderPath: folder.folderPath,
+      fileName: file.name,
+      contentType: file.type || 'application/octet-stream',
+      fileBase64: await fileToBase64(file),
+      metadata: {
+        productCode: product.sku || product.code,
+        productName: product.name,
+        documentKind: 'datasheet',
+      },
+    },
+  });
+
+  if (error) throw error;
+  if (data?.success === false) {
+    throw new Error(data.error || 'Datasheet se nepodarilo nahrat do externiho uloziste.');
+  }
+
+  return {
+    provider: connection.provider,
+    connectionId: connection.id,
+    fileName: file.name,
+    storageFields: {
+      datasheet_storage_provider: connection.provider,
+      datasheet_storage_connection_id: connection.id,
+      datasheet_external_file_id: data.fileId,
+      datasheet_external_web_url: data.webUrl,
+      datasheet_file_name: file.name,
+      datasheet_storage_metadata: data.metadata || {},
     },
   };
 };

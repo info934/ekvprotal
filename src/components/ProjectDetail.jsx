@@ -191,7 +191,7 @@ const ProjectDetail = () => {
 
             const [membersRes, subcontractorsRes, tasksRes, costsRes, linksRes, overheadCostsRes, payoutItemsRes] = await Promise.all([
                 supabase.from('project_members').select('id, project_id, member_id, reward_percentage, reward_amount, reward_type, is_hourly, member:members!project_members_member_id_fkey(id, name, email)').eq('project_id', projectId),
-                supabase.from('project_subcontractors').select('id, scope_of_work, price, subject:subjects!project_subcontractors_subject_id_fkey(id, name)').eq('project_id', projectId),
+                supabase.from('project_subcontractors').select('id, scope_of_work, price, subject:subjects!fk_subject(id, name)').eq('project_id', projectId),
                 supabase.from('project_tasks').select('*').eq('project_id', projectId),
                 supabase.from('project_costs').select('*').eq('project_id', projectId),
                 supabase.from('project_links').select('*').eq('project_id', projectId),

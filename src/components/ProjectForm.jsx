@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ProjectSchema } from '@/lib/validationSchemas';
@@ -25,11 +25,13 @@ import { ensureEntityFolder } from '@/lib/documentStorageService';
 
 const ProjectForm = () => {
     const { projectId } = useParams();
+    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const { toast } = useToast();
     const { memberId, user, hasPermission } = useAuth();
     
     const isEditing = Boolean(projectId);
+    const sourceOpportunityId = !isEditing ? searchParams.get('crmOpportunityId') : null;
     const canDelete = hasPermission('projects', 'can_admin');
 
     const { 
@@ -63,6 +65,7 @@ const ProjectForm = () => {
     const [projectStages, setProjectStages] = useState([]);
     const [projectCodePattern, setProjectCodePattern] = useState('');
     const [investorIsClient, setInvestorIsClient] = useState(false);
+    const [sourceOpportunity, setSourceOpportunity] = useState(null);
     const [loading, setLoading] = useState(true);
     
     // Templates
@@ -71,6 +74,17 @@ const ProjectForm = () => {
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
 
     const watchInvestorId = watch('investor_id');
+
+    const buildProjectCodeFromOpportunity = (opportunity) => {
+        const base = opportunity?.number || opportunity?.title || 'OP';
+        return String(base)
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-zA-Z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .toUpperCase()
+            .slice(0, 24) || `OP-${new Date().getFullYear()}`;
+    };
 
     useEffect(() => {
         if (investorIsClient) {
@@ -130,6 +144,26 @@ const ProjectForm = () => {
                 setValue('overhead_percentage', 10);
                 setValue('created_by_member_id', memberId);
                 setInvestorIsClient(true);
+                if (sourceOpportunityId) {
+                    const { data: opportunity, error: opportunityError } = await supabase
+                        .from('crm_opportunities')
+                        .select('id, number, title, value, expected_close_date, description, subject_id, subject:subject_id(id, name)')
+                        .eq('id', sourceOpportunityId)
+                        .maybeSingle();
+
+                    if (opportunityError) throw opportunityError;
+                    if (opportunity) {
+                        setSourceOpportunity(opportunity);
+                        setValue('name', opportunity.title || '');
+                        setValue('code', buildProjectCodeFromOpportunity(opportunity));
+                        setValue('status', 'active');
+                        setValue('price', Math.max(1, Number(opportunity.value || 0)));
+                        setValue('investor_id', opportunity.subject_id || null);
+                        setValue('client_id', opportunity.subject_id || null);
+                        setValue('completion_date', opportunity.expected_close_date || '');
+                        setInvestorIsClient(true);
+                    }
+                }
                 fetchTemplates();
             }
         } catch (error) {
@@ -138,7 +172,7 @@ const ProjectForm = () => {
         } finally {
             setLoading(false);
         }
-    }, [projectId, isEditing, setValue, toast, memberId, fetchTemplates]);
+    }, [projectId, isEditing, setValue, toast, memberId, fetchTemplates, sourceOpportunityId]);
 
     useEffect(() => {
         fetchData();
@@ -169,6 +203,7 @@ const ProjectForm = () => {
 
         if (!dataToSave.completion_date) dataToSave.completion_date = null;
         if (!dataToSave.start_date) dataToSave.start_date = null;
+        if (sourceOpportunityId) dataToSave.crm_opportunity_id = sourceOpportunityId;
 
         try {
             if (isEditing) {
@@ -178,8 +213,21 @@ const ProjectForm = () => {
                 toast({ title: 'Projekt úspěšně aktualizován', variant: 'default' }); 
                 navigate(`/projects/${projectId}`);
             } else {
-                const { data: newProject, error } = await supabase.from('projects').insert(dataToSave).select().single();
+                let { data: newProject, error } = await supabase.from('projects').insert(dataToSave).select().single();
+                if (error && ['42703', 'PGRST204'].includes(error.code) && sourceOpportunityId) {
+                    const { crm_opportunity_id, ...legacyData } = dataToSave;
+                    const legacyResult = await supabase.from('projects').insert(legacyData).select().single();
+                    newProject = legacyResult.data;
+                    error = legacyResult.error;
+                }
                 if (error) throw error;
+
+                if (sourceOpportunityId) {
+                    await supabase
+                        .from('crm_opportunities')
+                        .update({ project_id: newProject.id, updated_at: new Date().toISOString() })
+                        .eq('id', sourceOpportunityId);
+                }
 
                 try {
                     await ensureEntityFolder({
@@ -269,6 +317,23 @@ const ProjectForm = () => {
             </motion.div>
 
             <form onSubmit={handleSubmit(onSubmit, onFormError)} className="space-y-6">
+                {sourceOpportunity && (
+                    <Card className="border-emerald-200 bg-emerald-50/80 shadow-sm">
+                        <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p className="text-sm font-semibold text-emerald-950">
+                                    Projekt bude vytvoren z obchodniho pripadu {sourceOpportunity.number || ''}
+                                </p>
+                                <p className="text-sm text-emerald-800">
+                                    {sourceOpportunity.title} {sourceOpportunity.subject?.name ? `- ${sourceOpportunity.subject.name}` : ''}
+                                </p>
+                            </div>
+                            <Button type="button" variant="outline" onClick={() => navigate(`/crm/${sourceOpportunity.id}`)}>
+                                Zpet na OP
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
                 
                 {!isEditing && (
                     <Card className="shadow-sm border-slate-200 bg-blue-50/30">

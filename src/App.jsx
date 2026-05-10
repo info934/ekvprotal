@@ -1,56 +1,68 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import Sidebar from '@/components/Sidebar';
-import Dashboard from '@/components/Dashboard';
-import Projects from '@/components/Projects';
-import Documents from '@/components/Documents';
-import CRM from '@/components/CRM';
-import CRMCommercialDocuments from '@/components/CRMCommercialDocuments';
-import Engineering from '@/components/Engineering';
-import Payouts from '@/components/Payouts';
-import PayoutFormPage from '@/components/PayoutFormPage';
-import HourlyPayoutRequestsAdmin from '@/components/HourlyPayoutRequestsAdmin';
-import AuditLog from '@/components/AuditLog';
-import ProjectDetail from '@/components/ProjectDetail';
-import Members from '@/components/Members';
-import MemberDetail from '@/components/MemberDetail';
-import Settings from '@/components/Settings';
-import Reports from '@/components/Reports';
-import Auth from '@/components/Auth';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
-import UserManagement from '@/components/UserManagement';
-import Tasks from '@/components/Tasks';
-import OrderPage from '@/components/OrderPage';
-import SubcontractorOrderPage from '@/components/SubcontractorOrderPage';
-import UpdatePassword from '@/components/UpdatePassword';
-import Attendance from '@/components/Attendance';
-import ProjectHistory from '@/components/ProjectHistory';
-import RolePermissions from '@/components/RolePermissions';
-import Subjects from '@/components/Subjects';
-import SubjectDetail from '@/components/SubjectDetail';
-import OverheadCosts from '@/components/OverheadCosts';
-import MonthlyAllocation from '@/components/MonthlyAllocation';
-import OverheadReports from '@/components/OverheadReports';
-import Realizace from '@/components/Realizace';
-import RealizaceDetail from '@/components/RealizaceDetail';
-import ProjectForm from '@/components/ProjectForm';
-import RealizaceForm from '@/components/RealizaceForm';
-import RealizaceFinancials from '@/components/RealizaceFinancials';
-import OrderTemplateManager from '@/components/OrderTemplateManager';
-import RealizaceOrderForm from '@/components/RealizaceOrderForm';
-import SettingsProfile from '@/components/SettingsProfile';
-import SettingsPortal from '@/components/SettingsPortal';
-import SettingsDictionaries from '@/components/SettingsDictionaries';
-import SettingsStorage from '@/components/SettingsStorage';
-import SettingsCRM from '@/components/SettingsCRM';
-import ProjectTemplatesSettings from '@/components/ProjectTemplatesSettings';
-import ProjectTemplatesPage from '@/components/ProjectTemplatesPage';
-import BackupMaintenance from '@/components/BackupMaintenance';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { supabase } from '@/lib/customSupabaseClient';
+
+const Dashboard = lazy(() => import('@/components/Dashboard'));
+const Projects = lazy(() => import('@/components/Projects'));
+const Documents = lazy(() => import('@/components/Documents'));
+const CRM = lazy(() => import('@/components/CRM'));
+const CRMCommercialDocuments = lazy(() => import('@/components/CRMCommercialDocuments'));
+const Products = lazy(() => import('@/components/Products'));
+const ProductForm = lazy(() => import('@/components/ProductForm'));
+const Engineering = lazy(() => import('@/components/Engineering'));
+const Payouts = lazy(() => import('@/components/Payouts'));
+const PayoutFormPage = lazy(() => import('@/components/PayoutFormPage'));
+const HourlyPayoutRequestsAdmin = lazy(() => import('@/components/HourlyPayoutRequestsAdmin'));
+const AuditLog = lazy(() => import('@/components/AuditLog'));
+const ProjectDetail = lazy(() => import('@/components/ProjectDetail'));
+const Members = lazy(() => import('@/components/Members'));
+const MemberDetail = lazy(() => import('@/components/MemberDetail'));
+const Settings = lazy(() => import('@/components/Settings'));
+const Reports = lazy(() => import('@/components/Reports'));
+const Auth = lazy(() => import('@/components/Auth'));
+const UserManagement = lazy(() => import('@/components/UserManagement'));
+const Tasks = lazy(() => import('@/components/Tasks'));
+const OrderPage = lazy(() => import('@/components/OrderPage'));
+const SubcontractorOrderPage = lazy(() => import('@/components/SubcontractorOrderPage'));
+const UpdatePassword = lazy(() => import('@/components/UpdatePassword'));
+const Attendance = lazy(() => import('@/components/Attendance'));
+const ProjectHistory = lazy(() => import('@/components/ProjectHistory'));
+const RolePermissions = lazy(() => import('@/components/RolePermissions'));
+const Subjects = lazy(() => import('@/components/Subjects'));
+const SubjectDetail = lazy(() => import('@/components/SubjectDetail'));
+const OverheadCosts = lazy(() => import('@/components/OverheadCosts'));
+const MonthlyAllocation = lazy(() => import('@/components/MonthlyAllocation'));
+const OverheadReports = lazy(() => import('@/components/OverheadReports'));
+const Realizace = lazy(() => import('@/components/Realizace'));
+const RealizaceDetail = lazy(() => import('@/components/RealizaceDetail'));
+const ProjectForm = lazy(() => import('@/components/ProjectForm'));
+const RealizaceForm = lazy(() => import('@/components/RealizaceForm'));
+const RealizaceFinancials = lazy(() => import('@/components/RealizaceFinancials'));
+const OrderTemplateManager = lazy(() => import('@/components/OrderTemplateManager'));
+const RealizaceOrderForm = lazy(() => import('@/components/RealizaceOrderForm'));
+const SettingsProfile = lazy(() => import('@/components/SettingsProfile'));
+const SettingsPortal = lazy(() => import('@/components/SettingsPortal'));
+const SettingsDictionaries = lazy(() => import('@/components/SettingsDictionaries'));
+const SettingsStorage = lazy(() => import('@/components/SettingsStorage'));
+const SettingsCRM = lazy(() => import('@/components/SettingsCRM'));
+const ProjectTemplatesSettings = lazy(() => import('@/components/ProjectTemplatesSettings'));
+const ProjectTemplatesPage = lazy(() => import('@/components/ProjectTemplatesPage'));
+const BackupMaintenance = lazy(() => import('@/components/BackupMaintenance'));
+
+const PageLoader = () => (
+  <div className="flex min-h-[50vh] w-full items-center justify-center p-8">
+    <div className="text-center">
+      <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-b-2 border-primary" />
+      <p className="font-medium text-slate-700">Načítání modulu...</p>
+    </div>
+  </div>
+);
 
 const PrivateRoute = ({ children, module, level = 'can_read' }) => {
   const { hasPermission, isAdmin } = useAuth();
@@ -130,79 +142,86 @@ function AppContent() {
           <Sidebar />
           <main className="min-w-0 flex-1 overflow-x-hidden transition-all duration-300 lg:ml-[var(--sidebar-width,16rem)] print:ml-0 print:p-0">
             <ErrorBoundary>
-              <Routes>
-                <Route path="/" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />
-                <Route path="/dashboard" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />
-                <Route path="/projects" element={<PrivateRoute module="projects"><Projects /></PrivateRoute>} />
-                <Route path="/projects/new" element={<PrivateRoute module="projects" level="can_edit"><ProjectForm /></PrivateRoute>} />
-                <Route path="/projects/:projectId/edit" element={<PrivateRoute module="projects" level="can_edit"><ProjectForm /></PrivateRoute>} />
-                <Route path="/projects/:projectId" element={<PrivateRoute module="projects"><ProjectDetail /></PrivateRoute>} />
-                <Route path="/projects/:projectId/history" element={<PrivateRoute module="projects"><ProjectHistory /></PrivateRoute>} />
-                
-                <Route path="/templates" element={<PrivateRoute module="projects"><ProjectTemplatesPage /></PrivateRoute>} />
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />
+                  <Route path="/dashboard" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />
+                  <Route path="/projects" element={<PrivateRoute module="projects"><Projects /></PrivateRoute>} />
+                  <Route path="/projects/new" element={<PrivateRoute module="projects" level="can_edit"><ProjectForm /></PrivateRoute>} />
+                  <Route path="/projects/:projectId/edit" element={<PrivateRoute module="projects" level="can_edit"><ProjectForm /></PrivateRoute>} />
+                  <Route path="/projects/:projectId" element={<PrivateRoute module="projects"><ProjectDetail /></PrivateRoute>} />
+                  <Route path="/projects/:projectId/history" element={<PrivateRoute module="projects"><ProjectHistory /></PrivateRoute>} />
+                  
+                  <Route path="/templates" element={<PrivateRoute module="projects"><ProjectTemplatesPage /></PrivateRoute>} />
 
-                <Route path="/realizace" element={<PrivateRoute module="realizace"><Realizace /></PrivateRoute>} />
-                <Route path="/realizace/new" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceForm /></PrivateRoute>} />
-                <Route path="/realizace/financials" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceFinancials /></PrivateRoute>} />
-                <Route path="/realizace/:realizaceId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceForm /></PrivateRoute>} />
-                <Route path="/realizace/:realizaceId" element={<PrivateRoute module="realizace"><RealizaceDetail /></PrivateRoute>} />
-                <Route path="/realizace/:realizaceId/orders/new" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
-                <Route path="/realizace/:realizaceId/orders/:orderId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
-                <Route path="/documents" element={<PrivateRoute module="documents"><Documents /></PrivateRoute>} />
-                <Route path="/crm" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
-                <Route path="/crm/offers" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
-                <Route path="/crm/offers/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
-                <Route path="/crm/orders" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />
-                <Route path="/crm/orders/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />
-                <Route path="/crm/:opportunityId" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
-                <Route path="/engineering" element={<PrivateRoute module="engineering"><Engineering /></PrivateRoute>} />
-                <Route path="/tasks" element={<PrivateRoute module="tasks"><Tasks /></PrivateRoute>} />
-                <Route path="/attendance" element={<PrivateRoute module="attendance"><Attendance /></PrivateRoute>} />
-                <Route path="/subjects" element={<PrivateRoute module="subjects"><Subjects /></PrivateRoute>} />
-                <Route path="/subjects/:subjectId" element={<PrivateRoute module="subjects"><SubjectDetail /></PrivateRoute>} />
-                <Route path="/members" element={<PrivateRoute module="members"><Members /></PrivateRoute>} />
-                <Route path="/members/:memberId" element={<PrivateRoute module="members"><MemberDetail /></PrivateRoute>} />
-                
-                <Route path="/payouts" element={<ProtectedRoute><Payouts /></ProtectedRoute>} />
-                <Route path="/payouts/new" element={<ProtectedRoute><PayoutFormPage /></ProtectedRoute>} />
-                <Route path="/payouts/hourly-admin" element={<PrivateRoute module="payouts" level="can_admin"><div className="p-8"><HourlyPayoutRequestsAdmin /></div></PrivateRoute>} />
+                  <Route path="/realizace" element={<PrivateRoute module="realizace"><Realizace /></PrivateRoute>} />
+                  <Route path="/realizace/new" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceForm /></PrivateRoute>} />
+                  <Route path="/realizace/financials" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceFinancials /></PrivateRoute>} />
+                  <Route path="/realizace/:realizaceId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceForm /></PrivateRoute>} />
+                  <Route path="/realizace/:realizaceId" element={<PrivateRoute module="realizace"><RealizaceDetail /></PrivateRoute>} />
+                  <Route path="/realizace/:realizaceId/orders/new" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
+                  <Route path="/realizace/:realizaceId/orders/:orderId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
+                  <Route path="/documents" element={<PrivateRoute module="documents"><Documents /></PrivateRoute>} />
+                  <Route path="/crm" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                  <Route path="/crm/offers" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
+                  <Route path="/crm/offers/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
+                  <Route path="/crm/orders" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />
+                  <Route path="/crm/orders/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />
+                  <Route path="/crm/:opportunityId" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                  <Route path="/products" element={<PrivateRoute module="crm"><Products /></PrivateRoute>} />
+                  <Route path="/products/new" element={<PrivateRoute module="crm" level="can_edit"><ProductForm /></PrivateRoute>} />
+                  <Route path="/products/:productId/edit" element={<PrivateRoute module="crm" level="can_edit"><ProductForm /></PrivateRoute>} />
+                  <Route path="/engineering" element={<PrivateRoute module="engineering"><Engineering /></PrivateRoute>} />
+                  <Route path="/tasks" element={<PrivateRoute module="tasks"><Tasks /></PrivateRoute>} />
+                  <Route path="/attendance" element={<PrivateRoute module="attendance"><Attendance /></PrivateRoute>} />
+                  <Route path="/subjects" element={<PrivateRoute module="subjects"><Subjects /></PrivateRoute>} />
+                  <Route path="/subjects/:subjectId" element={<PrivateRoute module="subjects"><SubjectDetail /></PrivateRoute>} />
+                  <Route path="/members" element={<PrivateRoute module="members"><Members /></PrivateRoute>} />
+                  <Route path="/members/:memberId" element={<PrivateRoute module="members"><MemberDetail /></PrivateRoute>} />
+                  
+                  <Route path="/payouts" element={<ProtectedRoute><Payouts /></ProtectedRoute>} />
+                  <Route path="/payouts/new" element={<ProtectedRoute><PayoutFormPage /></ProtectedRoute>} />
+                  <Route path="/payouts/hourly-admin" element={<PrivateRoute module="payouts" level="can_admin"><div className="p-8"><HourlyPayoutRequestsAdmin /></div></PrivateRoute>} />
 
-                <Route path="/overhead-costs" element={<PrivateRoute module="finance" level="can_admin"><OverheadCosts /></PrivateRoute>} />
-                <Route path="/overhead-costs/:tab" element={<PrivateRoute module="finance" level="can_admin"><OverheadCosts /></PrivateRoute>} />
-                <Route path="/overhead-costs/allocation/:month" element={<PrivateRoute module="finance" level="can_admin"><MonthlyAllocation /></PrivateRoute>} />
-                <Route path="/overhead-costs/reports" element={<PrivateRoute module="finance" level="can_admin"><OverheadReports /></PrivateRoute>} />
+                  <Route path="/overhead-costs" element={<PrivateRoute module="finance" level="can_admin"><OverheadCosts /></PrivateRoute>} />
+                  <Route path="/overhead-costs/:tab" element={<PrivateRoute module="finance" level="can_admin"><OverheadCosts /></PrivateRoute>} />
+                  <Route path="/overhead-costs/allocation/:month" element={<PrivateRoute module="finance" level="can_admin"><MonthlyAllocation /></PrivateRoute>} />
+                  <Route path="/overhead-costs/reports" element={<PrivateRoute module="finance" level="can_admin"><OverheadReports /></PrivateRoute>} />
 
-                <Route path="/reports" element={<PrivateRoute module="reports"><Reports /></PrivateRoute>} />
-                <Route path="/audit" element={<PrivateRoute module="settings" level="can_admin"><AuditLog /></PrivateRoute>} />
-                <Route path="/settings" element={<PrivateRoute module="settings"><Settings /></PrivateRoute>}>
-                  <Route index element={<SettingsProfile />} />
-                  <Route path="profile" element={<SettingsProfile />} />
-                  <Route path="users" element={<PrivateRoute module="settings" level="can_admin"><UserManagement /></PrivateRoute>} />
-                  <Route path="permissions" element={<PrivateRoute module="settings" level="can_admin"><RolePermissions /></PrivateRoute>} />
-                  <Route path="portal" element={<PrivateRoute module="settings" level="can_admin"><SettingsPortal /></PrivateRoute>} />
-                  <Route path="order-templates" element={<PrivateRoute module="settings" level="can_admin"><OrderTemplateManager /></PrivateRoute>} />
-                  <Route path="dictionaries" element={<PrivateRoute module="settings" level="can_admin"><SettingsDictionaries /></PrivateRoute>} />
-                  <Route path="crm" element={<PrivateRoute module="settings" level="can_admin"><SettingsCRM /></PrivateRoute>} />
-                  <Route path="storage" element={<PrivateRoute module="settings" level="can_admin"><SettingsStorage /></PrivateRoute>} />
-                  <Route path="project-templates" element={<PrivateRoute module="settings" level="can_admin"><ProjectTemplatesSettings /></PrivateRoute>} />
-                  <Route path="backup-maintenance" element={<ProtectedRoute requiredRole="admin"><BackupMaintenance /></ProtectedRoute>} />
-                </Route>
-                <Route path="/login" element={<Navigate to="/" />} />
-                <Route path="/statements" element={<Navigate to="/engineering" />} />
-                <Route path="/authorities" element={<Navigate to="/engineering" />} />
-              </Routes>
+                  <Route path="/reports" element={<PrivateRoute module="reports"><Reports /></PrivateRoute>} />
+                  <Route path="/audit" element={<PrivateRoute module="settings" level="can_admin"><AuditLog /></PrivateRoute>} />
+                  <Route path="/settings" element={<PrivateRoute module="settings"><Settings /></PrivateRoute>}>
+                    <Route index element={<SettingsProfile />} />
+                    <Route path="profile" element={<SettingsProfile />} />
+                    <Route path="users" element={<PrivateRoute module="settings" level="can_admin"><UserManagement /></PrivateRoute>} />
+                    <Route path="permissions" element={<PrivateRoute module="settings" level="can_admin"><RolePermissions /></PrivateRoute>} />
+                    <Route path="portal" element={<PrivateRoute module="settings" level="can_admin"><SettingsPortal /></PrivateRoute>} />
+                    <Route path="order-templates" element={<PrivateRoute module="settings" level="can_admin"><OrderTemplateManager /></PrivateRoute>} />
+                    <Route path="dictionaries" element={<PrivateRoute module="settings" level="can_admin"><SettingsDictionaries /></PrivateRoute>} />
+                    <Route path="crm" element={<PrivateRoute module="settings" level="can_admin"><SettingsCRM /></PrivateRoute>} />
+                    <Route path="storage" element={<PrivateRoute module="settings" level="can_admin"><SettingsStorage /></PrivateRoute>} />
+                    <Route path="project-templates" element={<PrivateRoute module="settings" level="can_admin"><ProjectTemplatesSettings /></PrivateRoute>} />
+                    <Route path="backup-maintenance" element={<ProtectedRoute requiredRole="admin"><BackupMaintenance /></ProtectedRoute>} />
+                  </Route>
+                  <Route path="/login" element={<Navigate to="/" />} />
+                  <Route path="/statements" element={<Navigate to="/engineering" />} />
+                  <Route path="/authorities" element={<Navigate to="/engineering" />} />
+                </Routes>
+              </Suspense>
             </ErrorBoundary>
           </main>
         </>
       ) : (
         <ErrorBoundary>
-          <Routes>
-            <Route path="/login" element={<Auth />} />
-            <Route path="/order/:token" element={<OrderPage />} />
-            <Route path="/sub-order/:token" element={<SubcontractorOrderPage />} />
-            <Route path="/update-password" element={<UpdatePassword />} />
-            <Route path="*" element={<Navigate to="/login" />} />
-          </Routes>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/login" element={<Auth />} />
+              <Route path="/order/:token" element={<OrderPage />} />
+              <Route path="/sub-order/:token" element={<SubcontractorOrderPage />} />
+              <Route path="/update-password" element={<UpdatePassword />} />
+              <Route path="*" element={<Navigate to="/login" />} />
+            </Routes>
+          </Suspense>
         </ErrorBoundary>
       )}
     </div>
@@ -218,12 +237,14 @@ function App() {
       </Helmet>
       <AuthProvider>
         <BrowserRouter>
-          <Routes>
-            <Route path="/order/:token" element={<OrderPage />} />
-            <Route path="/sub-order/:token" element={<SubcontractorOrderPage />} />
-            <Route path="/update-password" element={<UpdatePassword />} />
-            <Route path="/*" element={<AppContent />} />
-          </Routes>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/order/:token" element={<OrderPage />} />
+              <Route path="/sub-order/:token" element={<SubcontractorOrderPage />} />
+              <Route path="/update-password" element={<UpdatePassword />} />
+              <Route path="/*" element={<AppContent />} />
+            </Routes>
+          </Suspense>
           <Toaster />
         </BrowserRouter>
       </AuthProvider>

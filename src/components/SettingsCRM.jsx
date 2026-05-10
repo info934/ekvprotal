@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Save, SlidersHorizontal, Target } from 'lucide-react';
+import { Plus, Save, SlidersHorizontal, Target, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,12 @@ const DEFAULT_PRIORITY_CONFIG = [
   { value: 'high', label: 'Vysoka', tone: 'destructive', sort_order: 30, is_active: true },
 ];
 
+const DEFAULT_PRODUCT_FIELD_DEFINITIONS = [
+  { field_key: 'manufacturer', label: 'Vyrobce', field_type: 'text', field_group: 'Identifikace', unit: '', ai_hint: 'Najdi vyrobce nebo brand produktu v datasheetu.', is_required: false, is_active: true, sort_order: 10, options_text: '' },
+  { field_key: 'model', label: 'Model', field_type: 'text', field_group: 'Identifikace', unit: '', ai_hint: 'Najdi presne modelove oznaceni produktu.', is_required: false, is_active: true, sort_order: 20, options_text: '' },
+  { field_key: 'power_wp', label: 'Vykon', field_type: 'number', field_group: 'Technicke parametry', unit: 'Wp', ai_hint: 'Jmenovity vykon panelu nebo zarizeni.', is_required: false, is_active: true, sort_order: 30, options_text: '' },
+];
+
 const normalizeStages = (stages) => (
   (stages?.length ? stages : DEFAULT_STAGE_CONFIG).map((stage, index) => ({
     ...stage,
@@ -46,12 +52,37 @@ const normalizePriorities = (priorities) => (
   }))
 );
 
+const normalizeFieldKey = (value) => String(value || '')
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9_]+/g, '_')
+  .replace(/^_+|_+$/g, '');
+
+const normalizeProductFields = (fields) => (
+  (fields?.length ? fields : DEFAULT_PRODUCT_FIELD_DEFINITIONS).map((field, index) => ({
+    id: field.id || null,
+    field_key: normalizeFieldKey(field.field_key) || `field_${index + 1}`,
+    label: field.label || field.field_key || 'Pole',
+    field_type: field.field_type || 'text',
+    field_group: field.field_group || 'Technicke parametry',
+    unit: field.unit || '',
+    ai_hint: field.ai_hint || '',
+    is_required: Boolean(field.is_required),
+    is_active: field.is_active ?? true,
+    sort_order: Number(field.sort_order ?? ((index + 1) * 10)),
+    options_text: field.options_text ?? (Array.isArray(field.options) ? field.options.join(', ') : ''),
+  }))
+);
+
 const SettingsCRM = () => {
   const { hasPermission } = useAuth();
   const { toast } = useToast();
   const [crmStages, setCrmStages] = useState(() => normalizeStages(DEFAULT_STAGE_CONFIG));
   const [crmPriorities, setCrmPriorities] = useState(() => normalizePriorities(DEFAULT_PRIORITY_CONFIG));
   const [crmNumbering, setCrmNumbering] = useState(() => normalizeCrmNumbering(Object.values(DEFAULT_CRM_NUMBERING)));
+  const [productFields, setProductFields] = useState(() => normalizeProductFields(DEFAULT_PRODUCT_FIELD_DEFINITIONS));
+  const [removedProductFields, setRemovedProductFields] = useState([]);
+  const [productFieldsReady, setProductFieldsReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -64,7 +95,7 @@ const SettingsCRM = () => {
     }
 
     setLoading(true);
-    const [stagesRes, prioritiesRes, numberingRes] = await Promise.all([
+    const [stagesRes, prioritiesRes, numberingRes, productFieldsRes] = await Promise.all([
       supabase
         .from('crm_stage_definitions')
         .select('value, label, color, probability, sort_order, is_active, is_closed')
@@ -79,6 +110,11 @@ const SettingsCRM = () => {
         .from('crm_numbering_settings')
         .select('document_type, prefix, next_number, padding')
         .in('document_type', ['opportunity', 'offer', 'order']),
+      supabase
+        .from('product_field_definitions')
+        .select('id, field_key, label, field_type, field_group, unit, options, ai_hint, is_required, is_active, sort_order')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true }),
     ]);
 
     const error = stagesRes.error || prioritiesRes.error;
@@ -92,6 +128,9 @@ const SettingsCRM = () => {
       setCrmStages(normalizeStages(stagesRes.data));
       setCrmPriorities(normalizePriorities(prioritiesRes.data));
       setCrmNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
+      setProductFieldsReady(!productFieldsRes.error);
+      setProductFields(normalizeProductFields(productFieldsRes.error ? DEFAULT_PRODUCT_FIELD_DEFINITIONS : productFieldsRes.data));
+      setRemovedProductFields([]);
     }
     setLoading(false);
   }, [canAdmin, toast]);
@@ -110,6 +149,14 @@ const SettingsCRM = () => {
     setCrmPriorities((current) => current.map((priority, priorityIndex) => (
       priorityIndex === index ? { ...priority, [field]: value } : priority
     )));
+  };
+
+  const updateProductField = (index, field, value) => {
+    setProductFields((current) => current.map((definition, definitionIndex) => {
+      if (definitionIndex !== index) return definition;
+      const nextValue = field === 'field_key' ? normalizeFieldKey(value) : value;
+      return { ...definition, [field]: nextValue };
+    }));
   };
 
   const addStageConfig = () => {
@@ -132,6 +179,35 @@ const SettingsCRM = () => {
       ...current,
       { value: `priority_${Date.now()}`, label: 'Nova priorita', tone: 'secondary', sort_order: (current.length + 1) * 10, is_active: true },
     ]));
+  };
+
+  const addProductField = () => {
+    setProductFields((current) => ([
+      ...current,
+      {
+        id: null,
+        field_key: `field_${Date.now()}`,
+        label: 'Nove pole',
+        field_type: 'text',
+        field_group: 'Technicke parametry',
+        unit: '',
+        options_text: '',
+        ai_hint: '',
+        is_required: false,
+        is_active: true,
+        sort_order: (current.length + 1) * 10,
+      },
+    ]));
+  };
+
+  const removeProductField = (index) => {
+    setProductFields((current) => {
+      const field = current[index];
+      if (field?.id || field?.field_key) {
+        setRemovedProductFields((removed) => ([...removed, { ...field, is_active: false }]));
+      }
+      return current.filter((_, fieldIndex) => fieldIndex !== index);
+    });
   };
 
   const updateNumberingConfig = (type, field, value) => {
@@ -179,6 +255,37 @@ const SettingsCRM = () => {
       padding: Math.max(2, Number(config.padding || 3)),
     }));
 
+    const productFieldRows = [
+      ...productFields.map((field, index) => ({
+        id: field.id || undefined,
+        field_key: normalizeFieldKey(field.field_key) || `field_${index + 1}`,
+        label: field.label.trim() || field.field_key || 'Pole',
+        field_type: field.field_type || 'text',
+        field_group: field.field_group.trim() || 'Technicke parametry',
+        unit: field.unit?.trim() || null,
+        options: field.field_type === 'select'
+          ? String(field.options_text || '').split(',').map((option) => option.trim()).filter(Boolean)
+          : [],
+        ai_hint: field.ai_hint?.trim() || null,
+        is_required: Boolean(field.is_required),
+        is_active: true,
+        sort_order: (index + 1) * 10,
+      })),
+      ...removedProductFields.map((field) => ({
+        id: field.id || undefined,
+        field_key: normalizeFieldKey(field.field_key),
+        label: field.label || field.field_key,
+        field_type: field.field_type || 'text',
+        field_group: field.field_group || 'Technicke parametry',
+        unit: field.unit || null,
+        options: [],
+        ai_hint: field.ai_hint || null,
+        is_required: Boolean(field.is_required),
+        is_active: false,
+        sort_order: Number(field.sort_order || 999),
+      })),
+    ].filter((field) => field.field_key);
+
     const { error: stagesError } = await supabase
       .from('crm_stage_definitions')
       .upsert(stageRows, { onConflict: 'value' });
@@ -191,9 +298,13 @@ const SettingsCRM = () => {
       .from('crm_numbering_settings')
       .upsert(numberingRows, { onConflict: 'document_type' });
 
+    const { error: productFieldsError } = (stagesError || prioritiesError || numberingError || !productFieldsReady) ? { error: null } : await supabase
+      .from('product_field_definitions')
+      .upsert(productFieldRows, { onConflict: 'field_key' });
+
     setSaving(false);
 
-    const error = stagesError || prioritiesError || numberingError;
+    const error = stagesError || prioritiesError || numberingError || productFieldsError;
     if (error) {
       toast({
         title: 'CRM nastaveni se nepodarilo ulozit',
@@ -206,6 +317,8 @@ const SettingsCRM = () => {
     setCrmStages(normalizeStages(stageRows));
     setCrmPriorities(normalizePriorities(priorityRows));
     setCrmNumbering(normalizeCrmNumbering(numberingRows));
+    setProductFields(normalizeProductFields(productFieldRows.filter((field) => field.is_active)));
+    setRemovedProductFields([]);
     toast({ title: 'CRM nastaveni ulozeno' });
     fetchCrmConfig();
   };
@@ -257,6 +370,111 @@ const SettingsCRM = () => {
                     disabled={loading || saving || !canAdmin}
                   />
                 </div>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="gap-4 border-b bg-slate-50/70">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <CardTitle>Produktova pole</CardTitle>
+              <CardDescription>
+                Definice technickych a obchodnich poli produktu. AI extrakce z datasheetu bude pouzivat klic pole a napovedu.
+              </CardDescription>
+            </div>
+            <Button type="button" variant="outline" onClick={addProductField} disabled={loading || saving || !canAdmin}>
+              <Plus className="mr-2 h-4 w-4" />
+              Pridat pole
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 p-4">
+          {!productFieldsReady && (
+            <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+              <SlidersHorizontal className="h-4 w-4" />
+              <AlertTitle>Produktova pole zatim nejsou v databazi</AlertTitle>
+              <AlertDescription>Aplikujte produktovou migraci. Do te doby se zobrazuji jen vychozi pole a nejdou ulozit online.</AlertDescription>
+            </Alert>
+          )}
+          {productFields.map((field, index) => (
+            <div key={`${field.field_key}-${index}`} className="grid gap-3 rounded-lg border bg-white p-3 shadow-sm xl:grid-cols-[1fr_160px_150px_120px_1.4fr_44px]">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Nazev</Label>
+                  <Input
+                    value={field.label}
+                    onChange={(event) => updateProductField(index, 'label', event.target.value)}
+                    disabled={loading || saving || !canAdmin}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Klic pro AI / template</Label>
+                  <Input
+                    value={field.field_key}
+                    onChange={(event) => updateProductField(index, 'field_key', event.target.value)}
+                    disabled={loading || saving || !canAdmin}
+                    className="font-mono"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Typ</Label>
+                <Select value={field.field_type} onValueChange={(value) => updateProductField(index, 'field_type', value)} disabled={loading || saving || !canAdmin}>
+                  <SelectTrigger className="bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="text">Text</SelectItem>
+                    <SelectItem value="textarea">Dlouhy text</SelectItem>
+                    <SelectItem value="number">Cislo</SelectItem>
+                    <SelectItem value="boolean">Ano / ne</SelectItem>
+                    <SelectItem value="date">Datum</SelectItem>
+                    <SelectItem value="select">Vyber</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Skupina</Label>
+                <Input
+                  value={field.field_group}
+                  onChange={(event) => updateProductField(index, 'field_group', event.target.value)}
+                  disabled={loading || saving || !canAdmin}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Jednotka</Label>
+                <Input
+                  value={field.unit || ''}
+                  onChange={(event) => updateProductField(index, 'unit', event.target.value)}
+                  disabled={loading || saving || !canAdmin}
+                  placeholder="Wp, kg, V..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>{field.field_type === 'select' ? 'Moznosti / AI napoveda' : 'AI napoveda'}</Label>
+                {field.field_type === 'select' && (
+                  <Input
+                    value={field.options_text || ''}
+                    onChange={(event) => updateProductField(index, 'options_text', event.target.value)}
+                    disabled={loading || saving || !canAdmin}
+                    placeholder="Hodnota 1, Hodnota 2"
+                    className="mb-2"
+                  />
+                )}
+                <Input
+                  value={field.ai_hint || ''}
+                  onChange={(event) => updateProductField(index, 'ai_hint', event.target.value)}
+                  disabled={loading || saving || !canAdmin}
+                  placeholder="Co ma AI hledat v datasheetu"
+                />
+              </div>
+              <div className="flex items-end justify-end">
+                <Button type="button" variant="ghost" size="icon" aria-label={`Odebrat produktove pole ${field.label || field.field_key || index + 1}`} onClick={() => removeProductField(index)} disabled={loading || saving || !canAdmin}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           ))}
