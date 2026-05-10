@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 
 const Table = React.forwardRef(({ className, ...props }, ref) => (
-  <div className="relative w-full max-w-full overflow-x-auto overflow-y-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+  <div className="relative w-full max-w-full overflow-x-auto overflow-y-hidden rounded-lg border border-slate-200 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
     <table ref={ref} className={cn('w-full min-w-max caption-bottom bg-white text-sm md:min-w-full', className)} {...props} />
   </div>
 ));
@@ -26,7 +26,7 @@ TableFooter.displayName = 'TableFooter';
 const TableRow = React.forwardRef(({ className, ...props }, ref) => (
   <tr
     ref={ref}
-    className={cn('border-b border-slate-200 transition-colors hover:bg-blue-50/35 data-[state=selected]:bg-blue-50', className)}
+    className={cn('border-b border-slate-200/80 transition-colors hover:bg-blue-50/45 data-[state=selected]:bg-blue-50', className)}
     {...props}
   />
 ));
@@ -35,7 +35,7 @@ TableRow.displayName = 'TableRow';
 const TableHead = React.forwardRef(({ className, ...props }, ref) => (
   <th
     ref={ref}
-    className={cn('h-10 px-3 text-left align-middle text-xs font-semibold uppercase tracking-normal text-slate-600 [&:has([role=checkbox])]:pr-0', className)}
+    className={cn('h-10 whitespace-nowrap px-3 text-left align-middle text-[11px] font-semibold uppercase tracking-normal text-slate-500 [&:has([role=checkbox])]:pr-0', className)}
     {...props}
   />
 ));

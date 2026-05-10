@@ -29,6 +29,7 @@ import {
   Shield,
   Star,
   Sun,
+  Target,
   UserCog,
   Users,
   Wrench,
@@ -74,68 +75,44 @@ const useDarkMode = () => {
 
 const NAV_GROUPS = [
   {
-    id: 'workspace',
-    label: 'Práce',
+    id: 'primary',
+    label: null,
     items: [
       { icon: Home, label: 'Přehled', path: '/dashboard', module: 'dashboard' },
       { icon: Folder, label: 'Projekce', path: '/projects', module: 'projects' },
       { icon: HardHat, label: 'Realizace', path: '/realizace', module: 'realizace' },
-      { icon: ListTodo, label: 'Úkoly', path: '/tasks', module: 'tasks' },
-    ],
-  },
-  {
-    id: 'business',
-    label: 'Obchod a CRM',
-    items: [
       {
         icon: Contact,
         label: 'CRM',
         path: '/crm',
         module: 'crm',
         children: [
+          { icon: BarChart, label: 'Obchodní nástěnka', path: '/crm', module: 'crm' },
+          { icon: Target, label: 'Obchodní případy', path: '/crm/opportunities', module: 'crm' },
           { icon: FileText, label: 'Nabídky', path: '/crm/offers', module: 'crm' },
           { icon: ClipboardList, label: 'Objednávky', path: '/crm/orders', module: 'crm' },
-          { icon: Package, label: 'Produkty', path: '/products', module: 'crm' },
           { icon: Building, label: 'Subjekty', path: '/subjects', module: 'subjects' },
-          { icon: FileText, label: 'Dokumenty', path: '/documents', module: 'documents' },
         ],
       },
-    ],
-  },
-  {
-    id: 'operations',
-    label: 'Provoz',
-    items: [
+      {
+        icon: DollarSign,
+        label: 'Finance',
+        path: '/reports',
+        module: 'reports',
+        children: [
+          { icon: DollarSign, label: 'Výplaty', path: '/payouts', module: 'payouts' },
+          { icon: FilePieChart, label: 'Režijní náklady', path: '/overhead-costs', module: 'finance' },
+          { icon: BarChart, label: 'Reporty', path: '/reports', module: 'reports' },
+        ],
+      },
+      { icon: Package, label: 'Produkty', path: '/products', module: 'crm' },
       { icon: Wrench, label: 'Inženýring', path: '/engineering', module: 'engineering' },
       { icon: Clock, label: 'Docházka', path: '/attendance', module: 'attendance' },
+      { icon: ListTodo, label: 'Úkoly', path: '/tasks', module: 'tasks' },
       { icon: Users, label: 'Zaměstnanci', path: '/members', module: 'members' },
       { icon: Copy, label: 'Šablony projektu', path: '/templates', module: 'projects' },
-    ],
-  },
-  {
-    id: 'finance',
-    label: 'Finance',
-    items: [
-      { icon: DollarSign, label: 'Výplaty', path: '/payouts', module: 'payouts' },
-      { icon: FilePieChart, label: 'Režijní náklady', path: '/overhead-costs', module: 'finance' },
-      { icon: BarChart, label: 'Reporty', path: '/reports', module: 'reports' },
-    ],
-  },
-  {
-    id: 'admin',
-    label: 'Administrace',
-    items: [
-      {
-        icon: UserCog,
-        label: 'Správa uživatelů',
-        path: '/settings/users',
-        module: 'settings',
-        level: 'can_admin',
-        children: [
-          { icon: Shield, label: 'Role a práva', path: '/settings/permissions', module: 'settings', level: 'can_admin' },
-          { icon: Settings, label: 'Můj profil', path: '/settings/profile', module: 'settings' },
-        ],
-      },
+      { icon: FileText, label: 'Dokumenty', path: '/documents', module: 'documents' },
+      { icon: UserCog, label: 'Správa uživatelů', path: '/settings/users', module: 'settings', level: 'can_admin' },
       { icon: Settings, label: 'Nastavení', path: '/settings', module: 'settings' },
     ],
   },
@@ -276,7 +253,7 @@ const QuickActions = ({ isCollapsed, onLinkClick }) => {
             navigate(action.path);
             onLinkClick?.();
           }}
-          className="flex min-w-0 flex-col items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-2 text-[10px] font-semibold text-slate-600 shadow-sm transition hover:border-primary/30 hover:bg-blue-50/40 hover:text-primary"
+          className="flex min-w-0 flex-col items-center gap-1 rounded-md border border-slate-200/90 bg-white px-2 py-2 text-[10px] font-semibold text-slate-600 shadow-sm transition hover:border-primary/30 hover:bg-blue-50/50 hover:text-primary hover:shadow-md"
           title={action.label}
         >
           <action.icon className="h-4 w-4" />
@@ -289,27 +266,28 @@ const QuickActions = ({ isCollapsed, onLinkClick }) => {
 
 const NavRow = ({ item, isCollapsed, isFavorite, onToggleFavorite, onLinkClick, depth = 0 }) => {
   const Icon = item.icon;
+  const hasChildren = item.children?.length > 0;
 
   return (
     <NavLink
       to={item.path}
+      end={item.path === '/crm' && depth > 0}
       onClick={onLinkClick}
       title={isCollapsed ? item.label : undefined}
       className={({ isActive }) => cn(
-        'group flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition',
+        'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all',
         isCollapsed && 'h-10 justify-center px-0',
-        depth > 0 && !isCollapsed && 'ml-5 py-1.5 pl-3 text-xs',
+        depth > 0 && !isCollapsed && 'ml-8 py-2 pl-3 text-xs font-medium',
         isActive
-          ? depth > 0
-            ? 'bg-blue-50 text-primary ring-1 ring-blue-100 dark:bg-gray-800 dark:text-white dark:ring-gray-700'
-            : 'bg-primary text-white shadow-sm'
-          : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+          ? 'bg-blue-50 text-primary ring-1 ring-blue-100 dark:bg-gray-800 dark:text-white dark:ring-gray-700'
+          : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
       )}
     >
       <Icon className={cn('shrink-0', isCollapsed ? 'h-5 w-5' : 'h-4 w-4')} />
       {!isCollapsed && (
         <>
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          {hasChildren && depth === 0 && <ChevronDown className="h-4 w-4 text-slate-400" />}
           <button
             type="button"
             onClick={(event) => {
@@ -317,7 +295,7 @@ const NavRow = ({ item, isCollapsed, isFavorite, onToggleFavorite, onLinkClick, 
               event.stopPropagation();
               onToggleFavorite(item.path);
             }}
-            className={cn('rounded p-0.5 opacity-0 transition group-hover:opacity-100', isFavorite && 'opacity-100')}
+            className={cn('rounded p-0.5 opacity-0 transition group-hover:opacity-100', isFavorite && 'opacity-100', hasChildren && depth === 0 && 'hidden')}
             title={isFavorite ? 'Odebrat z oblíbených' : 'Přidat do oblíbených'}
           >
             <Star className={cn('h-3.5 w-3.5', isFavorite ? 'fill-amber-400 text-amber-500' : 'text-slate-400')} />
@@ -359,7 +337,7 @@ const NavGroup = ({ group, isCollapsed, favorites, onToggleFavorite, onLinkClick
 
   return (
     <div className="space-y-1.5">
-      {!isCollapsed && (
+      {!isCollapsed && group.label && (
         <button
           type="button"
           onClick={() => setOpen(current => !current)}
@@ -387,10 +365,10 @@ const NavGroup = ({ group, isCollapsed, favorites, onToggleFavorite, onLinkClick
                   onLinkClick={onLinkClick}
                 />
                 {!isCollapsed && item.children?.length > 0 && (
-                  <div className="relative space-y-1 before:absolute before:left-7 before:top-1 before:h-[calc(100%-0.5rem)] before:w-px before:bg-slate-200 dark:before:bg-gray-800">
+                  <div className="relative space-y-0.5 py-1 before:absolute before:left-7 before:top-2 before:h-[calc(100%-1rem)] before:w-px before:bg-slate-200 dark:before:bg-gray-800">
                     {item.children.map(child => (
                       <NavRow
-                        key={child.path}
+                        key={`${child.path}-${child.label}`}
                         item={child}
                         depth={1}
                         isCollapsed={isCollapsed}
@@ -413,7 +391,7 @@ const NavGroup = ({ group, isCollapsed, favorites, onToggleFavorite, onLinkClick
 const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) => {
   const navigate = useNavigate();
   const { signOut, hasPermission, isPrivateMode } = useAuth();
-  const [query, setQuery] = useState('');
+  const [query] = useState('');
   const [favorites, setFavorites] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || DEFAULT_FAVORITES;
@@ -430,7 +408,7 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
   const favoriteItems = allItems
     .filter(item => favorites.includes(item.path))
     .filter(item => canSeeItem(item, hasPermission));
-  const hiddenFavoritePaths = !query && !isCollapsed ? favoriteItems.map(item => item.path) : [];
+  const hiddenFavoritePaths = [];
 
   const toggleFavorite = (path) => {
     setFavorites(current => (
@@ -448,20 +426,21 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
 
   return (
     <div className={cn(
-      'flex h-full min-h-0 flex-col border-r border-slate-200 bg-[#f3f6fa] p-3 shadow-sm dark:border-gray-800 dark:bg-gray-950',
+      'flex h-full min-h-0 flex-col border-r border-slate-200/90 bg-white px-2.5 py-3 shadow-[1px_0_2px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-950',
       isCollapsed && 'items-center'
     )}>
-      <div className={cn('mb-4 flex items-center gap-2', isCollapsed ? 'flex-col justify-center' : 'justify-between')}>
+      <div className={cn('mb-4 flex items-center gap-2 px-1', isCollapsed ? 'flex-col justify-center' : 'justify-between')}>
         <div className={cn(
-          'relative flex items-center rounded-md bg-white shadow-sm ring-1 ring-slate-200 dark:bg-gray-900 dark:ring-gray-800',
-          isCollapsed ? 'h-10 w-10 justify-center' : 'min-w-0 gap-2 px-2 py-2'
+          'relative flex items-center rounded-lg dark:bg-gray-900',
+          isCollapsed ? 'h-10 w-10 justify-center bg-slate-50 ring-1 ring-slate-200/90' : 'min-w-0 gap-2 py-1'
         )}>
           <img
             src="https://horizons-cdn.hostinger.com/71f822ff-0858-4714-9f59-dcfbecb55c00/2f93fb620df7a7540852c9ec9f499aee.png"
             alt="EKV Group Logo"
-            className={cn('w-auto', isCollapsed ? 'h-6' : 'h-8')}
+            className={cn('w-auto', isCollapsed ? 'h-6' : 'h-7')}
             loading="lazy"
           />
+          {!isCollapsed && <span className="text-xl font-semibold tracking-tight text-slate-950">Portal</span>}
           <div className={cn('absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white dark:border-gray-900', isPrivateMode ? 'bg-red-500' : 'bg-green-500')} />
         </div>
 
@@ -469,7 +448,7 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 rounded-md bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+            className="h-9 w-9 rounded-md bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 hover:shadow-md"
             onClick={onToggleCollapse}
             title={isCollapsed ? 'Zobrazit menu' : 'Skrýt menu'}
           >
@@ -478,22 +457,10 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
         )}
       </div>
 
-      {!isCollapsed && (
-        <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-200/80 pb-4 dark:border-gray-800">
-          <div className="min-w-0">
-            <div className="text-lg font-semibold leading-none text-slate-950 dark:text-white">Menu</div>
-            <div className="mt-1 truncate text-xs text-slate-500 dark:text-gray-400">EKV Portal</div>
-          </div>
-          <Badge variant="outline" className="rounded-md bg-white">Portál</Badge>
-        </div>
-      )}
+      {!isCollapsed && <div className="mb-3 border-b border-slate-200/80 dark:border-gray-800" />}
 
-      <UserProfile isCollapsed={isCollapsed} />
-      <SearchBox value={query} onChange={setQuery} isCollapsed={isCollapsed} />
-      <QuickActions isCollapsed={isCollapsed} onLinkClick={onLinkClick} />
-
-      <nav className={cn('min-h-0 flex-1 overflow-y-auto', isCollapsed ? 'w-full space-y-2' : 'space-y-4 pr-1')}>
-        {favoriteItems.length > 0 && !query && !isCollapsed && (
+      <nav className={cn('min-h-0 flex-1 overflow-y-auto', isCollapsed ? 'w-full space-y-2' : 'space-y-2 pr-1')}>
+        {false && favoriteItems.length > 0 && !query && !isCollapsed && (
           <div className="space-y-1">
             <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-normal text-slate-500">
               Oblíbené
@@ -525,7 +492,21 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
         ))}
       </nav>
 
-      <div className={cn('mt-3 space-y-1 border-t border-slate-200 pt-3 dark:border-gray-800', isCollapsed && 'w-full')}>
+      <div className={cn('mt-3 space-y-2 border-t border-slate-200 px-1 pt-3 dark:border-gray-800', isCollapsed && 'w-full px-0')}>
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-900',
+              isCollapsed && 'h-10 justify-center px-0'
+            )}
+            title={isCollapsed ? 'Zobrazit menu' : undefined}
+          >
+            {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+            {!isCollapsed && <span>Sbalit menu</span>}
+          </button>
+        )}
         <button
           type="button"
           onClick={handleLogout}
@@ -538,6 +519,12 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
           <LogOut className={cn('shrink-0', isCollapsed ? 'h-5 w-5' : 'h-4 w-4')} />
           {!isCollapsed && <span>Odhlásit se</span>}
         </button>
+        {!isCollapsed && (
+          <div className="pt-3 text-[11px] leading-5 text-slate-400">
+            <div>© 2026 EKV - Project s.r.o.</div>
+            <div>v2.0.0</div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -547,7 +534,7 @@ const DesktopSidebar = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
-    document.documentElement.style.setProperty('--sidebar-width', isCollapsed ? '4.5rem' : '17rem');
+    document.documentElement.style.setProperty('--sidebar-width', isCollapsed ? '4.5rem' : '15rem');
     return () => document.documentElement.style.removeProperty('--sidebar-width');
   }, [isCollapsed]);
 
@@ -557,7 +544,7 @@ const DesktopSidebar = () => {
       animate={{ x: 0 }}
       className={cn(
         'fixed left-0 top-0 z-40 hidden h-full flex-col transition-all duration-300 print:hidden lg:flex',
-        isCollapsed ? 'w-[4.5rem]' : 'w-[17rem]'
+        isCollapsed ? 'w-[4.5rem]' : 'w-[15rem]'
       )}
     >
       <SidebarShell isCollapsed={isCollapsed} onToggleCollapse={() => setIsCollapsed(current => !current)} />

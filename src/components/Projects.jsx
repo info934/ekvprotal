@@ -16,6 +16,8 @@ import {
 import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import PageHeader from '@/components/ui/page-header';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
   DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator
@@ -52,6 +54,54 @@ const Projects = () => {
   const canViewFinance = hasPermission('finance', 'can_read');
   const showFinance = canViewFinance && !isPrivateMode;
   const showReward = !isPrivateMode && !canViewFinance;
+  const projectTableColumns = useMemo(() => [
+    { id: 'code', label: 'Kód', hideable: false },
+    { id: 'name', label: 'Název' },
+    { id: 'investor', label: 'Investor' },
+    { id: 'status', label: 'Stav' },
+    showFinance && { id: 'price', label: 'Cena' },
+    showReward && { id: 'reward', label: 'Odměna' },
+    { id: 'actions', label: 'Akce', hideable: false },
+  ].filter(Boolean), [showFinance, showReward]);
+  const projectManagedTable = useManagedColumns('ekv-table-projects', projectTableColumns);
+  const projectVisibleColumns = projectManagedTable.visibleColumns;
+  const projectHeadClasses = {
+    code: 'w-24',
+    name: 'min-w-[260px]',
+    investor: 'min-w-[220px]',
+    status: 'min-w-[160px]',
+    price: 'min-w-[140px] text-right',
+    reward: 'min-w-[140px] text-right',
+    actions: 'w-12 text-right',
+  };
+  const projectCellClasses = {
+    code: 'font-mono text-xs text-muted-foreground',
+    name: 'max-w-[280px] truncate font-medium',
+    investor: 'text-muted-foreground',
+    price: 'text-right font-mono',
+    reward: 'text-right font-mono',
+    actions: 'text-right text-muted-foreground',
+  };
+  const renderProjectTableCell = (project, columnId) => {
+    switch (columnId) {
+      case 'code':
+        return project.code;
+      case 'name':
+        return project.name;
+      case 'investor':
+        return project.investor?.name || '-';
+      case 'status':
+        return renderStatusMenu(project);
+      case 'price':
+        return formatCurrency(project.price);
+      case 'reward':
+        return getRewardDisplay(project.id) || '-';
+      case 'actions':
+        return <ChevronDown className="ml-auto h-4 w-4 -rotate-90 opacity-0 group-hover:opacity-100" />;
+      default:
+        return null;
+    }
+  };
 
   const computeProjectStats = useCallback((items) => {
     return (items || []).reduce((acc, curr) => ({
@@ -497,51 +547,40 @@ const Projects = () => {
               })}
             </div>
           ) : viewMode === 'list' ? (
-            <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50 border-b text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3 font-medium w-24">Kód</th>
-                      <th className="px-4 py-3 font-medium">Název</th>
-                      <th className="px-4 py-3 font-medium hidden md:table-cell">Investor</th>
-                      <th className="px-4 py-3 font-medium">Stav</th>
-                      {showFinance && <th className="px-4 py-3 font-medium text-right">Cena</th>}
-                      {showReward && <th className="px-4 py-3 font-medium text-right">Odměna</th>}
-                      <th className="px-4 py-3 font-medium text-right"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {filteredProjects.map((project) => (
-                      <tr
-                        key={project.id}
-                        className="hover:bg-slate-50/50 cursor-pointer transition-colors"
-                        onClick={() => navigate(`/projects/${project.id}`)}
-                      >
-                        <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{project.code}</td>
-                        <td className="px-4 py-3 font-medium truncate max-w-[280px]" title={project.name}>{project.name}</td>
-                        <td className="px-4 py-3 hidden md:table-cell text-muted-foreground">{project.investor?.name || '-'}</td>
-                        <td className="px-4 py-3">
-                          {renderStatusMenu(project)}
-                        </td>
-                        {showFinance && (
-                          <td className="px-4 py-3 text-right font-mono">
-                            {formatCurrency(project.price)}
-                          </td>
-                        )}
-                        {showReward && (
-                          <td className="px-4 py-3 text-right font-mono">
-                            {getRewardDisplay(project.id) || '-'}
-                          </td>
-                        )}
-                        <td className="px-4 py-3 text-right text-muted-foreground">
-                          <ChevronDown className="w-4 h-4 ml-auto -rotate-90 opacity-0 group-hover:opacity-100" />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="space-y-3">
+              <div className="flex justify-end">
+                <ManagedTableToolbar
+                  columns={projectManagedTable.columns}
+                  visibility={projectManagedTable.visibility}
+                  onMoveColumn={projectManagedTable.moveColumn}
+                  onToggleColumn={projectManagedTable.toggleColumn}
+                  onReset={projectManagedTable.resetColumns}
+                />
               </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {projectVisibleColumns.map((column) => (
+                      <TableHead key={column.id} className={projectHeadClasses[column.id]}>{column.label}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredProjects.map((project) => (
+                    <TableRow
+                      key={project.id}
+                      className="group cursor-pointer"
+                      onClick={() => navigate(`/projects/${project.id}`)}
+                    >
+                      {projectVisibleColumns.map((column) => (
+                        <TableCell key={column.id} className={projectCellClasses[column.id]} title={column.id === 'name' ? project.name : undefined}>
+                          {renderProjectTableCell(project, column.id)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

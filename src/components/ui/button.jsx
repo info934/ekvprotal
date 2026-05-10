@@ -4,17 +4,17 @@ import { cva } from 'class-variance-authority';
 import React from 'react';
 
 const buttonVariants = cva(
-	'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent text-sm font-semibold leading-5 shadow-sm ring-offset-background transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+	'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent text-sm font-semibold leading-5 shadow-sm ring-offset-background transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
 	{
 		variants: {
 			variant: {
-				default: 'border-primary bg-primary text-primary-foreground hover:bg-blue-700 active:bg-blue-800',
+				default: 'border-primary bg-primary text-primary-foreground hover:bg-blue-700 hover:shadow-md active:bg-blue-800',
 				destructive:
           'border-destructive bg-destructive text-destructive-foreground hover:bg-red-700 active:bg-red-800',
 				outline:
-          'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-950',
+          'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-950 hover:shadow-md',
 				secondary:
-          'border-slate-300 bg-slate-100 text-slate-800 hover:bg-slate-200 hover:text-slate-950',
+          'border-slate-300 bg-slate-100 text-slate-800 hover:bg-slate-200 hover:text-slate-950 hover:shadow-md',
 				ghost: 'border-transparent bg-transparent shadow-none hover:bg-slate-100 hover:text-slate-950',
 				link: 'border-transparent bg-transparent text-primary shadow-none underline-offset-4 hover:underline',
 			},

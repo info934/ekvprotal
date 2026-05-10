@@ -14,9 +14,12 @@ import {
   FileText,
   GanttChartSquare,
   Home,
+  MoreHorizontal,
   Package,
   PiggyBank,
+  Plus,
   RefreshCw,
+  Search,
   ShieldAlert,
   ShoppingCart,
   Target,
@@ -61,6 +64,24 @@ const formatDate = (date) => {
 
 const safeArray = (result) => (result?.error ? [] : (result?.data || []));
 
+const stageLabels = {
+  lead: 'Přijetí poptávky',
+  contacted: 'Proběhlo jednání',
+  proposal: 'Šla nabídka',
+  negotiation: 'Před uzavřením',
+  won: 'Podepsáno',
+  lost: 'Prohra',
+};
+
+const stageClasses = {
+  lead: 'bg-amber-50 text-amber-700 border-amber-200',
+  contacted: 'bg-sky-50 text-sky-700 border-sky-200',
+  proposal: 'bg-orange-50 text-orange-700 border-orange-200',
+  negotiation: 'bg-lime-50 text-lime-700 border-lime-200',
+  won: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  lost: 'bg-rose-50 text-rose-700 border-rose-200',
+};
+
 const DashboardMetric = ({ icon: Icon, label, value, detail, tone = 'blue', to }) => {
   const tones = {
     blue: 'border-blue-100 bg-blue-50 text-blue-700',
@@ -71,15 +92,17 @@ const DashboardMetric = ({ icon: Icon, label, value, detail, tone = 'blue', to }
   };
 
   const content = (
-    <Card className="crm-panel h-full transition-colors hover:border-primary/30">
-      <CardContent className="flex h-full items-center justify-between gap-4 p-4">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-semibold uppercase tracking-normal text-slate-500">{label}</p>
-          <p className="mt-1 truncate text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
-          {detail && <p className="mt-1 truncate text-xs text-slate-500">{detail}</p>}
+    <Card className="crm-panel h-full min-h-[118px] transition-colors hover:border-primary/30">
+      <CardContent className="flex h-full flex-col justify-between gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <p className="min-w-0 text-[11px] font-semibold uppercase leading-4 tracking-normal text-slate-500">{label}</p>
+          <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border', tones[tone])}>
+            <Icon className="h-4 w-4" />
+          </div>
         </div>
-        <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-md border', tones[tone])}>
-          <Icon className="h-5 w-5" />
+        <div className="min-w-0">
+          <p className="break-words text-[1.15rem] font-semibold leading-6 tracking-tight text-slate-950 2xl:text-[1.35rem]">{value}</p>
+          {detail && <p className="mt-1 line-clamp-2 text-xs leading-4 text-slate-500">{detail}</p>}
         </div>
       </CardContent>
     </Card>
@@ -134,6 +157,93 @@ const EmptyBlock = ({ text }) => (
   <div className="rounded-md border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center text-sm text-slate-500">
     {text}
   </div>
+);
+
+const DashboardTable = ({ opportunities }) => (
+  <Card className="crm-panel">
+    <CardHeader className="border-b border-slate-200 bg-white px-4 py-3 sm:px-5">
+      <SectionHeader
+        icon={Target}
+        title="Obchodní nástěnka"
+        description="Aktuální pipeline v tabulkovém přehledu podle obchodního dashboardu."
+        action={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/crm">Otevřít CRM</Link>
+            </Button>
+            <Button size="sm" asChild>
+              <Link to="/crm/new">
+                <Plus className="h-4 w-4" />
+                Nový záznam
+              </Link>
+            </Button>
+          </div>
+        }
+      />
+    </CardHeader>
+    <CardContent className="p-0">
+      <div className="border-b border-slate-200 bg-white px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <div className="h-9 rounded-md border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm leading-9 text-slate-400">
+              Hledat...
+            </div>
+          </div>
+          <Badge variant="outline" className="h-9 rounded-md px-3 text-slate-600">Moje filtry</Badge>
+          <Badge variant="outline" className="h-9 rounded-md px-3 text-slate-600">Aktivní</Badge>
+          <Badge variant="outline" className="h-9 rounded-md px-3 text-slate-600">Typ obchodu</Badge>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <div className="flex min-w-[980px] items-center gap-2 bg-gradient-to-r from-blue-700 to-sky-600 px-4 py-2 text-sm font-semibold text-white">
+          <span>Obchodní nástěnka</span>
+          <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{opportunities.length}</span>
+        </div>
+        <table className="w-full min-w-[980px] border-collapse bg-white text-sm">
+          <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
+            <tr className="border-b border-slate-200">
+              <th className="px-4 py-3 text-left font-semibold">Kód</th>
+              <th className="px-4 py-3 text-left font-semibold">Předmět</th>
+              <th className="px-4 py-3 text-left font-semibold">Klient</th>
+              <th className="px-4 py-3 text-left font-semibold">Stav</th>
+              <th className="px-4 py-3 text-right font-semibold">Konečná cena</th>
+              <th className="px-4 py-3 text-left font-semibold">Odhad uzavření</th>
+              <th className="w-12 px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {opportunities.length > 0 ? opportunities.map((opportunity) => {
+              const stage = String(opportunity.stage || 'lead').toLowerCase();
+              return (
+                <tr key={opportunity.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-950">{opportunity.number || 'OP'}</td>
+                  <td className="px-4 py-3">
+                    <Link to={`/crm/${opportunity.id}`} className="font-medium text-slate-700 hover:text-primary">
+                      {opportunity.title || 'Bez názvu'}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-slate-800">{opportunity.subject?.name || '-'}</td>
+                  <td className="px-4 py-3">
+                    <span className={cn('inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5', stageClasses[stage] || 'border-slate-200 bg-slate-50 text-slate-600')}>
+                      {stageLabels[stage] || opportunity.stage || 'Aktivní'}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-950">{formatCurrency(opportunity.value || 0)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(opportunity.expected_close_date)}</td>
+                  <td className="px-4 py-3 text-right text-slate-400"><MoreHorizontal className="h-4 w-4" /></td>
+                </tr>
+              );
+            }) : (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">Zatím nejsou dostupné obchodní případy.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </CardContent>
+  </Card>
 );
 
 const UserFinancials = ({ memberId }) => {
@@ -432,6 +542,27 @@ const Dashboard = () => {
     return items.slice(0, 8);
   }, [data.attendanceSubmissions, data.payouts, summary.openOpportunities, summary.overdueEngineering, summary.overdueTasks]);
 
+  const stageSummary = useMemo(() => {
+    const counts = summary.openOpportunities.reduce((acc, opportunity) => {
+      const stage = String(opportunity.stage || 'lead').toLowerCase();
+      acc[stage] = {
+        stage,
+        count: (acc[stage]?.count || 0) + 1,
+        value: (acc[stage]?.value || 0) + Number(opportunity.value || 0),
+      };
+      return acc;
+    }, {});
+
+    return Object.values(counts).sort((a, b) => b.value - a.value);
+  }, [summary.openOpportunities]);
+
+  const topOpportunities = useMemo(
+    () => [...summary.openOpportunities]
+      .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
+      .slice(0, 10),
+    [summary.openOpportunities],
+  );
+
   const moduleTiles = [
     {
       title: 'CRM',
@@ -538,51 +669,89 @@ const Dashboard = () => {
           </div>
         )}
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           <DashboardMetric icon={Target} label="CRM pipeline" value={formatCurrency(summary.pipelineValue)} detail={`${summary.openOpportunities.length} otevřených OP`} tone="blue" to="/crm" />
           <DashboardMetric icon={Briefcase} label="Aktivní projekce" value={summary.activeProjects.length} detail={`${summary.visibleProjects.length} projektů celkem`} tone="slate" to="/projects" />
           <DashboardMetric icon={Wrench} label="Aktivní realizace" value={summary.activeRealizations.length} detail="stav realizací a harmonogram" tone="amber" to="/realizace" />
           <DashboardMetric icon={AlertTriangle} label="Vyžaduje pozornost" value={attentionItems.length} detail={`${summary.pendingApprovals} schválení, ${summary.overdueTasks.length} úkolů po termínu`} tone={attentionItems.length ? 'rose' : 'emerald'} />
+          {!isPrivateMode && isSuperUser && (
+            <DashboardMetric icon={CircleDollarSign} label="Realizovaný zisk" value={formatCurrency(data.companyFinance.realizedProfit)} tone="emerald" to="/reports" />
+          )}
+          {!isPrivateMode && isSuperUser && (
+            <DashboardMetric icon={FileText} label="Režie bilance" value={formatCurrency(data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted)} tone={(data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted) < 0 ? 'rose' : 'amber'} to="/overhead-costs" />
+          )}
         </div>
 
-        {!isPrivateMode && (
+        {!isPrivateMode && !isSuperUser && (
           <div className="space-y-3">
-            {isSuperUser && <AdminFinancials companyFinance={data.companyFinance} approvals={summary.pendingApprovals} />}
-            {!isSuperUser && <UserFinancials memberId={memberId} />}
+            <UserFinancials memberId={memberId} />
           </div>
         )}
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.15fr)_minmax(340px,0.75fr)]">
           <Card className="crm-panel">
             <CardHeader className="crm-panel-header">
               <SectionHeader
                 icon={BarChart3}
-                title="Stav napříč portálem"
-                description="Rychlé vstupy do hlavních modulů a nejdůležitější ukazatele."
+                title="Pipeline podle stavu"
+                description="Hodnota otevřených obchodních případů."
               />
             </CardHeader>
-            <CardContent className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
-              {moduleTiles.map((tile) => (
+            <CardContent className="space-y-4 p-4">
+              {stageSummary.length > 0 ? (
+                stageSummary.map((item) => {
+                  const maxValue = Math.max(...stageSummary.map((stage) => stage.value), 1);
+                  const width = Math.max(8, Math.round((item.value / maxValue) * 100));
+                  return (
+                    <div key={item.stage} className="space-y-2">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="font-semibold text-slate-700">{stageLabels[item.stage] || item.stage}</span>
+                        <span className="whitespace-nowrap font-semibold text-slate-950">{formatCurrency(item.value)}</span>
+                      </div>
+                      <div className="h-2.5 rounded-full bg-slate-100">
+                        <div className="h-2.5 rounded-full bg-primary" style={{ width: `${width}%` }} />
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <EmptyBlock text="Pipeline zatím nemá aktivní obchodní případy." />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="crm-panel">
+            <CardHeader className="crm-panel-header">
+              <SectionHeader
+                icon={Activity}
+                title="Rychlé přehledy"
+                description="Vstupy do hlavních modulů portálu."
+              />
+            </CardHeader>
+            <CardContent className="grid gap-3 p-4 sm:grid-cols-2">
+              {moduleTiles.slice(0, 6).map((tile) => (
                 <Link
                   key={tile.title}
                   to={tile.to}
-                  className="group rounded-md border border-slate-200 bg-white p-4 transition-colors hover:border-primary/30 hover:bg-blue-50/30"
+                  className="group flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-3 transition-colors hover:border-primary/30 hover:bg-blue-50/30"
                 >
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className={cn(
-                      'flex h-10 w-10 items-center justify-center rounded-md border',
+                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-md border',
                       tile.tone === 'rose' && 'border-rose-100 bg-rose-50 text-rose-700',
                       tile.tone === 'amber' && 'border-amber-100 bg-amber-50 text-amber-700',
                       tile.tone === 'emerald' && 'border-emerald-100 bg-emerald-50 text-emerald-700',
                       tile.tone === 'blue' && 'border-blue-100 bg-blue-50 text-blue-700',
                       tile.tone === 'slate' && 'border-slate-200 bg-slate-50 text-slate-700',
                     )}>
-                      <tile.icon className="h-5 w-5" />
+                      <tile.icon className="h-4 w-4" />
                     </div>
-                    <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold text-slate-950">{tile.title}</h3>
+                      <p className="truncate text-xs text-slate-500">{tile.description}</p>
+                    </div>
                   </div>
-                  <h3 className="mt-4 text-sm font-semibold text-slate-950">{tile.title}</h3>
-                  <p className="mt-1 text-sm text-slate-500">{tile.description}</p>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
                 </Link>
               ))}
             </CardContent>
@@ -607,8 +776,10 @@ const Dashboard = () => {
           </Card>
         </div>
 
+        <DashboardTable opportunities={topOpportunities} />
+
         <Tabs defaultValue="operations" className="space-y-5">
-          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-md border bg-slate-100 p-1 sm:w-auto">
+          <TabsList className="h-auto w-full justify-start overflow-x-auto sm:w-auto">
             <TabsTrigger value="operations">Operativa</TabsTrigger>
             {!isPrivateMode && <TabsTrigger value="finance">Finance</TabsTrigger>}
             <TabsTrigger value="schedules">Harmonogramy</TabsTrigger>

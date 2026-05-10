@@ -293,7 +293,7 @@ const ProjectForm = () => {
     if (loading) return <div className="p-8 text-center text-muted-foreground"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2"/>Načítání projektu...</div>;
 
     return (
-        <div className="max-w-4xl mx-auto p-4 pb-20">
+        <div className="app-page-wide pb-20">
             <PageHeader
                 icon={Briefcase}
                 title={isEditing ? 'Upravit projekt' : 'Založit nový projekt'}

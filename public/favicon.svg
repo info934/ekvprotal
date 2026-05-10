@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="EKV Portal">
+  <rect width="64" height="64" rx="14" fill="#1552a3"/>
+  <path d="M14 18h26v7H22v7h16v7H22v7h19v7H14V18Z" fill="#fff"/>
+  <path d="M44 18h7v35h-7V18Z" fill="#86efac"/>
+</svg>

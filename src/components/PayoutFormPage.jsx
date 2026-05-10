@@ -14,7 +14,7 @@ const PayoutFormPage = () => {
   };
 
   return (
-    <div className="mx-auto max-w-5xl p-4 pb-20">
+    <div className="app-page-wide pb-20">
       <PageHeader
         icon={Wallet}
         title="Nová žádost o výplatu"

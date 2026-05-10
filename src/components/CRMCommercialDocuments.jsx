@@ -13,6 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import { ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import SubjectSelect from '@/components/SubjectSelect';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -209,6 +210,73 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       document.opportunity?.subject?.name,
     ].filter(Boolean).some((value) => String(value).toLowerCase().includes(needle)));
   }, [documents, query]);
+
+  const listColumns = useMemo(() => [
+    { id: 'number', label: 'Kód', hideable: false },
+    { id: 'title', label: 'Předmět' },
+    { id: 'client', label: 'Klient' },
+    { id: 'opportunity', label: 'Obchodní případ' },
+    { id: 'created', label: 'Vytvořeno' },
+    { id: 'status', label: 'Stav' },
+    { id: 'total', label: 'Konečná cena' },
+    { id: 'validUntil', label: 'Konec platnosti' },
+    { id: 'actions', label: 'Akce', hideable: false },
+  ], []);
+  const managedList = useManagedColumns(`ekv-table-crm-${type}s`, listColumns);
+  const visibleListColumns = managedList.visibleColumns;
+  const listHeadClasses = {
+    number: 'min-w-[120px]',
+    title: 'min-w-[280px]',
+    client: 'min-w-[180px]',
+    opportunity: 'min-w-[190px]',
+    created: 'min-w-[110px]',
+    status: 'min-w-[110px]',
+    total: 'min-w-[130px] text-right',
+    validUntil: 'min-w-[130px]',
+    actions: 'w-12 text-right',
+  };
+  const listCellClasses = {
+    number: 'font-semibold text-slate-950',
+    title: 'max-w-[360px] truncate',
+    client: 'font-medium',
+    total: 'text-right font-semibold',
+    actions: 'text-right',
+  };
+  const renderListCell = (document, columnId) => {
+    switch (columnId) {
+      case 'number':
+        return document.number || '-';
+      case 'title':
+        return document.title;
+      case 'client':
+        return document.subject?.name || document.opportunity?.subject?.name || '-';
+      case 'opportunity':
+        return (
+          <>
+            <span className="text-muted-foreground">{document.opportunity?.number || 'OP'}</span>
+            <span className="ml-1">{document.opportunity?.title || ''}</span>
+          </>
+        );
+      case 'created':
+        return formatDate(document.created_at);
+      case 'status':
+        return <Badge variant="outline">{documentStatuses.find((status) => status.value === document.status)?.label || document.status}</Badge>;
+      case 'total':
+        return formatCurrency(document.total);
+      case 'validUntil':
+        return formatDate(document.valid_until);
+      case 'actions':
+        return (
+          <Button asChild variant="ghost" size="icon" onClick={(event) => event.stopPropagation()}>
+            <Link to={config.detailPath(document.id)}>
+              <FileText className="h-4 w-4" />
+            </Link>
+          </Button>
+        );
+      default:
+        return null;
+    }
+  };
 
   const updateSelectedDocument = (field, value) => {
     setSelectedDocument((current) => current ? { ...current, [field]: value } : current);
@@ -728,9 +796,18 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               <CardTitle>Prehled</CardTitle>
               <CardDescription>{filteredDocuments.length} zaznamu</CardDescription>
             </div>
-            <div className="relative w-full lg:w-80">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Hledat cislo, klienta, OP..." className="pl-9" />
+            <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+              <div className="relative w-full lg:w-80">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Hledat cislo, klienta, OP..." className="pl-9" />
+              </div>
+              <ManagedTableToolbar
+                columns={managedList.columns}
+                visibility={managedList.visibility}
+                onMoveColumn={managedList.moveColumn}
+                onToggleColumn={managedList.toggleColumn}
+                onReset={managedList.resetColumns}
+              />
             </div>
           </div>
         </CardHeader>
@@ -739,42 +816,23 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[120px]">Kod</TableHead>
-                  <TableHead className="min-w-[280px]">Predmet</TableHead>
-                  <TableHead className="min-w-[180px]">Klient</TableHead>
-                  <TableHead className="min-w-[190px]">Obchodni pripad</TableHead>
-                  <TableHead className="min-w-[110px]">Vytvoreno</TableHead>
-                  <TableHead className="min-w-[110px]">Stav</TableHead>
-                  <TableHead className="min-w-[130px] text-right">Konecna cena</TableHead>
-                  <TableHead className="min-w-[130px]">Konec platnosti</TableHead>
-                  <TableHead className="w-12" />
+                  {visibleListColumns.map((column) => (
+                    <TableHead key={column.id} className={listHeadClasses[column.id]}>{column.label}</TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={9} className="h-24 text-center text-muted-foreground">Nacitam...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={visibleListColumns.length} className="h-24 text-center text-muted-foreground">Nacitam...</TableCell></TableRow>
                 ) : filteredDocuments.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="h-24 text-center text-muted-foreground">Zadne zaznamy.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={visibleListColumns.length} className="h-24 text-center text-muted-foreground">Zadne zaznamy.</TableCell></TableRow>
                 ) : filteredDocuments.map((document) => (
                   <TableRow key={document.id} className="cursor-pointer" onClick={() => navigate(config.detailPath(document.id))}>
-                    <TableCell className="font-semibold text-slate-950">{document.number || '-'}</TableCell>
-                    <TableCell className="max-w-[360px] truncate">{document.title}</TableCell>
-                    <TableCell className="font-medium">{document.subject?.name || document.opportunity?.subject?.name || '-'}</TableCell>
-                    <TableCell>
-                      <span className="text-muted-foreground">{document.opportunity?.number || 'OP'}</span>
-                      <span className="ml-1">{document.opportunity?.title || ''}</span>
-                    </TableCell>
-                    <TableCell>{formatDate(document.created_at)}</TableCell>
-                    <TableCell><Badge variant="outline">{documentStatuses.find((status) => status.value === document.status)?.label || document.status}</Badge></TableCell>
-                    <TableCell className="text-right font-semibold">{formatCurrency(document.total)}</TableCell>
-                    <TableCell>{formatDate(document.valid_until)}</TableCell>
-                    <TableCell>
-                      <Button asChild variant="ghost" size="icon" onClick={(event) => event.stopPropagation()}>
-                        <Link to={config.detailPath(document.id)}>
-                          <FileText className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                    </TableCell>
+                    {visibleListColumns.map((column) => (
+                      <TableCell key={column.id} className={listCellClasses[column.id]}>
+                        {renderListCell(document, column.id)}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 ))}
               </TableBody>
