@@ -24,9 +24,10 @@ import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
 
 const getStatusBadge = (status) => {
   switch (status) {
-    case 'pending': return <Badge variant="warning" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100 border-none"><Clock className="w-3 h-3 mr-1"/> Čeká</Badge>;
-    case 'approved': return <Badge variant="success" className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none"><CheckCircle className="w-3 h-3 mr-1"/> Schváleno</Badge>;
-    case 'paid': return <Badge variant="info" className="bg-blue-100 text-blue-800 hover:bg-blue-100 border-none"><DollarSign className="w-3 h-3 mr-1"/> Vyplaceno</Badge>;
+    case 'pending': return <Badge variant="warning" className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-none"><Clock className="w-3 h-3 mr-1"/> Čeká na schválení</Badge>;
+    case 'approved': return <Badge variant="info" className="bg-blue-100 text-blue-800 hover:bg-blue-100 border-none"><FileText className="w-3 h-3 mr-1"/> Čeká na fakturu</Badge>;
+    case 'invoice_uploaded': return <Badge variant="secondary" className="bg-slate-200 text-slate-800 border-none"><FileText className="w-3 h-3 mr-1"/> Faktura nahrána</Badge>;
+    case 'paid': return <Badge variant="success" className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none"><CheckCircle className="w-3 h-3 mr-1"/> Vyplaceno</Badge>;
     case 'rejected': return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1"/> Zamítnuto</Badge>;
     default: return <Badge variant="secondary">{status}</Badge>;
   }
@@ -272,8 +273,8 @@ const HourlyPayoutRequestsAdmin = () => {
 
   return (
     <div className="space-y-6">
-      <Card className="shadow-sm border-slate-200">
-        <CardHeader className="bg-slate-50/50 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 py-4 px-6">
+      <Card className="overflow-hidden rounded-xl border-slate-200 bg-white shadow-sm">
+        <CardHeader className="flex flex-col justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center">
           <div className="flex items-center gap-4">
             <div>
               <CardTitle className="text-lg flex items-center gap-2">
@@ -283,19 +284,20 @@ const HourlyPayoutRequestsAdmin = () => {
               <CardDescription>Přehled a schvalování žádostí a přijatých faktur.</CardDescription>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
              <Button variant="outline" size="sm" onClick={handleRunAudit} className="gap-2 bg-white">
                 <Search className="w-4 h-4 text-slate-500" />
                 Audit DB URL
              </Button>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[200px] bg-white">
+              <SelectTrigger className="w-full bg-white sm:w-[220px]">
                 <SelectValue placeholder="Filtr stavu" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Všechny žádosti</SelectItem>
                 <SelectItem value="pending">Čeká na schválení</SelectItem>
-                <SelectItem value="approved">Schváleno (čeká na faktu/vyplacení)</SelectItem>
+                <SelectItem value="approved">Čeká na fakturu</SelectItem>
+                <SelectItem value="invoice_uploaded">Faktura nahrána</SelectItem>
                 <SelectItem value="paid">Vyplaceno</SelectItem>
                 <SelectItem value="rejected">Zamítnuto</SelectItem>
               </SelectContent>
@@ -312,23 +314,23 @@ const HourlyPayoutRequestsAdmin = () => {
             <Table>
               <TableHeader className="bg-slate-50">
                 <TableRow>
-                  <TableHead className="px-6">Datum</TableHead>
+                  <TableHead className="h-11 px-5 text-xs font-bold uppercase tracking-wide text-slate-500">Datum</TableHead>
                   <TableHead>Pracovník</TableHead>
-                  <TableHead>Projekt</TableHead>
-                  <TableHead className="text-right">Hodiny / Celkem</TableHead>
-                  <TableHead>Stav</TableHead>
+                  <TableHead className="h-11 text-xs font-bold uppercase tracking-wide text-slate-500">Obdob? / Projekt</TableHead>
+                  <TableHead className="h-11 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Hodiny / Celkem</TableHead>
+                  <TableHead className="h-11 text-xs font-bold uppercase tracking-wide text-slate-500">Stav</TableHead>
                   <TableHead>Faktura / Poznámka</TableHead>
-                  <TableHead className="text-right px-6">Akce</TableHead>
+                  <TableHead className="h-11 px-5 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Akce</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRequests.length > 0 ? (
                   filteredRequests.map((req) => (
-                    <TableRow key={req.id} className="hover:bg-slate-50/50">
-                      <TableCell className="px-6 font-medium text-slate-600">
+                    <TableRow key={req.id} className="border-slate-100 hover:bg-slate-50/70">
+                      <TableCell className="px-5 font-medium text-slate-600">
                         {format(new Date(req.created_at), 'dd. MM. yyyy')}
                       </TableCell>
-                      <TableCell className="font-semibold text-slate-800">
+                      <TableCell className="font-semibold text-slate-900">
                         {req.members?.name || 'Neznámý'}
                       </TableCell>
                       <TableCell className="text-slate-600 text-sm">
@@ -338,7 +340,7 @@ const HourlyPayoutRequestsAdmin = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="text-xs text-muted-foreground">{Number(req.total_hours || req.hours).toFixed(1)} h x {req.hourly_rate} Kč</div>
-                        <div className="font-bold text-slate-900">{Number(req.total_amount).toLocaleString('cs-CZ')} Kč</div>
+                        <div className="font-bold tabular-nums text-slate-900">{Number(req.total_amount).toLocaleString('cs-CZ')} Kč</div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1 items-start">
@@ -347,7 +349,7 @@ const HourlyPayoutRequestsAdmin = () => {
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] cursor-help px-1.5 py-0">
+                                  <Badge variant="outline" className="h-7 cursor-help gap-1.5 rounded-full border-amber-200 bg-amber-50 px-2.5 text-amber-700">
                                     <FileWarning className="w-2.5 h-2.5 mr-1" />
                                     Bez faktury
                                   </Badge>
@@ -380,11 +382,11 @@ const HourlyPayoutRequestsAdmin = () => {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-right px-6">
+                      <TableCell className="px-5 text-right">
                         <div className="flex justify-end items-center gap-2">
                            <Popover open={selectedAuditRequest === req.id} onOpenChange={(open) => setSelectedAuditRequest(open ? req.id : null)}>
                               <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-primary" title="Historie schválení">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-900" title="Historie schválení">
                                   <Eye className="w-4 h-4" />
                                 </Button>
                               </PopoverTrigger>
@@ -398,21 +400,21 @@ const HourlyPayoutRequestsAdmin = () => {
 
                           {req.status === 'pending' && (
                             <>
-                              <Button size="sm" variant="outline" className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100" onClick={() => openApprovalDialog(req)} disabled={processingId === req.id}>
+                              <Button size="sm" variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" onClick={() => openApprovalDialog(req)} disabled={processingId === req.id}>
                                 {processingId === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />} Schválit
                               </Button>
-                              <Button size="sm" variant="outline" className="bg-red-50 text-red-700 hover:bg-red-100" onClick={() => openRejectDialog(req)} disabled={processingId === req.id}>
+                              <Button size="icon" variant="outline" className="h-8 w-8 border-red-200 bg-red-50 text-red-700 hover:bg-red-100" onClick={() => openRejectDialog(req)} disabled={processingId === req.id}>
                                 <XCircle className="w-4 h-4" />
                               </Button>
                             </>
                           )}
-                          {req.status === 'approved' && (
+                          {['approved', 'invoice_uploaded'].includes(req.status) && (
                              <Button 
                                size="sm" 
                                variant="default"
                                onClick={() => handleMarkAsPaid(req)}
                                disabled={processingId === req.id || (!req.invoice_url && !req.approved_without_invoice)}
-                               className={(!req.invoice_url && !req.approved_without_invoice) ? 'opacity-50 cursor-not-allowed' : ''}
+                               className={(!req.invoice_url && !req.approved_without_invoice) ? 'cursor-not-allowed opacity-50' : 'bg-emerald-600 text-white hover:bg-emerald-700'}
                                title={(!req.invoice_url && !req.approved_without_invoice) ? "Čeká se na nahrání faktury uživatelem" : "Označit jako vyplacené"}
                              >
                                {processingId === req.id ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <DollarSign className="w-4 h-4 mr-1" />}

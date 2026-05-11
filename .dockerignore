@@ -1,0 +1,11 @@
+.git
+.playwright-cli
+dist
+node_modules
+output
+fa_portal
+*.log
+*.err.log
+.env.local
+.env.*.local
+crm-new-check.png

@@ -20,9 +20,10 @@ import { auditInvoiceUrls } from '@/lib/invoiceAudit';
 
 const getStatusBadge = (status) => {
   switch (status) {
-    case 'pending': return <Badge variant="warning" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100 border-none">Čeká na schválení</Badge>;
-    case 'approved': return <Badge variant="success" className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none">Schváleno</Badge>;
-    case 'paid': return <Badge variant="info" className="bg-blue-100 text-blue-800 hover:bg-blue-100 border-none">Vyplaceno</Badge>;
+    case 'pending': return <Badge variant="warning" className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-none">Čeká na schválení</Badge>;
+    case 'approved': return <Badge variant="info" className="bg-blue-100 text-blue-800 hover:bg-blue-100 border-none">Čeká na fakturu</Badge>;
+    case 'invoice_uploaded': return <Badge variant="secondary" className="bg-slate-200 text-slate-800 border-none">Faktura nahrána</Badge>;
+    case 'paid': return <Badge variant="success" className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none">Vyplaceno</Badge>;
     case 'rejected': return <Badge variant="destructive">Zamítnuto</Badge>;
     default: return <Badge variant="secondary">{status}</Badge>;
   }

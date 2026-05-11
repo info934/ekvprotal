@@ -353,6 +353,9 @@ const DealWorkspace = ({
   const discountTotal = itemTotals.discount_total;
   const total = itemTotals.total;
   const taxValue = itemTotals.total + itemTotals.tax_total;
+  const subject = opportunity.subject;
+  const subjectEmail = subject?.email || '';
+  const subjectPhone = subject?.phone || '';
 
   const updateOpportunityItem = (itemId, field, nextValue) => {
     const baseItems = opportunityItems.length > 0 ? opportunityItems : [{
@@ -492,9 +495,50 @@ const DealWorkspace = ({
               </TabsList>
               <TabsContent value="basic" className="space-y-5">
                 <div className="grid gap-4 rounded-lg border bg-white p-4 shadow-sm md:grid-cols-2">
-                  <div className="space-y-1">
+                  <div className="space-y-2 md:col-span-2">
                     <Label>Subjekt</Label>
-                    <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">{opportunity.subject?.name || '-'}</div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0">
+                          {subject?.id ? (
+                            <Button asChild variant="link" className="h-auto justify-start p-0 text-base font-semibold text-slate-950">
+                              <Link to={`/subjects/${subject.id}`}>
+                                {subject.name}
+                                <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
+                          ) : (
+                            <div className="text-base font-semibold text-slate-950">Bez subjektu</div>
+                          )}
+                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                            {subject?.ico && <span>IČO {subject.ico}</span>}
+                            {subject?.contact_person && <span>Kontakt: {subject.contact_person}</span>}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {subjectEmail ? (
+                            <Button asChild size="sm" variant="outline" className="gap-2 bg-white">
+                              <a href={`mailto:${subjectEmail}`}>
+                                <Mail className="h-4 w-4" />
+                                {subjectEmail}
+                              </a>
+                            </Button>
+                          ) : (
+                            <Badge variant="outline" className="bg-white">Email neuveden</Badge>
+                          )}
+                          {subjectPhone ? (
+                            <Button asChild size="sm" variant="outline" className="gap-2 bg-white">
+                              <a href={`tel:${subjectPhone}`}>
+                                <Phone className="h-4 w-4" />
+                                {subjectPhone}
+                              </a>
+                            </Button>
+                          ) : (
+                            <Badge variant="outline" className="bg-white">Telefon neuveden</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <Label>Odhad uzavření</Label>
@@ -639,6 +683,52 @@ const DealWorkspace = ({
           </div>
 
           <div className="space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-700">
+                  <Contact className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rychlý kontakt</div>
+                  {subject?.id ? (
+                    <Button asChild variant="link" className="mt-1 h-auto max-w-full justify-start p-0 text-left text-lg font-semibold text-slate-950">
+                      <Link to={`/subjects/${subject.id}`} className="min-w-0 truncate">
+                        {subject.name}
+                        <ExternalLink className="ml-1.5 inline h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                  ) : (
+                    <div className="mt-1 text-lg font-semibold text-slate-950">Bez subjektu</div>
+                  )}
+                  {subject?.contact_person && (
+                    <p className="mt-1 truncate text-sm text-slate-500">{subject.contact_person}</p>
+                  )}
+                  <div className="mt-3 grid gap-2">
+                    {subjectEmail ? (
+                      <Button asChild variant="outline" size="sm" className="justify-start gap-2 bg-white">
+                        <a href={`mailto:${subjectEmail}`}>
+                          <Mail className="h-4 w-4" />
+                          <span className="truncate">{subjectEmail}</span>
+                        </a>
+                      </Button>
+                    ) : (
+                      <div className="rounded-md border border-dashed px-3 py-2 text-sm text-slate-500">Email není uveden</div>
+                    )}
+                    {subjectPhone ? (
+                      <Button asChild variant="outline" size="sm" className="justify-start gap-2 bg-white">
+                        <a href={`tel:${subjectPhone}`}>
+                          <Phone className="h-4 w-4" />
+                          <span className="truncate">{subjectPhone}</span>
+                        </a>
+                      </Button>
+                    ) : (
+                      <div className="rounded-md border border-dashed px-3 py-2 text-sm text-slate-500">Telefon není uveden</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {stage.value === 'won' && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
                 <div className="flex items-start gap-3">
@@ -1548,7 +1638,7 @@ const CRM = () => {
         .limit(60),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, subject_id, project_id, subject:subject_id(id, name), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
         .order('updated_at', { ascending: false }),
       supabase
         .from('crm_activities')
