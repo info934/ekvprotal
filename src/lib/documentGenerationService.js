@@ -39,6 +39,15 @@ const escapeHtml = (value) => String(value ?? '')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const replaceTemplatePlaceholders = (templateContent, placeholders) => (
+  Object.entries(placeholders).reduce((content, [key, value]) => {
+    const replacement = String(value ?? '');
+    return content
+      .replace(new RegExp(escapeRegExp(`{${key}}`), 'g'), replacement)
+      .replace(new RegExp(escapeRegExp(`{{${key}}}`), 'g'), replacement);
+  }, String(templateContent || ''))
+);
+
 const stripHtml = (value) => String(value ?? '')
   .replace(/<style[\s\S]*?<\/style>/gi, '')
   .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -76,18 +85,24 @@ const downloadBlob = (blob, fileName) => {
 };
 
 export const buildDocumentGenerationPayload = ({ opportunity, document }) => {
-  const items = [...(document?.items || [])]
+  const sourceItems = document?.items?.length
+    ? document.items
+    : (opportunity?.items?.length ? opportunity.items : (opportunity?.opportunity_items || []));
+
+  const items = [...sourceItems]
     .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
     .map((item, index) => ({
       position: index + 1,
       code: item.code || '',
       name: item.name || '',
+      description: item.description || '',
       quantity: Number(item.quantity || 0),
       unit: item.unit || 'ks',
       unitPrice: Number(item.unit_price || 0),
       discountPercent: Number(item.discount_percent || 0),
       vatRate: Number(item.vat_rate || 0),
       lineTotal: Number(item.line_total || 0),
+      customFields: item.custom_fields || item.product_fields || {},
     }));
 
   return {
@@ -125,7 +140,10 @@ const renderItemsTableHtml = (items) => {
     <tr>
       <td>${item.position}</td>
       <td>${escapeHtml(item.code || '-')}</td>
-      <td>${escapeHtml(item.name)}</td>
+      <td>
+        <strong>${escapeHtml(item.name)}</strong>
+        ${item.description ? `<div class="muted">${escapeHtml(item.description)}</div>` : ''}
+      </td>
       <td class="num">${item.quantity.toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}</td>
       <td class="num">${formatCurrency(item.unitPrice)}</td>
       <td class="num">${item.discountPercent.toLocaleString('cs-CZ')} %</td>
@@ -155,6 +173,67 @@ const renderItemsTableHtml = (items) => {
   `;
 };
 
+const renderItemsRowsHtml = (items) => (
+  items.map((item) => `
+    <tr>
+      <td>${item.position}</td>
+      <td>${escapeHtml(item.code || '-')}</td>
+      <td>
+        <strong>${escapeHtml(item.name)}</strong>
+        ${item.description ? `<div class="muted">${escapeHtml(item.description)}</div>` : ''}
+      </td>
+      <td class="num">${item.quantity.toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}</td>
+      <td class="num">${formatCurrency(item.unitPrice)}</td>
+      <td class="num">${formatCurrency(item.lineTotal)}</td>
+    </tr>
+  `).join('')
+);
+
+const renderItemsListHtml = (items) => (
+  items.length > 0
+    ? `<ul>${items.map((item) => `
+        <li>
+          <strong>${escapeHtml(item.name)}</strong>
+          ${item.code ? ` (${escapeHtml(item.code)})` : ''}
+          - ${item.quantity.toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}
+          ${item.description ? `<br><span class="muted">${escapeHtml(item.description)}</span>` : ''}
+        </li>
+      `).join('')}</ul>`
+    : '<p class="empty">Dokument zatím nemá položky.</p>'
+);
+
+const buildItemTemplatePlaceholders = (item) => ({
+  item_position: item.position,
+  item_code: item.code || '',
+  item_name: item.name || '',
+  item_description: item.description || '',
+  item_quantity: item.quantity.toLocaleString('cs-CZ'),
+  item_unit: item.unit || '',
+  item_unit_price: formatCurrency(item.unitPrice),
+  item_discount_percent: item.discountPercent.toLocaleString('cs-CZ'),
+  item_vat_rate: item.vatRate.toLocaleString('cs-CZ'),
+  item_line_total: formatCurrency(item.lineTotal),
+  ...Object.entries(item.customFields || {}).reduce((acc, [key, value]) => {
+    acc[`item_${key}`] = value ?? '';
+    return acc;
+  }, {}),
+});
+
+const fillItemsRepeatBlocks = (templateContent, items) => {
+  const replaceBlock = (content, opening, closing) => {
+    const blockRegex = new RegExp(`${escapeRegExp(opening)}([\\s\\S]*?)${escapeRegExp(closing)}`, 'g');
+    return content.replace(blockRegex, (_, rowTemplate) => (
+      items.map((item) => replaceTemplatePlaceholders(rowTemplate, buildItemTemplatePlaceholders(item))).join('')
+    ));
+  };
+
+  return replaceBlock(
+    replaceBlock(String(templateContent || ''), '{{#items}}', '{{/items}}'),
+    '{#items}',
+    '{/items}'
+  );
+};
+
 export const buildDocumentTemplatePlaceholders = (payload) => {
   const { document, opportunity, generatedAt } = payload;
   const totalWithTax = document.total + document.taxTotal;
@@ -170,6 +249,7 @@ export const buildDocumentTemplatePlaceholders = (payload) => {
     project_name: projectName,
     project_code: opportunity.projectCode || '',
     opportunity_title: opportunity.title || '',
+    opportunity_description: opportunity.description || '',
     opportunity_value: formatCurrency(opportunity.value),
     subtotal: formatCurrency(document.subtotal),
     discount_total: formatCurrency(document.discountTotal),
@@ -178,7 +258,10 @@ export const buildDocumentTemplatePlaceholders = (payload) => {
     total_with_tax: formatCurrency(totalWithTax),
     notes: document.notes || '',
     generated_at: formatDate(generatedAt),
+    item_count: payload.items.length,
     items_table: renderItemsTableHtml(payload.items),
+    items_rows: renderItemsRowsHtml(payload.items),
+    items_list: renderItemsListHtml(payload.items),
 
     supplier_name: clientName,
     order_number: document.number || '',
@@ -193,12 +276,8 @@ export const buildDocumentTemplatePlaceholders = (payload) => {
 
 export const fillDocumentTemplate = (templateContent, payload) => {
   const placeholders = buildDocumentTemplatePlaceholders(payload);
-  return Object.entries(placeholders).reduce((content, [key, value]) => {
-    const replacement = String(value ?? '');
-    return content
-      .replace(new RegExp(escapeRegExp(`{${key}}`), 'g'), replacement)
-      .replace(new RegExp(escapeRegExp(`{{${key}}}`), 'g'), replacement);
-  }, String(templateContent || ''));
+  const withItemBlocks = fillItemsRepeatBlocks(templateContent, payload.items);
+  return replaceTemplatePlaceholders(withItemBlocks, placeholders);
 };
 
 const ensureHtmlDocument = (content, title = 'Dokument') => {
@@ -217,6 +296,7 @@ const ensureHtmlDocument = (content, title = 'Dokument') => {
     th { background: #f9fafb; color: #6b7280; font-size: 11px; text-align: left; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding: 9px; }
     td { border-bottom: 1px solid #eef2f7; padding: 9px; vertical-align: top; }
     .num { text-align: right; white-space: nowrap; }
+    .muted { color: #6b7280; font-size: 12px; margin-top: 3px; }
     .empty { text-align: center; color: #6b7280; padding: 24px; }
     @media print { body { background: #fff; } .page { margin: 0; box-shadow: none; width: auto; min-height: auto; } }
   </style>

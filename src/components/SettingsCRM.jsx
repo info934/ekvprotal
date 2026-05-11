@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, Save, SlidersHorizontal, Target, Trash2 } from 'lucide-react';
+import { Code2, FileText, Plus, Save, SlidersHorizontal, Target, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -79,6 +79,72 @@ const normalizeProductFields = (fields) => (
     options_text: field.options_text ?? (Array.isArray(field.options) ? field.options.join(', ') : ''),
   }))
 );
+
+const templateQuickKeys = [
+  '{{document_number}}',
+  '{{document_title}}',
+  '{{client_name}}',
+  '{{opportunity_title}}',
+  '{{opportunity_description}}',
+  '{{project_name}}',
+  '{{document_date}}',
+  '{{document_valid_until}}',
+  '{{subtotal}}',
+  '{{tax_total}}',
+  '{{total_amount}}',
+  '{{total_with_tax}}',
+  '{{item_count}}',
+  '{{items_table}}',
+  '{{items_rows}}',
+  '{{items_list}}',
+];
+
+const itemTemplateKeys = [
+  '{{item_position}}',
+  '{{item_code}}',
+  '{{item_name}}',
+  '{{item_description}}',
+  '{{item_quantity}}',
+  '{{item_unit}}',
+  '{{item_unit_price}}',
+  '{{item_discount_percent}}',
+  '{{item_vat_rate}}',
+  '{{item_line_total}}',
+];
+
+const templateExamples = {
+  fullTable: `<h2>Nabidka {{document_number}}</h2>
+<p>Klient: <strong>{{client_name}}</strong></p>
+<p>Obchodni pripad: {{opportunity_title}}</p>
+<p>{{opportunity_description}}</p>
+
+{{items_table}}
+
+<p style="text-align:right"><strong>Celkem: {{total_with_tax}}</strong></p>`,
+  customRows: `<table>
+  <thead>
+    <tr>
+      <th>Kod</th>
+      <th>Produkt</th>
+      <th>Mnozstvi</th>
+      <th>Cena celkem</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#items}}
+    <tr>
+      <td>{{item_code}}</td>
+      <td>
+        <strong>{{item_name}}</strong><br>
+        {{item_description}}
+      </td>
+      <td>{{item_quantity}} {{item_unit}}</td>
+      <td>{{item_line_total}}</td>
+    </tr>
+    {{/items}}
+  </tbody>
+</table>`,
+};
 
 const SettingsCRM = () => {
   const { hasPermission } = useAuth();
@@ -605,6 +671,120 @@ const SettingsCRM = () => {
               </div>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="gap-4 border-b bg-slate-50/70">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl border bg-white text-blue-600 shadow-sm">
+                  <FileText className="h-4 w-4" />
+                </span>
+                <div>
+                  <CardTitle>Navod k sablonam dokumentu</CardTitle>
+                  <CardDescription>
+                    Stejna sablona se pouziva pro nabidky, objednavky a dalsi CRM dokumenty.
+                    Do HTML vlozte znacky ve tvaru <code className="rounded bg-slate-100 px-1 py-0.5">{'{{client_name}}'}</code>;
+                    pri generovani se nahradi aktualnimi daty.
+                  </CardDescription>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-full border bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm">
+              HTML sablony + placeholdery
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6 p-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="mb-2 text-sm font-semibold text-slate-900">1. Jednoduche znacky</div>
+              <p className="text-sm text-slate-600">
+                Pouzijte napr. <code className="rounded bg-slate-100 px-1 py-0.5">{'{{document_number}}'}</code>,
+                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">{'{{client_name}}'}</code> nebo
+                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">{'{{total_with_tax}}'}</code>.
+              </p>
+            </div>
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="mb-2 text-sm font-semibold text-slate-900">2. Cela tabulka produktu</div>
+              <p className="text-sm text-slate-600">
+                Pro rychle vlozeni cele produktove tabulky pouzijte
+                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">{'{{items_table}}'}</code>.
+              </p>
+            </div>
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="mb-2 text-sm font-semibold text-slate-900">3. Vlastni radky</div>
+              <p className="text-sm text-slate-600">
+                Pokud chcete vlastni vzhled, obalte cast sablony blokem
+                <code className="mx-1 rounded bg-slate-100 px-1 py-0.5">{'{{#items}}'}</code>
+                ...
+                <code className="mx-1 rounded bg-slate-100 px-1 py-0.5">{'{{/items}}'}</code>.
+              </p>
+            </div>
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="mb-2 text-sm font-semibold text-slate-900">4. Vlastni pole produktu</div>
+              <p className="text-sm text-slate-600">
+                Pole definovana nize v produktovych polich jsou v bloku polozky dostupna jako
+                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">{'{{item_power_wp}}'}</code>.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <Code2 className="h-4 w-4 text-blue-600" />
+                Dostupne znacky dokumentu
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {templateQuickKeys.map((key) => (
+                  <code key={key} className="rounded-full border bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
+                    {key}
+                  </code>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <Code2 className="h-4 w-4 text-emerald-600" />
+                Znacky uvnitr bloku polozek
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {itemTemplateKeys.map((key) => (
+                  <code key={key} className="rounded-full border bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
+                    {key}
+                  </code>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="rounded-xl border bg-slate-950 p-4 text-slate-100 shadow-sm">
+              <div className="mb-3 text-sm font-semibold">Priklad: jednoducha sablona s automatickou tabulkou</div>
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-200">
+                <code>{templateExamples.fullTable}</code>
+              </pre>
+            </div>
+            <div className="rounded-xl border bg-slate-950 p-4 text-slate-100 shadow-sm">
+              <div className="mb-3 text-sm font-semibold">Priklad: vlastni produktove radky</div>
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-200">
+                <code>{templateExamples.customRows}</code>
+              </pre>
+            </div>
+          </div>
+
+          <Alert>
+            <FileText className="h-4 w-4" />
+            <AlertTitle>Doporuceny postup</AlertTitle>
+            <AlertDescription>
+              Sablony spravujte v oddilu nize. Ukladejte validni HTML a pro produktovou tabulku bud pouzijte
+              <code className="mx-1 rounded bg-slate-100 px-1 py-0.5">{'{{items_table}}'}</code>,
+              nebo vlastni opakovaci blok. Stejny datovy payload je pripraveny pro nasledne PDF/DOCX generovani.
+            </AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
 
