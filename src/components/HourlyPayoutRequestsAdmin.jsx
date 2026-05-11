@@ -1,4 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { format } from 'date-fns';
+import { cs } from 'date-fns/locale';
+import {
+  CheckCircle,
+  Download,
+  Eye,
+  FileText,
+  FileWarning,
+  Loader2,
+  Search,
+  Wallet,
+  XCircle
+} from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { sendHourlyPayoutPaidEmail, sendPayoutApprovalEmail } from '@/lib/email';
@@ -7,59 +20,43 @@ import { logPayoutAction } from '@/lib/payoutLogger';
 import { approveHourlyPayoutRequest } from '@/lib/PayoutApprovalService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import { auditInvoiceUrls } from '@/lib/invoiceAudit';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { format } from 'date-fns';
-import { cs } from 'date-fns/locale';
-import { CheckCircle, XCircle, Clock, DollarSign, Wallet, Loader2, FileText, FileWarning, Eye, Download, Search } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import HourlyPayoutRequestDialog from './HourlyPayoutRequestDialog';
 import AdminHourlyPayoutApprovalDialog from './AdminHourlyPayoutApprovalDialog';
 import HourlyPayoutApprovalAuditLog from './HourlyPayoutApprovalAuditLog';
 import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
-
-const getStatusBadge = (status) => {
-  switch (status) {
-    case 'pending': return <Badge variant="warning" className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-none"><Clock className="w-3 h-3 mr-1"/> Čeká na schválení</Badge>;
-    case 'approved': return <Badge variant="info" className="bg-blue-100 text-blue-800 hover:bg-blue-100 border-none"><FileText className="w-3 h-3 mr-1"/> Čeká na fakturu</Badge>;
-    case 'invoice_uploaded': return <Badge variant="secondary" className="bg-slate-200 text-slate-800 border-none"><FileText className="w-3 h-3 mr-1"/> Faktura nahrána</Badge>;
-    case 'paid': return <Badge variant="success" className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none"><CheckCircle className="w-3 h-3 mr-1"/> Vyplaceno</Badge>;
-    case 'rejected': return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1"/> Zamítnuto</Badge>;
-    default: return <Badge variant="secondary">{status}</Badge>;
-  }
-};
+import {
+  EmptyPayoutState,
+  formatCurrency,
+  formatHours,
+  PayoutMetricCard,
+  PayoutPanel,
+  PayoutStatusBadge
+} from '@/components/payouts/PayoutShared';
 
 const InvoiceLink = ({ url, onDownload, isDownloading }) => {
-    useEffect(() => {
-        if (url) {
-            console.log('[AdminInvoiceLink] Loaded with URL:', url);
-        }
-    }, [url]);
+  if (!url) {
+    return <span className="text-xs text-slate-400">Faktura zatím není nahraná</span>;
+  }
 
-    if (!url) return <span className="text-slate-400 text-xs italic">Není nahrána</span>;
-
-    return (
-        <div className="flex flex-col gap-1">
-            <Button 
-                variant="outline"
-                size="sm"
-                onClick={() => onDownload(url)} 
-                disabled={isDownloading}
-                className="flex items-center gap-1 h-7 text-sm text-blue-600 hover:text-blue-800 font-medium bg-blue-50 border-blue-200 px-2 py-1 rounded-md transition-colors cursor-pointer w-fit"
-                title="Kliknutím stáhnete fakturu"
-            >
-                {isDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                {isDownloading ? 'Stahuji...' : 'Stáhnout'}
-            </Button>
-            <span className="text-[9px] text-slate-400 font-mono break-all max-w-[150px] truncate" title={url}>
-                {url}
-            </span>
-        </div>
-    );
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => onDownload(url)}
+      disabled={isDownloading}
+      className="h-8 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+    >
+      {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+      {isDownloading ? 'Stahuji...' : 'Stáhnout'}
+    </Button>
+  );
 };
 
 const HourlyPayoutRequestsAdmin = () => {
@@ -67,6 +64,7 @@ const HourlyPayoutRequestsAdmin = () => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [selectedAuditRequest, setSelectedAuditRequest] = useState(null);
   const [downloadingInvoiceUrl, setDownloadingInvoiceUrl] = useState(null);
@@ -80,7 +78,6 @@ const HourlyPayoutRequestsAdmin = () => {
   const fetchRequests = async () => {
     setLoading(true);
     try {
-      // FIXED: Explicit foreign key relationship for hourly payout requests
       const { data, error } = await supabase
         .from('hourly_payout_requests')
         .select(`
@@ -92,10 +89,9 @@ const HourlyPayoutRequestsAdmin = () => {
 
       if (error) throw error;
       setRequests(data || []);
-      console.log('[Admin] Fetched requests:', data);
     } catch (error) {
-      console.error("Error fetching requests:", error);
-      toast({ title: "Chyba", description: "Nepodařilo se načíst žádosti.", variant: "destructive" });
+      console.error('Error fetching hourly payout requests:', error);
+      toast({ title: 'Chyba', description: 'Nepodařilo se načíst hodinové žádosti.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -103,31 +99,54 @@ const HourlyPayoutRequestsAdmin = () => {
 
   useEffect(() => {
     fetchRequests();
-    const channel = supabase.channel('hourly_admin_changes')
+    const channel = supabase
+      .channel('hourly_admin_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hourly_payout_requests' }, fetchRequests)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
+
+  const filteredRequests = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    return requests.filter((request) => {
+      const statusMatches = statusFilter === 'all' || request.status === statusFilter;
+      const searchMatches =
+        !normalizedSearch ||
+        request.members?.name?.toLowerCase().includes(normalizedSearch) ||
+        request.projects?.name?.toLowerCase().includes(normalizedSearch) ||
+        `${request.payout_month || ''}/${request.payout_year || ''}`.includes(normalizedSearch);
+
+      return statusMatches && searchMatches;
+    });
+  }, [requests, searchTerm, statusFilter]);
+
+  const metrics = useMemo(() => {
+    const active = requests.filter((request) => ['pending', 'approved', 'invoice_uploaded'].includes(request.status));
+    const pending = requests.filter((request) => request.status === 'pending');
+    const invoiceReady = requests.filter((request) => request.status === 'invoice_uploaded');
+    const paid = requests.filter((request) => request.status === 'paid');
+
+    return {
+      pending: pending.length,
+      invoiceReady: invoiceReady.length,
+      activeAmount: active.reduce((sum, request) => sum + Number(request.total_amount || 0), 0),
+      paidAmount: paid.reduce((sum, request) => sum + Number(request.total_amount || 0), 0)
+    };
+  }, [requests]);
 
   const handleDownloadInvoice = async (invoiceUrl) => {
     if (!invoiceUrl) return;
-    console.log('[Admin] Admin clicked download invoice. URL:', invoiceUrl);
     setDownloadingInvoiceUrl(invoiceUrl);
-    
+
     const { success, error } = await downloadInvoiceFromStorage(invoiceUrl);
-    
     if (success) {
-        console.log('[Admin] Download successful for URL:', invoiceUrl);
-        toast({ title: "Staženo", description: "Soubor byl úspěšně stažen." });
+      toast({ title: 'Staženo', description: 'Soubor faktury byl stažen.' });
     } else {
-        console.error('[Admin] Download error:', error);
-        toast({ 
-            title: "Chyba stahování", 
-            description: error || "Nepodařilo se stáhnout soubor.", 
-            variant: "destructive" 
-        });
+      toast({ title: 'Chyba stahování', description: error || 'Nepodařilo se stáhnout fakturu.', variant: 'destructive' });
     }
-    
+
     setDownloadingInvoiceUrl(null);
   };
 
@@ -138,11 +157,11 @@ const HourlyPayoutRequestsAdmin = () => {
 
   const handleApproveConfirm = async (requestId, adminNote, approvedWithoutInvoice) => {
     setProcessingId(requestId);
-    
+
     const result = await approveHourlyPayoutRequest(requestId, adminNote, approvedWithoutInvoice);
-    
+
     if (result.success) {
-      const memberName = approvalRequest?.members?.name || 'Pracovnik';
+      const memberName = approvalRequest?.members?.name || 'Pracovník';
       const amount = approvalRequest?.total_amount || 0;
       const memberEmailResult = await sendPayoutApprovalEmail({
         memberId: approvalRequest?.member_id,
@@ -152,34 +171,23 @@ const HourlyPayoutRequestsAdmin = () => {
       const adminEmailResult = await sendAdminPayoutNotification({
         memberName,
         amount,
-        action: 'Schvaleni hodinove zadosti'
+        action: 'Schválení hodinové žádosti'
       });
 
       if (!memberEmailResult.success || !adminEmailResult.success) {
-        console.error('[HourlyPayoutRequestsAdmin] Approval notification failed:', {
-          member: memberEmailResult.error,
-          admin: adminEmailResult.error
-        });
         toast({
-          title: 'Notifikace se nepodarilo odeslat',
-          description: 'Zadost byla schvalena, ale emailovy krok selhal.',
+          title: 'Notifikace se nepodařilo odeslat',
+          description: 'Žádost byla schválena, ale emailový krok selhal.',
           variant: 'warning'
         });
       } else {
-        toast({ 
-          title: "Schváleno", 
-          description: "Žádost byla úspěšně schválena." 
-        });
+        toast({ title: 'Schváleno', description: 'Hodinová žádost byla schválena.' });
       }
       fetchRequests();
     } else {
-      toast({ 
-          title: "Chyba", 
-          description: `Nepodařilo se schválit žádost: ${result.error}`, 
-          variant: "destructive" 
-      });
+      toast({ title: 'Chyba', description: `Nepodařilo se schválit žádost: ${result.error}`, variant: 'destructive' });
     }
-    
+
     setProcessingId(null);
     setIsApprovalDialogOpen(false);
     setApprovalRequest(null);
@@ -202,93 +210,92 @@ const HourlyPayoutRequestsAdmin = () => {
 
     if (success) {
       await logPayoutAction('reject_success', selectedRequest?.id);
-      toast({ title: "Zamítnuto", description: "Žádost byla zamítnuta." });
+      toast({ title: 'Zamítnuto', description: 'Hodinová žádost byla zamítnuta.' });
       fetchRequests();
     } else {
       await logPayoutAction('reject_failure', selectedRequest?.id, { error });
-      toast({ title: "Chyba", description: error, variant: "destructive" });
+      toast({ title: 'Chyba', description: error, variant: 'destructive' });
     }
   };
 
   const handleMarkAsPaid = async (request) => {
-      const canMarkAsPaid = request.invoice_url || request.approved_without_invoice;
-      
-      if (!canMarkAsPaid) {
-          toast({ title: "Chybí faktura", description: "Nelze označit jako vyplacené bez nahrané faktury nebo schválení bez faktury.", variant: "warning" });
-          return;
-      }
+    const canMarkAsPaid = request.invoice_url || request.approved_without_invoice;
 
-      setProcessingId(request.id);
-      await logPayoutAction('mark_paid_attempt', request.id);
+    if (!canMarkAsPaid) {
+      toast({
+        title: 'Chybí faktura',
+        description: 'Nelze označit jako vyplacené bez nahrané faktury nebo schválení bez faktury.',
+        variant: 'warning'
+      });
+      return;
+    }
 
-      try {
-          const paidDate = new Date().toISOString();
-          
-          const { data, error: dbError } = await supabase
-            .from('hourly_payout_requests')
-            .update({ status: 'paid', paid_at: paidDate, updated_at: paidDate })
-            .eq('id', request.id)
-            .select();
-            
-          if (dbError) throw dbError;
+    setProcessingId(request.id);
+    await logPayoutAction('mark_paid_attempt', request.id);
 
-          console.log(`[HourlyPayoutRequestsAdmin] Marked request ${request.id} as paid.`, data);
+    try {
+      const paidDate = new Date().toISOString();
 
-          await sendHourlyPayoutPaidEmail({
-              email: request.members?.email,
-              memberName: request.members?.name || 'Pracovník',
-              amount: request.total_amount,
-              hours: request.hours,
-              paidAt: paidDate
-          });
+      const { error: dbError } = await supabase
+        .from('hourly_payout_requests')
+        .update({ status: 'paid', paid_at: paidDate, updated_at: paidDate })
+        .eq('id', request.id)
+        .select();
 
-          await logPayoutAction('mark_paid_success', request.id);
-          toast({ title: "Vyplaceno", description: "Status změněn na vyplaceno a uživatel byl informován emailem." });
-          fetchRequests(); 
+      if (dbError) throw dbError;
 
-      } catch (err) {
-          console.error("[HourlyPayoutRequestsAdmin] Error marking as paid:", err);
-          await logPayoutAction('mark_paid_failure', request.id, { error: err.message });
-          toast({ title: "Chyba", description: "Nepodařilo se označit jako vyplacené.", variant: "destructive" });
-      } finally {
-          setProcessingId(null);
-      }
+      await sendHourlyPayoutPaidEmail({
+        email: request.members?.email,
+        memberName: request.members?.name || 'Pracovník',
+        amount: request.total_amount,
+        hours: request.hours,
+        paidAt: paidDate
+      });
+
+      await logPayoutAction('mark_paid_success', request.id);
+      toast({ title: 'Vyplaceno', description: 'Žádost byla uzavřena a zaměstnanec byl informován emailem.' });
+      fetchRequests();
+    } catch (err) {
+      console.error('Error marking hourly payout as paid:', err);
+      await logPayoutAction('mark_paid_failure', request.id, { error: err.message });
+      toast({ title: 'Chyba', description: 'Nepodařilo se označit žádost jako vyplacenou.', variant: 'destructive' });
+    } finally {
+      setProcessingId(null);
+    }
   };
-  
+
   const handleRunAudit = async () => {
-      toast({ title: "Spouštím audit URL", description: "Sledujte konzoli pro výsledky." });
-      const result = await auditInvoiceUrls();
-      if (result.success) {
-          toast({ 
-              title: "Audit dokončen", 
-              description: `Zkontrolováno ${result.total} URL. Varování: ${result.warnings}.`,
-              variant: result.warnings > 0 ? "warning" : "default"
-          });
-      } else {
-          toast({ title: "Chyba auditu", description: result.error, variant: "destructive" });
-      }
+    toast({ title: 'Spouštím audit URL', description: 'Kontroluji cesty faktur v databázi.' });
+    const result = await auditInvoiceUrls();
+    if (result.success) {
+      toast({
+        title: 'Audit dokončen',
+        description: `Zkontrolováno ${result.total} URL. Varování: ${result.warnings}.`,
+        variant: result.warnings > 0 ? 'warning' : 'default'
+      });
+    } else {
+      toast({ title: 'Chyba auditu', description: result.error, variant: 'destructive' });
+    }
   };
-
-  const filteredRequests = requests.filter(req => statusFilter === 'all' ? true : req.status === statusFilter);
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden rounded-xl border-slate-200 bg-white shadow-sm">
-        <CardHeader className="flex flex-col justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-4">
-            <div>
-              <CardTitle className="text-lg flex items-center gap-2">
-                  <Wallet className="w-5 h-5 text-primary" />
-                  Správa hodinových žádostí
-              </CardTitle>
-              <CardDescription>Přehled a schvalování žádostí a přijatých faktur.</CardDescription>
-            </div>
-          </div>
-          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
-             <Button variant="outline" size="sm" onClick={handleRunAudit} className="gap-2 bg-white">
-                <Search className="w-4 h-4 text-slate-500" />
-                Audit DB URL
-             </Button>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <PayoutMetricCard icon={Wallet} label="Aktivní hodinové žádosti" value={formatCurrency(metrics.activeAmount)} detail="Čekající workflow" tone="blue" />
+        <PayoutMetricCard icon={CheckCircle} label="Ke schválení" value={metrics.pending.toString()} detail="Nové žádosti" tone="amber" />
+        <PayoutMetricCard icon={FileText} label="Faktury ke kontrole" value={metrics.invoiceReady.toString()} detail="Lze uzavřít po kontrole" tone="slate" />
+        <PayoutMetricCard icon={Wallet} label="Vyplaceno" value={formatCurrency(metrics.paidAmount)} detail="Uzavřené hodinové žádosti" tone="emerald" />
+      </div>
+
+      <PayoutPanel
+        title="Schvalování hodinové mzdy"
+        description="Stejný princip jako u úkolových výplat: schválení, faktura, vyplacení."
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={handleRunAudit} className="gap-2 bg-white">
+              <Search className="h-4 w-4 text-slate-500" />
+              Audit URL
+            </Button>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full bg-white sm:w-[220px]">
                 <SelectValue placeholder="Filtr stavu" />
@@ -302,141 +309,154 @@ const HourlyPayoutRequestsAdmin = () => {
                 <SelectItem value="rejected">Zamítnuto</SelectItem>
               </SelectContent>
             </Select>
+          </>
+        }
+      >
+        <div className="border-b border-slate-200 p-4">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Hledat pracovníka, projekt nebo období..."
+              className="pl-9"
+            />
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="p-12 text-center text-muted-foreground flex flex-col items-center">
-                <Loader2 className="w-8 h-8 animate-spin text-slate-300 mb-4" />
-                Načítání...
-            </div>
-          ) : (
+        </div>
+
+        {loading ? (
+          <div className="flex flex-col items-center p-12 text-center text-slate-500">
+            <Loader2 className="mb-4 h-8 w-8 animate-spin text-slate-300" />
+            Načítám hodinové žádosti...
+          </div>
+        ) : filteredRequests.length === 0 ? (
+          <div className="p-5">
+            <EmptyPayoutState title="Žádné hodinové žádosti" description="Aktuální filtry nevrátily žádný záznam." />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-slate-50">
                 <TableRow>
                   <TableHead className="h-11 px-5 text-xs font-bold uppercase tracking-wide text-slate-500">Datum</TableHead>
-                  <TableHead>Pracovník</TableHead>
-                  <TableHead className="h-11 text-xs font-bold uppercase tracking-wide text-slate-500">Obdob? / Projekt</TableHead>
-                  <TableHead className="h-11 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Hodiny / Celkem</TableHead>
+                  <TableHead className="h-11 text-xs font-bold uppercase tracking-wide text-slate-500">Pracovník</TableHead>
+                  <TableHead className="h-11 text-xs font-bold uppercase tracking-wide text-slate-500">Období / projekt</TableHead>
+                  <TableHead className="h-11 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Hodiny</TableHead>
+                  <TableHead className="h-11 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Celkem</TableHead>
                   <TableHead className="h-11 text-xs font-bold uppercase tracking-wide text-slate-500">Stav</TableHead>
-                  <TableHead>Faktura / Poznámka</TableHead>
+                  <TableHead className="h-11 text-xs font-bold uppercase tracking-wide text-slate-500">Faktura</TableHead>
                   <TableHead className="h-11 px-5 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Akce</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRequests.length > 0 ? (
-                  filteredRequests.map((req) => (
-                    <TableRow key={req.id} className="border-slate-100 hover:bg-slate-50/70">
-                      <TableCell className="px-5 font-medium text-slate-600">
-                        {format(new Date(req.created_at), 'dd. MM. yyyy')}
-                      </TableCell>
-                      <TableCell className="font-semibold text-slate-900">
-                        {req.members?.name || 'Neznámý'}
-                      </TableCell>
-                      <TableCell className="text-slate-600 text-sm">
-                        {req.payout_month && req.payout_year 
-                            ? `Žádost za ${req.payout_month}/${req.payout_year}` 
-                            : req.projects?.name || 'Měsíční žádost'}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="text-xs text-muted-foreground">{Number(req.total_hours || req.hours).toFixed(1)} h x {req.hourly_rate} Kč</div>
-                        <div className="font-bold tabular-nums text-slate-900">{Number(req.total_amount).toLocaleString('cs-CZ')} Kč</div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1 items-start">
-                          {getStatusBadge(req.status)}
-                          {req.approved_without_invoice && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Badge variant="outline" className="h-7 cursor-help gap-1.5 rounded-full border-amber-200 bg-amber-50 px-2.5 text-amber-700">
-                                    <FileWarning className="w-2.5 h-2.5 mr-1" />
-                                    Bez faktury
-                                  </Badge>
-                                </TooltipTrigger>
-                                <TooltipContent>Schváleno bez nutnosti faktury</TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <InvoiceLink 
-                              url={req.invoice_url} 
-                              onDownload={handleDownloadInvoice}
-                              isDownloading={downloadingInvoiceUrl === req.invoice_url}
-                          />
-                          {req.admin_note && (
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <span className="text-xs text-slate-600 truncate block cursor-pointer hover:text-primary hover:underline border-b border-dashed border-slate-300 w-fit pb-0.5 mt-1">
-                                  Poznámka...
-                                </span>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-80 text-sm">
-                                <div className="font-semibold mb-1 text-slate-800">Poznámka:</div>
-                                <p className="text-slate-600">{req.admin_note}</p>
-                              </PopoverContent>
-                            </Popover>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-5 text-right">
-                        <div className="flex justify-end items-center gap-2">
-                           <Popover open={selectedAuditRequest === req.id} onOpenChange={(open) => setSelectedAuditRequest(open ? req.id : null)}>
-                              <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-900" title="Historie schválení">
-                                  <Eye className="w-4 h-4" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-96 p-0" align="end">
-                                 <div className="p-4 border-b bg-slate-50 font-semibold text-slate-800">Detail schválení</div>
-                                 <div className="p-4 max-h-[300px] overflow-y-auto">
-                                   <HourlyPayoutApprovalAuditLog requestId={req.id} />
-                                 </div>
-                              </PopoverContent>
-                           </Popover>
+                {filteredRequests.map((request) => (
+                  <TableRow key={request.id} className="border-slate-100 hover:bg-slate-50/70">
+                    <TableCell className="px-5 font-medium text-slate-600">
+                      {format(new Date(request.created_at), 'dd. MM. yyyy', { locale: cs })}
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-semibold text-slate-950">{request.members?.name || 'Neznámý pracovník'}</div>
+                      {request.members?.email && <div className="text-xs text-slate-500">{request.members.email}</div>}
+                    </TableCell>
+                    <TableCell className="text-sm text-slate-600">
+                      {request.payout_month && request.payout_year
+                        ? `Žádost za ${request.payout_month}/${request.payout_year}`
+                        : request.projects?.name || 'Měsíční žádost'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="font-semibold tabular-nums text-slate-950">{formatHours(request.total_hours || request.hours)}</div>
+                      <div className="text-xs text-slate-500">{formatCurrency(request.hourly_rate)}/h</div>
+                    </TableCell>
+                    <TableCell className="text-right font-bold tabular-nums text-slate-950">
+                      {formatCurrency(request.total_amount)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col items-start gap-1">
+                        <PayoutStatusBadge status={request.status} />
+                        {request.approved_without_invoice && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge variant="outline" className="h-7 cursor-help gap-1.5 rounded-full border-amber-200 bg-amber-50 px-2.5 text-amber-700">
+                                  <FileWarning className="h-3.5 w-3.5" />
+                                  Bez faktury
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>Schváleno bez nutnosti faktury</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-2">
+                        <InvoiceLink
+                          url={request.invoice_url}
+                          onDownload={handleDownloadInvoice}
+                          isDownloading={downloadingInvoiceUrl === request.invoice_url}
+                        />
+                        {request.admin_note && (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="link" className="h-auto p-0 text-xs text-slate-600">
+                                Poznámka administrátora
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80 text-sm">
+                              <div className="mb-1 font-semibold text-slate-950">Poznámka</div>
+                              <p className="text-slate-600">{request.admin_note}</p>
+                            </PopoverContent>
+                          </Popover>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-5 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Popover open={selectedAuditRequest === request.id} onOpenChange={(open) => setSelectedAuditRequest(open ? request.id : null)}>
+                          <PopoverTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-950" title="Historie schválení">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-96 p-0" align="end">
+                            <div className="border-b bg-slate-50 p-4 font-semibold text-slate-950">Detail schválení</div>
+                            <div className="max-h-[300px] overflow-y-auto p-4">
+                              <HourlyPayoutApprovalAuditLog requestId={request.id} />
+                            </div>
+                          </PopoverContent>
+                        </Popover>
 
-                          {req.status === 'pending' && (
-                            <>
-                              <Button size="sm" variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" onClick={() => openApprovalDialog(req)} disabled={processingId === req.id}>
-                                {processingId === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />} Schválit
-                              </Button>
-                              <Button size="icon" variant="outline" className="h-8 w-8 border-red-200 bg-red-50 text-red-700 hover:bg-red-100" onClick={() => openRejectDialog(req)} disabled={processingId === req.id}>
-                                <XCircle className="w-4 h-4" />
-                              </Button>
-                            </>
-                          )}
-                          {['approved', 'invoice_uploaded'].includes(req.status) && (
-                             <Button 
-                               size="sm" 
-                               variant="default"
-                               onClick={() => handleMarkAsPaid(req)}
-                               disabled={processingId === req.id || (!req.invoice_url && !req.approved_without_invoice)}
-                               className={(!req.invoice_url && !req.approved_without_invoice) ? 'cursor-not-allowed opacity-50' : 'bg-emerald-600 text-white hover:bg-emerald-700'}
-                               title={(!req.invoice_url && !req.approved_without_invoice) ? "Čeká se na nahrání faktury uživatelem" : "Označit jako vyplacené"}
-                             >
-                               {processingId === req.id ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <DollarSign className="w-4 h-4 mr-1" />}
-                               Vyplatit
-                             </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
-                      Žádné žádosti neodpovídají filtru.
+                        {request.status === 'pending' && (
+                          <>
+                            <Button size="sm" variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" onClick={() => openApprovalDialog(request)} disabled={processingId === request.id}>
+                              {processingId === request.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="mr-1 h-4 w-4" />}
+                              Schválit
+                            </Button>
+                            <Button size="icon" variant="outline" className="h-8 w-8 border-red-200 bg-red-50 text-red-700 hover:bg-red-100" onClick={() => openRejectDialog(request)} disabled={processingId === request.id}>
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                        {['approved', 'invoice_uploaded'].includes(request.status) && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleMarkAsPaid(request)}
+                            disabled={processingId === request.id || (!request.invoice_url && !request.approved_without_invoice)}
+                            className="bg-emerald-600 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {processingId === request.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Wallet className="mr-1 h-4 w-4" />}
+                            Vyplatit
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
-                )}
+                ))}
               </TableBody>
             </Table>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        )}
+      </PayoutPanel>
 
       <AdminHourlyPayoutApprovalDialog
         isOpen={isApprovalDialogOpen}

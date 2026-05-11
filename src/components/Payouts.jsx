@@ -31,6 +31,7 @@ import { sendInvoiceUploadedNotification, sendPayoutPaidEmail as sendWorkflowPay
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import { savePayoutRequest } from '@/lib/payoutRequestService';
 import PageHeader from '@/components/ui/page-header';
+import { formatCurrency, PayoutMetricCard, PayoutPanel } from '@/components/payouts/PayoutShared';
 
 const Badge = ({ children, variant = "default", className, ...props }) => {
   const variants = {
@@ -237,8 +238,12 @@ const Payouts = () => {
     const paidHourly = hourlyRequests.filter(p => p.status === 'paid');
     return { 
       totalRequests: payouts.length + hourlyRequests.length, 
+      fixedActiveCount: activeFixed.length,
+      hourlyActiveCount: activeHourly.length,
       activeCount: activeFixed.length + activeHourly.length,
       paidCount: paidFixed.length + paidHourly.length,
+      pendingCount: payouts.filter(p => p.status === 'pending').length + hourlyRequests.filter(p => p.status === 'pending').length,
+      invoiceReadyCount: payouts.filter(p => p.status === 'invoice_uploaded').length + hourlyRequests.filter(p => p.status === 'invoice_uploaded').length,
       totalActiveAmount: activeFixed.reduce((s, p) => s + Number(p.amount), 0) + activeHourly.reduce((s, p) => s + Number(p.total_amount), 0), 
       totalPaidAmount: paidFixed.reduce((s, p) => s + Number(p.amount), 0) + paidHourly.reduce((s, p) => s + Number(p.total_amount), 0) 
     };
@@ -438,11 +443,31 @@ const Payouts = () => {
       </div>
 
       <div className="app-page pt-0">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <StatCard icon={Target} title="Aktivní požadavky" value={stats.activeCount.toString()} subtitle={`V hodnotě: ${stats.totalActiveAmount.toLocaleString('cs-CZ')} Kč`} color="text-amber-600" bg="bg-amber-100/50" />
-          <StatCard icon={PiggyBank} title="Očekávaná platba" value={`${stats.totalActiveAmount.toLocaleString('cs-CZ')} Kč`} subtitle="Schválené a čekající částky celkem" color="text-blue-600" bg="bg-blue-100/50" />
-          <StatCard icon={Award} title="Celkem vyplaceno" value={`${stats.totalPaidAmount.toLocaleString('cs-CZ')} Kč`} subtitle={`Z ${stats.paidCount} úspěšných žádostí`} color="text-emerald-600" bg="bg-emerald-100/50" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <PayoutMetricCard icon={Target} label="Aktivní žádosti" value={stats.activeCount.toString()} detail={`${stats.fixedActiveCount} úkolové, ${stats.hourlyActiveCount} hodinové`} tone="blue" />
+          <PayoutMetricCard icon={Timer} label="Ke schválení" value={stats.pendingCount.toString()} detail="Čeká na rozhodnutí administrátora" tone="amber" />
+          <PayoutMetricCard icon={FileText} label="Faktury ke kontrole" value={stats.invoiceReadyCount.toString()} detail="Připraveno k uzavření" tone="slate" />
+          <PayoutMetricCard icon={PiggyBank} label="Finančně aktivní" value={formatCurrency(stats.totalActiveAmount)} detail={`Vyplaceno: ${formatCurrency(stats.totalPaidAmount)}`} tone="emerald" />
         </div>
+
+        <PayoutPanel className="mt-6">
+          <div className="grid divide-y divide-slate-100 md:grid-cols-4 md:divide-x md:divide-y-0">
+            {[
+              ['1', 'Žádost', 'Zaměstnanec vytvoří úkolovou nebo hodinovou žádost.'],
+              ['2', 'Schválení', 'Administrátor žádost schválí nebo zamítne.'],
+              ['3', 'Faktura', 'Po schválení se nahraje faktura, pokud není výjimka.'],
+              ['4', 'Vyplaceno', 'Po kontrole faktury se žádost uzavře.']
+            ].map(([step, title, description]) => (
+              <div key={step} className="flex gap-3 p-4">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-700">{step}</div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-950">{title}</div>
+                  <div className="mt-1 text-sm leading-5 text-slate-500">{description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </PayoutPanel>
 
         <Tabs defaultValue={defaultTab} className="w-full">
           <TabsList className="mb-8 flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:w-auto">
