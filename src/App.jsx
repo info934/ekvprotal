@@ -2,11 +2,13 @@ import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
+import { Button } from '@/components/ui/button';
 import Sidebar from '@/components/Sidebar';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { supabase } from '@/lib/customSupabaseClient';
+import { Loader2, LogOut, RefreshCw, ShieldCheck } from 'lucide-react';
 
 const Dashboard = lazy(() => import('@/components/Dashboard'));
 const Projects = lazy(() => import('@/components/Projects'));
@@ -55,12 +57,63 @@ const ProjectTemplatesSettings = lazy(() => import('@/components/ProjectTemplate
 const ProjectTemplatesPage = lazy(() => import('@/components/ProjectTemplatesPage'));
 const BackupMaintenance = lazy(() => import('@/components/BackupMaintenance'));
 
-const PageLoader = () => (
+const PortalLoaderCard = ({ title = 'Načítání modulu', description = 'Připravujeme data a rozhraní portálu.', showActions = false, onResetSession }) => (
+  <div className="relative w-full max-w-[440px] overflow-hidden rounded-[28px] border border-white/70 bg-white/90 p-6 text-left shadow-2xl shadow-slate-950/10 backdrop-blur-xl">
+    <div className="pointer-events-none absolute -right-20 -top-20 h-44 w-44 rounded-full bg-blue-200/60 blur-3xl" />
+    <div className="pointer-events-none absolute -bottom-24 -left-20 h-48 w-48 rounded-full bg-emerald-100 blur-3xl" />
+    <div className="relative flex items-start gap-4">
+      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-lg font-semibold tracking-tight text-slate-950">{title}</p>
+        <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
+        <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div className="h-full w-2/3 animate-pulse rounded-full bg-blue-600" />
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500">
+          <span className="inline-flex items-center gap-1.5">
+            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+            Bezpečná relace
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-blue-500" />
+            Online portal
+          </span>
+        </div>
+      </div>
+    </div>
+    {showActions && (
+      <div className="relative mt-6 rounded-2xl border border-amber-200/80 bg-amber-50/90 p-4">
+        <p className="text-sm font-semibold text-amber-950">Načítání trvá déle než obvykle.</p>
+        <p className="mt-1 text-sm leading-5 text-amber-800">Může jít o pomalé připojení nebo zaseknutou relaci. Zkuste obnovit stránku nebo relaci bezpečně resetovat.</p>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <Button type="button" onClick={() => window.location.reload()} className="rounded-xl bg-amber-600 text-white hover:bg-amber-700">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Obnovit stránku
+          </Button>
+          <Button type="button" variant="outline" onClick={onResetSession} className="rounded-xl border-amber-200 bg-white/80 text-amber-800 hover:bg-amber-100">
+            <LogOut className="mr-2 h-4 w-4" />
+            Odhlásit a resetovat
+          </Button>
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+const LegacyPageLoader = () => (
   <div className="flex min-h-[50vh] w-full items-center justify-center p-8">
     <div className="rounded-lg border border-slate-200/90 bg-white px-8 py-7 text-center shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
       <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-b-primary" />
       <p className="font-medium text-slate-700">Načítání modulu...</p>
     </div>
+  </div>
+);
+
+const PageLoader = () => (
+  <div className="flex min-h-[50vh] w-full items-center justify-center p-8">
+    <PortalLoaderCard />
   </div>
 );
 
@@ -99,6 +152,23 @@ function AppContent() {
   }, [loading]);
 
   if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-50 p-5">
+        <PortalLoaderCard
+          title="Načítání portálu"
+          description="Ověřujeme relaci a připravujeme pracovní prostředí."
+          showActions={loadingTimeout}
+          onResetSession={async () => {
+            await supabase.auth.signOut();
+            localStorage.clear();
+            window.location.href = '/login';
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (false && loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="max-w-md rounded-lg border border-slate-200/90 bg-white px-8 py-7 text-center shadow-[0_16px_42px_rgba(15,23,42,0.10)]">
@@ -164,6 +234,7 @@ function AppContent() {
                   <Route path="/documents" element={<PrivateRoute module="documents"><Documents /></PrivateRoute>} />
                   <Route path="/crm" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
                   <Route path="/crm/opportunities" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                  <Route path="/crm/opportunities/:opportunityId" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
                   <Route path="/crm/offers" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
                   <Route path="/crm/offers/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
                   <Route path="/crm/orders" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />

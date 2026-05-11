@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
+import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import { MemoBadge } from '@/components/ui/memo-badge';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import PageHeader from '@/components/ui/page-header';
@@ -366,19 +366,23 @@ const Realizace = () => {
             {loading ? (
                 <div className="text-center py-12 text-muted-foreground">Načítání dat...</div>
             ) : viewMode === 'table' ? (
-                <div className="space-y-3">
-                    <div className="flex justify-end">
+                <ManagedTableSection
+                    title="Realizace"
+                    count={filteredRealizations.length}
+                    toolbar={(
                         <ManagedTableToolbar
+                            className="text-slate-700"
                             columns={realizationManagedTable.columns}
                             visibility={realizationManagedTable.visibility}
                             onMoveColumn={realizationManagedTable.moveColumn}
                             onToggleColumn={realizationManagedTable.toggleColumn}
                             onReset={realizationManagedTable.resetColumns}
                         />
-                    </div>
+                    )}
+                >
                     <Table>
                         <TableHeader>
-                            <TableRow>
+                            <TableRow className="bg-slate-50">
                                 {realizationVisibleColumns.map((column) => (
                                     <TableHead key={column.id} className={realizationHeadClasses[column.id]}>{column.label}</TableHead>
                                 ))}
@@ -389,7 +393,7 @@ const Realizace = () => {
                                 <TableRow><TableCell colSpan={realizationVisibleColumns.length} className="text-center py-8 text-muted-foreground">Žádné realizace nenalezeny</TableCell></TableRow>
                             ) : (
                                 filteredRealizations.map(r => (
-                                    <TableRow key={r.id} className="cursor-pointer" onClick={() => navigate(`/realizace/${r.id}`)}>
+                                    <TableRow key={r.id} className="cursor-pointer bg-white hover:bg-blue-50/35" onClick={() => navigate(`/realizace/${r.id}`)}>
                                         {realizationVisibleColumns.map((column) => (
                                             <TableCell key={column.id} className={realizationCellClasses[column.id]} title={column.id === 'name' ? r.name : undefined}>
                                                 {renderRealizationTableCell(r, column.id)}
@@ -400,7 +404,7 @@ const Realizace = () => {
                             )}
                         </TableBody>
                     </Table>
-                </div>
+                </ManagedTableSection>
             ) : viewMode === 'grid' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredRealizations.map(r => {

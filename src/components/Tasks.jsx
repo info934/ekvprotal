@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { 
   ListTodo, Search, Plus, LayoutGrid, List,
-  Clock, CheckCircle2, AlertCircle, Target, BarChart3,
+  Clock, CheckCircle2, AlertCircle, Target,
   Filter, RefreshCw, Eye, Edit2, MoreHorizontal,
   Calendar as CalendarIcon, Users, Building
 } from 'lucide-react';
@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import TaskDialog from '@/components/TaskDialog';
 import { format, isPast } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ManagedTableSection } from '@/components/ui/managed-table';
 import { logAction } from '@/lib/logger';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { cn } from '@/lib/utils';
@@ -196,10 +197,14 @@ const TaskTable = ({ tasks, onTaskClick }) => {
     const { hasPermission } = useAuth();
 
     return (
-        <Card className="overflow-hidden">
-            <CardHeader className="border-b bg-slate-50/70">
+        <ManagedTableSection
+            title="Úkoly"
+            count={tasks.length}
+            minWidth="1040px"
+        >
+            <CardHeader className="hidden">
                 <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5 text-primary" />
+                    <ListTodo className="h-5 w-5 text-primary" />
                     Přehled úkolů
                 </CardTitle>
             </CardHeader>
@@ -207,7 +212,7 @@ const TaskTable = ({ tasks, onTaskClick }) => {
                 <div className="overflow-x-auto">
                     <Table>
                         <TableHeader>
-                            <TableRow>
+                            <TableRow className="bg-slate-50">
                                 <TableHead className="font-semibold">Název úkolu</TableHead>
                                 <TableHead className="font-semibold">Projekt</TableHead>
                                 <TableHead className="font-semibold">Přiřazeno</TableHead>
@@ -225,7 +230,7 @@ const TaskTable = ({ tasks, onTaskClick }) => {
                                 return (
                                     <TableRow 
                                         key={task.id} 
-                                        className="cursor-pointer transition-colors hover:bg-slate-50/80"
+                                        className="cursor-pointer bg-white transition-colors hover:bg-blue-50/35"
                                         onClick={() => onTaskClick(task)}
                                     >
                                         <TableCell className="min-w-[240px] font-semibold">
@@ -303,7 +308,7 @@ const TaskTable = ({ tasks, onTaskClick }) => {
                     </Table>
                 </div>
             </CardContent>
-        </Card>
+        </ManagedTableSection>
     );
 };
 

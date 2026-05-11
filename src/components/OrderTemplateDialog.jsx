@@ -47,7 +47,7 @@ const escapeHtml = (value) => String(value ?? '')
 const readFileAsText = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(String(reader.result || ''));
-  reader.onerror = () => reject(reader.error || new Error('Soubor se nepodarilo nacist.'));
+  reader.onerror = () => reject(reader.error || new Error('Soubor se nepodařilo načíst.'));
   reader.readAsText(file, 'utf-8');
 });
 
@@ -64,7 +64,7 @@ const extractDocxAsHtml = async (file) => {
     .map((text) => text.trim())
     .filter(Boolean);
 
-  if (paragraphs.length === 0) throw new Error('Z DOCX se nepodarilo nacist zadny text.');
+  if (paragraphs.length === 0) throw new Error('Z DOCX se nepodařilo načíst žádný text.');
   return paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('\n');
 };
 
@@ -90,8 +90,8 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
   const handleSave = () => {
     if (!name.trim() || !content.trim()) {
       toast({
-        title: 'Chybejici udaje',
-        description: 'Nazev a obsah sablony jsou povinne.',
+        title: 'Chybějící údaje',
+        description: 'Název a obsah šablony jsou povinné.',
         variant: 'destructive',
       });
       return;
@@ -114,20 +114,20 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
       } else if (['html', 'htm', 'txt'].includes(extension)) {
         nextContent = await readFileAsText(file);
       } else {
-        throw new Error('Podporovane jsou soubory .html, .htm, .txt a .docx.');
+        throw new Error('Podporované jsou soubory .html, .htm, .txt a .docx.');
       }
 
       setContent(nextContent);
       if (!name.trim()) setName(file.name.replace(/\.[^.]+$/, ''));
       toast({
-        title: 'Sablona nactena',
+        title: 'Šablona načtena',
         description: extension === 'docx'
-          ? 'DOCX byl preveden na jednoduche HTML odstavce. Zkontrolujte prosim formatovani a zastupne symboly.'
-          : 'Obsah souboru byl vlozen do sablony.',
+          ? 'DOCX byl převeden na jednoduché HTML odstavce. Zkontrolujte prosím formátování a zástupné symboly.'
+          : 'Obsah souboru byl vložen do šablony.',
       });
     } catch (error) {
       toast({
-        title: 'Soubor se nepodarilo nacist',
+        title: 'Soubor se nepodařilo načíst',
         description: error.message,
         variant: 'destructive',
       });
@@ -138,7 +138,7 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    toast({ title: `Zkopirovano: ${text}` });
+    toast({ title: `Zkopírováno: ${text}` });
   };
 
   return (
@@ -146,12 +146,12 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
       <FormDialogContent size="xl">
         <FormDialogHeader
           icon={Clipboard}
-          title={template ? 'Upravit sablonu dokumentu' : 'Nova sablona dokumentu'}
+          title={template ? 'Upravit šablonu dokumentu' : 'Nová šablona dokumentu'}
         />
         <FormDialogBody className="grid grid-cols-1 gap-6 md:grid-cols-3">
           <div className="space-y-4 md:col-span-2">
             <div>
-              <Label htmlFor="template-name">Nazev sablony</Label>
+              <Label htmlFor="template-name">Název šablony</Label>
               <Input id="template-name" value={name} onChange={(event) => setName(event.target.value)} />
             </div>
             <div>
@@ -161,15 +161,15 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
             <div className="rounded-lg border border-dashed bg-slate-50 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <Label htmlFor="template-file">Nahrat sablonu</Label>
+                  <Label htmlFor="template-file">Nahrát šablonu</Label>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Podporovane formaty: HTML, TXT a DOCX. DOCX se prevede na editovatelne HTML.
+                    Podporované formáty: HTML, TXT a DOCX. DOCX se převede na editovatelné HTML.
                   </p>
                 </div>
                 <Button type="button" variant="outline" disabled={importingFile} asChild>
                   <label htmlFor="template-file" className="cursor-pointer">
                     <FileUp className="mr-2 h-4 w-4" />
-                    {importingFile ? 'Nacitam...' : 'Vybrat soubor'}
+                    {importingFile ? 'Načítám...' : 'Vybrat soubor'}
                   </label>
                 </Button>
               </div>
@@ -182,17 +182,26 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
               />
             </div>
             <div>
-              <Label htmlFor="template-content">Obsah sablony (HTML je podporovan)</Label>
-              <Textarea id="template-content" value={content} onChange={(event) => setContent(event.target.value)} rows={15} />
+              <Label htmlFor="template-content">Obsah šablony (HTML je podporované)</Label>
+              <Textarea
+                id="template-content"
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                rows={15}
+                className="font-mono text-sm"
+              />
             </div>
           </div>
-          <div className="space-y-4">
-            <h4 className="font-semibold">Dostupne zastupne symboly</h4>
-            <div className="space-y-2">
+          <div className="space-y-4 rounded-lg border bg-slate-50 p-4">
+            <div>
+              <h4 className="font-semibold">Dostupné zástupné symboly</h4>
+              <p className="mt-1 text-xs text-muted-foreground">Kliknutím zkopírujete placeholder do schránky.</p>
+            </div>
+            <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
               {placeholders.map((placeholder) => (
-                <div key={placeholder} className="flex items-center justify-between rounded-md bg-muted/50 p-2">
+                <div key={placeholder} className="flex items-center justify-between rounded-md border bg-white p-2">
                   <Badge variant="secondary">{placeholder}</Badge>
-                  <Button variant="ghost" size="icon" onClick={() => copyToClipboard(placeholder)}>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => copyToClipboard(placeholder)}>
                     <Clipboard className="h-4 w-4" />
                   </Button>
                 </div>
@@ -201,8 +210,8 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
           </div>
         </FormDialogBody>
         <FormDialogFooter>
-          <Button variant="outline" onClick={onClose}>Zrusit</Button>
-          <Button onClick={handleSave}>Ulozit sablonu</Button>
+          <Button variant="outline" onClick={onClose}>Zrušit</Button>
+          <Button onClick={handleSave}>Uložit šablonu</Button>
         </FormDialogFooter>
       </FormDialogContent>
     </Dialog>

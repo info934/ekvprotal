@@ -17,6 +17,7 @@ import { useToast } from '@/components/ui/use-toast';
 // We use a simplified schema compared to full MemberSchema for inline creation
 const InlineMemberSchema = z.object({
   name: z.string().min(1, 'Jméno je povinné'),
+  ico: z.string().optional().or(z.literal('')),
   email: z.string().email('Neplatný email').optional().or(z.literal('')),
   phone: z.string().optional().or(z.literal('')),
 });
@@ -39,6 +40,7 @@ const CreateMemberDialog = ({
     resolver: zodResolver(InlineMemberSchema),
     defaultValues: {
       name: '',
+      ico: '',
       email: '',
       phone: '',
     },
@@ -47,27 +49,17 @@ const CreateMemberDialog = ({
   const onSubmit = async (data) => {
     setLoading(true);
     try {
-      // Determine table based on entityType
-      // Default to 'members' as per Task 2, but allow 'subjects' for Task 4 integration
       const table = entityType === 'subject' ? 'subjects' : 'members';
-      
-      // For subjects, we might need extra fields like 'ico' if strict validation exists, 
-      // but assuming standard nullable fields for now or minimal 'subjects' requirements.
-      // Looking at `subjects` table definition: `ico` is NOT NULL. 
-      // If we use this for subjects, we MUST ask for ICO.
-      // The prompt Task 2 says fields: "name, email, phone".
-      // This strongly suggests Task 2 is purely for `members` table (where ICO isn't required).
-      //
-      // However, Task 4 wants to use this for Investor/Client (Subjects).
-      // If I use this for Subjects, insert will fail due to missing ICO.
-      //
-      // I will implement specific logic: if entityType is 'subject', we mock/require ICO or handle it.
-      // Since Task 2 only requested name/email/phone, I'll stick to that for the UI.
-      // If `entityType` is subject, I might have to auto-generate a dummy ICO or fail.
-      // Let's assume for `members` mostly. For Task 4 integration, I might need to enhance this later.
-      //
-      // Wait, `subjects` table has `ico text NOT NULL`.
-      // I'll add ICO field conditionally if entityType is subject.
+
+      if (entityType === 'subject' && !data.ico?.trim()) {
+        toast({
+          title: "Doplňte IČO",
+          description: "Subjekt nelze založit bez IČO.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
       
       const payload = {
         name: data.name,
@@ -83,15 +75,7 @@ const CreateMemberDialog = ({
       }
       
       if (entityType === 'subject') {
-        // We need ICO for subjects
-        if (!data.ico) {
-            // If the form doesn't have ICO but table requires it...
-            // I'll assume for this task we might default it or the user must provide it.
-            // I will add ICO input to the form if entityType is subject.
-            payload.ico = data.ico || '00000000'; // Fallback if hidden, but I'll expose it
-        } else {
-            payload.ico = data.ico;
-        }
+        payload.ico = data.ico.trim();
       }
 
       const { data: newItem, error } = await supabase

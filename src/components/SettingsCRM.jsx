@@ -10,28 +10,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
-import { DEFAULT_CRM_NUMBERING, normalizeCrmNumbering } from '@/lib/crmNumbering';
+import {
+  DEFAULT_CRM_NUMBERING,
+  formatCrmNumber,
+  normalizeCrmNumbering,
+  selectCrmNumberingSettings,
+  upsertCrmNumberingSettings,
+} from '@/lib/crmNumbering';
 import OrderTemplateManager from '@/components/OrderTemplateManager';
 
 const DEFAULT_STAGE_CONFIG = [
   { value: 'lead', label: 'Lead', color: 'bg-slate-100 text-slate-700 border-slate-200', probability: 10, sort_order: 10, is_active: true, is_closed: false },
-  { value: 'qualified', label: 'Kvalifikovano', color: 'bg-blue-100 text-blue-700 border-blue-200', probability: 25, sort_order: 20, is_active: true, is_closed: false },
-  { value: 'proposal', label: 'Nabidka', color: 'bg-indigo-100 text-indigo-700 border-indigo-200', probability: 45, sort_order: 30, is_active: true, is_closed: false },
-  { value: 'negotiation', label: 'Jednani', color: 'bg-amber-100 text-amber-800 border-amber-200', probability: 70, sort_order: 40, is_active: true, is_closed: false },
-  { value: 'won', label: 'Vyhrano', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', probability: 100, sort_order: 50, is_active: true, is_closed: true },
+  { value: 'qualified', label: 'Kvalifikováno', color: 'bg-blue-100 text-blue-700 border-blue-200', probability: 25, sort_order: 20, is_active: true, is_closed: false },
+  { value: 'proposal', label: 'Nabídka', color: 'bg-indigo-100 text-indigo-700 border-indigo-200', probability: 45, sort_order: 30, is_active: true, is_closed: false },
+  { value: 'negotiation', label: 'Jednání', color: 'bg-amber-100 text-amber-800 border-amber-200', probability: 70, sort_order: 40, is_active: true, is_closed: false },
+  { value: 'won', label: 'Vyhráno', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', probability: 100, sort_order: 50, is_active: true, is_closed: true },
   { value: 'lost', label: 'Ztraceno', color: 'bg-rose-100 text-rose-700 border-rose-200', probability: 0, sort_order: 60, is_active: true, is_closed: true },
 ];
 
 const DEFAULT_PRIORITY_CONFIG = [
-  { value: 'low', label: 'Nizka', tone: 'secondary', sort_order: 10, is_active: true },
-  { value: 'medium', label: 'Stredni', tone: 'outline', sort_order: 20, is_active: true },
-  { value: 'high', label: 'Vysoka', tone: 'destructive', sort_order: 30, is_active: true },
+  { value: 'low', label: 'Nízká', tone: 'secondary', sort_order: 10, is_active: true },
+  { value: 'medium', label: 'Střední', tone: 'outline', sort_order: 20, is_active: true },
+  { value: 'high', label: 'Vysoká', tone: 'destructive', sort_order: 30, is_active: true },
 ];
 
 const DEFAULT_PRODUCT_FIELD_DEFINITIONS = [
-  { field_key: 'manufacturer', label: 'Vyrobce', field_type: 'text', field_group: 'Identifikace', unit: '', ai_hint: 'Najdi vyrobce nebo brand produktu v datasheetu.', is_required: false, is_active: true, sort_order: 10, options_text: '' },
-  { field_key: 'model', label: 'Model', field_type: 'text', field_group: 'Identifikace', unit: '', ai_hint: 'Najdi presne modelove oznaceni produktu.', is_required: false, is_active: true, sort_order: 20, options_text: '' },
-  { field_key: 'power_wp', label: 'Vykon', field_type: 'number', field_group: 'Technicke parametry', unit: 'Wp', ai_hint: 'Jmenovity vykon panelu nebo zarizeni.', is_required: false, is_active: true, sort_order: 30, options_text: '' },
+  { field_key: 'manufacturer', label: 'Výrobce', field_type: 'text', field_group: 'Identifikace', unit: '', ai_hint: 'Najdi výrobce nebo brand produktu v datasheetu.', is_required: false, is_active: true, sort_order: 10, options_text: '' },
+  { field_key: 'model', label: 'Model', field_type: 'text', field_group: 'Identifikace', unit: '', ai_hint: 'Najdi přesné modelové označení produktu.', is_required: false, is_active: true, sort_order: 20, options_text: '' },
+  { field_key: 'power_wp', label: 'Výkon', field_type: 'number', field_group: 'Technické parametry', unit: 'Wp', ai_hint: 'Jmenovitý výkon panelu nebo zařízení.', is_required: false, is_active: true, sort_order: 30, options_text: '' },
 ];
 
 const normalizeStages = (stages) => (
@@ -106,10 +112,7 @@ const SettingsCRM = () => {
         .select('value, label, tone, sort_order, is_active')
         .eq('is_active', true)
         .order('sort_order', { ascending: true }),
-      supabase
-        .from('crm_numbering_settings')
-        .select('document_type, prefix, next_number, padding')
-        .in('document_type', ['opportunity', 'offer', 'order']),
+      selectCrmNumberingSettings(supabase),
       supabase
         .from('product_field_definitions')
         .select('id, field_key, label, field_type, field_group, unit, options, ai_hint, is_required, is_active, sort_order')
@@ -120,7 +123,7 @@ const SettingsCRM = () => {
     const error = stagesRes.error || prioritiesRes.error;
     if (error) {
       toast({
-        title: 'CRM nastaveni se nepodarilo nacist',
+        title: 'CRM nastavení se nepodařilo načíst',
         description: error.message,
         variant: 'destructive',
       });
@@ -164,7 +167,7 @@ const SettingsCRM = () => {
       ...current,
       {
         value: `stage_${Date.now()}`,
-        label: 'Novy stav',
+        label: 'Nový stav',
         color: 'bg-slate-100 text-slate-700 border-slate-200',
         probability: 50,
         sort_order: (current.length + 1) * 10,
@@ -177,7 +180,7 @@ const SettingsCRM = () => {
   const addPriorityConfig = () => {
     setCrmPriorities((current) => ([
       ...current,
-      { value: `priority_${Date.now()}`, label: 'Nova priorita', tone: 'secondary', sort_order: (current.length + 1) * 10, is_active: true },
+      { value: `priority_${Date.now()}`, label: 'Nová priorita', tone: 'secondary', sort_order: (current.length + 1) * 10, is_active: true },
     ]));
   };
 
@@ -187,9 +190,9 @@ const SettingsCRM = () => {
       {
         id: null,
         field_key: `field_${Date.now()}`,
-        label: 'Nove pole',
+        label: 'Nové pole',
         field_type: 'text',
-        field_group: 'Technicke parametry',
+        field_group: 'Technické parametry',
         unit: '',
         options_text: '',
         ai_hint: '',
@@ -215,7 +218,11 @@ const SettingsCRM = () => {
       ...current,
       [type]: {
         ...current[type],
-        [field]: field === 'prefix' ? value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') : Number(value || 1),
+        [field]: field === 'prefix'
+          ? value.toUpperCase().replace(/[^A-Z0-9_-]/g, '')
+          : field === 'year_format'
+            ? value
+            : Number(value || 1),
       },
     }));
   };
@@ -253,6 +260,7 @@ const SettingsCRM = () => {
       prefix: String(config.prefix || '').trim().toUpperCase() || DEFAULT_CRM_NUMBERING[config.document_type]?.prefix || 'DOC',
       next_number: Math.max(1, Number(config.next_number || 1)),
       padding: Math.max(2, Number(config.padding || 3)),
+      year_format: ['YY', 'YYYY', 'NONE'].includes(config.year_format) ? config.year_format : 'YY',
     }));
 
     const productFieldRows = [
@@ -261,7 +269,7 @@ const SettingsCRM = () => {
         field_key: normalizeFieldKey(field.field_key) || `field_${index + 1}`,
         label: field.label.trim() || field.field_key || 'Pole',
         field_type: field.field_type || 'text',
-        field_group: field.field_group.trim() || 'Technicke parametry',
+        field_group: field.field_group.trim() || 'Technické parametry',
         unit: field.unit?.trim() || null,
         options: field.field_type === 'select'
           ? String(field.options_text || '').split(',').map((option) => option.trim()).filter(Boolean)
@@ -276,7 +284,7 @@ const SettingsCRM = () => {
         field_key: normalizeFieldKey(field.field_key),
         label: field.label || field.field_key,
         field_type: field.field_type || 'text',
-        field_group: field.field_group || 'Technicke parametry',
+        field_group: field.field_group || 'Technické parametry',
         unit: field.unit || null,
         options: [],
         ai_hint: field.ai_hint || null,
@@ -294,9 +302,7 @@ const SettingsCRM = () => {
       .from('crm_priority_definitions')
       .upsert(priorityRows, { onConflict: 'value' });
 
-    const { error: numberingError } = (stagesError || prioritiesError) ? { error: null } : await supabase
-      .from('crm_numbering_settings')
-      .upsert(numberingRows, { onConflict: 'document_type' });
+    const { error: numberingError } = (stagesError || prioritiesError) ? { error: null } : await upsertCrmNumberingSettings(supabase, numberingRows);
 
     const { error: productFieldsError } = (stagesError || prioritiesError || numberingError || !productFieldsReady) ? { error: null } : await supabase
       .from('product_field_definitions')
@@ -307,7 +313,7 @@ const SettingsCRM = () => {
     const error = stagesError || prioritiesError || numberingError || productFieldsError;
     if (error) {
       toast({
-        title: 'CRM nastaveni se nepodarilo ulozit',
+        title: 'CRM nastavení se nepodařilo uložit',
         description: error.message,
         variant: 'destructive',
       });
@@ -319,7 +325,7 @@ const SettingsCRM = () => {
     setCrmNumbering(normalizeCrmNumbering(numberingRows));
     setProductFields(normalizeProductFields(productFieldRows.filter((field) => field.is_active)));
     setRemovedProductFields([]);
-    toast({ title: 'CRM nastaveni ulozeno' });
+    toast({ title: 'CRM nastavení uloženo' });
     fetchCrmConfig();
   };
 
@@ -327,31 +333,31 @@ const SettingsCRM = () => {
     <div className="space-y-6">
       <PageHeader
         icon={Target}
-        title="CRM nastaveni"
-        description="Sprava stavu obchodnich pripadu, pravdepodobnosti a priorit pro CRM pipeline."
+        title="CRM nastavení"
+        description="Správa stavů obchodních případů, pravděpodobnosti a priorit pro CRM pipeline."
       />
 
       {!canAdmin && (
         <Alert>
           <SlidersHorizontal className="h-4 w-4" />
-          <AlertTitle>Nedostatecna opravneni</AlertTitle>
-          <AlertDescription>Tuto cast nastaveni muze menit pouze administrator.</AlertDescription>
+          <AlertTitle>Nedostatečná oprávnění</AlertTitle>
+          <AlertDescription>Tuto část nastavení může měnit pouze administrátor.</AlertDescription>
         </Alert>
       )}
 
       <Card>
         <CardHeader className="border-b bg-slate-50/70">
-          <CardTitle>Cislovani CRM dokumentu</CardTitle>
-          <CardDescription>Prefixy a dalsi cislo pro obchodni pripady, nabidky a objednavky.</CardDescription>
+          <CardTitle>Číslování CRM dokumentů</CardTitle>
+          <CardDescription>Prefixy a další číslo pro obchodní případy, nabídky a objednávky.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+        <CardContent className="grid gap-3 p-4 xl:grid-cols-3">
           {Object.values(crmNumbering).map((config) => (
             <div key={config.document_type} className="rounded-lg border bg-white p-3 shadow-sm">
               <div className="mb-3">
                 <div className="text-sm font-semibold text-slate-900">{config.label}</div>
-                <div className="text-xs text-muted-foreground">Priklad: {config.prefix}-26-{String(config.next_number || 1).padStart(Number(config.padding || 3), '0')}</div>
+                <div className="text-xs text-muted-foreground">Příklad: {formatCrmNumber(crmNumbering, config.document_type)}</div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-2">
                   <Label>Prefix</Label>
                   <Input
@@ -361,7 +367,20 @@ const SettingsCRM = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Dalsi cislo</Label>
+                  <Label>Rok v čísle</Label>
+                  <Select value={config.year_format || 'YY'} onValueChange={(value) => updateNumberingConfig(config.document_type, 'year_format', value)} disabled={loading || saving || !canAdmin}>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="YY">Krátký rok (26)</SelectItem>
+                      <SelectItem value="YYYY">Celý rok (2026)</SelectItem>
+                      <SelectItem value="NONE">Bez roku</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Další číslo</Label>
                   <Input
                     type="number"
                     min="1"
@@ -380,14 +399,14 @@ const SettingsCRM = () => {
         <CardHeader className="gap-4 border-b bg-slate-50/70">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <CardTitle>Produktova pole</CardTitle>
+              <CardTitle>Produktová pole</CardTitle>
               <CardDescription>
-                Definice technickych a obchodnich poli produktu. AI extrakce z datasheetu bude pouzivat klic pole a napovedu.
+                Definice technických a obchodních polí produktu. AI extrakce z datasheetu bude používat klíč pole a nápovědu.
               </CardDescription>
             </div>
             <Button type="button" variant="outline" onClick={addProductField} disabled={loading || saving || !canAdmin}>
               <Plus className="mr-2 h-4 w-4" />
-              Pridat pole
+              Přidat pole
             </Button>
           </div>
         </CardHeader>
@@ -395,15 +414,15 @@ const SettingsCRM = () => {
           {!productFieldsReady && (
             <Alert className="border-amber-200 bg-amber-50 text-amber-900">
               <SlidersHorizontal className="h-4 w-4" />
-              <AlertTitle>Produktova pole zatim nejsou v databazi</AlertTitle>
-              <AlertDescription>Aplikujte produktovou migraci. Do te doby se zobrazuji jen vychozi pole a nejdou ulozit online.</AlertDescription>
+              <AlertTitle>Produktová pole zatím nejsou v databázi</AlertTitle>
+              <AlertDescription>Aplikujte produktovou migraci. Do té doby se zobrazují jen výchozí pole a nejdou uložit online.</AlertDescription>
             </Alert>
           )}
           {productFields.map((field, index) => (
             <div key={`${field.field_key}-${index}`} className="grid gap-3 rounded-lg border bg-white p-3 shadow-sm xl:grid-cols-[1fr_160px_150px_120px_1.4fr_44px]">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Nazev</Label>
+                  <Label>Název</Label>
                   <Input
                     value={field.label}
                     onChange={(event) => updateProductField(index, 'label', event.target.value)}
@@ -411,7 +430,7 @@ const SettingsCRM = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Klic pro AI / template</Label>
+                  <Label>Klíč pro AI / template</Label>
                   <Input
                     value={field.field_key}
                     onChange={(event) => updateProductField(index, 'field_key', event.target.value)}
@@ -428,11 +447,11 @@ const SettingsCRM = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="text">Text</SelectItem>
-                    <SelectItem value="textarea">Dlouhy text</SelectItem>
-                    <SelectItem value="number">Cislo</SelectItem>
+                    <SelectItem value="textarea">Dlouhý text</SelectItem>
+                    <SelectItem value="number">Číslo</SelectItem>
                     <SelectItem value="boolean">Ano / ne</SelectItem>
                     <SelectItem value="date">Datum</SelectItem>
-                    <SelectItem value="select">Vyber</SelectItem>
+                    <SelectItem value="select">Výběr</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -454,7 +473,7 @@ const SettingsCRM = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{field.field_type === 'select' ? 'Moznosti / AI napoveda' : 'AI napoveda'}</Label>
+                <Label>{field.field_type === 'select' ? 'Možnosti / AI nápověda' : 'AI nápověda'}</Label>
                 {field.field_type === 'select' && (
                   <Input
                     value={field.options_text || ''}
@@ -468,11 +487,11 @@ const SettingsCRM = () => {
                   value={field.ai_hint || ''}
                   onChange={(event) => updateProductField(index, 'ai_hint', event.target.value)}
                   disabled={loading || saving || !canAdmin}
-                  placeholder="Co ma AI hledat v datasheetu"
+                  placeholder="Co má AI hledat v datasheetu"
                 />
               </div>
               <div className="flex items-end justify-end">
-                <Button type="button" variant="ghost" size="icon" aria-label={`Odebrat produktove pole ${field.label || field.field_key || index + 1}`} onClick={() => removeProductField(index)} disabled={loading || saving || !canAdmin}>
+                <Button type="button" variant="ghost" size="icon" aria-label={`Odebrat produktové pole ${field.label || field.field_key || index + 1}`} onClick={() => removeProductField(index)} disabled={loading || saving || !canAdmin}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
@@ -485,11 +504,11 @@ const SettingsCRM = () => {
         <CardHeader className="gap-4 border-b bg-slate-50/70">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <CardTitle>Stavy obchodniho pripadu</CardTitle>
-              <CardDescription>Tyto hodnoty se pouzivaji v CRM pipeline a pri vytvareni prilezitosti.</CardDescription>
+              <CardTitle>Stavy obchodního případu</CardTitle>
+              <CardDescription>Tyto hodnoty se používají v CRM pipeline a při vytváření příležitostí.</CardDescription>
             </div>
             <Button type="button" variant="outline" onClick={addStageConfig} disabled={loading || saving || !canAdmin}>
-              Pridat stav
+              Přidat stav
             </Button>
           </div>
         </CardHeader>
@@ -497,7 +516,7 @@ const SettingsCRM = () => {
           {crmStages.map((stage, index) => (
             <div key={stage.value} className="grid gap-3 rounded-lg border bg-white p-3 shadow-sm md:grid-cols-[minmax(140px,1fr)_110px_minmax(190px,1.2fr)_120px]">
               <div className="space-y-2">
-                <Label>Nazev</Label>
+                <Label>Název</Label>
                 <Input
                   value={stage.label}
                   onChange={(event) => updateStageConfig(index, 'label', event.target.value)}
@@ -505,7 +524,7 @@ const SettingsCRM = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Pravdep.</Label>
+                <Label>Pravděp.</Label>
                 <Input
                   type="number"
                   min="0"
@@ -523,11 +542,11 @@ const SettingsCRM = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="bg-slate-100 text-slate-700 border-slate-200">Neutral</SelectItem>
-                    <SelectItem value="bg-blue-100 text-blue-700 border-blue-200">Modra</SelectItem>
+                    <SelectItem value="bg-blue-100 text-blue-700 border-blue-200">Modrá</SelectItem>
                     <SelectItem value="bg-indigo-100 text-indigo-700 border-indigo-200">Indigo</SelectItem>
-                    <SelectItem value="bg-amber-100 text-amber-800 border-amber-200">Oranzova</SelectItem>
-                    <SelectItem value="bg-emerald-100 text-emerald-700 border-emerald-200">Zelena</SelectItem>
-                    <SelectItem value="bg-rose-100 text-rose-700 border-rose-200">Cervena</SelectItem>
+                    <SelectItem value="bg-amber-100 text-amber-800 border-amber-200">Oranžová</SelectItem>
+                    <SelectItem value="bg-emerald-100 text-emerald-700 border-emerald-200">Zelená</SelectItem>
+                    <SelectItem value="bg-rose-100 text-rose-700 border-rose-200">Červená</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -538,8 +557,8 @@ const SettingsCRM = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="open">Otevreno</SelectItem>
-                    <SelectItem value="closed">Uzavreno</SelectItem>
+                    <SelectItem value="open">Otevřeno</SelectItem>
+                    <SelectItem value="closed">Uzavřeno</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -553,10 +572,10 @@ const SettingsCRM = () => {
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <CardTitle>Priority</CardTitle>
-              <CardDescription>Priority se zobrazuji v kartach pipeline a ve formulari prilezitosti.</CardDescription>
+              <CardDescription>Priority se zobrazují v kartách pipeline a ve formuláři příležitosti.</CardDescription>
             </div>
             <Button type="button" variant="outline" onClick={addPriorityConfig} disabled={loading || saving || !canAdmin}>
-              Pridat prioritu
+              Přidat prioritu
             </Button>
           </div>
         </CardHeader>
@@ -564,7 +583,7 @@ const SettingsCRM = () => {
           {crmPriorities.map((priority, index) => (
             <div key={priority.value} className="grid gap-3 rounded-lg border bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_140px] xl:grid-cols-1">
               <div className="space-y-2">
-                <Label>Nazev</Label>
+                <Label>Název</Label>
                 <Input
                   value={priority.label}
                   onChange={(event) => updatePriorityConfig(index, 'label', event.target.value)}
@@ -580,7 +599,7 @@ const SettingsCRM = () => {
                   <SelectContent>
                     <SelectItem value="secondary">Neutral</SelectItem>
                     <SelectItem value="outline">Obrys</SelectItem>
-                    <SelectItem value="destructive">Vyrazna</SelectItem>
+                    <SelectItem value="destructive">Výrazná</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -593,11 +612,11 @@ const SettingsCRM = () => {
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
         <Button type="button" variant="ghost" onClick={resetCrmConfig} disabled={loading || saving || !canAdmin}>
-          Obnovit vychozi
+          Obnovit výchozí
         </Button>
         <Button type="button" onClick={handleSaveCrmConfig} disabled={loading || saving || !canAdmin}>
           <Save className="mr-2 h-4 w-4" />
-          {saving ? 'Ukladam...' : 'Ulozit CRM nastaveni'}
+          {saving ? 'Ukládám...' : 'Uložit CRM nastavení'}
         </Button>
       </div>
     </div>
@@ -605,3 +624,4 @@ const SettingsCRM = () => {
 };
 
 export default SettingsCRM;
+

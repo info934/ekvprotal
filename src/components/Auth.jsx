@@ -1,139 +1,168 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  ArrowLeft,
+  BarChart3,
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  Cloud,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  Mail,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  User,
+  Users,
+  Zap,
+} from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { 
-  ArrowLeft, Mail, Lock, User, Eye, EyeOff, Shield, 
-  CheckCircle, AlertCircle, Loader2, Sparkles, Zap,
-  Building2, Users, Target, BarChart3
-} from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { cn } from '@/lib/utils';
 
-// In-file UI Components
-const Card = ({ children, className, ...props }) => (
-  <div className={cn("bg-white border rounded-xl shadow-sm", className)} {...props}>
-    {children}
-  </div>
-);
-
-const CardContent = ({ children, className, ...props }) => (
-  <div className={cn("p-6", className)} {...props}>
-    {children}
-  </div>
-);
-
-const CardHeader = ({ children, className, ...props }) => (
-  <div className={cn("px-6 py-4 border-b", className)} {...props}>
-    {children}
-  </div>
-);
-
-const CardTitle = ({ children, className, ...props }) => (
-  <h3 className={cn("text-lg font-semibold", className)} {...props}>
-    {children}
-  </h3>
-);
-
-const Badge = ({ children, variant = "default", className, ...props }) => {
-  const variants = {
-    default: "bg-blue-100 text-blue-800 border-blue-200",
-    secondary: "bg-gray-100 text-gray-800 border-gray-200",
-    success: "bg-green-100 text-green-800 border-green-200",
-    warning: "bg-yellow-100 text-yellow-800 border-yellow-200",
-    danger: "bg-red-100 text-red-800 border-red-200",
-    info: "bg-blue-100 text-blue-800 border-blue-200"
-  };
-  
-  return (
-    <span 
-      className={cn(
-        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border",
-        variants[variant],
-        className
-      )}
-      {...props}
-    >
-      {children}
-    </span>
-  );
-};
-
-const FeatureCard = ({ icon: Icon, title, description, className, ...props }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    whileHover={{ y: -4, scale: 1.02 }}
-    className={cn(
-      "group bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6 cursor-pointer hover:bg-white/20 transition-all duration-200",
-      className
-    )}
-    {...props}
-  >
-    <div className="flex items-center gap-3 mb-3">
-      <div className="p-2 bg-white/20 rounded-lg">
-        <Icon className="w-5 h-5 text-white" />
-      </div>
-      <h3 className="font-semibold text-white">{title}</h3>
-    </div>
-    <p className="text-white/80 text-sm">{description}</p>
-  </motion.div>
-);
-
 const formVariants = {
-  initial: {
-    opacity: 0,
-    y: 20
-  },
-  animate: {
-    opacity: 1,
-    y: 0
-  },
-  exit: {
-    opacity: 0,
-    y: -20
-  },
-  transition: {
-    duration: 0.3
-  }
+  initial: { opacity: 0, y: 16 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -16 },
+  transition: { duration: 0.22, ease: 'easeOut' },
 };
+
+const HERO_IMAGE_URL = 'https://horizons-cdn.hostinger.com/71f822ff-0858-4714-9f59-dcfbecb55c00/gemini_generated_image_6o2xfv6o2xfv6o2x-A6n0A.png';
 
 const GoogleIcon = () => (
-  <svg className="w-5 h-5 mr-2" viewBox="0 0 48 48">
-    <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"></path>
-    <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"></path>
-    <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"></path>
-    <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571l6.19,5.238C42.021,35.596,44,30.138,44,24C44,22.659,43.862,21.35,43.611,20.083z"></path>
+  <svg className="h-5 w-5" viewBox="0 0 48 48" aria-hidden="true">
+    <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" />
+    <path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z" />
+    <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" />
+    <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l6.19 5.238C42.021 35.596 44 30.138 44 24c0-1.341-.138-2.65-.389-3.917z" />
   </svg>
 );
 
 const MicrosoftIcon = () => (
-    <svg className="w-5 h-5 mr-2" viewBox="0 0 21 21">
-        <path fill="#f25022" d="M1 1h9v9H1z"/>
-        <path fill="#00a4ef" d="M1 11h9v9H1z"/>
-        <path fill="#7fba00" d="M11 1h9v9h-9z"/>
-        <path fill="#ffb900" d="M11 11h9v9h-9z"/>
-    </svg>
+  <svg className="h-5 w-5" viewBox="0 0 21 21" aria-hidden="true">
+    <path fill="#f25022" d="M1 1h9v9H1z" />
+    <path fill="#00a4ef" d="M1 11h9v9H1z" />
+    <path fill="#7fba00" d="M11 1h9v9h-9z" />
+    <path fill="#ffb900" d="M11 11h9v9h-9z" />
+  </svg>
 );
 
+const BrandMark = ({ compact = false }) => (
+  <div className="flex items-center gap-3">
+    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
+      <span className="text-lg font-black tracking-tight">E</span>
+    </div>
+    {!compact && (
+      <div className="min-w-0">
+        <div className="text-lg font-semibold tracking-tight text-slate-950">EKV Portal</div>
+        <div className="text-xs font-medium text-slate-500">Project operating system</div>
+      </div>
+    )}
+  </div>
+);
 
-const LoginForm = ({
-  onSwitchToSignup,
-  onSwitchToReset,
-  onSubmit,
-  onSocialLogin,
-}) => {
+const Field = ({ icon: Icon, label, id, children, action }) => (
+  <div className="space-y-2">
+    <div className="flex items-center justify-between gap-3">
+      <Label htmlFor={id} className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+        <Icon className="h-4 w-4 text-slate-400" />
+        {label}
+      </Label>
+      {action}
+    </div>
+    {children}
+  </div>
+);
+
+const AuthStateMark = ({ icon: Icon }) => (
+  <div className="relative shrink-0">
+    <div className="grid h-14 w-14 place-items-center rounded-[22px] bg-gradient-to-br from-blue-600 to-blue-500 text-white shadow-xl shadow-blue-600/20">
+      <span className="text-xl font-black tracking-tight">E</span>
+    </div>
+    <div className="absolute -bottom-1.5 -right-1.5 grid h-7 w-7 place-items-center rounded-xl border-2 border-white bg-white text-blue-700 shadow-md ring-1 ring-blue-100">
+      <Icon className="h-4 w-4" />
+    </div>
+  </div>
+);
+
+const PasswordInput = ({ id, value, onChange, placeholder = 'Zadejte heslo' }) => {
+  const [showPassword, setShowPassword] = useState(false);
+
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        type={showPassword ? 'text' : 'password'}
+        value={value}
+        onChange={onChange}
+        required
+        placeholder={placeholder}
+        className="h-12 rounded-xl border-slate-200 bg-white pr-12 text-base shadow-sm transition focus-visible:ring-blue-500"
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="absolute right-1 top-1 h-10 w-10 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+        onClick={() => setShowPassword((current) => !current)}
+        aria-label={showPassword ? 'Skrýt heslo' : 'Zobrazit heslo'}
+      >
+        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </Button>
+    </div>
+  );
+};
+
+const AuthPanel = ({ title, description, icon: Icon, children }) => (
+  <motion.div {...formVariants} className="w-full">
+    <div className="rounded-[28px] border border-white/70 bg-white/90 p-5 shadow-2xl shadow-slate-950/10 backdrop-blur md:p-7">
+      <div className="mb-7 flex items-start gap-4">
+        <AuthStateMark icon={Icon} />
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">{title}</h1>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
+        </div>
+      </div>
+      {children}
+    </div>
+  </motion.div>
+);
+
+const PrimaryButton = ({ loading, icon: Icon, loadingText, children }) => (
+  <Button
+    type="submit"
+    className="h-12 w-full rounded-xl bg-blue-600 text-base font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-blue-600/25"
+    disabled={loading}
+  >
+    {loading ? (
+      <>
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+        {loadingText}
+      </>
+    ) : (
+      <>
+        <Icon className="mr-2 h-5 w-5" />
+        {children}
+      </>
+    )}
+  </Button>
+);
+
+const LoginForm = ({ onSwitchToSignup, onSwitchToReset, onSubmit, onSocialLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState(null);
-  
-  const handleSubmit = async e => {
-    e.preventDefault();
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
     await onSubmit(email, password);
     setLoading(false);
@@ -144,422 +173,320 @@ const LoginForm = ({
     await onSocialLogin(provider);
     setSocialLoading(null);
   };
-  
+
   return (
-    <motion.div {...formVariants} className="w-full">
-      <Card className="shadow-lg border border-gray-200 bg-white">
-        <CardContent className="p-8">
-          <div className="text-center mb-8">
-            <div className="flex flex-col items-center gap-4 mb-6">
-              <div className="p-3 bg-gray-100 rounded-xl">
-                <Shield className="w-8 h-8 text-gray-700" />
-              </div>
-              <div className="text-center">
-                <h2 className="text-3xl font-bold text-gray-900">Vítejte zpět!</h2>
-                <p className="text-gray-600">Přihlaste se do svého účtu</p>
-              </div>
-            </div>
-          </div>
+    <AuthPanel title="Přihlášení do portálu" description="Bezpečný vstup do projektů, CRM, realizací a firemních financí." icon={ShieldCheck}>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <Field id="email" icon={Mail} label="E-mail">
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            autoComplete="email"
+            placeholder="jmeno@ekvproject.cz"
+            className="h-12 rounded-xl border-slate-200 bg-white text-base shadow-sm transition focus-visible:ring-blue-500"
+          />
+        </Field>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium flex items-center gap-2">
-                  <Mail className="w-4 h-4" />
-                  Email
-                </Label>
-                <Input 
-                  id="email" 
-                  type="email" 
-                  value={email} 
-                  onChange={e => setEmail(e.target.value)} 
-                  required 
-                  placeholder="vas@email.cz"
-                  className="h-12 text-base"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label htmlFor="password" className="text-sm font-medium flex items-center gap-2">
-                    <Lock className="w-4 h-4" />
-                    Heslo
-                  </Label>
-                  <Button 
-                    variant="link" 
-                    type="button" 
-                    onClick={onSwitchToReset} 
-                    className="text-primary h-auto p-0 text-sm hover:text-primary/80"
-                  >
-                    Zapomněli jste heslo?
-                  </Button>
-                </div>
-                <div className="relative">
-                  <Input 
-                    id="password" 
-                    type={showPassword ? "text" : "password"} 
-                    value={password} 
-                    onChange={e => setPassword(e.target.value)} 
-                    required 
-                    placeholder="••••••••"
-                    className="h-12 text-base pr-12"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-0 top-0 h-12 px-3 py-2 hover:bg-transparent"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            <Button 
-              type="submit" 
-              className="w-full h-12 bg-gray-900 hover:bg-gray-800 text-white font-semibold text-base shadow-md hover:shadow-lg transition-all duration-200" 
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Přihlašování...
-                </>
-              ) : (
-                <>
-                  <Shield className="w-5 h-5 mr-2" />
-                  Přihlásit se
-                </>
-              )}
+        <Field
+          id="password"
+          icon={Lock}
+          label="Heslo"
+          action={
+            <Button type="button" variant="link" onClick={onSwitchToReset} className="h-auto p-0 text-sm font-semibold text-blue-700 hover:text-blue-800">
+              Zapomenuté heslo
             </Button>
-            
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-gray-200" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-4 text-muted-foreground font-medium">Nebo pokračovat s</span>
-              </div>
-            </div>
+          }
+        >
+          <PasswordInput id="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+        </Field>
 
-            <div className="grid grid-cols-2 gap-4">
-              <Button 
-                variant="outline" 
-                type="button" 
-                onClick={() => handleSocialLogin('google')} 
-                disabled={!!socialLoading}
-                className="h-12 border-gray-200 hover:bg-gray-50"
-              >
-                {socialLoading === 'google' ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <GoogleIcon />} 
-                <span className="ml-2">Google</span>
-              </Button>
-              <Button 
-                variant="outline" 
-                type="button" 
-                onClick={() => handleSocialLogin('azure')} 
-                disabled={!!socialLoading}
-                className="h-12 border-gray-200 hover:bg-gray-50"
-              >
-                {socialLoading === 'azure' ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <MicrosoftIcon />} 
-                <span className="ml-2">Microsoft</span>
-              </Button>
-            </div>
+        <PrimaryButton loading={loading} loadingText="Přihlašování..." icon={ShieldCheck}>
+          Přihlásit se
+        </PrimaryButton>
 
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground">
-                Nemáte účet?{' '}
-                <Button 
-                  variant="link" 
-                  onClick={onSwitchToSignup} 
-                  className="text-primary font-semibold hover:text-primary/80 p-0 h-auto"
-                >
-                  Zaregistrujte se
-                </Button>
-              </p>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </motion.div>
+        <div className="flex items-center gap-3 py-1">
+          <div className="h-px flex-1 bg-slate-200" />
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">nebo</span>
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => handleSocialLogin('google')}
+            disabled={!!socialLoading}
+            className="h-12 rounded-xl border-slate-200 bg-white font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            {socialLoading === 'google' ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <GoogleIcon />}
+            <span className="ml-2">Google</span>
+          </Button>
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => handleSocialLogin('azure')}
+            disabled={!!socialLoading}
+            className="h-12 rounded-xl border-slate-200 bg-white font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            {socialLoading === 'azure' ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <MicrosoftIcon />}
+            <span className="ml-2">Microsoft</span>
+          </Button>
+        </div>
+
+        <p className="text-center text-sm text-slate-500">
+          Nemáte účet?{' '}
+          <Button type="button" variant="link" onClick={onSwitchToSignup} className="h-auto p-0 font-semibold text-blue-700 hover:text-blue-800">
+            Požádat o přístup
+          </Button>
+        </p>
+      </form>
+    </AuthPanel>
   );
 };
-const SignupForm = ({
-  onSwitchToLogin,
-  onSubmit
-}) => {
+
+const SignupForm = ({ onSwitchToLogin, onSubmit }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  
-  const handleSubmit = async e => {
-    e.preventDefault();
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
     await onSubmit(email, password, fullName);
     setLoading(false);
   };
-  
+
   return (
-    <motion.div {...formVariants} className="w-full">
-      <Card className="shadow-lg border border-gray-200 bg-white">
-        <CardContent className="p-8">
-          <div className="text-center mb-8">
-            <div className="flex flex-col items-center gap-4 mb-6">
-              <div className="p-3 bg-gray-100 rounded-xl">
-                <User className="w-8 h-8 text-gray-700" />
-              </div>
-              <div className="text-center">
-                <h2 className="text-3xl font-bold text-gray-900">Vytvořit nový účet</h2>
-                <p className="text-gray-600">Začněte svou cestu s námi</p>
-              </div>
-            </div>
-          </div>
+    <AuthPanel title="Žádost o přístup" description="Vytvořte účet a po potvrzení e-mailu se přihlaste do portálu." icon={User}>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <Field id="full-name-signup" icon={User} label="Jméno a příjmení">
+          <Input
+            id="full-name-signup"
+            type="text"
+            value={fullName}
+            onChange={(event) => setFullName(event.target.value)}
+            required
+            autoComplete="name"
+            placeholder="Jan Novák"
+            className="h-12 rounded-xl border-slate-200 bg-white text-base shadow-sm transition focus-visible:ring-blue-500"
+          />
+        </Field>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="full-name-signup" className="text-sm font-medium flex items-center gap-2">
-                  <User className="w-4 h-4" />
-                  Jméno a příjmení
-                </Label>
-                <Input 
-                  id="full-name-signup" 
-                  type="text" 
-                  value={fullName} 
-                  onChange={e => setFullName(e.target.value)} 
-                  required 
-                  placeholder="Jan Novák"
-                  className="h-12 text-base"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="email-signup" className="text-sm font-medium flex items-center gap-2">
-                  <Mail className="w-4 h-4" />
-                  Email
-                </Label>
-                <Input 
-                  id="email-signup" 
-                  type="email" 
-                  value={email} 
-                  onChange={e => setEmail(e.target.value)} 
-                  required 
-                  placeholder="vas@email.cz"
-                  className="h-12 text-base"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="password-signup" className="text-sm font-medium flex items-center gap-2">
-                  <Lock className="w-4 h-4" />
-                  Heslo
-                </Label>
-                <div className="relative">
-                  <Input 
-                    id="password-signup" 
-                    type={showPassword ? "text" : "password"} 
-                    value={password} 
-                    onChange={e => setPassword(e.target.value)} 
-                    required 
-                    placeholder="••••••••"
-                    className="h-12 text-base pr-12"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-0 top-0 h-12 px-3 py-2 hover:bg-transparent"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
+        <Field id="email-signup" icon={Mail} label="E-mail">
+          <Input
+            id="email-signup"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            autoComplete="email"
+            placeholder="jmeno@ekvproject.cz"
+            className="h-12 rounded-xl border-slate-200 bg-white text-base shadow-sm transition focus-visible:ring-blue-500"
+          />
+        </Field>
 
-            <Button 
-              type="submit" 
-              className="w-full h-12 bg-gray-900 hover:bg-gray-800 text-white font-semibold text-base shadow-md hover:shadow-lg transition-all duration-200" 
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Registrace...
-                </>
-              ) : (
-                <>
-                  <User className="w-5 h-5 mr-2" />
-                  Zaregistrovat se
-                </>
-              )}
-            </Button>
+        <Field id="password-signup" icon={Lock} label="Heslo">
+          <PasswordInput id="password-signup" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Zvolte silné heslo" />
+        </Field>
 
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground">
-                Máte již účet?{' '}
-                <Button 
-                  variant="link" 
-                  onClick={onSwitchToLogin} 
-                  className="text-primary font-semibold hover:text-primary/80 p-0 h-auto"
-                >
-                  Přihlaste se
-                </Button>
-              </p>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </motion.div>
+        <PrimaryButton loading={loading} loadingText="Odesílání..." icon={User}>
+          Vytvořit účet
+        </PrimaryButton>
+
+        <p className="text-center text-sm text-slate-500">
+          Už máte účet?{' '}
+          <Button type="button" variant="link" onClick={onSwitchToLogin} className="h-auto p-0 font-semibold text-blue-700 hover:text-blue-800">
+            Přihlaste se
+          </Button>
+        </p>
+      </form>
+    </AuthPanel>
   );
 };
-const ResetPasswordForm = ({
-  onSwitchToLogin,
-  onSubmit
-}) => {
+
+const ResetPasswordForm = ({ onSwitchToLogin, onSubmit }) => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  
-  const handleSubmit = async e => {
-    e.preventDefault();
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
     await onSubmit(email);
     setLoading(false);
   };
-  
+
   return (
-    <motion.div {...formVariants} className="w-full">
-      <Card className="shadow-lg border border-gray-200 bg-white">
-        <CardContent className="p-8">
-          <div className="text-center mb-8">
-            <div className="flex flex-col items-center gap-4 mb-6">
-              <div className="p-3 bg-gray-100 rounded-xl">
-                <Lock className="w-8 h-8 text-gray-700" />
-              </div>
-              <div className="text-center">
-                <h2 className="text-3xl font-bold text-gray-900">Obnovit heslo</h2>
-                <p className="text-gray-600">Zadejte svůj e-mail pro obnovu</p>
-              </div>
-            </div>
-          </div>
+    <AuthPanel title="Obnova hesla" description="Pošleme vám odkaz pro nastavení nového hesla." icon={Lock}>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <Field id="email-reset" icon={Mail} label="E-mail">
+          <Input
+            id="email-reset"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            autoComplete="email"
+            placeholder="jmeno@ekvproject.cz"
+            className="h-12 rounded-xl border-slate-200 bg-white text-base shadow-sm transition focus-visible:ring-blue-500"
+          />
+        </Field>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email-reset" className="text-sm font-medium flex items-center gap-2">
-                  <Mail className="w-4 h-4" />
-                  Email
-                </Label>
-                <Input 
-                  id="email-reset" 
-                  type="email" 
-                  value={email} 
-                  onChange={e => setEmail(e.target.value)} 
-                  required 
-                  placeholder="vas@email.cz"
-                  className="h-12 text-base"
-                />
-              </div>
-            </div>
+        <PrimaryButton loading={loading} loadingText="Odesílání..." icon={Mail}>
+          Odeslat odkaz
+        </PrimaryButton>
 
-            <Button 
-              type="submit" 
-              className="w-full h-12 bg-gray-900 hover:bg-gray-800 text-white font-semibold text-base shadow-md hover:shadow-lg transition-all duration-200" 
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Odesílání...
-                </>
-              ) : (
-                <>
-                  <Mail className="w-5 h-5 mr-2" />
-                  Odeslat odkaz pro obnovu
-                </>
-              )}
-            </Button>
-
-            <div className="text-center">
-              <Button 
-                variant="link" 
-                onClick={onSwitchToLogin} 
-                className="text-primary font-semibold hover:text-primary/80 flex items-center justify-center mx-auto p-0 h-auto"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" /> 
-                Zpět na přihlášení
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </motion.div>
+        <Button type="button" variant="link" onClick={onSwitchToLogin} className="mx-auto flex h-auto items-center p-0 font-semibold text-blue-700 hover:text-blue-800">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Zpět na přihlášení
+        </Button>
+      </form>
+    </AuthPanel>
   );
 };
+
+const MetricCard = ({ icon: Icon, label, description, tone = 'blue' }) => {
+  const tones = {
+    blue: 'bg-blue-50 text-blue-700 ring-blue-100',
+    green: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+    amber: 'bg-amber-50 text-amber-700 ring-amber-100',
+  };
+
+  return (
+    <div className="rounded-2xl border border-white/70 bg-white/75 p-4 shadow-sm backdrop-blur">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+          <p className="mt-2 text-sm font-semibold leading-5 text-slate-800">{description}</p>
+        </div>
+        <div className={cn('grid h-10 w-10 place-items-center rounded-xl ring-1', tones[tone])}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+      <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-emerald-600">
+        <CheckCircle2 className="h-4 w-4" />
+        Připraveno k práci
+      </div>
+    </div>
+  );
+};
+
+const ModulePill = ({ icon: Icon, label }) => (
+  <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-white/70 bg-white/70 px-4 py-3 shadow-sm backdrop-blur">
+    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-950 text-white">
+      <Icon className="h-4 w-4" />
+    </div>
+    <span className="truncate text-sm font-semibold text-slate-700">{label}</span>
+  </div>
+);
+
+const HeroImagePanel = () => (
+  <div className="relative overflow-hidden rounded-[34px] border border-white/70 bg-white/70 p-3 shadow-2xl shadow-slate-950/10 backdrop-blur">
+    <div className="relative h-[260px] overflow-hidden rounded-[26px] bg-slate-200 xl:h-[320px]">
+      <img
+        src={HERO_IMAGE_URL}
+        alt="Moderní kancelářské prostředí EKV Portal"
+        className="h-full w-full object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-950/10 via-transparent to-blue-950/25" />
+      <div className="absolute left-5 top-5 rounded-2xl border border-white/50 bg-white/80 px-4 py-3 shadow-lg backdrop-blur">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">EKV Portal</div>
+        <div className="mt-1 text-sm font-semibold text-slate-950">Obchod, projekce a realizace v jednom toku</div>
+      </div>
+      <div className="absolute bottom-5 right-5 flex items-center gap-2 rounded-full border border-white/60 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-800 shadow-lg backdrop-blur">
+        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+        Live provoz
+      </div>
+    </div>
+  </div>
+);
+
+const PortalPreview = () => (
+  <div className="relative mx-auto w-full max-w-2xl">
+    <div className="absolute -inset-6 rounded-[40px] bg-blue-500/10 blur-3xl" />
+    <div className="relative overflow-hidden rounded-[32px] border border-white/70 bg-white/75 shadow-2xl shadow-slate-950/10 backdrop-blur">
+      <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4">
+        <div>
+          <div className="text-sm font-semibold text-slate-950">Přehled portálu</div>
+          <div className="text-xs text-slate-500">Aktuální stav firmy</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+          <span className="text-xs font-semibold text-slate-500">Online</span>
+        </div>
+      </div>
+      <div className="grid gap-3 p-5 sm:grid-cols-3">
+        <MetricCard icon={BarChart3} label="Obchod" description="Pipeline, nabídky a objednávky" />
+        <MetricCard icon={Target} label="Řízení" description="Projekty, úkoly a odpovědnosti" tone="green" />
+        <MetricCard icon={CalendarDays} label="Provoz" description="Realizace, docházka a finance" tone="amber" />
+      </div>
+      <div className="space-y-3 px-5 pb-5">
+        {[
+          ['CRM', 'Obchodní případy', 'Nabídky a objednávky'],
+          ['PRO', 'Projekce', 'Dokumentace a kapacity'],
+          ['REA', 'Realizace', 'Náklady, docházka a výstupy'],
+        ].map(([code, title, status]) => (
+          <div key={code} className="grid grid-cols-[64px_1fr_auto] items-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm shadow-sm ring-1 ring-slate-100">
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-center text-xs font-semibold text-blue-700">{code}</span>
+            <div className="min-w-0">
+              <div className="truncate font-semibold text-slate-800">{title}</div>
+              <div className="mt-0.5 text-xs text-slate-400">{status}</div>
+            </div>
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
 const Auth = () => {
-  const [view, setView] = useState('login'); // 'login', 'signup', 'reset'
-  const {
-    signIn,
-    signUp,
-    signInWithSso
-  } = useAuth();
-  const {
-    toast
-  } = useToast();
+  const [view, setView] = useState('login');
+  const { signIn, signUp, signInWithSso } = useAuth();
+  const { toast } = useToast();
+
   const handleSignIn = async (email, password) => {
-    const {
-      error
-    } = await signIn(email, password);
+    const { error } = await signIn(email, password);
     if (!error) {
-      toast({
-        title: '✅ Přihlášení úspěšné!'
-      });
+      toast({ title: 'Přihlášení úspěšné' });
     }
   };
+
   const handleSignUp = async (email, password, fullName) => {
-    const {
-      error
-    } = await signUp(email, password, fullName);
+    const { error } = await signUp(email, password, fullName);
     if (!error) {
       toast({
-        title: '✅ Registrace úspěšná!',
-        description: 'Prosím, zkontrolujte svůj e-mail pro potvrzení účtu.',
-        duration: 9000
+        title: 'Registrace úspěšná',
+        description: 'Zkontrolujte svůj e-mail pro potvrzení účtu.',
+        duration: 9000,
       });
       setView('login');
     }
   };
-  const handlePasswordReset = async email => {
-    const {
-      error
-    } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/update-password`
+
+  const handlePasswordReset = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/update-password`,
     });
+
     if (error) {
       toast({
-        title: 'Chyba',
+        title: 'Obnova hesla se nezdařila',
         description: error.message,
-        variant: 'destructive'
+        variant: 'destructive',
       });
-    } else {
-      toast({
-        title: '✅ Odesláno!',
-        description: 'Zkontrolujte prosím svou e-mailovou schránku pro odkaz na obnovu hesla.',
-        duration: 9000
-      });
-      setView('login');
+      return;
     }
+
+    toast({
+      title: 'Odkaz odeslán',
+      description: 'Zkontrolujte svou e-mailovou schránku.',
+      duration: 9000,
+    });
+    setView('login');
   };
 
   const handleSocialLogin = async (provider) => {
@@ -576,153 +503,97 @@ const Auth = () => {
 
     toast({
       title: `${providerLabel} SSO není dostupné`,
-      description: 'Zkontrolujte, že je provider zapnutý v Supabase Auth nastavení.',
+      description: 'Zkontrolujte nastavení poskytovatele v Supabase Auth.',
       variant: 'destructive',
     });
   };
 
   return (
-    <div className="w-full min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-white">
-      {/* Left Side - Forms */}
-      <div className="flex flex-col items-center justify-center p-8 lg:p-12 relative">
-        <div className="w-full max-w-md mx-auto relative z-10">
-          {/* Logo Section */}
-          <div className="mb-8 text-center">
-            <motion.div 
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col items-center gap-4 mb-6"
-            >
-              <img 
-                src="https://horizons-cdn.hostinger.com/71f822ff-0858-4714-9f59-dcfbecb55c00/71b77a994fbf9e20ce79a1c424df758b.png" 
-                alt="EKV Group Logo" 
-                className="h-16 w-auto" 
-              />
-              <div className="text-center">
-                <h1 className="text-2xl font-bold text-gray-900">EKV Group</h1>
-                <p className="text-sm text-gray-600 font-medium">Project Management Portal</p>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Forms */}
-          <AnimatePresence mode="wait">
-            {view === 'login' && (
-              <LoginForm 
-                key="login" 
-                onSubmit={handleSignIn} 
-                onSwitchToSignup={() => setView('signup')} 
-                onSwitchToReset={() => setView('reset')} 
-                onSocialLogin={handleSocialLogin} 
-              />
-            )}
-            {view === 'signup' && (
-              <SignupForm 
-                key="signup" 
-                onSubmit={handleSignUp} 
-                onSwitchToLogin={() => setView('login')} 
-              />
-            )}
-            {view === 'reset' && (
-              <ResetPasswordForm 
-                key="reset" 
-                onSubmit={handlePasswordReset} 
-                onSwitchToLogin={() => setView('login')} 
-              />
-            )}
-          </AnimatePresence>
-        </div>
+    <main className="min-h-screen overflow-hidden bg-slate-50 text-slate-950">
+      <div className="pointer-events-none fixed inset-0">
+        <div className="absolute left-[-10%] top-[-12%] h-[360px] w-[360px] rounded-full bg-blue-200/55 blur-3xl" />
+        <div className="absolute bottom-[-18%] right-[-8%] h-[460px] w-[460px] rounded-full bg-emerald-100 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:56px_56px] opacity-30" />
       </div>
 
-      {/* Right Side - Hero Section */}
-      <div className="hidden lg:block relative overflow-hidden bg-gray-50">
-        <img 
-          className="absolute inset-0 w-full h-full object-cover opacity-20" 
-          alt="Modern office interior with large windows" 
-          src="https://horizons-cdn.hostinger.com/71f822ff-0858-4714-9f59-dcfbecb55c00/gemini_generated_image_6o2xfv6o2xfv6o2x-A6n0A.png" 
-        />
-        <div className="absolute inset-0 bg-white/80"></div>
-        
-        {/* Content Overlay */}
-        <div className="absolute inset-0 flex flex-col justify-center p-12">
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="text-gray-900 space-y-8"
-          >
-            <div>
-              <h1 className="text-5xl font-bold leading-tight mb-4 text-gray-900">
-                Spravujte své projekty
-                <span className="block text-gray-700">
-                  efektivně
-                </span>
-              </h1>
-              <p className="text-xl text-gray-600 max-w-md leading-relaxed">
-                Všechny nástroje pro úspěšné řízení projektů na jednom místě. 
-                Moderní, intuitivní a výkonné řešení pro vaši firmu.
+      <div className="relative grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(420px,0.84fr)_minmax(560px,1.16fr)]">
+        <section className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">
+          <div className="w-full max-w-[460px]">
+            <div className="mb-8 flex items-center justify-between">
+              <BrandMark />
+              <div className="hidden rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm sm:block">
+                Online
+              </div>
+            </div>
+
+            <AnimatePresence mode="wait">
+              {view === 'login' && (
+                <LoginForm
+                  key="login"
+                  onSubmit={handleSignIn}
+                  onSwitchToSignup={() => setView('signup')}
+                  onSwitchToReset={() => setView('reset')}
+                  onSocialLogin={handleSocialLogin}
+                />
+              )}
+              {view === 'signup' && (
+                <SignupForm key="signup" onSubmit={handleSignUp} onSwitchToLogin={() => setView('login')} />
+              )}
+              {view === 'reset' && (
+                <ResetPasswordForm key="reset" onSubmit={handlePasswordReset} onSwitchToLogin={() => setView('login')} />
+              )}
+            </AnimatePresence>
+
+            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-slate-500">
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                Supabase Auth
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Cloud className="h-4 w-4 text-blue-600" />
+                Online databáze
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Zap className="h-4 w-4 text-amber-500" />
+                Rychlý přístup
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <aside className="hidden min-h-screen items-center justify-center border-l border-white/70 px-10 py-10 lg:flex">
+          <div className="w-full max-w-4xl">
+            <div className="mb-10 max-w-2xl">
+              <div className="mb-5 flex items-center gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-2xl bg-slate-950 text-white">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <span className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">EKV Project</span>
+              </div>
+              <h2 className="text-5xl font-semibold tracking-tight text-slate-950 xl:text-6xl">
+                Jeden portál pro obchod, projekce i realizace.
+              </h2>
+              <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
+                Přehledná práce s obchodními případy, dokumenty, docházkou, výplatami a projektovou ekonomikou v jednom prostředí.
               </p>
             </div>
 
-            {/* Feature Cards */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white/60 backdrop-blur-sm border border-gray-200 rounded-xl p-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-gray-100 rounded-lg">
-                    <Building2 className="w-5 h-5 text-gray-700" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900">Projekty</h3>
-                </div>
-                <p className="text-gray-600 text-sm">Kompletní správa projektů s pokročilými nástroji</p>
-              </div>
-              <div className="bg-white/60 backdrop-blur-sm border border-gray-200 rounded-xl p-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-gray-100 rounded-lg">
-                    <Users className="w-5 h-5 text-gray-700" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900">Tým</h3>
-                </div>
-                <p className="text-gray-600 text-sm">Efektivní spolupráce a komunikace v týmu</p>
-              </div>
-              <div className="bg-white/60 backdrop-blur-sm border border-gray-200 rounded-xl p-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-gray-100 rounded-lg">
-                    <Target className="w-5 h-5 text-gray-700" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900">Úkoly</h3>
-                </div>
-                <p className="text-gray-600 text-sm">Organizace úkolů s Kanban přehledem</p>
-              </div>
-              <div className="bg-white/60 backdrop-blur-sm border border-gray-200 rounded-xl p-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-gray-100 rounded-lg">
-                    <BarChart3 className="w-5 h-5 text-gray-700" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900">Reporty</h3>
-                </div>
-                <p className="text-gray-600 text-sm">Detailní analýzy a přehledy výkonnosti</p>
-              </div>
+            <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr] xl:items-stretch">
+              <HeroImagePanel />
+              <PortalPreview />
             </div>
 
-            {/* Trust Indicators */}
-            <div className="flex items-center gap-6 pt-4">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-green-600" />
-                <span className="text-sm text-gray-600">Bezpečné</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5 text-blue-600" />
-                <span className="text-sm text-gray-600">Rychlé</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-600" />
-                <span className="text-sm text-gray-600">Moderní</span>
-              </div>
+            <div className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <ModulePill icon={Target} label="CRM a nabídky" />
+              <ModulePill icon={Building2} label="Projekce" />
+              <ModulePill icon={Users} label="Realizace" />
+              <ModulePill icon={BarChart3} label="Finance" />
             </div>
-          </motion.div>
-        </div>
+          </div>
+        </aside>
       </div>
-    </div>
+    </main>
   );
 };
+
 export default Auth;

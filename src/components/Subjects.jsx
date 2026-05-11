@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import * as XLSX from 'xlsx';
 import PageHeader from '@/components/ui/page-header';
+import { getVatStatusLabel } from '@/lib/ares';
 
 const subjectTypeConfig = {
   customer: { label: 'Zákazník', icon: User2, color: 'text-emerald-700', surface: 'bg-emerald-50 ring-emerald-100', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -39,6 +40,7 @@ const subjectKindConfig = {
 const allColumns = {
   name: { label: 'Název subjektu', default: true },
   ico: { label: 'IČO', default: true },
+  vat_status: { label: 'DPH', default: true },
   subject_kind: { label: 'Druh', default: true },
   birth_date: { label: 'Datum narozeni', default: false },
   type: { label: 'Typ', default: true },
@@ -63,6 +65,21 @@ const SubjectKindBadge = ({ kind }) => {
     <Badge variant="outline" className={cn("inline-flex items-center gap-1 whitespace-nowrap", config.badgeClass)}>
       <Icon className="h-3 w-3" />
       {config.label}
+    </Badge>
+  );
+};
+
+const VatStatusBadge = ({ status }) => {
+  const styles = {
+    payer: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    non_payer: 'bg-slate-50 text-slate-700 border-slate-200',
+    identified_person: 'bg-amber-50 text-amber-700 border-amber-200',
+    unknown: 'bg-blue-50 text-blue-700 border-blue-200',
+  };
+
+  return (
+    <Badge variant="outline" className={cn("whitespace-nowrap", styles[status] || styles.unknown)}>
+      {getVatStatusLabel(status)}
     </Badge>
   );
 };
@@ -285,6 +302,11 @@ const SubjectTable = ({ subjects, visibleColumns, sortConfig, requestSort, onSel
                       </TableCell>
                     )}
                     {visibleColumns.ico && <TableCell className="text-sm">{subject.ico || '-'}</TableCell>}
+                    {visibleColumns.vat_status && (
+                      <TableCell>
+                        {getSubjectKind(subject) === 'person' ? '-' : <VatStatusBadge status={subject.vat_status || 'unknown'} />}
+                      </TableCell>
+                    )}
                     {visibleColumns.subject_kind && (
                       <TableCell>
                         <SubjectKindBadge kind={getSubjectKind(subject)} />
@@ -577,6 +599,7 @@ const Subjects = () => {
       const kind = getSubjectKind(s);
       if (visibleColumns.name) row['Název subjektu'] = s.name;
       if (visibleColumns.ico) row['IČO'] = s.ico;
+      if (visibleColumns.vat_status) row['DPH'] = getSubjectKind(s) === 'person' ? '-' : getVatStatusLabel(s.vat_status || 'unknown');
       if (visibleColumns.subject_kind) row['Druh'] = subjectKindConfig[kind]?.label || '-';
       if (visibleColumns.birth_date) row['Datum narozeni'] = formatDate(s.birth_date);
       if (visibleColumns.type) row['Typ'] = s.subject_types?.name || '-';

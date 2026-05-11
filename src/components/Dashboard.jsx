@@ -40,6 +40,7 @@ import { PendingApprovalsWidget } from '@/components/DashboardWidgets';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
+import { crmOpportunityPath } from '@/lib/crmRoutes';
 import { cn, formatCurrency } from '@/lib/utils';
 
 const today = new Date();
@@ -196,13 +197,13 @@ const DashboardTable = ({ opportunities }) => (
         </div>
       </div>
       <div className="overflow-x-auto">
-        <div className="flex min-w-[980px] items-center gap-2 bg-gradient-to-r from-blue-700 to-sky-600 px-4 py-2 text-sm font-semibold text-white">
+        <div className="flex min-w-[980px] items-center gap-2 border-b border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950">
           <span>Obchodní nástěnka</span>
-          <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{opportunities.length}</span>
+          <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">{opportunities.length}</span>
         </div>
         <table className="w-full min-w-[980px] border-collapse bg-white text-sm">
-          <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
-            <tr className="border-b border-slate-200">
+          <thead className="border-y border-slate-200 bg-slate-50/90 text-[11px] uppercase tracking-[0.02em] text-slate-500">
+            <tr>
               <th className="px-4 py-3 text-left font-semibold">Kód</th>
               <th className="px-4 py-3 text-left font-semibold">Předmět</th>
               <th className="px-4 py-3 text-left font-semibold">Klient</th>
@@ -219,7 +220,7 @@ const DashboardTable = ({ opportunities }) => (
                 <tr key={opportunity.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
                   <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-950">{opportunity.number || 'OP'}</td>
                   <td className="px-4 py-3">
-                    <Link to={`/crm/${opportunity.id}`} className="font-medium text-slate-700 hover:text-primary">
+                    <Link to={crmOpportunityPath(opportunity)} className="font-medium text-slate-700 hover:text-primary">
                       {opportunity.title || 'Bez názvu'}
                     </Link>
                   </td>
@@ -312,6 +313,19 @@ const AdminFinancials = ({ companyFinance, approvals }) => {
     </div>
   );
 };
+
+const FinancialModuleSection = ({ title, description, metrics }) => (
+  <Card className="crm-panel">
+    <CardHeader className="crm-panel-header">
+      <SectionHeader icon={CircleDollarSign} title={title} description={description} />
+    </CardHeader>
+    <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+      {metrics.map((metric) => (
+        <DashboardMetric key={metric.label} {...metric} />
+      ))}
+    </CardContent>
+  </Card>
+);
 
 const TrendingIcon = (props) => <BarChart3 {...props} />;
 
@@ -461,6 +475,14 @@ const Dashboard = () => {
     }, 0);
     const offers = data.commercialDocuments.filter((document) => document.type === 'offer');
     const orders = data.commercialDocuments.filter((document) => document.type === 'order');
+    const offersValue = offers.reduce((sum, document) => sum + Number(document.total || 0), 0);
+    const ordersValue = orders.reduce((sum, document) => sum + Number(document.total || 0), 0);
+    const activeProjectsValue = activeProjects.reduce((sum, project) => sum + Number(project.price || 0), 0);
+    const activeRealizationsValue = activeRealizations.reduce((sum, realization) => sum + Number(realization.contract_amount || 0), 0);
+    const allRealizationsValue = data.realizations.reduce((sum, realization) => sum + Number(realization.contract_amount || 0), 0);
+    const closedOpportunities = data.opportunities.filter((opportunity) => ['won', 'lost'].includes(String(opportunity.stage || '').toLowerCase()));
+    const wonOpportunities = data.opportunities.filter((opportunity) => String(opportunity.stage || '').toLowerCase() === 'won');
+    const wonValue = wonOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
     const pendingApprovals = data.payouts.length + data.attendanceSubmissions.length;
     const activeProducts = data.products.filter((product) => product.is_active !== false);
 
@@ -477,6 +499,14 @@ const Dashboard = () => {
       weightedPipeline,
       offers,
       orders,
+      offersValue,
+      ordersValue,
+      activeProjectsValue,
+      activeRealizationsValue,
+      allRealizationsValue,
+      closedOpportunities,
+      wonOpportunities,
+      wonValue,
       pendingApprovals,
       activeProducts,
     };
@@ -622,6 +652,39 @@ const Dashboard = () => {
     },
   ];
 
+  const financialSections = [
+    {
+      title: 'CRM finance',
+      description: 'Obchodní pipeline, nabídky a objednávky.',
+      metrics: [
+        { icon: Target, label: 'Pipeline otevřených OP', value: formatCurrency(summary.pipelineValue), detail: `${summary.openOpportunities.length} otevřených obchodních případů`, tone: 'blue', to: '/crm' },
+        { icon: BarChart3, label: 'Vážená pipeline', value: formatCurrency(summary.weightedPipeline), detail: 'hodnota podle pravděpodobnosti', tone: 'emerald', to: '/crm' },
+        { icon: FileText, label: 'Nabídky celkem', value: formatCurrency(summary.offersValue), detail: `${summary.offers.length} nabídek`, tone: 'slate', to: '/crm/offers' },
+        { icon: ShoppingCart, label: 'Objednávky celkem', value: formatCurrency(summary.ordersValue), detail: `${summary.orders.length} objednávek`, tone: 'amber', to: '/crm/orders' },
+      ],
+    },
+    {
+      title: 'Projekce finance',
+      description: 'Hodnota projekčních zakázek a aktivní rozpracovanost.',
+      metrics: [
+        { icon: Briefcase, label: 'Hodnota projektů', value: formatCurrency(data.companyFinance.totalProjectValue || summary.activeProjectsValue), detail: `${summary.visibleProjects.length} projektů celkem`, tone: 'slate', to: '/projects' },
+        { icon: Activity, label: 'Aktivní projekce', value: formatCurrency(summary.activeProjectsValue), detail: `${summary.activeProjects.length} aktivních projektů`, tone: 'blue', to: '/projects' },
+        { icon: CircleDollarSign, label: 'Potenciální zisk', value: formatCurrency(data.companyFinance.potentialProfit), detail: 'výhled podle projektů', tone: 'emerald', to: '/reports' },
+        { icon: AlertTriangle, label: 'Úkoly po termínu', value: summary.overdueTasks.length, detail: `${summary.openTasks.length} otevřených úkolů`, tone: summary.overdueTasks.length ? 'rose' : 'emerald', to: '/tasks' },
+      ],
+    },
+    {
+      title: 'Realizace finance',
+      description: 'Smluvní objem realizací, skutečný zisk a provozní bilance.',
+      metrics: [
+        { icon: Wrench, label: 'Aktivní realizace', value: formatCurrency(summary.activeRealizationsValue), detail: `${summary.activeRealizations.length} aktivních realizací`, tone: 'amber', to: '/realizace' },
+        { icon: CircleDollarSign, label: 'Realizovaný zisk', value: formatCurrency(data.companyFinance.realizedProfit), detail: 'výsledek z realizací', tone: 'emerald', to: '/reports' },
+        { icon: Banknote, label: 'Objem realizací', value: formatCurrency(summary.allRealizationsValue), detail: `${data.realizations.length} realizací celkem`, tone: 'slate', to: '/realizace' },
+        { icon: PiggyBank, label: 'Režie bilance', value: formatCurrency(data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted), detail: 'alokováno minus zaúčtováno', tone: (data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted) < 0 ? 'rose' : 'amber', to: '/overhead-costs' },
+      ],
+    },
+  ];
+
   if (loading) {
     return (
       <div className="app-page-wide space-y-5">
@@ -685,6 +748,14 @@ const Dashboard = () => {
         {!isPrivateMode && !isSuperUser && (
           <div className="space-y-3">
             <UserFinancials memberId={memberId} />
+          </div>
+        )}
+
+        {!isPrivateMode && isSuperUser && (
+          <div className="grid gap-5">
+            {financialSections.map((section) => (
+              <FinancialModuleSection key={section.title} {...section} />
+            ))}
           </div>
         )}
 

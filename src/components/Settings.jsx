@@ -75,7 +75,7 @@ const Settings = () => {
       </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        <aside className="lg:col-span-4 xl:col-span-3">
+        <aside className={cn('lg:order-1 lg:col-span-4 xl:col-span-3', isRootSettings ? 'order-1' : 'order-2')}>
           <nav className="app-surface sticky top-4 space-y-5 p-3">
             {visibleGroups.map((group) => (
               <div key={group.label} className="space-y-2">
@@ -132,7 +132,7 @@ const Settings = () => {
           </nav>
         </aside>
 
-        <main className="min-w-0 lg:col-span-8 xl:col-span-9">
+        <main className={cn('min-w-0 lg:order-2 lg:col-span-8 xl:col-span-9', isRootSettings ? 'order-2' : 'order-1')}>
           <Outlet />
         </main>
       </div>
