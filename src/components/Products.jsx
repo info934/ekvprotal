@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -37,8 +37,8 @@ const emptyMovement = {
 };
 
 const productTypeLabels = {
-  service: 'Sluzba',
-  manufactured: 'Vyrobek / sklad',
+  service: 'Služba',
+  manufactured: 'Výrobek / sklad',
 };
 
 const movementTypeLabels = {
@@ -102,7 +102,7 @@ const Products = () => {
 
       if (fallback.error) {
         setLoading(false);
-        setSchemaWarning(fallback.error.message || 'Katalog produktu se nepodarilo nacist.');
+        setSchemaWarning(fallback.error.message || 'Katalog produktů se nepodařilo načíst.');
         return;
       }
 
@@ -124,7 +124,7 @@ const Products = () => {
         archived_at: null,
       }));
       setProductSchemaReady(false);
-      setSchemaWarning('Online databaze jeste nema produktovou migraci. Zobrazuji puvodni katalog bez skladu a rozsirene editace.');
+      setSchemaWarning('Online databáze ještě nemá produktovou migraci. Zobrazuji původní katalog bez skladu a rozšířené editace.');
     } else {
       setProductSchemaReady(true);
     }
@@ -197,7 +197,7 @@ const Products = () => {
       .eq('id', product.id);
 
     if (error) {
-      toast({ title: 'Produkt se nepodarilo archivovat', description: error.message, variant: 'destructive' });
+      toast({ title: 'Produkt se nepodařilo archivovat', description: error.message, variant: 'destructive' });
       return;
     }
     toast({ title: 'Produkt archivovan' });
@@ -225,11 +225,11 @@ const Products = () => {
     setSaving(false);
 
     if (error) {
-      toast({ title: 'Skladovy pohyb se nepodarilo ulozit', description: error.message, variant: 'destructive' });
+      toast({ title: 'Skladový pohyb se nepodařilo uložit', description: error.message, variant: 'destructive' });
       return;
     }
 
-    toast({ title: 'Skladovy pohyb ulozen' });
+    toast({ title: 'Skladový pohyb uložen' });
     setMovementDialogOpen(false);
     fetchProducts();
   };
@@ -240,7 +240,7 @@ const Products = () => {
         <PageHeader
           icon={Package}
           title="Produkty"
-          description="Centralni katalog pro CRM, nabidky, objednavky a realizace."
+          description="Centrální katalog pro CRM, nabídky, objednávky a realizace."
           actions={(
             <>
               <Button variant="outline" onClick={fetchProducts} disabled={loading}>
@@ -249,7 +249,7 @@ const Products = () => {
               </Button>
               <Button onClick={() => navigate('/products/new')} disabled={!canEdit}>
                 <Plus className="mr-2 h-4 w-4" />
-                Novy produkt
+                Nový produkt
               </Button>
             </>
           )}
@@ -258,16 +258,16 @@ const Products = () => {
         {schemaWarning && (
           <Alert className="border-amber-200 bg-amber-50 text-amber-900">
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Produktova databaze neni kompletni</AlertTitle>
+            <AlertTitle>Produktová databáze není kompletní</AlertTitle>
             <AlertDescription>{schemaWarning}</AlertDescription>
           </Alert>
         )}
 
         <div className="grid gap-4 md:grid-cols-4">
           {[
-            { label: 'Celkem polozek', value: stats.total, icon: Boxes },
-            { label: 'Aktivni', value: stats.active, icon: Package },
-            { label: 'Skladove', value: stats.manufactured, icon: Warehouse },
+            { label: 'Celkem položek', value: stats.total, icon: Boxes },
+            { label: 'Aktivní', value: stats.active, icon: Package },
+            { label: 'Skladové', value: stats.manufactured, icon: Warehouse },
             { label: 'Pod minimem', value: stats.lowStock, icon: AlertTriangle, danger: stats.lowStock > 0 },
           ].map((item) => (
             <Card key={item.label} className="border-slate-200 bg-white shadow-sm">
@@ -290,14 +290,14 @@ const Products = () => {
         <Card className="border-slate-200 bg-white shadow-sm">
           <CardHeader className="border-b bg-white p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <CardTitle className="text-base">Katalog produktu</CardTitle>
+              <CardTitle className="text-base">Katalog produktů</CardTitle>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <div className="relative sm:w-[320px]">
                   <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Hledat kod, nazev, kategorii..."
+                    placeholder="Hledat kód, název, kategorii..."
                     className="pl-9"
                   />
                 </div>
@@ -306,9 +306,9 @@ const Products = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Vsechny typy</SelectItem>
-                    <SelectItem value="service">Sluzby</SelectItem>
-                    <SelectItem value="manufactured">Skladove produkty</SelectItem>
+                    <SelectItem value="all">Všechny typy</SelectItem>
+                    <SelectItem value="service">Služby</SelectItem>
+                    <SelectItem value="manufactured">Skladové produkty</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={activeFilter} onValueChange={setActiveFilter}>
@@ -316,9 +316,9 @@ const Products = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="active">Aktivni</SelectItem>
+                    <SelectItem value="active">Aktivní</SelectItem>
                     <SelectItem value="archived">Archiv</SelectItem>
-                    <SelectItem value="all">Vse</SelectItem>
+                    <SelectItem value="all">Vše</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -330,14 +330,14 @@ const Products = () => {
                 <TableHeader>
                   <TableRow className="bg-slate-50/80">
                     <TableHead className="min-w-[120px]">SKU</TableHead>
-                    <TableHead className="min-w-[260px]">Nazev</TableHead>
+                    <TableHead className="min-w-[260px]">Název</TableHead>
                     <TableHead className="min-w-[140px]">Typ</TableHead>
                     <TableHead className="min-w-[140px]">Kategorie</TableHead>
                     <TableHead className="min-w-[120px] text-right">Prodej</TableHead>
-                    <TableHead className="min-w-[120px] text-right">Nakup</TableHead>
+                    <TableHead className="min-w-[120px] text-right">Nákup</TableHead>
                     <TableHead className="min-w-[130px] text-right">Skladem</TableHead>
                     <TableHead className="min-w-[130px] text-right">Rezervace</TableHead>
-                    <TableHead className="min-w-[130px] text-right">Dostupne</TableHead>
+                    <TableHead className="min-w-[130px] text-right">Dostupné</TableHead>
                     <TableHead className="min-w-[130px]">Datasheet</TableHead>
                     <TableHead className="min-w-[180px]">Platnost</TableHead>
                     <TableHead className="min-w-[150px]">Lokace</TableHead>
@@ -347,11 +347,11 @@ const Products = () => {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={13} className="h-32 text-center text-muted-foreground">Nacitam produkty...</TableCell>
+                      <TableCell colSpan={13} className="h-32 text-center text-muted-foreground">Načítám produkty...</TableCell>
                     </TableRow>
                   ) : filteredProducts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={13} className="h-32 text-center text-muted-foreground">Zadny produkt neodpovida filtrum.</TableCell>
+                      <TableCell colSpan={13} className="h-32 text-center text-muted-foreground">Žádný produkt neodpovídá filtrům.</TableCell>
                     </TableRow>
                   ) : filteredProducts.map((product) => {
                     const stock = stockByProduct[product.id] || {};
@@ -397,7 +397,7 @@ const Products = () => {
                               Soubor
                             </Button>
                           ) : product.datasheet_file_name || product.datasheet_preview_image_url || product.image_url ? (
-                            <Badge variant="outline">Pripraveno</Badge>
+                            <Badge variant="outline">Připraveno</Badge>
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}
@@ -405,11 +405,11 @@ const Products = () => {
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             <span className="text-xs text-muted-foreground">
-                              {(product.valid_from || product.valid_until) ? `${product.valid_from || '-'} - ${product.valid_until || '-'}` : 'Bez omezeni'}
+                              {(product.valid_from || product.valid_until) ? `${product.valid_from || '-'} - ${product.valid_until || '-'}` : 'Bez omezení'}
                             </span>
                             {(expired || notYetValid) && (
                               <Badge variant="outline" className={expired ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'}>
-                                {expired ? 'Po platnosti' : 'Ceka na platnost'}
+                                {expired ? 'Po platnosti' : 'Čeká na platnost'}
                               </Badge>
                             )}
                           </div>
@@ -443,7 +443,7 @@ const Products = () => {
       <Dialog open={movementDialogOpen} onOpenChange={setMovementDialogOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Skladovy pohyb</DialogTitle>
+            <DialogTitle>Skladový pohyb</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4">
             <div className="space-y-2">
@@ -461,22 +461,22 @@ const Products = () => {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Mnozstvi</Label>
+                <Label>Množství</Label>
                 <Input type="number" value={movementForm.quantity} onChange={(event) => setMovementForm({ ...movementForm, quantity: event.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label>Jedn. naklad</Label>
+                <Label>Jedn. náklad</Label>
                 <Input type="number" value={movementForm.unit_cost} onChange={(event) => setMovementForm({ ...movementForm, unit_cost: event.target.value })} />
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Poznamka</Label>
+              <Label>Poznámka</Label>
               <Textarea value={movementForm.note} onChange={(event) => setMovementForm({ ...movementForm, note: event.target.value })} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMovementDialogOpen(false)}>Zavrit</Button>
-            <Button onClick={saveMovement} disabled={saving || !canEdit}>Ulozit pohyb</Button>
+            <Button variant="outline" onClick={() => setMovementDialogOpen(false)}>Zavřít</Button>
+            <Button onClick={saveMovement} disabled={saving || !canEdit}>Uložit pohyb</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -485,3 +485,4 @@ const Products = () => {
 };
 
 export default Products;
+

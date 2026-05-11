@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, FileText, Image, Package, Save, UploadCloud } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
@@ -14,6 +14,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { uploadProductDatasheet } from '@/lib/documentStorageService';
+import { crmCommercialDocumentPath, crmOpportunityPath } from '@/lib/crmRoutes';
 
 const emptyProduct = {
   id: null,
@@ -109,26 +110,26 @@ const ProductForm = () => {
 
     const opportunityRows = (opportunityItemsRes.data || []).map((item) => ({
       id: `op-${item.id}`,
-      type: 'Obchodni pripad',
+      type: 'Obchodní případ',
       number: item.opportunity?.number || 'OP',
       title: item.opportunity?.title || item.name,
       subject: item.opportunity?.subject?.name || '-',
       quantity: item.quantity,
       unit: item.unit,
       total: item.line_total,
-      href: item.opportunity_id ? `/crm/${item.opportunity_id}` : '/crm',
+      href: item.opportunity ? crmOpportunityPath(item.opportunity) : '/crm',
     }));
 
     const documentRows = (documentItemsRes.data || []).map((item) => ({
       id: `doc-${item.id}`,
-      type: item.document?.type === 'order' ? 'Objednavka' : 'Nabidka',
+      type: item.document?.type === 'order' ? 'Objednávka' : 'Nabídka',
       number: item.document?.number || '-',
       title: item.document?.title || item.name,
       subject: item.document?.subject?.name || item.document?.opportunity?.title || '-',
       quantity: item.quantity,
       unit: item.unit,
       total: item.line_total,
-      href: item.document?.type === 'order' ? `/crm/orders/${item.document_id}` : `/crm/offers/${item.document_id}`,
+      href: item.document ? crmCommercialDocumentPath(item.document) : (item.document?.type === 'order' ? `/crm/orders/${item.document_id}` : `/crm/offers/${item.document_id}`),
     }));
 
     const realizaceRows = (realizaceOrdersRes.data || []).flatMap((order) => {
@@ -143,8 +144,8 @@ const ProductForm = () => {
             id: `realizace-${order.id}-${rowIndex}`,
             type: 'Realizace',
             number: order.order_number || 'Realizace',
-            title: item.description || order.order_number || 'Polozka realizace',
-            subject: order.commercial_status === 'offer' ? 'Nabidka v realizaci' : 'Objednavka v realizaci',
+            title: item.description || order.order_number || 'Položka realizace',
+            subject: order.commercial_status === 'offer' ? 'Nabídka v realizaci' : 'Objednávka v realizaci',
             quantity: item.quantity,
             unit: item.unit,
             total: item.total_price || order.total_amount,
@@ -183,7 +184,7 @@ const ProductForm = () => {
         .limit(1);
       if (schemaCheckError) {
         setProductSchemaReady(false);
-        setWarning('Online databaze jeste nema produktovou migraci. Novy produkt se ulozi jen do puvodniho katalogu bez skladu a datasheet poli.');
+        setWarning('Online databáze ještě nemá produktovou migraci. Nový produkt se uloží jen do původního katalogu bez skladu a datasheet polí.');
       } else {
         setProductSchemaReady(true);
       }
@@ -206,7 +207,7 @@ const ProductForm = () => {
         .single();
 
       if (fallback.error) {
-        toast({ title: 'Produkt se nepodarilo nacist', description: fallback.error.message, variant: 'destructive' });
+        toast({ title: 'Produkt se nepodařilo načíst', description: fallback.error.message, variant: 'destructive' });
         setLoading(false);
         return;
       }
@@ -233,7 +234,7 @@ const ProductForm = () => {
         archived_at: null,
       };
       setProductSchemaReady(false);
-      setWarning('Online databaze jeste nema produktovou migraci. Ulozi se jen zakladni katalogova pole.');
+      setWarning('Online databáze ještě nemá produktovou migraci. Uloží se jen základní katalogová pole.');
     } else {
       setProductSchemaReady(true);
     }
@@ -292,7 +293,7 @@ const ProductForm = () => {
           </SelectTrigger>
           <SelectContent>
             {options.length === 0 ? (
-              <SelectItem value="__empty" disabled>Bez definovanych moznosti</SelectItem>
+              <SelectItem value="__empty" disabled>Bez definovaných možností</SelectItem>
             ) : options.map((option) => (
               <SelectItem key={option} value={option}>{option}</SelectItem>
             ))}
@@ -342,16 +343,16 @@ const ProductForm = () => {
   const saveProduct = async () => {
     if (!canEdit) return;
     if (!form.name.trim()) {
-      toast({ title: 'Doplnte nazev produktu', variant: 'destructive' });
+      toast({ title: 'Doplňte název produktu', variant: 'destructive' });
       return;
     }
     const normalizedCode = (form.sku || form.code || '').trim();
     if (!normalizedCode) {
-      toast({ title: 'Doplnte unikatni kod produktu', variant: 'destructive' });
+      toast({ title: 'Doplňte unikátní kód produktu', variant: 'destructive' });
       return;
     }
     if (form.valid_from && form.valid_until && form.valid_from > form.valid_until) {
-      toast({ title: 'Platnost od nemuze byt pozdeji nez platnost do', variant: 'destructive' });
+      toast({ title: 'Platnost od nemůže být později než platnost do', variant: 'destructive' });
       return;
     }
 
@@ -410,21 +411,21 @@ const ProductForm = () => {
 
     if (error) {
       setSaving(false);
-      toast({ title: 'Produkt se nepodarilo ulozit', description: error.message, variant: 'destructive' });
+      toast({ title: 'Produkt se nepodařilo uložit', description: error.message, variant: 'destructive' });
       return;
     }
 
     try {
       const upload = await uploadDatasheetForProduct(data);
       if (upload) {
-        toast({ title: 'Produkt ulozen a datasheet nahran', description: upload.provider === 'sharepoint' ? 'Soubor byl propojen pres SharePoint uloziste.' : 'Soubor byl ulozen do nakonfigurovaneho uloziste.' });
+        toast({ title: 'Produkt uložen a datasheet nahrán', description: upload.provider === 'sharepoint' ? 'Soubor byl propojen přes SharePoint úložiště.' : 'Soubor byl uložen do nakonfigurovaného úložiště.' });
       } else {
-        toast({ title: 'Produkt ulozen' });
+        toast({ title: 'Produkt uložen' });
       }
       setDatasheetFile(null);
     } catch (uploadError) {
       toast({
-        title: 'Produkt ulozen, ale datasheet se nepodarilo nahrat',
+        title: 'Produkt uložen, ale datasheet se nepodařilo nahrát',
         description: uploadError.message,
         variant: 'destructive',
       });
@@ -440,17 +441,17 @@ const ProductForm = () => {
       <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5">
         <PageHeader
           icon={Package}
-          title={isEditing ? 'Upravit produkt' : 'Novy produkt'}
-          description={isEditing ? (form.sku || form.code || form.name || 'Produktovy katalog') : 'Zalozeni katalogove polozky pro CRM, nabidky, objednavky a realizace.'}
+          title={isEditing ? 'Upravit produkt' : 'Nový produkt'}
+          description={isEditing ? (form.sku || form.code || form.name || 'Produktový katalog') : 'Založení katalogové položky pro CRM, nabídky, objednávky a realizace.'}
           actions={(
             <>
               <Button variant="outline" onClick={() => navigate('/products')}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                Zpet na produkty
+                Zpět na produkty
               </Button>
               <Button onClick={saveProduct} disabled={loading || saving || !canEdit}>
                 <Save className="mr-2 h-4 w-4" />
-                {saving ? 'Ukladam...' : 'Ulozit produkt'}
+                {saving ? 'Ukládám...' : 'Uložit produkt'}
               </Button>
             </>
           )}
@@ -458,7 +459,7 @@ const ProductForm = () => {
 
         {warning && (
           <Alert className="border-amber-200 bg-amber-50 text-amber-900">
-            <AlertTitle>Omezene ulozeni</AlertTitle>
+            <AlertTitle>Omezené uložení</AlertTitle>
             <AlertDescription>{warning}</AlertDescription>
           </Alert>
         )}
@@ -467,16 +468,16 @@ const ProductForm = () => {
           <div className="space-y-5">
             <Card>
               <CardHeader className="border-b bg-white">
-                <CardTitle>Zakladni udaje</CardTitle>
-                <CardDescription>Identifikace produktu a prodejni parametry.</CardDescription>
+                <CardTitle>Základní údaje</CardTitle>
+                <CardDescription>Identifikace produktu a prodejní parametry.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 p-5 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="product-name">Nazev</Label>
+                  <Label htmlFor="product-name">Název</Label>
                   <Input id="product-name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="product-sku">Unikatni kod produktu</Label>
+                  <Label htmlFor="product-sku">Unikátní kód produktu</Label>
                   <Input
                     id="product-sku"
                     value={form.sku || form.code || ''}
@@ -485,15 +486,15 @@ const ProductForm = () => {
                     className="font-mono"
                     placeholder="NAPR. FVEPANEL-001"
                   />
-                  <p className="text-xs text-muted-foreground">Kod musi byt jedinecny. Pouziva se v nabidkach, objednavkach a historii.</p>
+                  <p className="text-xs text-muted-foreground">Kód musí být jedinečný. Používá se v nabídkách, objednávkách a historii.</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="product-type">Typ</Label>
                   <Select value={form.product_type} onValueChange={(value) => setForm({ ...form, product_type: value })} disabled={loading || saving || !canEdit}>
                     <SelectTrigger id="product-type"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="service">Sluzba</SelectItem>
-                      <SelectItem value="manufactured">Vyrobek / sklad</SelectItem>
+                      <SelectItem value="service">Služba</SelectItem>
+                      <SelectItem value="manufactured">Výrobek / sklad</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -506,15 +507,15 @@ const ProductForm = () => {
                   <Input id="product-unit" value={form.unit || ''} onChange={(event) => setForm({ ...form, unit: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="product-currency">Mena</Label>
+                  <Label htmlFor="product-currency">Měna</Label>
                   <Input id="product-currency" value={form.currency || 'CZK'} onChange={(event) => setForm({ ...form, currency: event.target.value.toUpperCase() })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="product-sales-price">Prodejni cena</Label>
+                  <Label htmlFor="product-sales-price">Prodejní cena</Label>
                   <Input id="product-sales-price" type="number" value={form.default_unit_price ?? 0} onChange={(event) => setForm({ ...form, default_unit_price: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="product-purchase-price">Nakupni cena</Label>
+                  <Label htmlFor="product-purchase-price">Nákupni cena</Label>
                   <Input id="product-purchase-price" type="number" value={form.purchase_price ?? 0} onChange={(event) => setForm({ ...form, purchase_price: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
@@ -539,8 +540,8 @@ const ProductForm = () => {
             {Object.keys(groupedProductFields).length > 0 && (
               <Card>
                 <CardHeader className="border-b bg-white">
-                  <CardTitle>Volitelna produktova pole</CardTitle>
-                  <CardDescription>Pole definovana v nastaveni CRM. Pozdeji je bude mozne predvyplnit z datasheetu pomoci AI.</CardDescription>
+                  <CardTitle>Volitelná produktová pole</CardTitle>
+                  <CardDescription>Pole definovaná v nastavení CRM. Později je bude možné předvyplnit z datasheetu pomocí AI.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 p-5">
                   {Object.entries(groupedProductFields).map(([groupName, fields]) => (
@@ -568,15 +569,15 @@ const ProductForm = () => {
                 <CardHeader className="border-b bg-white">
                   <CardTitle className="flex items-center gap-2">
                     <FileText className="h-4 w-4" />
-                    Historie pouziti
+                    Historie použití
                   </CardTitle>
-                  <CardDescription>Kde byl produkt pouzit v CRM a v realizacnich objednavkach.</CardDescription>
+                  <CardDescription>Kde byl produkt použit v CRM a v realizačních objednávkách.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
                   {historyLoading ? (
-                    <div className="p-5 text-sm text-muted-foreground">Nacitam historii...</div>
+                    <div className="p-5 text-sm text-muted-foreground">Načítám historii...</div>
                   ) : usageHistory.length === 0 ? (
-                    <div className="p-5 text-sm text-muted-foreground">Produkt zatim neni pouzit v CRM ani v realizacich.</div>
+                    <div className="p-5 text-sm text-muted-foreground">Produkt zatím není použit v CRM ani v realizacích.</div>
                   ) : (
                     <div className="divide-y">
                       {usageHistory.map((item) => (
@@ -610,7 +611,7 @@ const ProductForm = () => {
                     <FileText className="h-4 w-4" />
                     Datasheet
                   </CardTitle>
-                  <CardDescription>Pripraveno pro SharePoint nebo jine externi uloziste. Upload se aktivuje po finalni konfiguraci storage.</CardDescription>
+                  <CardDescription>Připraveno pro SharePoint nebo jiné externí úložiště. Upload se aktivuje po finální konfiguraci storage.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 p-5">
                   <div className="rounded-lg border border-dashed bg-slate-50 p-4">
@@ -619,9 +620,9 @@ const ProductForm = () => {
                         <UploadCloud className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
-                        <div className="font-semibold text-slate-950">Upload bude napojen na externi uloziste</div>
+                        <div className="font-semibold text-slate-950">Upload bude napojen na externí úložiště</div>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          Vyberte PDF nebo obrazek datasheetu. Po ulozeni produktu se soubor nahraje pres nakonfigurovane uloziste a ulozi se vazba na produkt.
+                          Vyberte PDF nebo obrázek datasheetu. Po uložení produktu se soubor nahraje přes nakonfigurované úložiště a uloží se vazba na produkt.
                         </p>
                       </div>
                     </div>
@@ -638,13 +639,13 @@ const ProductForm = () => {
                     />
                     {datasheetFile && (
                       <p className="text-xs text-muted-foreground">
-                        Pripraveno k nahrani: {datasheetFile.name}
+                        Připraveno k nahrani: {datasheetFile.name}
                       </p>
                     )}
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="product-datasheet-storage">Uloziste</Label>
+                    <Label htmlFor="product-datasheet-storage">Úložiště</Label>
                     <Select
                       value={form.datasheet_storage_connection_id || 'manual-sharepoint'}
                       onValueChange={(value) => {
@@ -672,7 +673,7 @@ const ProductForm = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="product-datasheet-file-name">Nazev souboru</Label>
+                    <Label htmlFor="product-datasheet-file-name">Název souboru</Label>
                     <Input
                       id="product-datasheet-file-name"
                       value={form.datasheet_file_name || ''}
@@ -692,14 +693,14 @@ const ProductForm = () => {
                         placeholder="https://..."
                       />
                       {form.datasheet_external_web_url && (
-                        <Button type="button" variant="outline" size="icon" aria-label="Otevrit datasheet" onClick={() => window.open(form.datasheet_external_web_url, '_blank', 'noopener,noreferrer')}>
+                        <Button type="button" variant="outline" size="icon" aria-label="Otevřít datasheet" onClick={() => window.open(form.datasheet_external_web_url, '_blank', 'noopener,noreferrer')}>
                           <ExternalLink className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="product-datasheet-external-id">Externi ID souboru</Label>
+                    <Label htmlFor="product-datasheet-external-id">Externí ID souboru</Label>
                     <Input
                       id="product-datasheet-external-id"
                       value={form.datasheet_external_file_id || ''}
@@ -709,7 +710,7 @@ const ProductForm = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="product-preview-url">URL nahledu / obrazku</Label>
+                    <Label htmlFor="product-preview-url">URL náhledu / obrázku</Label>
                     <Input
                       id="product-preview-url"
                       value={form.datasheet_preview_image_url || form.image_url || ''}
@@ -722,14 +723,14 @@ const ProductForm = () => {
                     <div className="overflow-hidden rounded-lg border bg-white">
                       <img
                         src={form.datasheet_preview_image_url || form.image_url}
-                        alt="Nahled datasheetu"
+                        alt="Náhled datasheetu"
                         className="h-44 w-full object-contain bg-slate-50"
                       />
                     </div>
                   ) : (
                     <div className="flex h-36 items-center justify-center rounded-lg border border-dashed bg-slate-50 text-sm text-muted-foreground">
                       <Image className="mr-2 h-4 w-4" />
-                      Bez nahledu
+                      Bez náhledu
                     </div>
                   )}
                 </CardContent>
@@ -739,29 +740,29 @@ const ProductForm = () => {
             <Card>
               <CardHeader className="border-b bg-white">
                 <CardTitle>Sklad</CardTitle>
-                <CardDescription>Zobrazuje se pro skladove produkty.</CardDescription>
+                <CardDescription>Zobrazuje se pro skladové produkty.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 p-5">
                 {form.product_type === 'manufactured' ? (
                   <>
                     <div className="space-y-2">
-                      <Label htmlFor="product-stock-min-qty">Minimalni sklad</Label>
+                      <Label htmlFor="product-stock-min-qty">Minimální sklad</Label>
                       <Input id="product-stock-min-qty" type="number" value={form.stock_min_qty ?? ''} onChange={(event) => setForm({ ...form, stock_min_qty: event.target.value })} disabled={loading || saving || !canEdit} />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="product-warehouse-location">Skladova lokace</Label>
+                      <Label htmlFor="product-warehouse-location">Skladová lokace</Label>
                       <Input id="product-warehouse-location" value={form.warehouse_location || ''} onChange={(event) => setForm({ ...form, warehouse_location: event.target.value })} disabled={loading || saving || !canEdit} />
                     </div>
                     <div className="flex items-center justify-between rounded-md border p-3">
                       <div>
-                        <Label htmlFor="product-allow-backorder">Povolit minusovy sklad</Label>
-                        <p className="text-xs text-muted-foreground">Pouzije se pro budouci kontrolu objednavek a rezervaci.</p>
+                        <Label htmlFor="product-allow-backorder">Povolit minusový sklad</Label>
+                        <p className="text-xs text-muted-foreground">Použije se pro budoucí kontrolu objednávek a rezervací.</p>
                       </div>
                       <Switch id="product-allow-backorder" checked={Boolean(form.allow_backorder)} onCheckedChange={(checked) => setForm({ ...form, allow_backorder: checked })} disabled={loading || saving || !canEdit} />
                     </div>
                   </>
                 ) : (
-                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">Skladove parametry se pouzivaji jen pro typ Vyrobek / sklad.</div>
+                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">Skladové parametry se pouzivaji jen pro typ Výrobek / sklad.</div>
                 )}
               </CardContent>
             </Card>
@@ -773,8 +774,8 @@ const ProductForm = () => {
               <CardContent className="p-5">
                 <div className="flex items-center justify-between rounded-md border p-3">
                   <div>
-                    <Label htmlFor="product-is-active">Aktivni produkt</Label>
-                    <p className="text-xs text-muted-foreground">Neaktivni produkty zustanou v historii, ale nenabizi se pro nove polozky.</p>
+                    <Label htmlFor="product-is-active">Aktivní produkt</Label>
+                    <p className="text-xs text-muted-foreground">Neaktivní produkty zůstanou v historii, ale nenabízí se pro nové položky.</p>
                   </div>
                   <Switch id="product-is-active" checked={Boolean(form.is_active)} onCheckedChange={(checked) => setForm({ ...form, is_active: checked })} disabled={loading || saving || !canEdit} />
                 </div>
@@ -788,3 +789,4 @@ const ProductForm = () => {
 };
 
 export default ProductForm;
+

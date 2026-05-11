@@ -8,8 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
-import { Edit2, Loader2, Plus, Search } from 'lucide-react';
-import { fetchJsonWithTimeout } from '@/lib/http';
+import { Edit2, ExternalLink, Loader2, Plus, Search } from 'lucide-react';
+import { DPH_REGISTRY_URL, fetchAresSubjectByIco, getVatStatusLabel, normalizeDic } from '@/lib/ares';
 
 const emptySubject = {
   name: '',
@@ -17,6 +17,13 @@ const emptySubject = {
   birth_date: '',
   ico: '',
   dic: '',
+  vat_status: 'unknown',
+  vat_payer: null,
+  vat_checked_at: null,
+  company_summary: '',
+  registry_checked_at: null,
+  registry_source: '',
+  registry_snapshot: null,
   address: '',
   legal_form: '',
   contact_person: '',
@@ -74,20 +81,23 @@ const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
     }
     setIsFetchingAres(true);
     try {
-      const data = await fetchJsonWithTimeout(
-        `https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/${formData.ico}`,
-        { headers: { accept: 'application/json' } },
-        { timeoutMs: 8000 }
-      );
+      const data = await fetchAresSubjectByIco(formData.ico);
 
       setFormData((current) => ({
         ...current,
         subject_kind: current.subject_kind === 'person' ? 'entrepreneur' : current.subject_kind,
-        name: data.obchodniJmeno || current.name,
+        name: data.name || current.name,
         dic: data.dic || current.dic,
-        address: data.sidlo?.textovaAdresa || current.address,
-        legal_form: data.pravniForma ? `Kod ${data.pravniForma}` : current.legal_form,
-        region: data.sidlo?.nazevKraje || current.region,
+        vat_status: data.vat_status || current.vat_status || 'unknown',
+        vat_payer: data.vat_payer,
+        vat_checked_at: new Date().toISOString(),
+        company_summary: data.company_summary || current.company_summary,
+        registry_checked_at: new Date().toISOString(),
+        registry_source: 'ARES',
+        registry_snapshot: data.raw || null,
+        address: data.address || current.address,
+        legal_form: data.legal_form || current.legal_form,
+        region: data.region || current.region,
       }));
 
       toast({ title: 'Data z ARES nactena' });
@@ -120,7 +130,14 @@ const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
       ...formData,
       name: formData.name.trim(),
       ico: formData.subject_kind === 'person' ? null : (formData.ico.trim() || null),
-      dic: formData.subject_kind === 'person' ? null : (formData.dic.trim() || null),
+      dic: formData.subject_kind === 'person' ? null : (normalizeDic(formData.dic) || null),
+      vat_status: formData.subject_kind === 'person' ? 'unknown' : (formData.vat_status || 'unknown'),
+      vat_payer: formData.subject_kind === 'person' ? null : formData.vat_status === 'payer',
+      vat_checked_at: formData.subject_kind === 'person' ? null : formData.vat_checked_at,
+      company_summary: formData.subject_kind === 'person' ? null : (formData.company_summary?.trim() || null),
+      registry_checked_at: formData.subject_kind === 'person' ? null : formData.registry_checked_at,
+      registry_source: formData.subject_kind === 'person' ? null : (formData.registry_source || null),
+      registry_snapshot: formData.subject_kind === 'person' ? null : formData.registry_snapshot,
       birth_date: formData.subject_kind === 'person' ? (formData.birth_date || null) : null,
       type_id: formData.type_id || null,
     };
@@ -201,15 +218,57 @@ const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
               ) : (
                 <div className="space-y-2">
                   <Label htmlFor="dic">DIC</Label>
-                  <Input id="dic" value={formData.dic || ''} onChange={(event) => handleChange('dic', event.target.value)} />
+                  <Input id="dic" value={formData.dic || ''} onChange={(event) => handleChange('dic', normalizeDic(event.target.value))} />
                 </div>
               )}
             </div>
+
+            {!isPerson && (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>DPH status</Label>
+                  <Select value={formData.vat_status || 'unknown'} onValueChange={(value) => {
+                    handleChange('vat_status', value);
+                    handleChange('vat_payer', value === 'payer');
+                    handleChange('vat_checked_at', new Date().toISOString());
+                  }}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unknown">{getVatStatusLabel('unknown')}</SelectItem>
+                      <SelectItem value="payer">{getVatStatusLabel('payer')}</SelectItem>
+                      <SelectItem value="non_payer">{getVatStatusLabel('non_payer')}</SelectItem>
+                      <SelectItem value="identified_person">{getVatStatusLabel('identified_person')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button type="button" variant="outline" className="w-full justify-start" onClick={() => window.open(DPH_REGISTRY_URL, '_blank', 'noopener,noreferrer')}>
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Otevřít registr DPH
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="address">Adresa</Label>
               <Input id="address" value={formData.address || ''} onChange={(event) => handleChange('address', event.target.value)} />
             </div>
+
+            {!isPerson && (
+              <div className="space-y-2">
+                <Label htmlFor="company_summary">Summary o firmě</Label>
+                <Textarea
+                  id="company_summary"
+                  value={formData.company_summary || ''}
+                  onChange={(event) => handleChange('company_summary', event.target.value)}
+                  rows={4}
+                  placeholder="Stručné veřejné shrnutí firmy, oboru, registrů a DPH statusu."
+                />
+              </div>
+            )}
 
             <div className="grid gap-4 md:grid-cols-2">
               {!isPerson && (

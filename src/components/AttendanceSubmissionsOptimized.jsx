@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { FixedSizeList as List } from 'react-window';
 import { 
-  CheckCircle, XCircle, Clock, Eye, AlertTriangle, 
-  Search, Filter, Calendar, User, ChevronRight,
-  FileText, RotateCcw, Download, X
+  CheckCircle, XCircle, Clock, Eye,
+  Search, Filter, User,
+  FileText, RotateCcw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -36,67 +34,93 @@ const StatusBadge = React.memo(({ status }) => {
   const Icon = current.icon;
 
   return (
-    <Badge variant="outline" className={cn("flex items-center gap-1", current.className)}>
-      <Icon className="w-3 h-3" />
-      {current.label}
+    <Badge variant="outline" className={cn("inline-flex max-w-full items-center gap-1 whitespace-nowrap font-semibold", current.className)}>
+      <Icon className="h-3 w-3 shrink-0" />
+      <span className="truncate">{current.label}</span>
     </Badge>
   );
 });
 
 StatusBadge.displayName = 'StatusBadge';
 
-const SubmissionCard = React.memo(({ submission, style, onDetail, onApprove, onReject, onRevert, showActions }) => {
+const StatCard = ({ label, value, icon: Icon, tone }) => {
+  const tones = {
+    orange: 'border-orange-100 bg-orange-50 text-orange-700',
+    green: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+    red: 'border-rose-100 bg-rose-50 text-rose-700',
+    slate: 'border-slate-200 bg-white text-slate-700',
+  };
+
+  return (
+    <Card className={cn('overflow-hidden shadow-sm', tones[tone])}>
+      <CardContent className="flex min-h-[84px] items-center justify-between gap-3 p-4">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-semibold uppercase tracking-[0.02em] opacity-80">{label}</p>
+          <p className="mt-1 text-2xl font-semibold leading-none text-slate-950">{value}</p>
+        </div>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white/70">
+          <Icon className="h-5 w-5" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+const SubmissionCard = React.memo(({ submission, onDetail, onApprove, onReject, onRevert, showActions }) => {
   const memberName = submission.member?.name || 'Neznámý uživatel';
   const monthLabel = format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs });
   const totalHours = Number(submission.total_hours).toFixed(1);
   const submittedDate = submission.submitted_at ? format(parseISO(submission.submitted_at), 'd.M.yyyy HH:mm') : '-';
 
   return (
-    <div style={style} className="px-2 py-2">
-      <div className="bg-white border rounded-lg p-4 hover:shadow-sm transition-all h-full flex flex-col justify-between">
-        <div className="flex justify-between items-start mb-2">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-50 p-2 rounded-full">
-              <User className="w-5 h-5 text-blue-600" />
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-primary/25 hover:shadow-md">
+      <div className="flex min-h-[128px] flex-col justify-between">
+        <div className="mb-2 flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600">
+              <User className="h-5 w-5" />
             </div>
-            <div>
-              <h4 className="font-semibold text-slate-900">{memberName}</h4>
-              <p className="text-xs text-muted-foreground capitalize">{monthLabel}</p>
+            <div className="min-w-0">
+              <h4 className="truncate font-semibold text-slate-950">{memberName}</h4>
+              <p className="truncate text-xs capitalize text-muted-foreground">{monthLabel}</p>
             </div>
           </div>
           <StatusBadge status={submission.status} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4 my-3 text-sm">
-          <div className="bg-slate-50 p-2 rounded border border-slate-100">
+        <div className="my-3 grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+          <div className="min-w-0 rounded border border-slate-100 bg-slate-50 p-2">
             <span className="text-muted-foreground block text-xs">Celkem hodin</span>
-            <span className="font-bold text-lg text-slate-800">{totalHours}h</span>
+            <span className="text-lg font-bold text-slate-800">{totalHours} h</span>
           </div>
-          <div className="bg-slate-50 p-2 rounded border border-slate-100">
+          <div className="min-w-0 rounded border border-slate-100 bg-slate-50 p-2">
             <span className="text-muted-foreground block text-xs">Odesláno</span>
-            <span className="font-medium text-slate-800">{submittedDate}</span>
+            <span className="block truncate font-medium text-slate-800">{submittedDate}</span>
           </div>
         </div>
 
-        <div className="flex items-center justify-between mt-auto pt-2 border-t border-slate-100">
-          <Button variant="ghost" size="sm" onClick={() => onDetail(submission)} className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
-            <Eye className="w-4 h-4 mr-2" /> Detail
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
+          <Button variant="ghost" size="sm" onClick={() => onDetail(submission)} className="text-blue-600 hover:bg-blue-50 hover:text-blue-700">
+            <Eye className="mr-2 h-4 w-4" /> Detail
           </Button>
           
           {showActions && submission.status === 'submitted' && (
-            <div className="flex gap-1">
-              <Button size="sm" variant="ghost" onClick={() => onReject(submission)} className="text-red-600 hover:text-red-700 hover:bg-red-50">
-                <XCircle className="w-4 h-4" />
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => onReject(submission)} className="border-red-100 text-red-600 hover:bg-red-50 hover:text-red-700">
+                <XCircle className="mr-2 h-4 w-4" />
+                Zamítnout
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => onApprove(submission)} className="text-green-600 hover:text-green-700 hover:bg-green-50">
-                <CheckCircle className="w-4 h-4" />
+              <Button size="sm" variant="outline" onClick={() => onApprove(submission)} className="border-emerald-100 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700">
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Schválit
               </Button>
             </div>
           )}
           
           {showActions && submission.status !== 'submitted' && submission.status !== 'draft' && (
-             <Button size="sm" variant="ghost" onClick={() => onRevert(submission)} className="text-orange-600 hover:text-orange-700 hover:bg-orange-50" title="Vrátit do zpracování">
-                <RotateCcw className="w-4 h-4" />
+             <Button size="sm" variant="outline" onClick={() => onRevert(submission)} className="border-orange-100 text-orange-600 hover:bg-orange-50 hover:text-orange-700" title="Vrátit do zpracování">
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Vrátit
              </Button>
           )}
         </div>
@@ -106,23 +130,6 @@ const SubmissionCard = React.memo(({ submission, style, onDetail, onApprove, onR
 });
 
 SubmissionCard.displayName = 'SubmissionCard';
-
-// --- Helper for virtualization ---
-const Row = ({ index, style, data }) => {
-  const { items, onDetail, onApprove, onReject, onRevert, showActions } = data;
-  const submission = items[index];
-  return (
-    <SubmissionCard 
-      submission={submission} 
-      style={style} 
-      onDetail={onDetail} 
-      onApprove={onApprove} 
-      onReject={onReject} 
-      onRevert={onRevert}
-      showActions={showActions}
-    />
-  );
-};
 
 const AttendanceSubmissionsOptimized = () => {
   const { toast } = useToast();
@@ -309,43 +316,11 @@ const AttendanceSubmissionsOptimized = () => {
   return (
     <div className="space-y-6">
       {/* Statistics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="bg-orange-50 border-orange-100">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-orange-600">Ke schválení</p>
-              <p className="text-2xl font-bold text-orange-700">{stats.pending}</p>
-            </div>
-            <Clock className="w-8 h-8 text-orange-300" />
-          </CardContent>
-        </Card>
-        <Card className="bg-green-50 border-green-100">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-green-600">Schváleno</p>
-              <p className="text-2xl font-bold text-green-700">{stats.approved}</p>
-            </div>
-            <CheckCircle className="w-8 h-8 text-green-300" />
-          </CardContent>
-        </Card>
-        <Card className="bg-red-50 border-red-100">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-red-600">Zamítnuto</p>
-              <p className="text-2xl font-bold text-red-700">{stats.rejected}</p>
-            </div>
-            <XCircle className="w-8 h-8 text-red-300" />
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-50 border-slate-100">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-slate-600">Celkem</p>
-              <p className="text-2xl font-bold text-slate-700">{stats.total}</p>
-            </div>
-            <FileText className="w-8 h-8 text-slate-300" />
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Ke schválení" value={stats.pending} icon={Clock} tone="orange" />
+        <StatCard label="Schváleno" value={stats.approved} icon={CheckCircle} tone="green" />
+        <StatCard label="Zamítnuto" value={stats.rejected} icon={XCircle} tone="red" />
+        <StatCard label="Celkem" value={stats.total} icon={FileText} tone="slate" />
       </div>
 
       {/* Controls */}
@@ -376,31 +351,29 @@ const AttendanceSubmissionsOptimized = () => {
       </div>
 
       {/* List */}
-      <div className="h-[600px] w-full bg-slate-50/50 rounded-lg border border-slate-200">
+      <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2">
         {loading ? (
-          <div className="flex h-full items-center justify-center">
-            <span className="animate-spin mr-2">⏳</span> Načítání...
+          <div className="flex min-h-[260px] items-center justify-center text-sm text-muted-foreground">
+            <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
+            Načítání...
           </div>
         ) : filteredSubmissions.length > 0 ? (
-          <List
-            height={600}
-            itemCount={filteredSubmissions.length}
-            itemSize={200} // Approximate height of card + padding
-            width="100%"
-            itemData={{
-              items: filteredSubmissions,
-              onDetail: handleOpenDetail,
-              onApprove: handleApprove,
-              onReject: (s) => setRejectDialog(s),
-              onRevert: handleRevert,
-              showActions: canAdmin
-            }}
-          >
-            {Row}
-          </List>
+          <div className="max-h-[620px] space-y-2 overflow-y-auto pr-1">
+            {filteredSubmissions.map((submission) => (
+              <SubmissionCard
+                key={submission.id}
+                submission={submission}
+                onDetail={handleOpenDetail}
+                onApprove={handleApprove}
+                onReject={(s) => setRejectDialog(s)}
+                onRevert={handleRevert}
+                showActions={canAdmin}
+              />
+            ))}
+          </div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-            <Search className="w-12 h-12 mb-2 opacity-20" />
+          <div className="flex min-h-[260px] flex-col items-center justify-center text-muted-foreground">
+            <Search className="mb-2 h-12 w-12 opacity-20" />
             <p>Žádné záznamy k zobrazení</p>
           </div>
         )}
@@ -417,12 +390,12 @@ const AttendanceSubmissionsOptimized = () => {
           </DialogHeader>
           
           <div className="flex-1 overflow-y-auto pr-2 mt-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-               <div className="bg-slate-50 p-3 rounded">
+            <div className="grid gap-3 text-sm sm:grid-cols-2">
+               <div className="rounded border border-slate-100 bg-slate-50 p-3">
                  <span className="text-muted-foreground">Celkem hodin</span>
                  <p className="font-bold text-lg">{detailSubmission ? Number(detailSubmission.total_hours).toFixed(1) : 0}</p>
                </div>
-               <div className="bg-slate-50 p-3 rounded">
+               <div className="rounded border border-slate-100 bg-slate-50 p-3">
                  <span className="text-muted-foreground">Stav</span>
                  <div className="mt-1"><StatusBadge status={detailSubmission?.status} /></div>
                </div>
@@ -434,13 +407,13 @@ const AttendanceSubmissionsOptimized = () => {
               <div className="space-y-2">
                 <h4 className="font-semibold text-sm text-slate-700 sticky top-0 bg-white py-2">Denní záznamy</h4>
                 {detailRecords.map((record, idx) => (
-                  <div key={idx} className="flex justify-between items-start text-sm border-b pb-2">
-                    <div>
+                  <div key={idx} className="flex flex-col gap-2 rounded-md border border-slate-100 bg-white p-3 text-sm sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
                       <div className="font-medium">{format(parseISO(record.date), 'd.M.yyyy')}</div>
-                      <div className="text-muted-foreground text-xs">{record.project?.name} ({record.project?.code})</div>
-                      {record.description && <div className="text-xs mt-0.5 italic">{record.description}</div>}
+                      <div className="truncate text-xs text-muted-foreground">{record.project?.name} ({record.project?.code})</div>
+                      {record.description && <div className="mt-0.5 break-words text-xs italic">{record.description}</div>}
                     </div>
-                    <div className="font-bold">{Number(record.hours).toFixed(1)}h</div>
+                    <div className="shrink-0 font-bold">{Number(record.hours).toFixed(1)} h</div>
                   </div>
                 ))}
               </div>

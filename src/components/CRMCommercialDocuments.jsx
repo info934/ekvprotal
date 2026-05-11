@@ -13,11 +13,12 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
-import { ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
+import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import SubjectSelect from '@/components/SubjectSelect';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
-import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering } from '@/lib/crmNumbering';
+import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
+import { crmOpportunityPath, findCrmRecordByRef, getCrmRecordRef } from '@/lib/crmRoutes';
 import {
   downloadGeneratedDocumentDocx,
   downloadGeneratedDocumentHtml,
@@ -27,31 +28,31 @@ import { cn } from '@/lib/utils';
 
 const documentTypeConfig = {
   offer: {
-    title: 'Nabidky',
-    detailTitle: 'Detail nabidky',
-    singular: 'Nabidka',
+    title: 'Nabídky',
+    detailTitle: 'Detail nabídky',
+    singular: 'Nabídka',
     icon: Package,
     listPath: '/crm/offers',
-    detailPath: (id) => `/crm/offers/${id}`,
-    createLabel: 'Nova nabidka',
+    detailPath: (document) => `/crm/offers/${getCrmRecordRef(document)}`,
+    createLabel: 'Nová nabídka',
   },
   order: {
-    title: 'Objednavky',
-    detailTitle: 'Detail objednavky',
-    singular: 'Objednavka',
+    title: 'Objednávky',
+    detailTitle: 'Detail objednávky',
+    singular: 'Objednávka',
     icon: ShoppingCart,
     listPath: '/crm/orders',
-    detailPath: (id) => `/crm/orders/${id}`,
-    createLabel: 'Nova objednavka',
+    detailPath: (document) => `/crm/orders/${getCrmRecordRef(document)}`,
+    createLabel: 'Nová objednávka',
   },
 };
 
 const documentStatuses = [
-  { value: 'draft', label: 'Priprava' },
-  { value: 'sent', label: 'Odeslano' },
-  { value: 'accepted', label: 'Prijato' },
-  { value: 'rejected', label: 'Zamitnuto' },
-  { value: 'closed', label: 'Uzavreno' },
+  { value: 'draft', label: 'Příprava' },
+  { value: 'sent', label: 'Odesláno' },
+  { value: 'accepted', label: 'Přijato' },
+  { value: 'rejected', label: 'Zamítnuto' },
+  { value: 'closed', label: 'Uzavřeno' },
 ];
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
@@ -63,6 +64,21 @@ const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
 const formatDate = (value) => {
   if (!value) return '-';
   return new Intl.DateTimeFormat('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
+};
+
+const formatCommercialDocumentTitle = (title) => (
+  title
+    ?.replace(/^Nabidka\b/, 'Nabídka')
+    ?.replace(/^Objednavka\b/, 'Objednávka')
+    || ''
+);
+
+const getStatusBadgeClass = (status) => {
+  const value = String(status || '').toLowerCase();
+  if (['accepted', 'approved', 'paid', 'completed', 'done'].includes(value)) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (['sent', 'issued', 'ordered'].includes(value)) return 'border-blue-200 bg-blue-50 text-blue-700';
+  if (['cancelled', 'canceled', 'rejected', 'lost'].includes(value)) return 'border-rose-200 bg-rose-50 text-rose-700';
+  return 'border-amber-200 bg-amber-50 text-amber-700';
 };
 
 const emptyItem = () => ({
@@ -103,7 +119,7 @@ const buildItemPayload = (item, documentId, index) => ({
   document_id: documentId,
   catalog_item_id: item.catalog_item_id || null,
   code: item.code || null,
-  name: item.name?.trim() || 'Polozka',
+  name: item.name?.trim() || 'Položka',
   description: item.description || null,
   quantity: Number(item.quantity || 0),
   unit: item.unit || 'ks',
@@ -155,9 +171,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         .from('crm_opportunities')
         .select('id, number, title, value, subject_id, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
         .order('created_at', { ascending: false }),
-      supabase
-        .from('crm_numbering_settings')
-        .select('document_type, prefix, next_number, padding'),
+      selectCrmNumberingSettings(supabase),
       supabase
         .from('order_templates')
         .select('id, name, content')
@@ -167,22 +181,33 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
     const error = documentsRes.error || opportunitiesRes.error;
     if (error) {
-      toast({ title: `${config.title} se nepodarilo nacist`, description: error.message, variant: 'destructive' });
+      toast({ title: `${config.title} se nepodařilo načíst`, description: error.message, variant: 'destructive' });
       setLoading(false);
       return;
     }
 
-    const normalizedDocuments = (documentsRes.data || []).map((document) => ({
-      ...document,
-      sync_items: document.sync_items ?? true,
-      items: [...((document.sync_items ?? true) ? (document.opportunity?.opportunity_items || []) : (document.items || []))]
-        .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
-    }));
+    const opportunities = opportunitiesRes.data || [];
+    const opportunityById = new Map(opportunities.map((opportunity) => [opportunity.id, opportunity]));
+    const normalizedDocuments = (documentsRes.data || []).map((document) => {
+      const fallbackOpportunity = opportunityById.get(document.opportunity_id);
+      const opportunity = document.opportunity?.number ? document.opportunity : {
+        ...fallbackOpportunity,
+        ...document.opportunity,
+        number: document.opportunity?.number || fallbackOpportunity?.number,
+      };
+      return {
+        ...document,
+        opportunity,
+        sync_items: document.sync_items ?? true,
+        items: [...((document.sync_items ?? true) ? (opportunity?.opportunity_items || fallbackOpportunity?.items || []) : (document.items || []))]
+          .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
+      };
+    });
     setDocuments(normalizedDocuments);
-    setOpportunities(opportunitiesRes.data || []);
+    setOpportunities(opportunities);
     setDocumentTemplates(templatesRes.error ? [] : (templatesRes.data || []));
     setNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
-    setSelectedDocument(documentId ? normalizedDocuments.find((document) => document.id === documentId) || null : null);
+    setSelectedDocument(documentId ? findCrmRecordByRef(normalizedDocuments, documentId) : null);
 
     const { data: catalogData, error: catalogError } = await supabase
       .from('commercial_item_catalog')
@@ -247,7 +272,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       case 'number':
         return document.number || '-';
       case 'title':
-        return document.title;
+        return formatCommercialDocumentTitle(document.title);
       case 'client':
         return document.subject?.name || document.opportunity?.subject?.name || '-';
       case 'opportunity':
@@ -260,15 +285,25 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       case 'created':
         return formatDate(document.created_at);
       case 'status':
-        return <Badge variant="outline">{documentStatuses.find((status) => status.value === document.status)?.label || document.status}</Badge>;
+        return (
+          <Badge variant="outline" className={cn('font-semibold', getStatusBadgeClass(document.status))}>
+            {documentStatuses.find((status) => status.value === document.status)?.label || document.status}
+          </Badge>
+        );
       case 'total':
         return formatCurrency(document.total);
       case 'validUntil':
         return formatDate(document.valid_until);
+      case 'sync':
+        return (
+          <Badge variant="outline" className={document.sync_items === false ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}>
+            {document.sync_items === false ? 'Vlastní položky' : 'Sync s OP'}
+          </Badge>
+        );
       case 'actions':
         return (
           <Button asChild variant="ghost" size="icon" onClick={(event) => event.stopPropagation()}>
-            <Link to={config.detailPath(document.id)}>
+            <Link to={config.detailPath(document)}>
               <FileText className="h-4 w-4" />
             </Link>
           </Button>
@@ -326,7 +361,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       id: `new-${Date.now()}-${product.id}`,
       catalog_item_id: product.id,
       code: product.code || '',
-      name: product.name || 'Polozka',
+              name: product.name || 'Položka',
       description: product.description || '',
       unit: product.unit || 'ks',
       unit_price: Number(product.default_unit_price || 0),
@@ -390,7 +425,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     const { error: docError } = await supabase
       .from('crm_commercial_documents')
       .update({
-        title: selectedDocument.title?.trim() || config.singular,
+        title: formatCommercialDocumentTitle(selectedDocument.title?.trim()) || config.singular,
         status: selectedDocument.status || 'draft',
         issue_date: selectedDocument.issue_date || new Date().toISOString().slice(0, 10),
         valid_until: selectedDocument.valid_until || null,
@@ -404,7 +439,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
     if (docError) {
       setSaving(false);
-      toast({ title: 'Dokument se nepodarilo ulozit', description: docError.message, variant: 'destructive' });
+      toast({ title: 'Dokument se nepodařilo uložit', description: docError.message, variant: 'destructive' });
       return;
     }
 
@@ -423,7 +458,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
     if (deleteError) {
       setSaving(false);
-      toast({ title: 'Polozky se nepodarilo ulozit', description: deleteError.message, variant: 'destructive' });
+      toast({ title: 'Položky se nepodařilo uložit', description: deleteError.message, variant: 'destructive' });
       return;
     }
 
@@ -433,7 +468,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         .insert(itemRows);
       if (insertError) {
         setSaving(false);
-        toast({ title: 'Polozky se nepodarilo ulozit', description: insertError.message, variant: 'destructive' });
+        toast({ title: 'Položky se nepodařilo uložit', description: insertError.message, variant: 'destructive' });
         return;
       }
     }
@@ -443,9 +478,9 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       : null;
     setSaving(false);
     if (syncError) {
-      toast({ title: 'Dokument ulozen, synchronizace polozek selhala', description: syncError.message, variant: 'destructive' });
+      toast({ title: 'Dokument uložen, synchronizace položek selhala', description: syncError.message, variant: 'destructive' });
     } else {
-      toast({ title: selectedDocument.sync_items ? 'Dokument ulozen a polozky synchronizovany' : 'Dokument ulozen' });
+      toast({ title: selectedDocument.sync_items ? 'Dokument uložen a položky synchronizovány' : 'Dokument uložen' });
     }
     fetchData();
   };
@@ -476,7 +511,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         sync_items: true,
         ...totals,
       })
-      .select('id')
+      .select('id, number, type')
       .single();
 
     if (!error) {
@@ -501,12 +536,12 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
     setSaving(false);
     if (error) {
-      toast({ title: `${config.singular} se nepodarilo vytvorit`, description: error.message, variant: 'destructive' });
+      toast({ title: `${config.singular} se nepodařilo vytvořit`, description: error.message, variant: 'destructive' });
       return;
     }
 
-    toast({ title: `${config.singular} vytvorena` });
-    navigate(config.detailPath(data.id));
+    toast({ title: `${config.singular} vytvořena` });
+    navigate(config.detailPath(data || { number, type }));
   };
 
   const handleGenerateSelectedDocument = async (format = 'docx') => {
@@ -532,12 +567,12 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       }
 
       toast({
-        title: 'Dokument vygenerovan',
-        description: `${template?.name ? `Sablona "${template.name}" byla vyplnena. ` : ''}Vystup ${format.toUpperCase()} byl pripraven ke stazeni.`,
+        title: 'Dokument vygenerován',
+        description: `${template?.name ? `Šablona "${template.name}" byla vyplněna. ` : ''}Výstup ${format.toUpperCase()} byl připraven ke stažení.`,
       });
     } catch (error) {
       toast({
-        title: 'Dokument se nepodarilo vygenerovat',
+        title: 'Dokument se nepodařilo vygenerovat',
         description: error.message,
         variant: 'destructive',
       });
@@ -552,21 +587,21 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       <div className="app-page-wide space-y-6">
         <PageHeader
           icon={Icon}
-          title={selectedDocument?.title || config.detailTitle}
-          description={selectedDocument?.number || 'Nacitani detailu dokumentu'}
+          title={formatCommercialDocumentTitle(selectedDocument?.title) || config.detailTitle}
+          description={selectedDocument?.number || 'Načítání detailu dokumentu'}
           actions={(
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" onClick={() => navigate(config.listPath)}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                Zpet na seznam
+                Zpět na seznam
               </Button>
               <div className="flex items-center gap-2 rounded-md border bg-white p-1">
                 <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
                   <SelectTrigger className="h-9 w-[210px] border-0 bg-transparent shadow-none focus:ring-0">
-                    <SelectValue placeholder="Sablona dokumentu" />
+                    <SelectValue placeholder="Šablona dokumentu" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="default">Vychozi sablona</SelectItem>
+                    <SelectItem value="default">Výchozí šablona</SelectItem>
                     {documentTemplates.map((template) => (
                       <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
                     ))}
@@ -580,25 +615,25 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">
-                    <DropdownMenuLabel>Vystup dokumentu</DropdownMenuLabel>
+                    <DropdownMenuLabel>Výstup dokumentu</DropdownMenuLabel>
                     <DropdownMenuItem onSelect={() => handleGenerateSelectedDocument('docx')}>DOCX</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => handleGenerateSelectedDocument('pdf')}>PDF</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => handleGenerateSelectedDocument('html')}>HTML</DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem disabled>Vybrana sablona se pouzije automaticky</DropdownMenuItem>
+                    <DropdownMenuItem disabled>Vybraná šablona se použije automaticky</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
               <Button onClick={handleSaveDocument} disabled={!canEdit || saving || !selectedDocument}>
                 <Save className="mr-2 h-4 w-4" />
-                {saving ? 'Ukladam...' : 'Ulozit'}
+                {saving ? 'Ukládám...' : 'Uložit'}
               </Button>
             </div>
           )}
         />
 
         {loading || !selectedDocument ? (
-          <Card><CardContent className="p-8 text-sm text-muted-foreground">Nacitam dokument...</CardContent></Card>
+          <Card><CardContent className="p-8 text-sm text-muted-foreground">Načítám dokument...</CardContent></Card>
         ) : (
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.55fr)]">
             <Card className="crm-panel">
@@ -608,9 +643,9 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                     <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {config.singular} {selectedDocument.number || ''}
                     </div>
-                    <CardTitle className="mt-1 text-3xl font-semibold tracking-tight">{selectedDocument.title}</CardTitle>
+                    <CardTitle className="mt-1 text-3xl font-semibold tracking-tight">{formatCommercialDocumentTitle(selectedDocument.title)}</CardTitle>
                     <CardDescription className="mt-2">
-                      <Link to={`/crm/${selectedDocument.opportunity_id}`} className="font-medium text-primary hover:underline">
+                      <Link to={crmOpportunityPath(selectedDocument.opportunity || selectedDocument.opportunity_id)} className="font-medium text-primary hover:underline">
                         {selectedDocument.opportunity?.number || 'OP'} - {selectedDocument.opportunity?.title}
                       </Link>
                     </CardDescription>
@@ -620,7 +655,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               </CardHeader>
               <CardContent className="grid gap-4 bg-white p-5 md:grid-cols-2">
                 <div className="space-y-2 md:col-span-2">
-                  <Label>Nazev dokumentu</Label>
+                  <Label>Název dokumentu</Label>
                   <Input value={selectedDocument.title || ''} onChange={(event) => updateSelectedDocument('title', event.target.value)} disabled={!canEdit || saving} />
                 </div>
                 <div className="space-y-2">
@@ -638,7 +673,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                     value={selectedDocument.subject_id || ''}
                     onChange={(value, subject) => updateSelectedDocumentSubject(value || null, subject)}
                     onCreated={(subject) => updateSelectedDocumentSubject(subject.id, subject)}
-                    placeholder="Vyberte nebo vytvorte subjekt"
+                    placeholder="Vyberte nebo vytvořte subjekt"
                     disabled={!canEdit || saving}
                   />
                 </div>
@@ -651,7 +686,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   <Input type="date" value={selectedDocument.valid_until || ''} onChange={(event) => updateSelectedDocument('valid_until', event.target.value)} disabled={!canEdit || saving} />
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label>Popis / poznamka</Label>
+                  <Label>Popis / poznámka</Label>
                   <Textarea value={selectedDocument.notes || ''} onChange={(event) => updateSelectedDocument('notes', event.target.value)} rows={5} disabled={!canEdit || saving} />
                 </div>
               </CardContent>
@@ -670,11 +705,11 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               </Card>
               <Card className="crm-panel">
                 <CardHeader className="crm-panel-header">
-                  <CardTitle className="text-base">Synchronizace polozek</CardTitle>
-                  <CardDescription>Zapnuto znamena, ze polozky se pri ulozeni propisou do ostatnich synchronizovanych nabidek a objednavek stejneho obchodniho pripadu.</CardDescription>
+                  <CardTitle className="text-base">Synchronizace položek</CardTitle>
+                  <CardDescription>Zapnuto znamená, že položky se při uložení propíšou do ostatních synchronizovaných nabídek a objednávek stejného obchodního případu.</CardDescription>
                 </CardHeader>
                 <CardContent className="flex items-center justify-between gap-4 p-4">
-                  <Label htmlFor="sync-items">Synchronizovat s obchodnim pripadem</Label>
+                  <Label htmlFor="sync-items">Synchronizovat s obchodním případem</Label>
                   <Switch id="sync-items" checked={selectedDocument.sync_items ?? true} onCheckedChange={(checked) => updateSelectedDocument('sync_items', checked)} disabled={!canEdit || saving} />
                 </CardContent>
               </Card>
@@ -684,19 +719,19 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               <CardHeader className="crm-panel-header">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <CardTitle>Polozkovy seznam</CardTitle>
-                    <CardDescription>Polozky jsou spolecne pro obchodni pripad, pokud u dokumentu nevypnete synchronizaci.</CardDescription>
+                    <CardTitle>Položkový seznam</CardTitle>
+                    <CardDescription>Položky jsou společné pro obchodní případ, pokud u dokumentu nevypnete synchronizaci.</CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button type="button" variant="outline" disabled={!canEdit || saving}>
                           <Plus className="mr-2 h-4 w-4" />
-                          Pridat z katalogu
+                          Přidat z katalogu
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-80">
-                        <DropdownMenuLabel>Produktovy katalog</DropdownMenuLabel>
+                        <DropdownMenuLabel>Produktový katalog</DropdownMenuLabel>
                         <div className="px-2 py-1.5">
                           <Input
                             value={catalogQuery}
@@ -707,7 +742,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                         </div>
                         <DropdownMenuSeparator />
                         {filteredCatalogProducts.length === 0 ? (
-                          <DropdownMenuItem disabled>Zadny produkt nenalezen</DropdownMenuItem>
+                          <DropdownMenuItem disabled>Žádný produkt nenalezen</DropdownMenuItem>
                         ) : filteredCatalogProducts.map((product) => (
                           <DropdownMenuItem key={product.id} onSelect={() => addCatalogItem(product)} className="flex flex-col items-start gap-0.5">
                             <span className="font-medium">{product.name}</span>
@@ -719,7 +754,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                       </DropdownMenuContent>
                     </DropdownMenu>
                     <Button type="button" variant="secondary" onClick={addItem} disabled={!canEdit || saving}>
-                      Rucni polozka
+                      Ruční položka
                     </Button>
                   </div>
                 </div>
@@ -729,9 +764,9 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[110px]">Kod</TableHead>
-                        <TableHead className="min-w-[260px]">Nazev</TableHead>
-                        <TableHead className="min-w-[100px] text-right">Mnozstvi</TableHead>
+                        <TableHead className="min-w-[110px]">Kód</TableHead>
+                        <TableHead className="min-w-[260px]">Název</TableHead>
+                        <TableHead className="min-w-[100px] text-right">Množství</TableHead>
                         <TableHead className="min-w-[90px]">MJ</TableHead>
                         <TableHead className="min-w-[130px] text-right">Cena</TableHead>
                         <TableHead className="min-w-[100px] text-right">Sleva %</TableHead>
@@ -741,7 +776,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                     </TableHeader>
                     <TableBody>
                       {selectedDocument.items.length === 0 ? (
-                        <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">Zatim bez polozek.</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">Zatím bez položek.</TableCell></TableRow>
                       ) : selectedDocument.items.map((item) => (
                         <TableRow key={item.id}>
                           <TableCell><Input value={item.code || ''} onChange={(event) => updateItem(item.id, 'code', event.target.value)} disabled={!canEdit || saving} /></TableCell>
@@ -774,7 +809,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       <PageHeader
         icon={Icon}
         title={config.title}
-        description="Tabulkovy seznam CRM dokumentu napojenych na obchodni pripady."
+        description="Tabulkový seznam CRM dokumentů napojených na obchodní případy."
         actions={(
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={fetchData} disabled={loading}>
@@ -789,33 +824,34 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         )}
       />
 
-      <Card className="crm-panel">
-        <CardHeader className="crm-panel-header">
+      <Card className="crm-panel overflow-hidden">
+        <CardHeader className="border-b border-slate-200 bg-white px-4 py-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle>Prehled</CardTitle>
-              <CardDescription>{filteredDocuments.length} zaznamu</CardDescription>
+            <div className="relative w-full lg:w-96">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Hledat číslo, klienta, OP..." className="pl-9" />
             </div>
-            <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
-              <div className="relative w-full lg:w-80">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Hledat cislo, klienta, OP..." className="pl-9" />
-              </div>
+            <p className="text-sm text-muted-foreground">{filteredDocuments.length} záznamů v seznamu</p>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ManagedTableSection
+            title={config.title}
+            count={filteredDocuments.length}
+            toolbar={(
               <ManagedTableToolbar
+                className="text-slate-700"
                 columns={managedList.columns}
                 visibility={managedList.visibility}
                 onMoveColumn={managedList.moveColumn}
                 onToggleColumn={managedList.toggleColumn}
                 onReset={managedList.resetColumns}
               />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="crm-table-wrap">
+            )}
+          >
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="bg-slate-50">
                   {visibleListColumns.map((column) => (
                     <TableHead key={column.id} className={listHeadClasses[column.id]}>{column.label}</TableHead>
                   ))}
@@ -823,11 +859,11 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={visibleListColumns.length} className="h-24 text-center text-muted-foreground">Nacitam...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={visibleListColumns.length} className="h-24 text-center text-muted-foreground">Načítám...</TableCell></TableRow>
                 ) : filteredDocuments.length === 0 ? (
-                  <TableRow><TableCell colSpan={visibleListColumns.length} className="h-24 text-center text-muted-foreground">Zadne zaznamy.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={visibleListColumns.length} className="h-24 text-center text-muted-foreground">Žádné záznamy.</TableCell></TableRow>
                 ) : filteredDocuments.map((document) => (
-                  <TableRow key={document.id} className="cursor-pointer" onClick={() => navigate(config.detailPath(document.id))}>
+                  <TableRow key={document.id} className="cursor-pointer bg-white hover:bg-blue-50/35" onClick={() => navigate(config.detailPath(document))}>
                     {visibleListColumns.map((column) => (
                       <TableCell key={column.id} className={listCellClasses[column.id]}>
                         {renderListCell(document, column.id)}
@@ -837,7 +873,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                 ))}
               </TableBody>
             </Table>
-          </div>
+          </ManagedTableSection>
         </CardContent>
       </Card>
     </div>

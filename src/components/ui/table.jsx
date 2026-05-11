@@ -9,7 +9,7 @@ const Table = React.forwardRef(({ className, ...props }, ref) => (
 Table.displayName = 'Table';
 
 const TableHeader = React.forwardRef(({ className, ...props }, ref) => (
-  <thead ref={ref} className={cn('bg-slate-50 text-slate-700 [&_tr]:border-b', className)} {...props} />
+  <thead ref={ref} className={cn('border-y border-slate-200 bg-slate-50/90 text-slate-600 [&_tr]:border-b-0', className)} {...props} />
 ));
 TableHeader.displayName = 'TableHeader';
 
@@ -35,7 +35,7 @@ TableRow.displayName = 'TableRow';
 const TableHead = React.forwardRef(({ className, ...props }, ref) => (
   <th
     ref={ref}
-    className={cn('h-10 whitespace-nowrap px-3 text-left align-middle text-[11px] font-semibold uppercase tracking-normal text-slate-500 [&:has([role=checkbox])]:pr-0', className)}
+    className={cn('h-10 whitespace-nowrap px-3 text-left align-middle text-[11px] font-semibold uppercase tracking-[0.02em] text-slate-500 [&:has([role=checkbox])]:pr-0', className)}
     {...props}
   />
 ));

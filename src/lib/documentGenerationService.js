@@ -14,8 +14,8 @@ import {
 import { jsPDF } from 'jspdf';
 
 const documentTypeLabels = {
-  offer: 'Nabidka',
-  order: 'Objednavka',
+  offer: 'Nabídka',
+  order: 'Objednávka',
   contract: 'Smlouva',
 };
 
@@ -133,7 +133,7 @@ const renderItemsTableHtml = (items) => {
     </tr>
   `).join('') : `
     <tr>
-      <td colspan="7" class="empty">Dokument zatim nema polozky.</td>
+      <td colspan="7" class="empty">Dokument zatím nemá položky.</td>
     </tr>
   `;
 
@@ -142,9 +142,9 @@ const renderItemsTableHtml = (items) => {
       <thead>
         <tr>
           <th>#</th>
-          <th>Kod</th>
-          <th>Nazev</th>
-          <th class="num">Mnozstvi</th>
+          <th>Kód</th>
+          <th>Název</th>
+          <th class="num">Množství</th>
           <th class="num">Jedn. cena</th>
           <th class="num">Sleva</th>
           <th class="num">Celkem</th>
@@ -374,11 +374,11 @@ export const renderCommercialDocumentHtml = (payload, template = null) => {
     <header>
       <div>
         <div class="brand">EKV Group</div>
-        <p class="muted">Dokument generovany z EKVPortal CRM</p>
+        <p class="muted">Dokument generovaný z EKVPortal CRM</p>
       </div>
       <div class="doc-title">
         <h1>${escapeHtml(document.label)}</h1>
-        <p>${escapeHtml(document.number || 'Bez cisla')}</p>
+        <p>${escapeHtml(document.number || 'Bez čísla')}</p>
       </div>
     </header>
 
@@ -390,27 +390,27 @@ export const renderCommercialDocumentHtml = (payload, template = null) => {
       </div>
       <div class="box">
         <h2>Dokument</h2>
-        <p><strong>Nazev:</strong> ${escapeHtml(document.title)}</p>
+        <p><strong>Název:</strong> ${escapeHtml(document.title)}</p>
         <p><strong>Datum:</strong> ${formatDate(document.issueDate)}</p>
         <p><strong>Platnost:</strong> ${formatDate(document.validUntil)}</p>
       </div>
     </section>
 
-    <h2>Polozky</h2>
+    <h2>Položky</h2>
     ${renderItemsTableHtml(items)}
 
     <section class="summary">
-      <div><span>Mezisoucet</span><strong>${formatCurrency(document.subtotal)}</strong></div>
+      <div><span>Mezisoučet</span><strong>${formatCurrency(document.subtotal)}</strong></div>
       <div><span>Sleva</span><strong>${formatCurrency(document.discountTotal)}</strong></div>
       <div><span>DPH</span><strong>${formatCurrency(document.taxTotal)}</strong></div>
       <div><span>Celkem s DPH</span><strong>${formatCurrency(totalWithTax)}</strong></div>
     </section>
 
-    ${document.notes ? `<section class="notes"><strong>Poznamka</strong><br />${escapeHtml(document.notes)}</section>` : ''}
+    ${document.notes ? `<section class="notes"><strong>Poznámka</strong><br />${escapeHtml(document.notes)}</section>` : ''}
 
     <footer>
-      <span>Vygenerovano: ${formatDate(generatedAt)}</span>
-      <span>ID obchodniho pripadu: ${escapeHtml(opportunity.id || '-')}</span>
+      <span>Vygenerováno: ${formatDate(generatedAt)}</span>
+      <span>ID obchodního případu: ${escapeHtml(opportunity.id || '-')}</span>
     </footer>
   </main>
 </body>
@@ -499,9 +499,9 @@ export const createCommercialDocumentDocxBlob = async (payload, template = null)
       tableHeader: true,
       children: [
         makeCell('#', { bold: true, shading: 'F3F4F6', width: 6 }),
-        makeCell('Kod', { bold: true, shading: 'F3F4F6', width: 12 }),
-        makeCell('Nazev', { bold: true, shading: 'F3F4F6', width: 34 }),
-        makeCell('Mnozstvi', { bold: true, shading: 'F3F4F6', width: 12, align: AlignmentType.RIGHT }),
+        makeCell('Kód', { bold: true, shading: 'F3F4F6', width: 12 }),
+        makeCell('Název', { bold: true, shading: 'F3F4F6', width: 34 }),
+        makeCell('Množství', { bold: true, shading: 'F3F4F6', width: 12, align: AlignmentType.RIGHT }),
         makeCell('Jedn. cena', { bold: true, shading: 'F3F4F6', width: 16, align: AlignmentType.RIGHT }),
         makeCell('Celkem', { bold: true, shading: 'F3F4F6', width: 20, align: AlignmentType.RIGHT }),
       ],
@@ -517,7 +517,7 @@ export const createCommercialDocumentDocxBlob = async (payload, template = null)
       ],
     })) : [
       new TableRow({
-        children: [makeCell('Dokument zatim nema polozky.', { width: 100 })],
+        children: [makeCell('Dokument zatím nemá položky.', { width: 100 })],
       }),
     ]),
   ];
@@ -537,12 +537,12 @@ export const createCommercialDocumentDocxBlob = async (payload, template = null)
             makeText(`    ${document.label}`, { bold: true, size: 30 }),
           ],
         }),
-        makeParagraph(document.number || 'Bez cisla', { color: '6B7280' }),
+        makeParagraph(document.number || 'Bez čísla', { color: '6B7280' }),
         makeParagraph(document.title, { heading: HeadingLevel.HEADING_1, size: 30, bold: true }),
         makeParagraph(`Klient: ${opportunity.subjectName || 'Bez subjektu'}`),
         makeParagraph(`Projekt: ${opportunity.projectName || opportunity.projectCode || '-'}`),
         makeParagraph(`Datum: ${formatDate(document.issueDate)}    Platnost: ${formatDate(document.validUntil)}`),
-        makeParagraph('Polozky', { heading: HeadingLevel.HEADING_2, bold: true, size: 26, spacing: { before: 240, after: 120 } }),
+        makeParagraph('Položky', { heading: HeadingLevel.HEADING_2, bold: true, size: 26, spacing: { before: 240, after: 120 } }),
         new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
           borders: {
@@ -555,15 +555,15 @@ export const createCommercialDocumentDocxBlob = async (payload, template = null)
           },
           rows,
         }),
-        makeParagraph(`Mezisoucet: ${formatCurrency(document.subtotal)}`, { alignment: AlignmentType.RIGHT, spacing: { before: 240, after: 60 } }),
+        makeParagraph(`Mezisoučet: ${formatCurrency(document.subtotal)}`, { alignment: AlignmentType.RIGHT, spacing: { before: 240, after: 60 } }),
         makeParagraph(`Sleva: ${formatCurrency(document.discountTotal)}`, { alignment: AlignmentType.RIGHT, spacing: { after: 60 } }),
         makeParagraph(`DPH: ${formatCurrency(document.taxTotal)}`, { alignment: AlignmentType.RIGHT, spacing: { after: 60 } }),
         makeParagraph(`Celkem s DPH: ${formatCurrency(totalWithTax)}`, { alignment: AlignmentType.RIGHT, bold: true, size: 26 }),
         ...(document.notes ? [
-          makeParagraph('Poznamka', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 240, after: 80 } }),
+          makeParagraph('Poznámka', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 240, after: 80 } }),
           makeParagraph(document.notes),
         ] : []),
-        makeParagraph(`Vygenerovano: ${formatDate(generatedAt)}`, { color: '6B7280', size: 18, spacing: { before: 360 } }),
+        makeParagraph(`Vygenerováno: ${formatDate(generatedAt)}`, { color: '6B7280', size: 18, spacing: { before: 360 } }),
       ],
     }],
   });
@@ -615,7 +615,7 @@ export const createCommercialDocumentPdf = (payload, template = null) => {
   addText('EKV Group', margin, y, { bold: true, size: 18 });
   addText(document.label, pageWidth - margin, y, { bold: true, size: 18, align: 'right' });
   y += 7;
-  addText(document.number || 'Bez cisla', pageWidth - margin, y, { size: 10, align: 'right' });
+  addText(document.number || 'Bez čísla', pageWidth - margin, y, { size: 10, align: 'right' });
   y += 12;
   pdf.setDrawColor(17, 24, 39);
   pdf.line(margin, y, pageWidth - margin, y);
@@ -630,14 +630,14 @@ export const createCommercialDocumentPdf = (payload, template = null) => {
   addText(`Platnost: ${formatDate(document.validUntil)}`, pageWidth - margin, y, { align: 'right' });
   y += 12;
 
-  addText('Polozky', margin, y, { bold: true, size: 13 });
+  addText('Položky', margin, y, { bold: true, size: 13 });
   y += 7;
 
   const columns = [
     { label: '#', x: margin, width: 8 },
-    { label: 'Kod', x: margin + 10, width: 22 },
-    { label: 'Nazev', x: margin + 34, width: 70 },
-    { label: 'Mnozstvi', x: margin + 106, width: 22 },
+    { label: 'Kód', x: margin + 10, width: 22 },
+    { label: 'Název', x: margin + 34, width: 70 },
+    { label: 'Množství', x: margin + 106, width: 22 },
     { label: 'Jedn. cena', x: margin + 130, width: 25 },
     { label: 'Celkem', x: margin + 158, width: 24 },
   ];
@@ -648,7 +648,7 @@ export const createCommercialDocumentPdf = (payload, template = null) => {
   y += 7;
 
   if (items.length === 0) {
-    addText('Dokument zatim nema polozky.', margin, y);
+    addText('Dokument zatím nemá položky.', margin, y);
     y += 8;
   } else {
     items.forEach((item) => {
@@ -670,7 +670,7 @@ export const createCommercialDocumentPdf = (payload, template = null) => {
   }
 
   y += 8;
-  addText(`Mezisoucet: ${formatCurrency(document.subtotal)}`, pageWidth - margin, y, { align: 'right' });
+  addText(`Mezisoučet: ${formatCurrency(document.subtotal)}`, pageWidth - margin, y, { align: 'right' });
   y += 6;
   addText(`Sleva: ${formatCurrency(document.discountTotal)}`, pageWidth - margin, y, { align: 'right' });
   y += 6;
@@ -680,12 +680,12 @@ export const createCommercialDocumentPdf = (payload, template = null) => {
 
   if (document.notes) {
     y += 14;
-    addText('Poznamka', margin, y, { bold: true, size: 12 });
+    addText('Poznámka', margin, y, { bold: true, size: 12 });
     y += 6;
     addText(pdf.splitTextToSize(document.notes, pageWidth - (margin * 2)), margin, y);
   }
 
-  addText(`Vygenerovano: ${formatDate(generatedAt)}`, margin, 287, { size: 8 });
+  addText(`Vygenerováno: ${formatDate(generatedAt)}`, margin, 287, { size: 8 });
   return pdf;
 };
 
@@ -718,7 +718,7 @@ const buildOpportunityOverviewPayload = (opportunity, documents = []) => {
     opportunity: {
       id: opportunity?.id,
       number: opportunity?.number || '',
-      title: opportunity?.title || 'Obchodni pripad',
+      title: opportunity?.title || 'Obchodní případ',
       subjectName: opportunity?.subject?.name || '',
       projectName: opportunity?.project?.name || '',
       projectCode: opportunity?.project?.code || '',
@@ -751,13 +751,13 @@ const renderOpportunityOverviewHtml = (payload) => {
   const { opportunity, items, documents, totals, generatedAt } = payload;
   const documentRows = documents.length > 0 ? documents.map((document) => `
     <tr>
-      <td>${escapeHtml(document.type === 'order' ? 'Objednavka' : 'Nabidka')}</td>
+      <td>${escapeHtml(document.type === 'order' ? 'Objednávka' : 'Nabídka')}</td>
       <td>${escapeHtml(document.number || '-')}</td>
       <td>${escapeHtml(document.title || '-')}</td>
       <td>${escapeHtml(document.status || '-')}</td>
       <td class="num">${formatCurrency(document.total || 0)}</td>
     </tr>
-  `).join('') : '<tr><td colspan="5" class="empty">Zatim bez nabidek a objednavek.</td></tr>';
+  `).join('') : '<tr><td colspan="5" class="empty">Zatím bez nabídek a objednávek.</td></tr>';
 
   return `<!doctype html>
 <html lang="cs">
@@ -789,7 +789,7 @@ const renderOpportunityOverviewHtml = (payload) => {
   <main class="page">
     <header>
       <div>
-        <p class="muted">Obchodni pripad ${escapeHtml(opportunity.number || '')}</p>
+        <p class="muted">Obchodní případ ${escapeHtml(opportunity.number || '')}</p>
         <h1>${escapeHtml(opportunity.title)}</h1>
         <p class="muted">${escapeHtml(opportunity.subjectName || 'Bez subjektu')}</p>
       </div>
@@ -801,23 +801,23 @@ const renderOpportunityOverviewHtml = (payload) => {
     <section class="grid">
       <div class="box"><span>Stav</span><strong>${escapeHtml(opportunity.stage || '-')}</strong></div>
       <div class="box"><span>Priorita</span><strong>${escapeHtml(opportunity.priority || '-')}</strong></div>
-      <div class="box"><span>Pravdepodobnost</span><strong>${opportunity.probability.toLocaleString('cs-CZ')} %</strong></div>
-      <div class="box"><span>Odhad uzavreni</span><strong>${formatDate(opportunity.expectedCloseDate)}</strong></div>
+      <div class="box"><span>Pravděpodobnost</span><strong>${opportunity.probability.toLocaleString('cs-CZ')} %</strong></div>
+      <div class="box"><span>Odhad uzavření</span><strong>${formatDate(opportunity.expectedCloseDate)}</strong></div>
       <div class="box"><span>Hodnota</span><strong>${formatCurrency(totals.value)}</strong></div>
-      <div class="box"><span>Celkem s DPH z polozek</span><strong>${formatCurrency(totals.totalWithTax)}</strong></div>
+      <div class="box"><span>Celkem s DPH z položek</span><strong>${formatCurrency(totals.totalWithTax)}</strong></div>
     </section>
     <h2>Popis</h2>
     <p class="notes">${escapeHtml(opportunity.description || 'Bez popisu.')}</p>
     <h2>Produkty</h2>
     ${renderItemsTableHtml(items)}
-    <h2>Nabidky a objednavky</h2>
+    <h2>Nabídky a objednávky</h2>
     <table>
-      <thead><tr><th>Typ</th><th>Cislo</th><th>Nazev</th><th>Stav</th><th class="num">Castka</th></tr></thead>
+      <thead><tr><th>Typ</th><th>Číslo</th><th>Název</th><th>Stav</th><th class="num">Částka</th></tr></thead>
       <tbody>${documentRows}</tbody>
     </table>
-    <h2>Dalsi krok</h2>
-    <p class="notes">${escapeHtml(opportunity.nextStep || 'Neni naplanovan.')}</p>
-    <footer>Vygenerovano: ${formatDate(generatedAt)}</footer>
+    <h2>Další krok</h2>
+    <p class="notes">${escapeHtml(opportunity.nextStep || 'Není naplánován.')}</p>
+    <footer>Vygenerováno: ${formatDate(generatedAt)}</footer>
   </main>
 </body>
 </html>`;
@@ -835,23 +835,23 @@ export const downloadOpportunityOverviewDocx = async ({ opportunity, documents =
   const { opportunity: deal, items, totals } = payload;
   const docRows = documents.length > 0 ? documents.map((document) => new TableRow({
     children: [
-      makeCell(document.type === 'order' ? 'Objednavka' : 'Nabidka', { width: 18 }),
+      makeCell(document.type === 'order' ? 'Objednávka' : 'Nabídka', { width: 18 }),
       makeCell(document.number || '-', { width: 18 }),
       makeCell(document.title || '-', { width: 36 }),
       makeCell(document.status || '-', { width: 14 }),
       makeCell(formatCurrency(document.total || 0), { width: 14, align: AlignmentType.RIGHT }),
     ],
-  })) : [new TableRow({ children: [makeCell('Zatim bez nabidek a objednavek.', { width: 100 })] })];
+  })) : [new TableRow({ children: [makeCell('Zatím bez nabídek a objednávek.', { width: 100 })] })];
 
   const doc = new Document({
     sections: [{
       properties: { page: { margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 } } },
       children: [
-        makeParagraph(`Obchodni pripad ${deal.number || ''}`.trim(), { color: '6B7280' }),
+        makeParagraph(`Obchodní případ ${deal.number || ''}`.trim(), { color: '6B7280' }),
         makeParagraph(deal.title, { heading: HeadingLevel.HEADING_1, bold: true, size: 32 }),
         makeParagraph(`Klient: ${deal.subjectName || 'Bez subjektu'}`),
-        makeParagraph(`Stav: ${deal.stage || '-'}    Priorita: ${deal.priority || '-'}    Pravdepodobnost: ${deal.probability} %`),
-        makeParagraph(`Hodnota: ${formatCurrency(totals.value)}    Odhad uzavreni: ${formatDate(deal.expectedCloseDate)}`),
+        makeParagraph(`Stav: ${deal.stage || '-'}    Priorita: ${deal.priority || '-'}    Pravděpodobnost: ${deal.probability} %`),
+        makeParagraph(`Hodnota: ${formatCurrency(totals.value)}    Odhad uzavření: ${formatDate(deal.expectedCloseDate)}`),
         makeParagraph('Popis', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 240, after: 80 } }),
         makeParagraph(deal.description || 'Bez popisu.'),
         makeParagraph('Produkty', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 240, after: 80 } }),
@@ -870,9 +870,9 @@ export const downloadOpportunityOverviewDocx = async ({ opportunity, documents =
               tableHeader: true,
               children: [
                 makeCell('#', { bold: true, shading: 'F3F4F6', width: 6 }),
-                makeCell('Kod', { bold: true, shading: 'F3F4F6', width: 14 }),
-                makeCell('Nazev', { bold: true, shading: 'F3F4F6', width: 42 }),
-                makeCell('Mnozstvi', { bold: true, shading: 'F3F4F6', width: 16, align: AlignmentType.RIGHT }),
+                makeCell('Kód', { bold: true, shading: 'F3F4F6', width: 14 }),
+                makeCell('Název', { bold: true, shading: 'F3F4F6', width: 42 }),
+                makeCell('Množství', { bold: true, shading: 'F3F4F6', width: 16, align: AlignmentType.RIGHT }),
                 makeCell('Celkem', { bold: true, shading: 'F3F4F6', width: 22, align: AlignmentType.RIGHT }),
               ],
             }),
@@ -884,11 +884,11 @@ export const downloadOpportunityOverviewDocx = async ({ opportunity, documents =
                 makeCell(`${item.quantity.toLocaleString('cs-CZ')} ${item.unit}`, { width: 16, align: AlignmentType.RIGHT }),
                 makeCell(formatCurrency(item.lineTotal), { width: 22, align: AlignmentType.RIGHT }),
               ],
-            })) : [new TableRow({ children: [makeCell('Obchodni pripad zatim nema polozky.', { width: 100 })] })]),
+            })) : [new TableRow({ children: [makeCell('Obchodní případ zatím nemá položky.', { width: 100 })] })]),
           ],
         }),
         makeParagraph(`Celkem s DPH: ${formatCurrency(totals.totalWithTax)}`, { alignment: AlignmentType.RIGHT, bold: true, size: 24, spacing: { before: 180, after: 160 } }),
-        makeParagraph('Nabidky a objednavky', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 240, after: 80 } }),
+        makeParagraph('Nabídky a objednávky', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 240, after: 80 } }),
         new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
           borders: {
@@ -904,18 +904,18 @@ export const downloadOpportunityOverviewDocx = async ({ opportunity, documents =
               tableHeader: true,
               children: [
                 makeCell('Typ', { bold: true, shading: 'F3F4F6', width: 18 }),
-                makeCell('Cislo', { bold: true, shading: 'F3F4F6', width: 18 }),
-                makeCell('Nazev', { bold: true, shading: 'F3F4F6', width: 36 }),
+                makeCell('Číslo', { bold: true, shading: 'F3F4F6', width: 18 }),
+                makeCell('Název', { bold: true, shading: 'F3F4F6', width: 36 }),
                 makeCell('Stav', { bold: true, shading: 'F3F4F6', width: 14 }),
-                makeCell('Castka', { bold: true, shading: 'F3F4F6', width: 14, align: AlignmentType.RIGHT }),
+                makeCell('Částka', { bold: true, shading: 'F3F4F6', width: 14, align: AlignmentType.RIGHT }),
               ],
             }),
             ...docRows,
           ],
         }),
-        makeParagraph('Dalsi krok', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 240, after: 80 } }),
-        makeParagraph(deal.nextStep || 'Neni naplanovan.'),
-        makeParagraph(`Vygenerovano: ${formatDate(payload.generatedAt)}`, { color: '6B7280', size: 18, spacing: { before: 360 } }),
+        makeParagraph('Další krok', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 240, after: 80 } }),
+        makeParagraph(deal.nextStep || 'Není naplánován.'),
+        makeParagraph(`Vygenerováno: ${formatDate(payload.generatedAt)}`, { color: '6B7280', size: 18, spacing: { before: 360 } }),
       ],
     }],
   });
@@ -937,15 +937,15 @@ export const downloadOpportunityOverviewPdf = ({ opportunity, documents = [] }) 
     pdf.text(String(text ?? ''), x, lineY, options);
   };
 
-  addText(`Obchodni pripad ${deal.number || ''}`.trim(), margin, y, { size: 10 });
+  addText(`Obchodní případ ${deal.number || ''}`.trim(), margin, y, { size: 10 });
   y += 8;
   addText(deal.title, margin, y, { bold: true, size: 17 });
   y += 8;
   addText(`Klient: ${deal.subjectName || 'Bez subjektu'}`, margin, y);
   y += 6;
-  addText(`Stav: ${deal.stage || '-'} | Priorita: ${deal.priority || '-'} | Pravdepodobnost: ${deal.probability} %`, margin, y);
+  addText(`Stav: ${deal.stage || '-'} | Priorita: ${deal.priority || '-'} | Pravděpodobnost: ${deal.probability} %`, margin, y);
   y += 6;
-  addText(`Hodnota: ${formatCurrency(totals.value)} | Odhad uzavreni: ${formatDate(deal.expectedCloseDate)}`, margin, y);
+  addText(`Hodnota: ${formatCurrency(totals.value)} | Odhad uzavření: ${formatDate(deal.expectedCloseDate)}`, margin, y);
   y += 10;
   addText('Popis', margin, y, { bold: true, size: 12 });
   y += 6;
@@ -966,16 +966,16 @@ export const downloadOpportunityOverviewPdf = ({ opportunity, documents = [] }) 
     y += 5;
   });
   if (items.length === 0) {
-    addText('Obchodni pripad zatim nema polozky.', margin, y);
+    addText('Obchodní případ zatím nemá položky.', margin, y);
     y += 6;
   }
   y += 4;
   addText(`Celkem s DPH: ${formatCurrency(totals.totalWithTax)}`, pageWidth - margin, y, { bold: true, align: 'right' });
   y += 12;
-  addText('Nabidky a objednavky', margin, y, { bold: true, size: 12 });
+  addText('Nabídky a objednávky', margin, y, { bold: true, size: 12 });
   y += 7;
   if (documents.length === 0) {
-    addText('Zatim bez nabidek a objednavek.', margin, y);
+    addText('Zatím bez nabídek a objednávek.', margin, y);
     y += 6;
   } else {
     documents.forEach((document) => {
@@ -988,13 +988,13 @@ export const downloadOpportunityOverviewPdf = ({ opportunity, documents = [] }) 
       y += 5;
     });
   }
-  addText(`Vygenerovano: ${formatDate(generatedAt)}`, margin, 287, { size: 8 });
+  addText(`Vygenerováno: ${formatDate(generatedAt)}`, margin, 287, { size: 8 });
   pdf.save(generateOpportunityOverviewFileName(payload, 'pdf'));
   return payload;
 };
 
 export const documentGenerationTargets = [
-  { type: 'offer', label: 'Nabidky', output: ['html', 'docx', 'pdf'] },
-  { type: 'order', label: 'Objednavky', output: ['html', 'docx', 'pdf'] },
+  { type: 'offer', label: 'Nabídky', output: ['html', 'docx', 'pdf'] },
+  { type: 'order', label: 'Objednávky', output: ['html', 'docx', 'pdf'] },
   { type: 'contract', label: 'Smlouvy', output: ['html', 'pdf', 'docx'] },
 ];

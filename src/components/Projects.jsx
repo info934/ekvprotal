@@ -17,7 +17,7 @@ import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import PageHeader from '@/components/ui/page-header';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
+import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
   DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator
@@ -547,19 +547,23 @@ const Projects = () => {
               })}
             </div>
           ) : viewMode === 'list' ? (
-            <div className="space-y-3">
-              <div className="flex justify-end">
+            <ManagedTableSection
+              title="Projekce"
+              count={filteredProjects.length}
+              toolbar={(
                 <ManagedTableToolbar
+                  className="text-slate-700"
                   columns={projectManagedTable.columns}
                   visibility={projectManagedTable.visibility}
                   onMoveColumn={projectManagedTable.moveColumn}
                   onToggleColumn={projectManagedTable.toggleColumn}
                   onReset={projectManagedTable.resetColumns}
                 />
-              </div>
+              )}
+            >
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="bg-slate-50">
                     {projectVisibleColumns.map((column) => (
                       <TableHead key={column.id} className={projectHeadClasses[column.id]}>{column.label}</TableHead>
                     ))}
@@ -569,7 +573,7 @@ const Projects = () => {
                   {filteredProjects.map((project) => (
                     <TableRow
                       key={project.id}
-                      className="group cursor-pointer"
+                      className="group cursor-pointer bg-white hover:bg-blue-50/35"
                       onClick={() => navigate(`/projects/${project.id}`)}
                     >
                       {projectVisibleColumns.map((column) => (
@@ -581,7 +585,7 @@ const Projects = () => {
                   ))}
                 </TableBody>
               </Table>
-            </div>
+            </ManagedTableSection>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {statusOrder.map((statusKey) => {

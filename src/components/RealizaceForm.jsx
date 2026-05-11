@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { RealizationSchema } from '@/lib/validationSchemas';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
+import { crmOpportunityPath } from '@/lib/crmRoutes';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { format, parseISO } from 'date-fns';
@@ -434,7 +435,7 @@ const RealizaceForm = () => {
                                     {sourceOpportunity.title} {sourceOpportunity.subject?.name ? `- ${sourceOpportunity.subject.name}` : ''}
                                 </p>
                             </div>
-                            <Button type="button" variant="outline" onClick={() => navigate(`/crm/${sourceOpportunity.id}`)}>
+                            <Button type="button" variant="outline" onClick={() => navigate(crmOpportunityPath(sourceOpportunity))}>
                                 Zpet na OP
                             </Button>
                         </CardContent>

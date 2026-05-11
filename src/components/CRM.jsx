@@ -46,7 +46,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
-import { ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
+import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import {
@@ -57,7 +57,8 @@ import {
   downloadOpportunityOverviewHtml,
   downloadOpportunityOverviewPdf,
 } from '@/lib/documentGenerationService';
-import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering } from '@/lib/crmNumbering';
+import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
+import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef } from '@/lib/crmRoutes';
 import { cn } from '@/lib/utils';
 
 const subjectTypeLabels = {
@@ -113,13 +114,6 @@ const isMissingCrmTableError = (error) => {
     message.includes('crm_commercial_document_items');
 };
 
-const isMissingColumnError = (error, columns = []) => {
-  if (!error) return false;
-  const message = `${error.code || ''} ${error.message || ''}`.toLowerCase();
-  return ['42703', 'PGRST204', 'PGRST205'].includes(error.code) &&
-    columns.some((column) => message.includes(String(column).toLowerCase()));
-};
-
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
   style: 'currency',
   currency: 'CZK',
@@ -130,6 +124,13 @@ const formatDate = (value) => {
   if (!value) return '-';
   return new Intl.DateTimeFormat('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
 };
+
+const formatCommercialDocumentTitle = (title) => (
+  title
+    ?.replace(/^Nabidka\b/, 'Nabídka')
+    ?.replace(/^Objednavka\b/, 'Objednávka')
+    || ''
+);
 
 const createEmptyCrmItem = () => ({
   id: `new-${Date.now()}`,
@@ -303,8 +304,8 @@ const DealWorkspace = ({
         <CardContent className="flex min-h-[220px] flex-col items-center justify-center p-8 text-center">
           <Target className="mb-3 h-10 w-10 text-muted-foreground" />
           <h3 className="text-lg font-semibold text-slate-950">Vyberte obchodní případ</h3>
-          <p className="mt-1 max-w-md text-sm text-muted-foreground">
-            Kliknutim na kartu v pipeline se zde zobrazi detail pro pripravu produktu, nabidky a objednavky.
+            <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            Kliknutím na kartu v pipeline se zde zobrazí detail pro přípravu produktů, nabídky a objednávky.
           </p>
         </CardContent>
       </Card>
@@ -398,7 +399,7 @@ const DealWorkspace = ({
       id: `new-${Date.now()}-${product.id}`,
       catalog_item_id: product.id,
       code: product.code || '',
-      name: product.name || 'Polozka',
+              name: product.name || 'Položka',
       description: product.description || '',
       unit: product.unit || 'ks',
       unit_price: Number(product.default_unit_price || 0),
@@ -428,7 +429,7 @@ const DealWorkspace = ({
               </CardTitle>
               <CardDescription className="mt-3 flex flex-wrap items-center gap-2">
                 <Badge className={stage.color}>{stage.label}</Badge>
-                <Badge variant="outline">{opportunity.probability || 0} % pravdepodobnost</Badge>
+                <Badge variant="outline">{opportunity.probability || 0} % pravděpodobnost</Badge>
                 <span className="font-semibold text-slate-700">{formatCurrency(value)}</span>
               </CardDescription>
             </div>
@@ -447,20 +448,20 @@ const DealWorkspace = ({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem disabled={!canEdit || creatingDocument} onSelect={() => onCreateDocument?.('offer')}>
-                  Vytvorit nabidku
+                  Vytvořit nabídku
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={!canEdit || creatingDocument} onSelect={() => onCreateDocument?.('order')}>
-                  Vytvorit objednavku
+                  Vytvořit objednávku
                 </DropdownMenuItem>
                 {stage.value === 'won' && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel>Predat do vyroby</DropdownMenuLabel>
                     <DropdownMenuItem disabled={!canEdit} onSelect={() => onCreateProject?.()}>
-                      Vytvorit projekt z OP
+                      Vytvořit projekt z OP
                     </DropdownMenuItem>
                     <DropdownMenuItem disabled={!canEdit} onSelect={() => onCreateRealization?.()}>
-                      Vytvorit realizaci z OP
+                      Vytvořit realizaci z OP
                     </DropdownMenuItem>
                   </>
                 )}
@@ -484,8 +485,8 @@ const DealWorkspace = ({
           <div className="space-y-5">
             <Tabs defaultValue="basic" className="space-y-4">
               <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg border bg-slate-100 p-1">
-                <TabsTrigger value="basic">Zakladni udaje</TabsTrigger>
-                <TabsTrigger value="commerce">Nabidky a objednavky</TabsTrigger>
+                <TabsTrigger value="basic">Základní údaje</TabsTrigger>
+                <TabsTrigger value="commerce">Nabídky a objednávky</TabsTrigger>
                 <TabsTrigger value="history">Historie</TabsTrigger>
                 <TabsTrigger value="discussion">Diskuse</TabsTrigger>
               </TabsList>
@@ -496,7 +497,7 @@ const DealWorkspace = ({
                     <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">{opportunity.subject?.name || '-'}</div>
                   </div>
                   <div className="space-y-1">
-                    <Label>Odhad uzavreni</Label>
+                    <Label>Odhad uzavření</Label>
                     <Input
                       type="date"
                       value={opportunity.expected_close_date || ''}
@@ -598,7 +599,7 @@ const DealWorkspace = ({
                       {opportunity.lost_reason || 'Důvod zatím není vyplněn.'}
                     </p>
                     {opportunity.lost_at && (
-                      <p className="mt-2 text-xs text-rose-700">Uzavreno jako prohrane: {formatDate(opportunity.lost_at)}</p>
+                      <p className="mt-2 text-xs text-rose-700">Uzavřeno jako prohrané: {formatDate(opportunity.lost_at)}</p>
                     )}
                   </div>
                 )}
@@ -606,7 +607,7 @@ const DealWorkspace = ({
                 <div className="min-h-[150px] rounded-lg border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
                   <h3 className="text-sm font-semibold text-amber-900">Popis</h3>
                   <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">
-                    {opportunity.description || 'Zatim bez popisu.'}
+                    {opportunity.description || 'Zatím bez popisu.'}
                   </p>
                 </div>
               </TabsContent>
@@ -614,14 +615,14 @@ const DealWorkspace = ({
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="rounded-lg border bg-white p-4 shadow-sm">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-slate-900">Nabidky</h3>
+                      <h3 className="text-sm font-semibold text-slate-900">Nabídky</h3>
                       <Badge variant="outline">{offerDocuments.length}</Badge>
                     </div>
                     <p className="mt-2 text-sm text-muted-foreground">Nabídkové dokumenty jsou navázané na tento obchodní případ a sdílí položky s obchodním rozpočtem.</p>
                   </div>
                   <div className="rounded-lg border bg-white p-4 shadow-sm">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-slate-900">Objednavky</h3>
+                      <h3 className="text-sm font-semibold text-slate-900">Objednávky</h3>
                       <Badge variant="outline">{orderDocuments.length}</Badge>
                     </div>
                     <p className="mt-2 text-sm text-muted-foreground">Objednávky navazují na stejný obchodní případ a lze je vytvářet ze stejného položkového základu.</p>
@@ -658,11 +659,11 @@ const DealWorkspace = ({
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
                       <Button size="sm" onClick={() => onCreateProject?.()} disabled={!canEdit}>
                         <Building2 className="mr-2 h-4 w-4" />
-                        Vytvorit projekt
+                        Vytvořit projekt
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => onCreateRealization?.()} disabled={!canEdit}>
                         <CheckCircle2 className="mr-2 h-4 w-4" />
-                        Vytvorit realizaci
+                        Vytvořit realizaci
                       </Button>
                     </div>
                   </div>
@@ -671,8 +672,8 @@ const DealWorkspace = ({
             )}
             <div className="rounded-lg border bg-white p-5 text-center shadow-sm">
               <Paperclip className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium text-muted-foreground">Zatim bez priloh</p>
-              <Button className="mt-4" variant="secondary" disabled>Nahrat soubor</Button>
+              <p className="text-sm font-medium text-muted-foreground">Zatím bez příloh</p>
+              <Button className="mt-4" variant="secondary" disabled>Nahrát soubor</Button>
             </div>
             <div className="rounded-lg border bg-white p-4 shadow-sm">
               <div className="flex items-center gap-2 text-sm font-semibold text-primary">
@@ -684,7 +685,7 @@ const DealWorkspace = ({
                 className="mt-3 min-h-[90px]"
                 defaultValue={opportunity.next_step || ''}
                 disabled={!canEdit || updatingOpportunity}
-                placeholder="Zatim neni naplanovana."
+                placeholder="Zatím není naplánovaná."
                 onBlur={(event) => {
                   if ((event.target.value || '') !== (opportunity.next_step || '')) {
                     onUpdateOpportunity?.(opportunity.id, { next_step: event.target.value || null });
@@ -716,7 +717,7 @@ const DealWorkspace = ({
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" disabled={!canEdit || updatingOpportunity}>
                     <Plus className="mr-2 h-4 w-4" />
-                    Pridat z katalogu
+                    Přidat z katalogu
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-80">
@@ -731,7 +732,7 @@ const DealWorkspace = ({
                   </div>
                   <DropdownMenuSeparator />
                   {catalogLoading ? (
-                    <DropdownMenuItem disabled>Nacitam katalog...</DropdownMenuItem>
+                    <DropdownMenuItem disabled>Načítám katalog...</DropdownMenuItem>
                   ) : filteredCatalogProducts.length === 0 ? (
                     <DropdownMenuItem disabled>Žádný produkt nenalezen</DropdownMenuItem>
                   ) : filteredCatalogProducts.map((product) => (
@@ -744,7 +745,7 @@ const DealWorkspace = ({
                   ))}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={addOpportunityItem}>
-                    Rucni polozka
+                    Ruční položka
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -756,10 +757,10 @@ const DealWorkspace = ({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Kod</TableHead>
+                  <TableHead>Kód</TableHead>
                   <TableHead>Název</TableHead>
                   <TableHead className="text-right">Jedn. cena</TableHead>
-                  <TableHead className="text-right">Mnozstvi</TableHead>
+                  <TableHead className="text-right">Množství</TableHead>
                   <TableHead>MJ</TableHead>
                   <TableHead className="text-right">Sleva %</TableHead>
                   <TableHead className="text-right">Cena celkem</TableHead>
@@ -812,120 +813,167 @@ const DealWorkspace = ({
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
               <ShoppingCart className="h-4 w-4" />
-              Nabidky / objednavky
+              Nabídky / objednávky
             </CardTitle>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" disabled={!canEdit || creatingDocument}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Pridat dokument
+                  Přidat dokument
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onSelect={() => onCreateDocument?.('offer')}>Nabidka</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onCreateDocument?.('order')}>Objednavka</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onCreateDocument?.('offer')}>Nabídka</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onCreateDocument?.('order')}>Objednávka</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </CardHeader>
         <CardContent className="grid gap-4 p-5 xl:grid-cols-2">
-          <div className="rounded-lg border border-dashed bg-slate-50 p-4 text-sm text-muted-foreground xl:col-span-2">
-            Generator dokumentu je pripraveny jako spolecna vrstva pro nabidky, objednavky a smlouvy. Aktualne generuje HTML vystup pro tisk/stazeni; stejny payload bude pouzity pro PDF/DOCX a Edge Function frontu.
+          <div className="xl:col-span-2 overflow-hidden rounded-lg border border-blue-100 bg-gradient-to-r from-blue-50 via-white to-emerald-50">
+            <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white shadow-sm">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-slate-950">Generátor dokumentů je aktivní</h3>
+                  <p className="mt-1 max-w-3xl text-sm leading-5 text-slate-600">
+                    Nabídky a objednávky používají stejný datový základ obchodního případu. Výstup lze generovat podle zvolené šablony do HTML, PDF i DOCX.
+                  </p>
+                </div>
+              </div>
+              <div className="grid shrink-0 grid-cols-3 gap-2 text-xs font-semibold text-slate-700">
+                {['HTML', 'PDF', 'DOCX'].map((format) => (
+                  <div key={format} className="rounded-md border border-white/70 bg-white px-3 py-2 text-center shadow-sm">
+                    <CheckCircle2 className="mx-auto mb-1 h-4 w-4 text-emerald-600" />
+                    {format}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
           {documents.length === 0 ? (
-            <div className="rounded-lg border border-dashed bg-slate-50 p-6 text-sm text-muted-foreground xl:col-span-2">
-              Zatim neni zalozena zadna nabidka ani objednavka. Vytvorte prvni dokument tlacitkem nahore.
+            <div className="rounded-lg border border-dashed bg-slate-50 p-8 text-center text-sm text-muted-foreground xl:col-span-2">
+              <ShoppingCart className="mx-auto mb-3 h-10 w-10 text-slate-300" />
+              <h3 className="text-base font-semibold text-slate-900">Zatím zde není žádná nabídka ani objednávka</h3>
+              <p className="mx-auto mt-1 max-w-md">Vytvořte první dokument z položek obchodního případu. Šablonu lze zvolit před vytvořením nebo před generováním výstupu.</p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Button size="sm" onClick={() => onCreateDocument?.('offer')} disabled={!canEdit || creatingDocument}>
+                  <Package className="mr-2 h-4 w-4" />
+                  Vytvořit nabídku
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => onCreateDocument?.('order')} disabled={!canEdit || creatingDocument}>
+                  <ShoppingCart className="mr-2 h-4 w-4" />
+                  Vytvořit objednávku
+                </Button>
+              </div>
             </div>
           ) : (
             <>
               {[ 
-                { type: 'offer', title: 'Nabidky', icon: Package, rows: offerDocuments, empty: 'Zatim neni vytvorena zadna nabidka.' },
-                { type: 'order', title: 'Objednavky', icon: ShoppingCart, rows: orderDocuments, empty: 'Zatim neni vytvorena zadna objednavka.' },
+                { type: 'offer', title: 'Nabídky', icon: Package, rows: offerDocuments, empty: 'Zatím není vytvořena žádná nabídka.', cta: 'Přidat nabídku' },
+                { type: 'order', title: 'Objednávky', icon: ShoppingCart, rows: orderDocuments, empty: 'Zatím není vytvořena žádná objednávka.', cta: 'Přidat objednávku' },
               ].map((module) => (
-                <div key={module.type} className="overflow-hidden rounded-lg border bg-white">
-                  <div className="flex flex-col gap-3 border-b bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-2">
-                      <module.icon className="h-4 w-4 text-primary" />
-                      <h3 className="text-sm font-semibold text-slate-900">{module.title}</h3>
-                      <Badge variant="outline">{module.rows.length}</Badge>
-                    </div>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <Select
-                        value={selectedTemplateIds[module.type] || 'default'}
-                        onValueChange={(value) => onTemplateChange?.(module.type, value === 'default' ? null : value)}
-                      >
-                        <SelectTrigger className="h-8 w-full bg-white text-xs sm:w-[190px]">
-                          <SelectValue placeholder="Sablona" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="default">Vychozi sablona</SelectItem>
-                          {documentTemplates.map((template) => (
-                            <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onCreateDocument?.(module.type)}
-                        disabled={!canEdit || creatingDocument}
-                      >
-                        Pridat
-                      </Button>
+                <div key={module.type} className="overflow-hidden rounded-lg border bg-white shadow-sm">
+                  <div className="border-b bg-slate-50/80 px-4 py-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary ring-1 ring-primary/10">
+                          <module.icon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                            {module.title}
+                            <Badge variant="secondary" className="h-5 px-1.5">{module.rows.length}</Badge>
+                          </h3>
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {module.type === 'offer' ? 'Dokumenty pro klientskou nabídku' : 'Navazující objednávky k obchodnímu případu'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <Select
+                          value={selectedTemplateIds[module.type] || 'default'}
+                          onValueChange={(value) => onTemplateChange?.(module.type, value === 'default' ? null : value)}
+                        >
+                          <SelectTrigger className="h-9 w-full bg-white text-xs sm:w-[210px]">
+                            <SelectValue placeholder="Šablona" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="default">Výchozí šablona</SelectItem>
+                            {documentTemplates.map((template) => (
+                              <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onCreateDocument?.(module.type)}
+                          disabled={!canEdit || creatingDocument}
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          {module.cta}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                   {module.rows.length === 0 ? (
-                    <div className="p-5 text-sm text-muted-foreground">{module.empty}</div>
+                    <div className="flex min-h-[150px] flex-col items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                      <module.icon className="mb-3 h-9 w-9 text-slate-300" />
+                      <p className="font-medium text-slate-700">{module.empty}</p>
+                      <Button className="mt-4" size="sm" variant="outline" onClick={() => onCreateDocument?.(module.type)} disabled={!canEdit || creatingDocument}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        {module.cta}
+                      </Button>
+                    </div>
                   ) : (
-                    <div className="divide-y">
+                    <div className="divide-y divide-slate-100">
                       {module.rows.map((document) => (
-                        <div key={document.id} className="grid gap-2 p-4 text-sm sm:grid-cols-[minmax(0,1fr)_130px]">
+                        <div key={document.id} className="grid gap-4 p-4 text-sm transition-colors hover:bg-slate-50/70 lg:grid-cols-[minmax(0,1fr)_auto]">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <Link
-                                to={document.type === 'order' ? `/crm/orders/${document.id}` : `/crm/offers/${document.id}`}
+                                to={crmCommercialDocumentPath(document)}
                                 className="font-semibold text-slate-950 hover:text-primary hover:underline"
                               >
                                 {document.number || '-'}
                               </Link>
-                              <Badge variant="outline">{document.status}</Badge>
-                              {document.sync_items === false && <Badge variant="secondary">sync vypnuty</Badge>}
+                              <Badge variant="outline" className="bg-white">{document.status}</Badge>
+                              {document.sync_items === false && <Badge variant="secondary">sync vypnutý</Badge>}
                             </div>
-                            <div className="mt-1 truncate text-muted-foreground">{document.title}</div>
-                            <div className="mt-2 text-xs text-muted-foreground">{formatDate(document.issue_date)} - {document.items?.length || 0} polozek</div>
+                            <div className="mt-1 truncate font-medium text-slate-700">{formatCommercialDocumentTitle(document.title)}</div>
+                            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                              <span>{formatDate(document.issue_date)}</span>
+                              <span>{document.items?.length || 0} položek</span>
+                              <span>{document.tax_total ? 's DPH' : 'bez DPH'}</span>
+                            </div>
                           </div>
-                          <div className="text-left sm:text-right">
-                            <div className="font-semibold text-slate-950">{formatCurrency(document.total)}</div>
-                            <div className="mt-1 text-xs text-muted-foreground">bez DPH</div>
-                            <div className="mt-3 flex flex-wrap justify-start gap-1 sm:justify-end">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8 px-2"
-                                disabled={generatingDocument}
-                                onClick={() => onGenerateDocument?.(document, 'docx', documentTemplates.find((template) => template.id === selectedTemplateIds[module.type]))}
-                              >
-                                DOCX
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8 px-2"
-                                disabled={generatingDocument}
-                                onClick={() => onGenerateDocument?.(document, 'pdf', documentTemplates.find((template) => template.id === selectedTemplateIds[module.type]))}
-                              >
-                                PDF
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-8 px-2"
-                                disabled={generatingDocument}
-                                onClick={() => onGenerateDocument?.(document, 'html', documentTemplates.find((template) => template.id === selectedTemplateIds[module.type]))}
-                              >
-                                HTML
-                              </Button>
+                          <div className="flex items-center justify-between gap-3 lg:justify-end">
+                            <div className="text-left lg:text-right">
+                              <div className="font-semibold text-slate-950">{formatCurrency(document.total)}</div>
+                              <div className="mt-1 text-xs text-muted-foreground">celkem</div>
                             </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="outline" disabled={generatingDocument}>
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  Generovat
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-40">
+                                <DropdownMenuItem onSelect={() => onGenerateDocument?.(document, 'docx', documentTemplates.find((template) => template.id === selectedTemplateIds[module.type]))}>
+                                  DOCX
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => onGenerateDocument?.(document, 'pdf', documentTemplates.find((template) => template.id === selectedTemplateIds[module.type]))}>
+                                  PDF
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => onGenerateDocument?.(document, 'html', documentTemplates.find((template) => template.id === selectedTemplateIds[module.type]))}>
+                                  HTML
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       ))}
@@ -1120,19 +1168,20 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
   };
 
   return (
-  <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-    <div className="flex min-w-[1180px] items-center gap-2 bg-gradient-to-r from-blue-700 to-sky-600 px-4 py-2 text-sm font-semibold text-white">
-      <span>Obchodní případy</span>
-      <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{opportunities.length}</span>
+  <ManagedTableSection
+    title="Obchodní případy"
+    count={opportunities.length}
+    toolbar={(
       <ManagedTableToolbar
-        className="ml-auto text-slate-700"
+        className="text-slate-700"
         columns={managedColumns}
         visibility={visibility}
         onMoveColumn={moveColumn}
         onToggleColumn={toggleColumn}
         onReset={resetColumns}
       />
-    </div>
+    )}
+  >
     <Table>
       <TableHeader>
         <TableRow className="bg-slate-50">
@@ -1165,7 +1214,7 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
         ))}
       </TableBody>
     </Table>
-  </div>
+  </ManagedTableSection>
   );
 };
 
@@ -1216,14 +1265,14 @@ const CrmDashboardInsights = ({
   const orders = commercialDocuments.filter((document) => document.type === 'order');
   const documentStats = [
     {
-      label: 'Nabidky',
+      label: 'Nabídky',
       count: offers.length,
       value: offers.reduce((sum, document) => sum + Number(document.total || 0), 0),
       icon: FileText,
       tone: 'text-blue-700 bg-blue-50 border-blue-100',
     },
     {
-      label: 'Objednavky',
+      label: 'Objednávky',
       count: orders.length,
       value: orders.reduce((sum, document) => sum + Number(document.total || 0), 0),
       icon: ShoppingCart,
@@ -1240,11 +1289,11 @@ const CrmDashboardInsights = ({
               <BarChart3 className="h-4 w-4 text-primary" />
               Pipeline podle stavu
             </CardTitle>
-            <CardDescription>Rychly pohled na rozlozeni aktivnich obchodnich pripadu.</CardDescription>
+            <CardDescription>Rychlý pohled na rozložení aktivních obchodních případů.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 p-4">
             {stageRows.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">Zatim nejsou zadne obchodni pripady.</div>
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">Zatím nejsou žádné obchodní případy.</div>
             ) : stageRows.map((stage) => (
               <div key={stage.value} className="rounded-lg border border-slate-200 bg-white p-3">
                 <div className="mb-2 flex items-center justify-between gap-3 text-sm">
@@ -1291,7 +1340,7 @@ const CrmDashboardInsights = ({
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase text-muted-foreground">Konverze</p>
                 <p className="mt-1 text-2xl font-semibold text-slate-950">{metrics.conversionRate} %</p>
-                <p className="truncate text-xs text-muted-foreground">{metrics.won} vyhrano / {metrics.lost} prohrano</p>
+                <p className="truncate text-xs text-muted-foreground">{metrics.won} vyhráno / {metrics.lost} prohráno</p>
               </div>
             </CardContent>
           </Card>
@@ -1301,26 +1350,26 @@ const CrmDashboardInsights = ({
           <CardHeader className="crm-panel-header">
             <CardTitle className="flex items-center gap-2 text-base">
               <Target className="h-4 w-4 text-primary" />
-              Nejvetsi otevrene prilezitosti
+              Největší otevřené příležitosti
             </CardTitle>
-            <CardDescription>Obchody s nejvyssi hodnotou, ktere maji vliv na pipeline.</CardDescription>
+            <CardDescription>Obchody s nejvyšší hodnotou, které mají vliv na pipeline.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Obchodni pripad</TableHead>
+                    <TableHead>Obchodní případ</TableHead>
                     <TableHead>Klient</TableHead>
                     <TableHead>Stav</TableHead>
-                    <TableHead>Odhad uzavreni</TableHead>
+                    <TableHead>Odhad uzavření</TableHead>
                     <TableHead className="text-right">Hodnota</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {topOpportunities.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">Zatim zadne otevrene prilezitosti.</TableCell>
+                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">Zatím žádné otevřené příležitosti.</TableCell>
                     </TableRow>
                   ) : topOpportunities.map((opportunity) => {
                     const stage = getStage(opportunity.stage, stages);
@@ -1349,12 +1398,12 @@ const CrmDashboardInsights = ({
           <CardHeader className="crm-panel-header">
             <CardTitle className="flex items-center gap-2 text-base">
               <CalendarClock className="h-4 w-4 text-primary" />
-              Uzavreni do 30 dnu
+              Uzavření do 30 dnů
             </CardTitle>
           </CardHeader>
           <CardContent className="divide-y p-0">
             {closingSoon.length === 0 ? (
-              <div className="p-5 text-sm text-muted-foreground">Zadne blizke uzavreni.</div>
+              <div className="p-5 text-sm text-muted-foreground">Žádné blízké uzavření.</div>
             ) : closingSoon.map((opportunity) => (
               <button
                 key={opportunity.id}
@@ -1376,12 +1425,12 @@ const CrmDashboardInsights = ({
           <CardHeader className="crm-panel-header">
             <CardTitle className="flex items-center gap-2 text-base">
               <Clock className="h-4 w-4 text-primary" />
-              Bez dalsiho kroku
+              Bez dalšího kroku
             </CardTitle>
           </CardHeader>
           <CardContent className="divide-y p-0">
             {withoutNextStep.length === 0 ? (
-              <div className="p-5 text-sm text-muted-foreground">Vsechny hlavni OP maji dalsi krok.</div>
+              <div className="p-5 text-sm text-muted-foreground">Všechny hlavní OP mají další krok.</div>
             ) : withoutNextStep.map((opportunity) => (
               <button
                 key={opportunity.id}
@@ -1403,12 +1452,12 @@ const CrmDashboardInsights = ({
           <CardHeader className="crm-panel-header">
             <CardTitle className="flex items-center gap-2 text-base">
               <CheckCircle2 className="h-4 w-4 text-primary" />
-              Nejblizsi aktivity
+              Nejbližší aktivity
             </CardTitle>
           </CardHeader>
           <CardContent className="divide-y p-0">
             {upcomingActivities.length === 0 ? (
-              <div className="p-5 text-sm text-muted-foreground">Zadne planovane CRM aktivity.</div>
+              <div className="p-5 text-sm text-muted-foreground">Žádné plánované CRM aktivity.</div>
             ) : upcomingActivities.slice(0, 5).map((activity) => (
               <div key={activity.id} className="p-4">
                 <div className="font-semibold text-slate-950">{activity.title}</div>
@@ -1524,18 +1573,8 @@ const CRM = () => {
         .from('order_templates')
         .select('id, name, description, content, created_at')
         .order('created_at', { ascending: false }),
-      supabase
-        .from('crm_numbering_settings')
-        .select('document_type, prefix, next_number, padding'),
+      selectCrmNumberingSettings(supabase),
     ]);
-
-    let effectiveOpportunitiesRes = opportunitiesRes;
-    if (isMissingColumnError(opportunitiesRes.error, ['lost_reason', 'lost_at', 'realization_id'])) {
-      effectiveOpportunitiesRes = await supabase
-        .from('crm_opportunities')
-        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, subject_id, project_id, subject:subject_id(id, name), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
-        .order('updated_at', { ascending: false });
-    }
 
     const coreError = subjectsRes.error || projectsRes.error || contactsRes.error;
     if (coreError) {
@@ -1550,8 +1589,8 @@ const CRM = () => {
       setContacts(contactsRes.data || []);
     }
 
-    if (effectiveOpportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error) {
-      const crmError = effectiveOpportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error;
+    if (opportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error) {
+      const crmError = opportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error;
       if (isMissingCrmTableError(crmError)) {
         setCrmTablesReady(false);
         setOpportunities([]);
@@ -1567,7 +1606,7 @@ const CRM = () => {
       }
     } else {
       setCrmTablesReady(true);
-      setOpportunities((effectiveOpportunitiesRes.data || []).map((opportunity) => ({
+      setOpportunities((opportunitiesRes.data || []).map((opportunity) => ({
         lost_reason: null,
         lost_at: null,
         realization_id: null,
@@ -1695,7 +1734,7 @@ const CRM = () => {
 
   const selectedOpportunity = useMemo(() => {
     if (!opportunities.length) return null;
-    return opportunities.find((opportunity) => opportunity.id === (opportunityId || selectedOpportunityId)) || null;
+    return findCrmRecordByRef(opportunities, opportunityId || selectedOpportunityId);
   }, [opportunities, opportunityId, selectedOpportunityId]);
 
   const selectedOpportunityDocuments = useMemo(() => {
@@ -1705,7 +1744,8 @@ const CRM = () => {
 
   useEffect(() => {
     if (opportunityId) {
-      setSelectedOpportunityId(opportunityId);
+      const opportunity = findCrmRecordByRef(opportunities, opportunityId);
+      setSelectedOpportunityId(opportunity?.id || opportunityId);
       return;
     }
     if (!selectedOpportunityId && opportunities.length > 0) {
@@ -1716,10 +1756,14 @@ const CRM = () => {
     }
   }, [opportunities, opportunityId, selectedOpportunityId]);
 
-  const openOpportunityDetail = useCallback((id) => {
-    setSelectedOpportunityId(id);
-    navigate(`/crm/${id}`);
-  }, [navigate]);
+  const openOpportunityDetail = useCallback((idOrOpportunity) => {
+    const opportunity = typeof idOrOpportunity === 'object'
+      ? idOrOpportunity
+      : opportunities.find((item) => item.id === idOrOpportunity) || findCrmRecordByRef(opportunities, idOrOpportunity);
+    const nextId = opportunity?.id || idOrOpportunity;
+    setSelectedOpportunityId(nextId);
+    navigate(opportunity ? crmOpportunityPath(opportunity) : `/crm/${encodeURIComponent(String(idOrOpportunity))}`);
+  }, [navigate, opportunities]);
 
   const updateOpportunityState = useCallback((opportunityId, patch) => {
     setOpportunities((current) => current.map((opportunity) => (
@@ -1741,23 +1785,6 @@ const CRM = () => {
     setUpdatingOpportunity(false);
 
     if (error) {
-      if (['42703', 'PGRST204'].includes(error.code) && ('lost_reason' in patch || 'lost_at' in patch)) {
-        const { lost_reason, lost_at, ...legacyPatch } = patch;
-        const { error: legacyError } = await supabase
-          .from('crm_opportunities')
-          .update(legacyPatch)
-          .eq('id', opportunityId);
-
-        if (!legacyError) {
-          toast({
-            title: 'Stav uložen bez důvodu prohry',
-            description: 'Online databaze jeste nema sloupce lost_reason/lost_at. Aplikujte CRM migraci.',
-          });
-          fetchCrmData();
-          return;
-        }
-      }
-
       toast({
         title: 'Změnu se nepodařilo uložit',
         description: error.message,
@@ -1960,7 +1987,7 @@ const CRM = () => {
 
     if (!crmTablesReady) {
       toast({
-        title: 'CRM tabulky nejsou v databazi',
+        title: 'CRM tabulky nejsou v databázi',
         description: 'Nejdriv je potreba aplikovat CRM migrace.',
         variant: 'destructive',
       });
@@ -2008,16 +2035,7 @@ const CRM = () => {
       ? supabase.from('crm_opportunities').update(payload).eq('id', opportunityForm.id)
       : supabase.from('crm_opportunities').insert(payload);
 
-    let { error } = await request;
-
-    if (error && ['42703', 'PGRST204'].includes(error.code) && ('lost_reason' in payload || 'lost_at' in payload)) {
-      const { lost_reason, lost_at, ...legacyPayload } = payload;
-      const legacyRequest = opportunityForm.id
-        ? supabase.from('crm_opportunities').update(legacyPayload).eq('id', opportunityForm.id)
-        : supabase.from('crm_opportunities').insert(legacyPayload);
-      const legacyResult = await legacyRequest;
-      error = legacyResult.error;
-    }
+    const { error } = await request;
 
     if (error) {
       setSavingOpportunity(false);
@@ -2071,7 +2089,7 @@ const CRM = () => {
         type,
         status: 'draft',
         number,
-        title: `${type === 'offer' ? 'Nabidka' : 'Objednavka'} - ${selectedOpportunity.title}`,
+        title: `${type === 'offer' ? 'Nabídka' : 'Objednávka'} - ${selectedOpportunity.title}`,
         subtotal: totals.subtotal,
         discount_total: totals.discount_total,
         tax_total: totals.tax_total,
@@ -2103,7 +2121,7 @@ const CRM = () => {
     if (itemError) {
       setCreatingDocument(false);
       toast({
-        title: 'Polozka dokumentu se nepodarila vytvorit',
+        title: 'Položka dokumentu se nepodařila vytvořit',
         description: itemError.message,
         variant: 'destructive',
       });
@@ -2116,7 +2134,7 @@ const CRM = () => {
       .eq('document_type', type);
 
     setCreatingDocument(false);
-    toast({ title: type === 'offer' ? 'Nabidka vytvorena' : 'Objednavka vytvorena' });
+    toast({ title: type === 'offer' ? 'Nabídka vytvořena' : 'Objednávka vytvořena' });
     fetchCrmData();
   };
 
@@ -3052,3 +3070,4 @@ const CRM = () => {
 };
 
 export default CRM;
+
