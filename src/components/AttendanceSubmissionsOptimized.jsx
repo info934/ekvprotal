@@ -21,6 +21,54 @@ import { cn } from '@/lib/utils';
 import { sendEmail } from '@/lib/email';
 
 // --- Memoized Components ---
+const escapeHtml = (value) => String(value ?? '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#039;');
+
+const buildAttendanceApprovalEmail = ({ submission, records }) => {
+  const monthLabel = format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs });
+  const detailRows = records.map((record) => {
+    const target = record.project?.code
+      ?`${record.project.code} - ${record.project.name}`
+      : (record.realization?.name || '-');
+
+    return `
+      <tr>
+        <td style="padding:8px;border-bottom:1px solid #eef2f7;">${format(new Date(record.date), 'dd.MM.yyyy')}</td>
+        <td style="padding:8px;border-bottom:1px solid #eef2f7;">${escapeHtml(target)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eef2f7;">${escapeHtml(record.description || '')}</td>
+        <td style="padding:8px;border-bottom:1px solid #eef2f7;text-align:right;font-weight:700;">${Number(record.hours || 0).toFixed(1)} h</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <p>Vaše docházka za období <strong>${monthLabel}</strong> byla schválena.</p>
+
+    <div style="margin:18px 0;padding:16px;border:1px solid #bbf7d0;border-radius:10px;background:#f0fdf4;">
+      <div style="font-size:12px;color:#166534;font-weight:700;text-transform:uppercase;">Schválený souhrn</div>
+      <div style="font-size:26px;font-weight:800;color:#14532d;margin-top:6px;">${Number(submission.total_hours || 0).toFixed(1)} h</div>
+    </div>
+
+    <h3 style="margin:22px 0 8px;">Detail záznamů</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="background:#f8fafc;">
+          <th style="padding:8px;text-align:left;border-bottom:1px solid #cbd5e1;">Datum</th>
+          <th style="padding:8px;text-align:left;border-bottom:1px solid #cbd5e1;">Projekt / Realizace</th>
+          <th style="padding:8px;text-align:left;border-bottom:1px solid #cbd5e1;">Popis</th>
+          <th style="padding:8px;text-align:right;border-bottom:1px solid #cbd5e1;">Hodiny</th>
+        </tr>
+      </thead>
+      <tbody>${detailRows || '<tr><td colspan="4" style="padding:10px;color:#64748b;">Bez detailních záznamů.</td></tr>'}</tbody>
+    </table>
+
+    <p style="margin-top:20px;color:#64748b;font-size:13px;">Schválená docházka je nyní uzavřená pro další zpracování hodinové mzdy.</p>
+  `;
+};
 
 const StatusBadge = React.memo(({ status }) => {
   const config = {
@@ -70,7 +118,7 @@ const SubmissionCard = React.memo(({ submission, onDetail, onApprove, onReject, 
   const memberName = submission.member?.name || 'Neznámý uživatel';
   const monthLabel = format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs });
   const totalHours = Number(submission.total_hours).toFixed(1);
-  const submittedDate = submission.submitted_at ? format(parseISO(submission.submitted_at), 'd.M.yyyy HH:mm') : '-';
+  const submittedDate = submission.submitted_at ?format(parseISO(submission.submitted_at), 'd.M.yyyy HH:mm') : '-';
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-primary/25 hover:shadow-md">
@@ -253,13 +301,36 @@ const AttendanceSubmissionsOptimized = () => {
       toast({ title: 'Schváleno', className: 'bg-green-100 text-green-800' });
       fetchSubmissions();
       
-      // Send email
       if (submission.member?.email) {
-        await sendEmail({
-          to: submission.member.email,
-          subject: `Docházka schválena: ${format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs })}`,
-          content: `<p>Vaše docházka byla schválena.</p>`
-        });
+        try {
+          const start = startOfMonth(parseISO(submission.month_date));
+          const end = endOfMonth(start);
+          const { data: approvedRecords, error: recordsError } = await supabase
+            .from('attendance')
+            .select('date, hours, description, project:projects(name, code), realization:realizations(name)')
+            .eq('member_id', submission.member_id)
+            .gte('date', format(start, 'yyyy-MM-dd'))
+            .lte('date', format(end, 'yyyy-MM-dd'))
+            .order('date');
+
+          if (recordsError) throw recordsError;
+
+          const { error: emailError } = await sendEmail({
+            to: submission.member.email,
+            subject: `Docházka schválena: ${format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs })}`,
+            greeting: `Dobrý den, ${submission.member?.name || ''}`,
+            content: buildAttendanceApprovalEmail({ submission, records: approvedRecords || [] }),
+            salutation: 'S pozdravem,<br>EKV Portál'
+          });
+
+          if (emailError) throw emailError;
+        } catch (emailError) {
+          toast({
+            title: 'Schváleno, ale email se nepodařilo odeslat',
+            description: emailError.message,
+            variant: 'warning'
+          });
+        }
       }
     } catch (error) {
       toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
@@ -352,12 +423,12 @@ const AttendanceSubmissionsOptimized = () => {
 
       {/* List */}
       <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2">
-        {loading ? (
+        {loading ?(
           <div className="flex min-h-[260px] items-center justify-center text-sm text-muted-foreground">
             <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
             Načítání...
           </div>
-        ) : filteredSubmissions.length > 0 ? (
+        ) : filteredSubmissions.length > 0 ?(
           <div className="max-h-[620px] space-y-2 overflow-y-auto pr-1">
             {filteredSubmissions.map((submission) => (
               <SubmissionCard
@@ -393,7 +464,7 @@ const AttendanceSubmissionsOptimized = () => {
             <div className="grid gap-3 text-sm sm:grid-cols-2">
                <div className="rounded border border-slate-100 bg-slate-50 p-3">
                  <span className="text-muted-foreground">Celkem hodin</span>
-                 <p className="font-bold text-lg">{detailSubmission ? Number(detailSubmission.total_hours).toFixed(1) : 0}</p>
+                 <p className="font-bold text-lg">{detailSubmission ?Number(detailSubmission.total_hours).toFixed(1) : 0}</p>
                </div>
                <div className="rounded border border-slate-100 bg-slate-50 p-3">
                  <span className="text-muted-foreground">Stav</span>
@@ -401,9 +472,9 @@ const AttendanceSubmissionsOptimized = () => {
                </div>
             </div>
 
-            {detailLoading ? (
+            {detailLoading ?(
               <p className="text-center py-4">Načítání detailů...</p>
-            ) : detailRecords.length > 0 ? (
+            ) : detailRecords.length > 0 ?(
               <div className="space-y-2">
                 <h4 className="font-semibold text-sm text-slate-700 sticky top-0 bg-white py-2">Denní záznamy</h4>
                 {detailRecords.map((record, idx) => (

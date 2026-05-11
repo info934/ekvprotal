@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -233,7 +233,7 @@ const Payouts = () => {
   const stats = useMemo(() => {
     const activeFixed = payouts.filter(p => ['pending', 'approved', 'invoice_uploaded'].includes(p.status));
     const paidFixed = payouts.filter(p => p.status === 'paid');
-    const activeHourly = hourlyRequests.filter(p => ['pending', 'approved'].includes(p.status));
+    const activeHourly = hourlyRequests.filter(p => ['pending', 'approved', 'invoice_uploaded'].includes(p.status));
     const paidHourly = hourlyRequests.filter(p => p.status === 'paid');
     return { 
       totalRequests: payouts.length + hourlyRequests.length, 
@@ -398,8 +398,12 @@ const Payouts = () => {
   };
 
   const isHourlyWorker = memberInfo?.hourly_rate > 0;
-  const availableTabs = [{ value: 'fixed', label: 'Úkolová mzda (Fix)', show: true }, { value: 'hourly', label: 'Hodinová mzda', show: true }, { value: 'hourly_admin', label: 'Správa hodinové mzdy', show: canAdmin }].filter(tab => tab.show);
   const defaultTab = canAdmin ? 'hourly_admin' : (isHourlyWorker ? 'hourly' : 'fixed');
+  const payoutTabs = [
+    { value: 'fixed', label: 'Úkolová mzda', show: true },
+    { value: 'hourly', label: 'Moje hodinová mzda', show: true },
+    { value: 'hourly_admin', label: 'Schvalování hodinové mzdy', show: canAdmin }
+  ].filter(tab => tab.show);
 
   return (
     <div className="pb-12">
@@ -415,7 +419,7 @@ const Payouts = () => {
                   <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />Aktualizovat
                 </Button>
                 <Button onClick={() => navigate('/payouts/new')} className="shadow-sm w-full sm:w-auto">
-                  <Plus className="w-4 h-4 mr-2" />Nová žádost (Úkol)
+                  <Plus className="w-4 h-4 mr-2" />Nová žádost (úkol)
                 </Button>
               </>
             }
@@ -428,7 +432,7 @@ const Payouts = () => {
           </div>
           <div className="flex gap-3 w-full md:w-auto">
             <Button variant="outline" onClick={fetchPayouts} className="bg-white shadow-sm border-slate-200 hidden sm:flex"><RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />Aktualizovat</Button>
-            <Button onClick={() => {setIsDialogOpen(true); setEditingPayout(null);}} className="shadow-sm w-full sm:w-auto"><Plus className="w-4 h-4 mr-2" />Nová žádost (Úkol)</Button>
+            <Button onClick={() => {setIsDialogOpen(true); setEditingPayout(null);}} className="shadow-sm w-full sm:w-auto"><Plus className="w-4 h-4 mr-2" />Nová žádost (úkol)</Button>
           </div>
         </div>
       </div>
@@ -441,8 +445,17 @@ const Payouts = () => {
         </div>
 
         <Tabs defaultValue={defaultTab} className="w-full">
-          <TabsList className="flex w-full sm:w-auto mb-8 bg-slate-200/50 p-1 h-12 overflow-x-auto no-scrollbar justify-start">
-            {availableTabs.map(tab => <TabsTrigger key={tab.value} value={tab.value} className="rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm px-4 whitespace-nowrap">{tab.value === 'hourly_admin' && <Settings className="w-3.5 h-3.5 mr-2 inline-block text-slate-500" />}{tab.label}</TabsTrigger>)}
+          <TabsList className="mb-8 flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:w-auto">
+            {payoutTabs.map(tab => (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className="h-10 rounded-lg px-4 text-sm font-semibold text-slate-600 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm"
+              >
+                {tab.value === 'hourly_admin' && <Settings className="mr-2 inline-block h-3.5 w-3.5" />}
+                {tab.label}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
           <TabsContent value="fixed" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -461,8 +474,11 @@ const Payouts = () => {
           </TabsContent>
 
           <TabsContent value="hourly" className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-4 text-sm leading-6 text-blue-900 shadow-sm">
+               <div className="mb-1 font-semibold">Moje hodinová mzda</div>
+               Tato záložka slouží pro vytvoření vlastní měsíční žádosti z docházky a nahrání faktury po schválení. Administrátorské schvalování je v záložce „Schvalování hodinové mzdy“.
+             </div>
              <HourlyPayoutRequest onPayoutRequested={fetchPayouts} />
-             <PayoutTableHistory data={hourlyRequests.filter(r => r.members?.auth_user_id === user?.id)} loading={loading} onRefresh={fetchPayouts} />
           </TabsContent>
           {canAdmin && <TabsContent value="hourly_admin" className="space-y-8 animate-in fade-in-slide-in-from-bottom-4 duration-500"><HourlyPayoutRequestsAdmin /></TabsContent>}
         </Tabs>
