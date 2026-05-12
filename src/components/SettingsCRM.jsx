@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Code2, FileText, Plus, Save, SlidersHorizontal, Target, Trash2 } from 'lucide-react';
+import { FileText, Plus, Save, SlidersHorizontal, Target, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -80,72 +81,6 @@ const normalizeProductFields = (fields) => (
   }))
 );
 
-const templateQuickKeys = [
-  '{{document_number}}',
-  '{{document_title}}',
-  '{{client_name}}',
-  '{{opportunity_title}}',
-  '{{opportunity_description}}',
-  '{{project_name}}',
-  '{{document_date}}',
-  '{{document_valid_until}}',
-  '{{subtotal}}',
-  '{{tax_total}}',
-  '{{total_amount}}',
-  '{{total_with_tax}}',
-  '{{item_count}}',
-  '{{items_table}}',
-  '{{items_rows}}',
-  '{{items_list}}',
-];
-
-const itemTemplateKeys = [
-  '{{item_position}}',
-  '{{item_code}}',
-  '{{item_name}}',
-  '{{item_description}}',
-  '{{item_quantity}}',
-  '{{item_unit}}',
-  '{{item_unit_price}}',
-  '{{item_discount_percent}}',
-  '{{item_vat_rate}}',
-  '{{item_line_total}}',
-];
-
-const templateExamples = {
-  fullTable: `<h2>Nabidka {{document_number}}</h2>
-<p>Klient: <strong>{{client_name}}</strong></p>
-<p>Obchodni pripad: {{opportunity_title}}</p>
-<p>{{opportunity_description}}</p>
-
-{{items_table}}
-
-<p style="text-align:right"><strong>Celkem: {{total_with_tax}}</strong></p>`,
-  customRows: `<table>
-  <thead>
-    <tr>
-      <th>Kod</th>
-      <th>Produkt</th>
-      <th>Mnozstvi</th>
-      <th>Cena celkem</th>
-    </tr>
-  </thead>
-  <tbody>
-    {{#items}}
-    <tr>
-      <td>{{item_code}}</td>
-      <td>
-        <strong>{{item_name}}</strong><br>
-        {{item_description}}
-      </td>
-      <td>{{item_quantity}} {{item_unit}}</td>
-      <td>{{item_line_total}}</td>
-    </tr>
-    {{/items}}
-  </tbody>
-</table>`,
-};
-
 const SettingsCRM = () => {
   const { hasPermission } = useAuth();
   const { toast } = useToast();
@@ -157,8 +92,26 @@ const SettingsCRM = () => {
   const [productFieldsReady, setProductFieldsReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [activeSection, setActiveSection] = useState('documents');
 
   const canAdmin = hasPermission('settings', 'can_admin');
+  const activeSectionMeta = {
+    documents: {
+      title: 'Dokumenty',
+      saveLabel: 'Uložit dokumentová nastavení',
+      description: 'Uloží číslování CRM dokumentů. Šablony se ukládají samostatně v knihovně šablon.',
+    },
+    pipeline: {
+      title: 'Pipeline',
+      saveLabel: 'Uložit pipeline',
+      description: 'Uloží stavy obchodních případů a priority.',
+    },
+    products: {
+      title: 'Produkty',
+      saveLabel: 'Uložit produktová pole',
+      description: 'Uloží definice produktových polí pro katalog, AI extrakci a dokumenty.',
+    },
+  }[activeSection];
 
   const fetchCrmConfig = useCallback(async () => {
     if (!canAdmin) {
@@ -411,397 +364,245 @@ const SettingsCRM = () => {
         </Alert>
       )}
 
-      <Card>
-        <CardHeader className="border-b bg-slate-50/70">
-          <CardTitle>Číslování CRM dokumentů</CardTitle>
-          <CardDescription>Prefixy a další číslo pro obchodní případy, nabídky a objednávky.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 p-4 xl:grid-cols-3">
-          {Object.values(crmNumbering).map((config) => (
-            <div key={config.document_type} className="rounded-lg border bg-white p-3 shadow-sm">
-              <div className="mb-3">
-                <div className="text-sm font-semibold text-slate-900">{config.label}</div>
-                <div className="text-xs text-muted-foreground">Příklad: {formatCrmNumber(crmNumbering, config.document_type)}</div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label>Prefix</Label>
-                  <Input
-                    value={config.prefix}
-                    onChange={(event) => updateNumberingConfig(config.document_type, 'prefix', event.target.value)}
-                    disabled={loading || saving || !canAdmin}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Rok v čísle</Label>
-                  <Select value={config.year_format || 'YY'} onValueChange={(value) => updateNumberingConfig(config.document_type, 'year_format', value)} disabled={loading || saving || !canAdmin}>
-                    <SelectTrigger className="bg-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="YY">Krátký rok (26)</SelectItem>
-                      <SelectItem value="YYYY">Celý rok (2026)</SelectItem>
-                      <SelectItem value="NONE">Bez roku</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Další číslo</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={config.next_number}
-                    onChange={(event) => updateNumberingConfig(config.document_type, 'next_number', event.target.value)}
-                    disabled={loading || saving || !canAdmin}
-                  />
-                </div>
-              </div>
-            </div>
+      <Tabs value={activeSection} onValueChange={setActiveSection} className="w-full">
+        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm">
+          {[
+            ['documents', FileText, 'Dokumenty'],
+            ['pipeline', Target, 'Pipeline'],
+            ['products', SlidersHorizontal, 'Produkty'],
+          ].map(([value, Icon, label]) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              className="h-10 rounded-lg border-0 px-4 text-sm font-semibold text-slate-600 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm"
+            >
+              <Icon className="mr-2 h-4 w-4" />
+              {label}
+            </TabsTrigger>
           ))}
-        </CardContent>
-      </Card>
+        </TabsList>
 
-      <Card>
-        <CardHeader className="gap-4 border-b bg-slate-50/70">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <CardTitle>Produktová pole</CardTitle>
-              <CardDescription>
-                Definice technických a obchodních polí produktu. AI extrakce z datasheetu bude používat klíč pole a nápovědu.
-              </CardDescription>
-            </div>
-            <Button type="button" variant="outline" onClick={addProductField} disabled={loading || saving || !canAdmin}>
-              <Plus className="mr-2 h-4 w-4" />
-              Přidat pole
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 p-4">
-          {!productFieldsReady && (
-            <Alert className="border-amber-200 bg-amber-50 text-amber-900">
-              <SlidersHorizontal className="h-4 w-4" />
-              <AlertTitle>Produktová pole zatím nejsou v databázi</AlertTitle>
-              <AlertDescription>Aplikujte produktovou migraci. Do té doby se zobrazují jen výchozí pole a nejdou uložit online.</AlertDescription>
-            </Alert>
-          )}
-          {productFields.map((field, index) => (
-            <div key={`${field.field_key}-${index}`} className="grid gap-3 rounded-lg border bg-white p-3 shadow-sm xl:grid-cols-[1fr_160px_150px_120px_1.4fr_44px]">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Název</Label>
-                  <Input
-                    value={field.label}
-                    onChange={(event) => updateProductField(index, 'label', event.target.value)}
-                    disabled={loading || saving || !canAdmin}
-                  />
+        <TabsContent value="documents" className="space-y-6">
+          <Card>
+            <CardHeader className="border-b bg-slate-50/70">
+              <CardTitle>Číslování CRM dokumentů</CardTitle>
+              <CardDescription>Prefixy a další číslo pro obchodní případy, nabídky a objednávky.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 p-4 xl:grid-cols-3">
+              {Object.values(crmNumbering).map((config) => (
+                <div key={config.document_type} className="rounded-lg border bg-white p-3 shadow-sm">
+                  <div className="mb-3">
+                    <div className="text-sm font-semibold text-slate-900">{config.label}</div>
+                    <div className="text-xs text-muted-foreground">Příklad: {formatCrmNumber(crmNumbering, config.document_type)}</div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label>Prefix</Label>
+                      <Input value={config.prefix} onChange={(event) => updateNumberingConfig(config.document_type, 'prefix', event.target.value)} disabled={loading || saving || !canAdmin} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Rok v čísle</Label>
+                      <Select value={config.year_format || 'YY'} onValueChange={(value) => updateNumberingConfig(config.document_type, 'year_format', value)} disabled={loading || saving || !canAdmin}>
+                        <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="YY">Krátký rok (26)</SelectItem>
+                          <SelectItem value="YYYY">Celý rok (2026)</SelectItem>
+                          <SelectItem value="NONE">Bez roku</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Další číslo</Label>
+                      <Input type="number" min="1" value={config.next_number} onChange={(event) => updateNumberingConfig(config.document_type, 'next_number', event.target.value)} disabled={loading || saving || !canAdmin} />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Klíč pro AI / template</Label>
-                  <Input
-                    value={field.field_key}
-                    onChange={(event) => updateProductField(index, 'field_key', event.target.value)}
-                    disabled={loading || saving || !canAdmin}
-                    className="font-mono"
-                  />
+              ))}
+            </CardContent>
+          </Card>
+
+          <OrderTemplateManager embedded />
+        </TabsContent>
+
+        <TabsContent value="pipeline" className="space-y-6">
+          <Card>
+            <CardHeader className="gap-4 border-b bg-slate-50/70">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <CardTitle>Stavy obchodního případu</CardTitle>
+                  <CardDescription>Hodnoty používané v CRM pipeline a ve formuláři příležitosti.</CardDescription>
                 </div>
+                <Button type="button" variant="outline" onClick={addStageConfig} disabled={loading || saving || !canAdmin}>Přidat stav</Button>
               </div>
-              <div className="space-y-2">
-                <Label>Typ</Label>
-                <Select value={field.field_type} onValueChange={(value) => updateProductField(index, 'field_type', value)} disabled={loading || saving || !canAdmin}>
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="text">Text</SelectItem>
-                    <SelectItem value="textarea">Dlouhý text</SelectItem>
-                    <SelectItem value="number">Číslo</SelectItem>
-                    <SelectItem value="boolean">Ano / ne</SelectItem>
-                    <SelectItem value="date">Datum</SelectItem>
-                    <SelectItem value="select">Výběr</SelectItem>
-                  </SelectContent>
-                </Select>
+            </CardHeader>
+            <CardContent className="space-y-3 p-4">
+              {crmStages.map((stage, index) => (
+                <div key={stage.value} className="grid gap-3 rounded-lg border bg-white p-3 shadow-sm md:grid-cols-[minmax(140px,1fr)_110px_minmax(190px,1.2fr)_120px]">
+                  <div className="space-y-2">
+                    <Label>Název</Label>
+                    <Input value={stage.label} onChange={(event) => updateStageConfig(index, 'label', event.target.value)} disabled={loading || saving || !canAdmin} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Pravděp.</Label>
+                    <Input type="number" min="0" max="100" value={stage.probability} onChange={(event) => updateStageConfig(index, 'probability', event.target.value)} disabled={loading || saving || !canAdmin} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Barva</Label>
+                    <Select value={stage.color} onValueChange={(value) => updateStageConfig(index, 'color', value)} disabled={loading || saving || !canAdmin}>
+                      <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="bg-slate-100 text-slate-700 border-slate-200">Neutral</SelectItem>
+                        <SelectItem value="bg-blue-100 text-blue-700 border-blue-200">Modrá</SelectItem>
+                        <SelectItem value="bg-indigo-100 text-indigo-700 border-indigo-200">Indigo</SelectItem>
+                        <SelectItem value="bg-amber-100 text-amber-800 border-amber-200">Oranžová</SelectItem>
+                        <SelectItem value="bg-emerald-100 text-emerald-700 border-emerald-200">Zelená</SelectItem>
+                        <SelectItem value="bg-rose-100 text-rose-700 border-rose-200">Červená</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Typ</Label>
+                    <Select value={stage.is_closed ? 'closed' : 'open'} onValueChange={(value) => updateStageConfig(index, 'is_closed', value === 'closed')} disabled={loading || saving || !canAdmin}>
+                      <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="open">Otevřeno</SelectItem>
+                        <SelectItem value="closed">Uzavřeno</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="gap-4 border-b bg-slate-50/70">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <CardTitle>Priority</CardTitle>
+                  <CardDescription>Priority se zobrazují v kartách pipeline a ve formuláři příležitosti.</CardDescription>
+                </div>
+                <Button type="button" variant="outline" onClick={addPriorityConfig} disabled={loading || saving || !canAdmin}>Přidat prioritu</Button>
               </div>
-              <div className="space-y-2">
-                <Label>Skupina</Label>
-                <Input
-                  value={field.field_group}
-                  onChange={(event) => updateProductField(index, 'field_group', event.target.value)}
-                  disabled={loading || saving || !canAdmin}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Jednotka</Label>
-                <Input
-                  value={field.unit || ''}
-                  onChange={(event) => updateProductField(index, 'unit', event.target.value)}
-                  disabled={loading || saving || !canAdmin}
-                  placeholder="Wp, kg, V..."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{field.field_type === 'select' ? 'Možnosti / AI nápověda' : 'AI nápověda'}</Label>
-                {field.field_type === 'select' && (
-                  <Input
-                    value={field.options_text || ''}
-                    onChange={(event) => updateProductField(index, 'options_text', event.target.value)}
-                    disabled={loading || saving || !canAdmin}
-                    placeholder="Hodnota 1, Hodnota 2"
-                    className="mb-2"
-                  />
-                )}
-                <Input
-                  value={field.ai_hint || ''}
-                  onChange={(event) => updateProductField(index, 'ai_hint', event.target.value)}
-                  disabled={loading || saving || !canAdmin}
-                  placeholder="Co má AI hledat v datasheetu"
-                />
-              </div>
-              <div className="flex items-end justify-end">
-                <Button type="button" variant="ghost" size="icon" aria-label={`Odebrat produktové pole ${field.label || field.field_key || index + 1}`} onClick={() => removeProductField(index)} disabled={loading || saving || !canAdmin}>
-                  <Trash2 className="h-4 w-4" />
+            </CardHeader>
+            <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+              {crmPriorities.map((priority, index) => (
+                <div key={priority.value} className="grid gap-3 rounded-lg border bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_140px] xl:grid-cols-1">
+                  <div className="space-y-2">
+                    <Label>Název</Label>
+                    <Input value={priority.label} onChange={(event) => updatePriorityConfig(index, 'label', event.target.value)} disabled={loading || saving || !canAdmin} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Vzhled</Label>
+                    <Select value={priority.tone} onValueChange={(value) => updatePriorityConfig(index, 'tone', value)} disabled={loading || saving || !canAdmin}>
+                      <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="secondary">Neutral</SelectItem>
+                        <SelectItem value="outline">Obrys</SelectItem>
+                        <SelectItem value="destructive">Výrazná</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="products" className="space-y-6">
+          <Card>
+            <CardHeader className="gap-4 border-b bg-slate-50/70">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <CardTitle>Produktová pole</CardTitle>
+                  <CardDescription>Definice technických a obchodních polí produktu pro katalog, AI extrakci a dokumenty.</CardDescription>
+                </div>
+                <Button type="button" variant="outline" onClick={addProductField} disabled={loading || saving || !canAdmin}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Přidat pole
                 </Button>
               </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="gap-4 border-b bg-slate-50/70">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <CardTitle>Stavy obchodního případu</CardTitle>
-              <CardDescription>Tyto hodnoty se používají v CRM pipeline a při vytváření příležitostí.</CardDescription>
-            </div>
-            <Button type="button" variant="outline" onClick={addStageConfig} disabled={loading || saving || !canAdmin}>
-              Přidat stav
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 p-4">
-          {crmStages.map((stage, index) => (
-            <div key={stage.value} className="grid gap-3 rounded-lg border bg-white p-3 shadow-sm md:grid-cols-[minmax(140px,1fr)_110px_minmax(190px,1.2fr)_120px]">
-              <div className="space-y-2">
-                <Label>Název</Label>
-                <Input
-                  value={stage.label}
-                  onChange={(event) => updateStageConfig(index, 'label', event.target.value)}
-                  disabled={loading || saving || !canAdmin}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Pravděp.</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={stage.probability}
-                  onChange={(event) => updateStageConfig(index, 'probability', event.target.value)}
-                  disabled={loading || saving || !canAdmin}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Barva</Label>
-                <Select value={stage.color} onValueChange={(value) => updateStageConfig(index, 'color', value)} disabled={loading || saving || !canAdmin}>
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="bg-slate-100 text-slate-700 border-slate-200">Neutral</SelectItem>
-                    <SelectItem value="bg-blue-100 text-blue-700 border-blue-200">Modrá</SelectItem>
-                    <SelectItem value="bg-indigo-100 text-indigo-700 border-indigo-200">Indigo</SelectItem>
-                    <SelectItem value="bg-amber-100 text-amber-800 border-amber-200">Oranžová</SelectItem>
-                    <SelectItem value="bg-emerald-100 text-emerald-700 border-emerald-200">Zelená</SelectItem>
-                    <SelectItem value="bg-rose-100 text-rose-700 border-rose-200">Červená</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Typ</Label>
-                <Select value={stage.is_closed ? 'closed' : 'open'} onValueChange={(value) => updateStageConfig(index, 'is_closed', value === 'closed')} disabled={loading || saving || !canAdmin}>
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">Otevřeno</SelectItem>
-                    <SelectItem value="closed">Uzavřeno</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="gap-4 border-b bg-slate-50/70">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <CardTitle>Priority</CardTitle>
-              <CardDescription>Priority se zobrazují v kartách pipeline a ve formuláři příležitosti.</CardDescription>
-            </div>
-            <Button type="button" variant="outline" onClick={addPriorityConfig} disabled={loading || saving || !canAdmin}>
-              Přidat prioritu
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-          {crmPriorities.map((priority, index) => (
-            <div key={priority.value} className="grid gap-3 rounded-lg border bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_140px] xl:grid-cols-1">
-              <div className="space-y-2">
-                <Label>Název</Label>
-                <Input
-                  value={priority.label}
-                  onChange={(event) => updatePriorityConfig(index, 'label', event.target.value)}
-                  disabled={loading || saving || !canAdmin}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Vzhled</Label>
-                <Select value={priority.tone} onValueChange={(value) => updatePriorityConfig(index, 'tone', value)} disabled={loading || saving || !canAdmin}>
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="secondary">Neutral</SelectItem>
-                    <SelectItem value="outline">Obrys</SelectItem>
-                    <SelectItem value="destructive">Výrazná</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="gap-4 border-b bg-slate-50/70">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl border bg-white text-blue-600 shadow-sm">
-                  <FileText className="h-4 w-4" />
-                </span>
-                <div>
-                  <CardTitle>Navod k sablonam dokumentu</CardTitle>
-                  <CardDescription>
-                    Stejna sablona se pouziva pro nabidky, objednavky a dalsi CRM dokumenty.
-                    Do HTML vlozte znacky ve tvaru <code className="rounded bg-slate-100 px-1 py-0.5">{'{{client_name}}'}</code>;
-                    pri generovani se nahradi aktualnimi daty.
-                  </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 p-4">
+              {!productFieldsReady && (
+                <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+                  <SlidersHorizontal className="h-4 w-4" />
+                  <AlertTitle>Produktová pole zatím nejsou v databázi</AlertTitle>
+                  <AlertDescription>Aplikujte produktovou migraci. Do té doby se zobrazují jen výchozí pole a nejdou uložit online.</AlertDescription>
+                </Alert>
+              )}
+              {productFields.map((field, index) => (
+                <div key={`${field.field_key}-${index}`} className="grid gap-3 rounded-lg border bg-white p-3 shadow-sm xl:grid-cols-[1fr_160px_150px_120px_1.4fr_44px]">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Název</Label>
+                      <Input value={field.label} onChange={(event) => updateProductField(index, 'label', event.target.value)} disabled={loading || saving || !canAdmin} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Klíč pro AI / template</Label>
+                      <Input value={field.field_key} onChange={(event) => updateProductField(index, 'field_key', event.target.value)} disabled={loading || saving || !canAdmin} className="font-mono" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Typ</Label>
+                    <Select value={field.field_type} onValueChange={(value) => updateProductField(index, 'field_type', value)} disabled={loading || saving || !canAdmin}>
+                      <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="text">Text</SelectItem>
+                        <SelectItem value="textarea">Dlouhý text</SelectItem>
+                        <SelectItem value="number">Číslo</SelectItem>
+                        <SelectItem value="boolean">Ano / ne</SelectItem>
+                        <SelectItem value="date">Datum</SelectItem>
+                        <SelectItem value="select">Výběr</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Skupina</Label>
+                    <Input value={field.field_group} onChange={(event) => updateProductField(index, 'field_group', event.target.value)} disabled={loading || saving || !canAdmin} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Jednotka</Label>
+                    <Input value={field.unit || ''} onChange={(event) => updateProductField(index, 'unit', event.target.value)} disabled={loading || saving || !canAdmin} placeholder="Wp, kg, V..." />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{field.field_type === 'select' ? 'Možnosti / AI nápověda' : 'AI nápověda'}</Label>
+                    {field.field_type === 'select' && (
+                      <Input value={field.options_text || ''} onChange={(event) => updateProductField(index, 'options_text', event.target.value)} disabled={loading || saving || !canAdmin} placeholder="Hodnota 1, Hodnota 2" className="mb-2" />
+                    )}
+                    <Input value={field.ai_hint || ''} onChange={(event) => updateProductField(index, 'ai_hint', event.target.value)} disabled={loading || saving || !canAdmin} placeholder="Co má AI hledat v datasheetu" />
+                  </div>
+                  <div className="flex items-end justify-end">
+                    <Button type="button" variant="ghost" size="icon" aria-label={`Odebrat produktové pole ${field.label || field.field_key || index + 1}`} onClick={() => removeProductField(index)} disabled={loading || saving || !canAdmin}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </div>
-            <div className="rounded-full border bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm">
-              HTML sablony + placeholdery
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6 p-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <div className="mb-2 text-sm font-semibold text-slate-900">1. Jednoduche znacky</div>
-              <p className="text-sm text-slate-600">
-                Pouzijte napr. <code className="rounded bg-slate-100 px-1 py-0.5">{'{{document_number}}'}</code>,
-                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">{'{{client_name}}'}</code> nebo
-                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">{'{{total_with_tax}}'}</code>.
-              </p>
-            </div>
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <div className="mb-2 text-sm font-semibold text-slate-900">2. Cela tabulka produktu</div>
-              <p className="text-sm text-slate-600">
-                Pro rychle vlozeni cele produktove tabulky pouzijte
-                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">{'{{items_table}}'}</code>.
-              </p>
-            </div>
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <div className="mb-2 text-sm font-semibold text-slate-900">3. Vlastni radky</div>
-              <p className="text-sm text-slate-600">
-                Pokud chcete vlastni vzhled, obalte cast sablony blokem
-                <code className="mx-1 rounded bg-slate-100 px-1 py-0.5">{'{{#items}}'}</code>
-                ...
-                <code className="mx-1 rounded bg-slate-100 px-1 py-0.5">{'{{/items}}'}</code>.
-              </p>
-            </div>
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <div className="mb-2 text-sm font-semibold text-slate-900">4. Vlastni pole produktu</div>
-              <p className="text-sm text-slate-600">
-                Pole definovana nize v produktovych polich jsou v bloku polozky dostupna jako
-                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">{'{{item_power_wp}}'}</code>.
-              </p>
-            </div>
-          </div>
+              ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Code2 className="h-4 w-4 text-blue-600" />
-                Dostupne znacky dokumentu
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {templateQuickKeys.map((key) => (
-                  <code key={key} className="rounded-full border bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
-                    {key}
-                  </code>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Code2 className="h-4 w-4 text-emerald-600" />
-                Znacky uvnitr bloku polozek
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {itemTemplateKeys.map((key) => (
-                  <code key={key} className="rounded-full border bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
-                    {key}
-                  </code>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-2">
-            <div className="rounded-xl border bg-slate-950 p-4 text-slate-100 shadow-sm">
-              <div className="mb-3 text-sm font-semibold">Priklad: jednoducha sablona s automatickou tabulkou</div>
-              <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-200">
-                <code>{templateExamples.fullTable}</code>
-              </pre>
-            </div>
-            <div className="rounded-xl border bg-slate-950 p-4 text-slate-100 shadow-sm">
-              <div className="mb-3 text-sm font-semibold">Priklad: vlastni produktove radky</div>
-              <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-200">
-                <code>{templateExamples.customRows}</code>
-              </pre>
-            </div>
-          </div>
-
-          <Alert>
-            <FileText className="h-4 w-4" />
-            <AlertTitle>Doporuceny postup</AlertTitle>
-            <AlertDescription>
-              Sablony spravujte v oddilu nize. Ukladejte validni HTML a pro produktovou tabulku bud pouzijte
-              <code className="mx-1 rounded bg-slate-100 px-1 py-0.5">{'{{items_table}}'}</code>,
-              nebo vlastni opakovaci blok. Stejny datovy payload je pripraveny pro nasledne PDF/DOCX generovani.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-
-      <OrderTemplateManager embedded />
-
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <Button type="button" variant="ghost" onClick={resetCrmConfig} disabled={loading || saving || !canAdmin}>
-          Obnovit výchozí
-        </Button>
+      <div className="sticky bottom-4 z-10 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-sm font-semibold text-slate-950">{activeSectionMeta.title}</div>
+          <div className="mt-1 text-sm text-slate-500">{activeSectionMeta.description}</div>
+        </div>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+        {activeSection === 'pipeline' && (
+          <Button type="button" variant="ghost" onClick={resetCrmConfig} disabled={loading || saving || !canAdmin}>
+            Obnovit výchozí pipeline
+          </Button>
+        )}
         <Button type="button" onClick={handleSaveCrmConfig} disabled={loading || saving || !canAdmin}>
           <Save className="mr-2 h-4 w-4" />
-          {saving ? 'Ukládám...' : 'Uložit CRM nastavení'}
+          {saving ? 'Ukládám...' : activeSectionMeta.saveLabel}
         </Button>
+        </div>
       </div>
     </div>
   );
 };
 
 export default SettingsCRM;
-

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Plus, Edit2, Trash2, ShoppingCart, Search, FileText, Eye } from 'lucide-react';
+import { Plus, Edit2, Trash2, ShoppingCart, Search, FileText, Eye, Code2 } from 'lucide-react';
 import OrderTemplateDialog from './OrderTemplateDialog';
 import { Card, CardContent, CardHeader } from './ui/card';
 import {
@@ -74,6 +74,72 @@ const sampleItemsTable = `
     </tbody>
   </table>
 `;
+
+const templateQuickKeys = [
+  '{{document_number}}',
+  '{{document_title}}',
+  '{{client_name}}',
+  '{{opportunity_title}}',
+  '{{opportunity_description}}',
+  '{{project_name}}',
+  '{{document_date}}',
+  '{{document_valid_until}}',
+  '{{subtotal}}',
+  '{{tax_total}}',
+  '{{total_amount}}',
+  '{{total_with_tax}}',
+  '{{item_count}}',
+  '{{items_table}}',
+  '{{items_rows}}',
+  '{{items_list}}',
+];
+
+const itemTemplateKeys = [
+  '{{item_position}}',
+  '{{item_code}}',
+  '{{item_name}}',
+  '{{item_description}}',
+  '{{item_quantity}}',
+  '{{item_unit}}',
+  '{{item_unit_price}}',
+  '{{item_discount_percent}}',
+  '{{item_vat_rate}}',
+  '{{item_line_total}}',
+];
+
+const templateExamples = {
+  fullTable: `<h2>Nabidka {{document_number}}</h2>
+<p>Klient: <strong>{{client_name}}</strong></p>
+<p>Obchodni pripad: {{opportunity_title}}</p>
+<p>{{opportunity_description}}</p>
+
+{{items_table}}
+
+<p style="text-align:right"><strong>Celkem: {{total_with_tax}}</strong></p>`,
+  customRows: `<table>
+  <thead>
+    <tr>
+      <th>Kod</th>
+      <th>Produkt</th>
+      <th>Mnozstvi</th>
+      <th>Cena celkem</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#items}}
+    <tr>
+      <td>{{item_code}}</td>
+      <td>
+        <strong>{{item_name}}</strong><br>
+        {{item_description}}
+      </td>
+      <td>{{item_quantity}} {{item_unit}}</td>
+      <td>{{item_line_total}}</td>
+    </tr>
+    {{/items}}
+  </tbody>
+</table>`,
+};
 
 const buildTemplatePreviewHtml = (template) => {
   const rawContent = String(template?.content || '<p>Šablona zatím nemá obsah.</p>');
@@ -285,6 +351,59 @@ const OrderTemplateManager = ({ embedded = false }) => {
             </div>
           </DialogContent>
         </Dialog>
+      </Card>
+
+      <Card>
+        <CardHeader className="border-b bg-slate-50/60">
+          <div className="flex items-center gap-2">
+            <Code2 className="h-4 w-4 text-slate-500" />
+            <div>
+              <h2 className="text-lg font-semibold">Reference šablon</h2>
+              <p className="text-sm text-muted-foreground">Placeholdery a HTML ukázky pro úpravu dokumentových šablon.</p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 p-4">
+          <details className="rounded-xl border bg-white p-4 shadow-sm">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-900">Zobrazit placeholdery a ukázky</summary>
+            <div className="mt-4 space-y-4">
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="rounded-xl border bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    <Code2 className="h-4 w-4 text-blue-600" />
+                    Značky dokumentu
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {templateQuickKeys.map((key) => (
+                      <code key={key} className="rounded-full border bg-slate-50 px-2.5 py-1 text-xs text-slate-700">{key}</code>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-xl border bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    <Code2 className="h-4 w-4 text-emerald-600" />
+                    Značky položek
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {itemTemplateKeys.map((key) => (
+                      <code key={key} className="rounded-full border bg-slate-50 px-2.5 py-1 text-xs text-slate-700">{key}</code>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="rounded-xl border bg-slate-950 p-4 text-slate-100 shadow-sm">
+                  <div className="mb-3 text-sm font-semibold">Automatická tabulka položek</div>
+                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-200"><code>{templateExamples.fullTable}</code></pre>
+                </div>
+                <div className="rounded-xl border bg-slate-950 p-4 text-slate-100 shadow-sm">
+                  <div className="mb-3 text-sm font-semibold">Vlastní produktové řádky</div>
+                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-200"><code>{templateExamples.customRows}</code></pre>
+                </div>
+              </div>
+            </div>
+          </details>
+        </CardContent>
       </Card>
     </div>
   );
