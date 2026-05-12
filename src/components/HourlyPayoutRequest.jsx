@@ -165,11 +165,17 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <PayoutMetricCard icon={Clock} label="Hodiny za měsíc" value={formatHours(grandTotalHours)} detail="Dle vybraného období" tone="blue" />
-        <PayoutMetricCard icon={Wallet} label="K proplacení" value={formatCurrency(grandTotalAmount)} detail={`${formatCurrency(member.hourly_rate)}/h`} tone="emerald" />
-        <PayoutMetricCard icon={FileText} label="Aktivní žádosti" value={requestStats.active.toString()} detail={formatCurrency(requestStats.activeAmount)} tone="amber" />
-        <PayoutMetricCard icon={Wallet} label="Vyplaceno" value={requestStats.paid.toString()} detail={formatCurrency(requestStats.paidAmount)} tone="slate" />
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Můj aktuální měsíc</h2>
+          <p className="mt-1 text-sm text-slate-600">Souhrn vybraného měsíce a stav mých hodinových žádostí.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <PayoutMetricCard icon={Clock} label="Hodiny v měsíci" value={formatHours(grandTotalHours)} detail="Dle vybraného období" tone="blue" />
+          <PayoutMetricCard icon={Wallet} label="K žádosti za měsíc" value={formatCurrency(grandTotalAmount)} detail={`${formatCurrency(member.hourly_rate)}/h`} tone="emerald" />
+          <PayoutMetricCard icon={FileText} label="Moje aktivní žádosti" value={requestStats.active.toString()} detail={formatCurrency(requestStats.activeAmount)} tone="amber" />
+          <PayoutMetricCard icon={Wallet} label="Mně vyplaceno" value={requestStats.paid.toString()} detail={formatCurrency(requestStats.paidAmount)} tone="slate" />
+        </div>
       </div>
 
       <PayoutPanel
