@@ -340,13 +340,13 @@ const GlobalAttendanceOptimized = () => {
           <div className="flex flex-col md:flex-row justify-between gap-4 items-center">
             {/* Month Selector */}
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
-              <Button variant="ghost" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>
+              <Button variant="ghost" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} aria-label="Předchozí měsíc">
                 <code className="text-lg">←</code>
               </Button>
               <span className="font-semibold min-w-[140px] text-center capitalize">
                 {format(currentMonth, 'LLLL yyyy', { locale: cs })}
               </span>
-              <Button variant="ghost" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}>
+              <Button variant="ghost" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} aria-label="Další měsíc">
                 <code className="text-lg">→</code>
               </Button>
             </div>

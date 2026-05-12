@@ -57,7 +57,7 @@ import {
   downloadOpportunityOverviewHtml,
   downloadOpportunityOverviewPdf,
 } from '@/lib/documentGenerationService';
-import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
+import { DEFAULT_CRM_NUMBERING, formatCrmNumber, incrementCrmNumbering, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef } from '@/lib/crmRoutes';
 import { cn } from '@/lib/utils';
 
@@ -85,6 +85,24 @@ const DEFAULT_PRIORITY_CONFIG = [
   { value: 'medium', label: 'Střední', tone: 'outline' },
   { value: 'high', label: 'Vysoká', tone: 'destructive' },
 ];
+
+const CRM_STAGE_LABEL_OVERRIDES = {
+  kvalifikovano: 'Kvalifikováno',
+  nabidka: 'Nabídka',
+  jednani: 'Jednání',
+  vyhrano: 'Vyhráno',
+  ztraceno: 'Ztraceno',
+};
+
+const uniqueByValue = (items = []) => {
+  const seen = new Set();
+  return items.filter((item) => {
+    const value = String(item?.value || item?.label || '').trim().toLowerCase();
+    if (!value || seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+};
 
 const initialOpportunityForm = {
   id: null,
@@ -210,6 +228,7 @@ const loadCrmConfig = () => {
 const normalizeStages = (stages) => (
   (stages?.length ? stages : DEFAULT_STAGE_CONFIG).map((stage, index) => ({
     ...stage,
+    label: CRM_STAGE_LABEL_OVERRIDES[String(stage.label || '').trim().toLowerCase()] || stage.label,
     probability: Number(stage.probability || 0),
     sort_order: Number(stage.sort_order ?? ((index + 1) * 10)),
     is_active: stage.is_active ?? true,
@@ -1316,12 +1335,13 @@ const CrmDashboardInsights = ({
   upcomingActivities,
   onOpenOpportunity,
 }) => {
-  const stageRows = stages
-    .map((stage) => {
+  const stageRows = uniqueByValue(stages)
+    .map((stage, index) => {
       const stageOpportunities = opportunities.filter((opportunity) => opportunity.stage === stage.value);
       const value = stageOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
       const share = metrics.pipelineValue > 0 ? Math.round((value / metrics.pipelineValue) * 100) : 0;
-      return { ...stage, count: stageOpportunities.length, value, share };
+      const rowKey = String(stage.value || stage.label || `stage-${index}`);
+      return { ...stage, count: stageOpportunities.length, value, share, rowKey };
     })
     .filter((stage) => stage.count > 0 || !stage.is_closed);
 
@@ -1385,7 +1405,7 @@ const CrmDashboardInsights = ({
             {stageRows.length === 0 ? (
               <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">Zatím nejsou žádné obchodní případy.</div>
             ) : stageRows.map((stage) => (
-              <div key={stage.value} className="rounded-lg border border-slate-200 bg-white p-3">
+              <div key={stage.rowKey} className="rounded-lg border border-slate-200 bg-white p-3">
                 <div className="mb-2 flex items-center justify-between gap-3 text-sm">
                   <div className="min-w-0">
                     <div className="font-semibold text-slate-950">{stage.label}</div>
@@ -2138,10 +2158,7 @@ const CRM = () => {
     }
 
     if (isNewOpportunity) {
-      await supabase
-        .from('crm_numbering_settings')
-        .update({ next_number: Number(crmNumbering.opportunity?.next_number || 1) + 1, updated_at: new Date().toISOString() })
-        .eq('document_type', 'opportunity');
+      await incrementCrmNumbering(supabase, 'opportunity', Number(crmNumbering.opportunity?.next_number || 1) + 1);
     }
 
     setSavingOpportunity(false);
@@ -2218,10 +2235,7 @@ const CRM = () => {
       return;
     }
 
-    await supabase
-      .from('crm_numbering_settings')
-      .update({ next_number: Number(crmNumbering[type]?.next_number || 1) + 1, updated_at: new Date().toISOString() })
-      .eq('document_type', type);
+    await incrementCrmNumbering(supabase, type, Number(crmNumbering[type]?.next_number || 1) + 1);
 
     setCreatingDocument(false);
     toast({ title: type === 'offer' ? 'Nabídka vytvořena' : 'Objednávka vytvořena' });
@@ -2306,18 +2320,6 @@ const CRM = () => {
           description="Obchodní vrstva nad subjekty, kontakty, projekty a připravenou pipeline."
           actions={
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={fetchCrmData} disabled={loading}>
-                <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
-                Obnovit
-              </Button>
-              {canAdminCrm && (
-                <Button asChild variant="outline">
-                  <Link to="/settings/crm">
-                    <Target className="mr-2 h-4 w-4" />
-                  Nastavení CRM
-                  </Link>
-                </Button>
-              )}
               {canEditCrm && !isCreatingOpportunityPage && (
                 <Button onClick={() => navigate('/crm/new')} disabled={!crmTablesReady}>
                   <Plus className="mr-2 h-4 w-4" />
@@ -2330,6 +2332,28 @@ const CRM = () => {
                   Adresář subjektů
                 </Link>
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" aria-label="Další akce CRM">
+                    <MoreHorizontal className="mr-2 h-4 w-4" />
+                    Další
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onSelect={fetchCrmData} disabled={loading}>
+                    <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
+                    Obnovit data
+                  </DropdownMenuItem>
+                  {canAdminCrm && (
+                    <DropdownMenuItem asChild>
+                      <Link to="/settings/crm">
+                        <Target className="mr-2 h-4 w-4" />
+                        Nastavení CRM
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           }
         />
@@ -3160,4 +3184,3 @@ const CRM = () => {
 };
 
 export default CRM;
-

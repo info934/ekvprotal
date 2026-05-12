@@ -450,6 +450,7 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
             size="icon"
             className="h-9 w-9 rounded-md bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 hover:shadow-md"
             onClick={onToggleCollapse}
+            aria-label={isCollapsed ? 'Zobrazit menu' : 'Skrýt menu'}
             title={isCollapsed ? 'Zobrazit menu' : 'Skrýt menu'}
           >
             {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
@@ -502,6 +503,7 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
               isCollapsed && 'h-10 justify-center px-0'
             )}
             title={isCollapsed ? 'Zobrazit menu' : undefined}
+            aria-label={isCollapsed ? 'Zobrazit menu' : 'Sbalit menu'}
           >
             {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
             {!isCollapsed && <span>Sbalit menu</span>}
@@ -515,6 +517,7 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
             isCollapsed && 'h-10 justify-center px-0'
           )}
           title={isCollapsed ? 'Odhlásit se' : undefined}
+          aria-label="Odhlásit se"
         >
           <LogOut className={cn('shrink-0', isCollapsed ? 'h-5 w-5' : 'h-4 w-4')} />
           {!isCollapsed && <span>Odhlásit se</span>}
@@ -559,7 +562,7 @@ const MobileSidebar = () => {
     <div className="fixed left-4 top-4 z-50 print:hidden lg:hidden">
       <Sheet open={isOpen} onOpenChange={setIsOpen}>
         <SheetTrigger asChild>
-          <Button variant="outline" size="icon" className="bg-white shadow-md">
+          <Button variant="outline" size="icon" className="bg-white shadow-md" aria-label="Otevřít menu">
             <Menu className="h-5 w-5" />
           </Button>
         </SheetTrigger>

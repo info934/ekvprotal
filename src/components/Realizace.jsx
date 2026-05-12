@@ -213,14 +213,14 @@ const Realizace = () => {
                 return (
                     <div className="flex justify-end gap-2" onClick={e => e.stopPropagation()}>
                         {canEdit && (
-                            <Button variant="ghost" size="icon" onClick={() => navigate(`/realizace/${r.id}/edit`)}>
+                            <Button variant="ghost" size="icon" onClick={() => navigate(`/realizace/${r.id}/edit`)} aria-label={`Upravit realizaci ${r.name || r.code || r.id}`}>
                                 <Edit2 className="w-4 h-4" />
                             </Button>
                         )}
                         {canDelete && (
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600">
+                                    <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600" aria-label={`Smazat realizaci ${r.name || r.code || r.id}`}>
                                         <Trash2 className="w-4 h-4" />
                                     </Button>
                                 </AlertDialogTrigger>
@@ -356,9 +356,9 @@ const Realizace = () => {
                 </div>
                 <div className="flex items-center gap-2 w-full md:w-auto justify-end">
                     <div className="border rounded-lg p-1 flex items-center bg-slate-50">
-                        <Button variant={viewMode === 'table' ? 'white' : 'ghost'} size="sm" onClick={() => setViewMode('table')} className="h-7 w-7 p-0 shadow-sm"><List className="w-4 h-4" /></Button>
-                        <Button variant={viewMode === 'grid' ? 'white' : 'ghost'} size="sm" onClick={() => setViewMode('grid')} className="h-7 w-7 p-0 shadow-sm"><LayoutGrid className="w-4 h-4" /></Button>
-                        <Button variant={viewMode === 'kanban' ? 'white' : 'ghost'} size="sm" onClick={() => setViewMode('kanban')} className="h-7 w-7 p-0 shadow-sm"><Columns className="w-4 h-4" /></Button>
+                        <Button variant={viewMode === 'table' ? 'white' : 'ghost'} size="sm" onClick={() => setViewMode('table')} className="h-7 w-7 p-0 shadow-sm" aria-label="Zobrazit realizace jako tabulku"><List className="w-4 h-4" /></Button>
+                        <Button variant={viewMode === 'grid' ? 'white' : 'ghost'} size="sm" onClick={() => setViewMode('grid')} className="h-7 w-7 p-0 shadow-sm" aria-label="Zobrazit realizace jako karty"><LayoutGrid className="w-4 h-4" /></Button>
+                        <Button variant={viewMode === 'kanban' ? 'white' : 'ghost'} size="sm" onClick={() => setViewMode('kanban')} className="h-7 w-7 p-0 shadow-sm" aria-label="Zobrazit realizace jako kanban"><Columns className="w-4 h-4" /></Button>
                     </div>
                 </div>
             </div>

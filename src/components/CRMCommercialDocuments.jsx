@@ -17,7 +17,7 @@ import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/c
 import SubjectSelect from '@/components/SubjectSelect';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
-import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
+import { DEFAULT_CRM_NUMBERING, formatCrmNumber, incrementCrmNumbering, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmOpportunityPath, findCrmRecordByRef, getCrmRecordRef } from '@/lib/crmRoutes';
 import {
   downloadGeneratedDocumentDocx,
@@ -528,10 +528,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         await supabase.from('crm_commercial_document_items').insert(documentRows);
       }
       const nextNumber = Number(numbering[type]?.next_number || 1) + 1;
-      await supabase
-        .from('crm_numbering_settings')
-        .update({ next_number: nextNumber, updated_at: new Date().toISOString() })
-        .eq('document_type', type);
+      await incrementCrmNumbering(supabase, type, nextNumber);
     }
 
     setSaving(false);
