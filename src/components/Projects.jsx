@@ -441,7 +441,7 @@ const Projects = () => {
 
           <DropdownMenu open={filterOpen} onOpenChange={setFilterOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className={statusFilter !== 'all' ? 'border-primary text-primary' : ''}>
+              <Button variant="outline" size="icon" className={statusFilter !== 'all' ? 'border-primary text-primary' : ''} aria-label="Filtrovat projekty podle stavu">
                 <SlidersHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -490,6 +490,7 @@ const Projects = () => {
               size="sm"
               className={cn("h-7 w-7 p-0 shadow-sm", viewMode === 'grid' && "bg-white")}
               onClick={() => setViewMode('grid')}
+              aria-label="Zobrazit projekty jako karty"
             >
               <LayoutGrid className="w-4 h-4" />
             </Button>
@@ -498,6 +499,7 @@ const Projects = () => {
               size="sm"
               className={cn("h-7 w-7 p-0 shadow-sm", viewMode === 'list' && "bg-white")}
               onClick={() => setViewMode('list')}
+              aria-label="Zobrazit projekty jako seznam"
             >
               <ListIcon className="w-4 h-4" />
             </Button>
@@ -506,6 +508,7 @@ const Projects = () => {
               size="sm"
               className={cn("h-7 w-7 p-0 shadow-sm", viewMode === 'kanban' && "bg-white")}
               onClick={() => setViewMode('kanban')}
+              aria-label="Zobrazit projekty jako kanban"
             >
               <Columns className="w-4 h-4" />
             </Button>

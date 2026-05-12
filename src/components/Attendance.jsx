@@ -413,13 +413,13 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
         <CardContent className="p-6">
           <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-4">
-              <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>
+              <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} aria-label="Předchozí měsíc docházky">
                 <ChevronLeft className="w-5 h-5" />
               </Button>
               <h2 className="text-2xl font-bold text-center w-48 capitalize">
                 {format(currentMonth, 'LLLL yyyy', { locale: cs })}
               </h2>
-              <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}>
+              <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} aria-label="Další měsíc docházky">
                 <ChevronRight className="w-5 h-5" />
               </Button>
             </div>
@@ -675,6 +675,7 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
                             size="icon"
                             onClick={() => { setEditingRecord(record); setIsAttendanceDialogOpen(true); }}
                             title="Upravit"
+                            aria-label={`Upravit docházku ${format(new Date(record.date), 'd.M.yyyy')}`}
                           >
                             <Edit2 className="w-4 h-4 text-slate-500" />
                           </Button>
@@ -683,6 +684,7 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
                             size="icon"
                             onClick={() => setDeletingRecord(record)}
                             title="Smazat"
+                            aria-label={`Smazat docházku ${format(new Date(record.date), 'd.M.yyyy')}`}
                             className="text-red-500 hover:text-red-600 hover:bg-red-50"
                           >
                             <Trash2 className="w-4 h-4" />

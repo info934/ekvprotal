@@ -43,11 +43,24 @@ export const formatCrmNumber = (settings, type, sequence = null, date = new Date
 };
 
 export const selectCrmNumberingSettings = async (supabase) => {
-  const query = supabase
+  const baseQuery = supabase
+    .from('crm_numbering_settings')
+    .select('document_type, prefix, next_number, padding');
+
+  const baseResult = await baseQuery;
+  if (baseResult.error) return baseResult;
+
+  // The online database may lag behind the UI migration that added year_format.
+  // Read the stable base columns first so CRM dashboards do not emit schema
+  // errors in normal use; missing year_format falls back to DEFAULT_CRM_NUMBERING.
+  return baseResult;
+};
+
+export const selectCrmNumberingSettingsWithYearFormat = async (supabase) => {
+  const result = await supabase
     .from('crm_numbering_settings')
     .select('document_type, prefix, next_number, padding, year_format');
 
-  const result = await query;
   if (!result.error || !isMissingYearFormatColumn(result.error)) return result;
 
   return supabase
@@ -67,3 +80,10 @@ export const upsertCrmNumberingSettings = async (supabase, rows) => {
     .from('crm_numbering_settings')
     .upsert(fallbackRows, { onConflict: 'document_type' });
 };
+
+export const incrementCrmNumbering = async (supabase, type, nextNumber) => (
+  supabase
+    .from('crm_numbering_settings')
+    .update({ next_number: Number(nextNumber || 1), updated_at: new Date().toISOString() })
+    .eq('document_type', type)
+);

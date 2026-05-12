@@ -37,6 +37,7 @@ import ProjectStatusChart from '@/components/ProjectStatusChart';
 import ProjectGanttChart from '@/components/ProjectGanttChart';
 import RealizationGanttChart from '@/components/RealizationGanttChart';
 import { PendingApprovalsWidget } from '@/components/DashboardWidgets';
+import { getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -61,6 +62,13 @@ const isOverdue = (date) => {
 const formatDate = (date) => {
   if (!date) return 'Bez termínu';
   return new Intl.DateTimeFormat('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(date));
+};
+
+const pluralizeCs = (count, one, few, many) => {
+  const value = Math.abs(Number(count || 0));
+  if (value === 1) return one;
+  if (value >= 2 && value <= 4) return few;
+  return many;
 };
 
 const safeArray = (result) => (result?.error ? [] : (result?.data || []));
@@ -624,14 +632,14 @@ const Dashboard = () => {
     },
     {
       title: 'Nabídky',
-      description: `${summary.offers.length} záznamů v CRM`,
+      description: `${summary.offers.length} ${pluralizeCs(summary.offers.length, 'záznam', 'záznamy', 'záznamů')} v CRM`,
       icon: FileText,
       to: '/crm/offers',
       tone: 'blue',
     },
     {
       title: 'Objednávky',
-      description: `${summary.orders.length} záznamů v CRM`,
+      description: `${summary.orders.length} ${pluralizeCs(summary.orders.length, 'záznam', 'záznamy', 'záznamů')} v CRM`,
       icon: ShoppingCart,
       to: '/crm/orders',
       tone: 'emerald',
@@ -659,8 +667,8 @@ const Dashboard = () => {
       metrics: [
         { icon: Target, label: 'Pipeline otevřených OP', value: formatCurrency(summary.pipelineValue), detail: `${summary.openOpportunities.length} otevřených obchodních případů`, tone: 'blue', to: '/crm' },
         { icon: BarChart3, label: 'Vážená pipeline', value: formatCurrency(summary.weightedPipeline), detail: 'hodnota podle pravděpodobnosti', tone: 'emerald', to: '/crm' },
-        { icon: FileText, label: 'Nabídky celkem', value: formatCurrency(summary.offersValue), detail: `${summary.offers.length} nabídek`, tone: 'slate', to: '/crm/offers' },
-        { icon: ShoppingCart, label: 'Objednávky celkem', value: formatCurrency(summary.ordersValue), detail: `${summary.orders.length} objednávek`, tone: 'amber', to: '/crm/orders' },
+        { icon: FileText, label: 'Nabídky celkem', value: formatCurrency(summary.offersValue), detail: `${summary.offers.length} ${pluralizeCs(summary.offers.length, 'nabídka', 'nabídky', 'nabídek')}`, tone: 'slate', to: '/crm/offers' },
+        { icon: ShoppingCart, label: 'Objednávky celkem', value: formatCurrency(summary.ordersValue), detail: `${summary.orders.length} ${pluralizeCs(summary.orders.length, 'objednávka', 'objednávky', 'objednávek')}`, tone: 'amber', to: '/crm/orders' },
       ],
     },
     {
@@ -760,7 +768,25 @@ const Dashboard = () => {
         )}
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.15fr)_minmax(340px,0.75fr)]">
-          <Card className="crm-panel">
+          <Card className="crm-panel xl:order-3">
+            <CardHeader className="crm-panel-header">
+              <SectionHeader
+                icon={Timer}
+                title="Co řešit teď"
+                description="Termíny, schválení a obchodní případy, které mohou blokovat další práci."
+                action={<Button asChild variant="outline" size="sm"><Link to="/tasks">Všechny úkoly</Link></Button>}
+              />
+            </CardHeader>
+            <CardContent className="space-y-2 p-4">
+              {attentionItems.length > 0 ? (
+                attentionItems.map((item, index) => <WorkItem key={`${item.title}-${index}`} {...item} />)
+              ) : (
+                <EmptyBlock text="Aktuálně není nic kritického k řešení." />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="crm-panel xl:order-1">
             <CardHeader className="crm-panel-header">
               <SectionHeader
                 icon={BarChart3}
@@ -791,7 +817,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="crm-panel">
+          <Card className="crm-panel xl:order-2">
             <CardHeader className="crm-panel-header">
               <SectionHeader
                 icon={Activity}
@@ -825,24 +851,6 @@ const Dashboard = () => {
                   <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
                 </Link>
               ))}
-            </CardContent>
-          </Card>
-
-          <Card className="crm-panel">
-            <CardHeader className="crm-panel-header">
-              <SectionHeader
-                icon={Timer}
-                title="Co řešit teď"
-                description="Termíny, schválení a obchodní případy, které mohou blokovat další práci."
-                action={<Button asChild variant="outline" size="sm"><Link to="/tasks">Všechny úkoly</Link></Button>}
-              />
-            </CardHeader>
-            <CardContent className="space-y-2 p-4">
-              {attentionItems.length > 0 ? (
-                attentionItems.map((item, index) => <WorkItem key={`${item.title}-${index}`} {...item} />)
-              ) : (
-                <EmptyBlock text="Aktuálně není nic kritického k řešení." />
-              )}
             </CardContent>
           </Card>
         </div>
@@ -887,7 +895,7 @@ const Dashboard = () => {
                         key={activity.id}
                         title={activity.subject}
                         subtitle={activity.projects?.name || 'Bez projektu'}
-                        meta={activity.status || 'aktivní'}
+                        meta={getActivityStatusConfig(activity.status).label}
                         tone={isOverdue(activity.end_date) ? 'rose' : 'blue'}
                         to="/engineering"
                       />
