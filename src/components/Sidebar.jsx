@@ -40,7 +40,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { cn } from '@/lib/utils';
 
@@ -75,45 +75,84 @@ const useDarkMode = () => {
 
 const NAV_GROUPS = [
   {
-    id: 'primary',
+    id: 'home',
     label: null,
     items: [
       { icon: Home, label: 'Přehled', path: '/dashboard', module: 'dashboard' },
+    ],
+  },
+  {
+    id: 'work',
+    label: 'Práce',
+    items: [
       { icon: Folder, label: 'Projekce', path: '/projects', module: 'projects' },
       { icon: HardHat, label: 'Realizace', path: '/realizace', module: 'realizace' },
+      { icon: Wrench, label: 'Inženýring', path: '/engineering', module: 'engineering' },
+      { icon: ListTodo, label: 'Úkoly', path: '/tasks', module: 'tasks' },
+    ],
+  },
+  {
+    id: 'business',
+    label: 'Obchod',
+    items: [
       {
         icon: Contact,
-        label: 'CRM',
+        label: 'CRM nástěnka',
         path: '/crm',
         module: 'crm',
+        exact: true,
         children: [
-          { icon: BarChart, label: 'Obchodní nástěnka', path: '/crm', module: 'crm' },
           { icon: Target, label: 'Obchodní případy', path: '/crm/opportunities', module: 'crm' },
           { icon: FileText, label: 'Nabídky', path: '/crm/offers', module: 'crm' },
           { icon: ClipboardList, label: 'Objednávky', path: '/crm/orders', module: 'crm' },
           { icon: Building, label: 'Subjekty', path: '/subjects', module: 'subjects' },
         ],
       },
+      { icon: Package, label: 'Produkty', path: '/products', module: 'crm' },
+    ],
+  },
+  {
+    id: 'operations',
+    label: 'Provoz',
+    items: [
+      { icon: Clock, label: 'Docházka', path: '/attendance', module: 'attendance' },
+      { icon: Users, label: 'Zaměstnanci', path: '/members', module: 'members' },
+      { icon: FileText, label: 'Dokumenty', path: '/documents', module: 'documents' },
+      { icon: Copy, label: 'Šablony projektu', path: '/templates', module: 'projects' },
+    ],
+  },
+  {
+    id: 'finance',
+    label: 'Finance',
+    items: [
       {
         icon: DollarSign,
-        label: 'Finance',
+        label: 'Výplaty',
+        path: '/payouts',
+        module: 'payouts',
+      },
+      {
+        icon: FilePieChart,
+        label: 'Režijní náklady',
+        path: '/overhead-costs',
+        module: 'finance',
+        level: 'can_admin',
+      },
+      {
+        icon: BarChart,
+        label: 'Reporty',
         path: '/reports',
         module: 'reports',
-        children: [
-          { icon: DollarSign, label: 'Výplaty', path: '/payouts', module: 'payouts' },
-          { icon: FilePieChart, label: 'Režijní náklady', path: '/overhead-costs', module: 'finance' },
-          { icon: BarChart, label: 'Reporty', path: '/reports', module: 'reports' },
-        ],
       },
-      { icon: Package, label: 'Produkty', path: '/products', module: 'crm' },
-      { icon: Wrench, label: 'Inženýring', path: '/engineering', module: 'engineering' },
-      { icon: Clock, label: 'Docházka', path: '/attendance', module: 'attendance' },
-      { icon: ListTodo, label: 'Úkoly', path: '/tasks', module: 'tasks' },
-      { icon: Users, label: 'Zaměstnanci', path: '/members', module: 'members' },
-      { icon: Copy, label: 'Šablony projektu', path: '/templates', module: 'projects' },
-      { icon: FileText, label: 'Dokumenty', path: '/documents', module: 'documents' },
+    ],
+  },
+  {
+    id: 'admin',
+    label: 'Správa',
+    items: [
+      { icon: Settings, label: 'Nastavení', path: '/settings', module: 'settings', exact: true },
       { icon: UserCog, label: 'Správa uživatelů', path: '/settings/users', module: 'settings', level: 'can_admin' },
-      { icon: Settings, label: 'Nastavení', path: '/settings', module: 'settings' },
+      { icon: Shield, label: 'Oprávnění', path: '/settings/permissions', module: 'settings', level: 'can_admin' },
     ],
   },
 ];
@@ -224,10 +263,16 @@ const SearchBox = ({ value, onChange, isCollapsed }) => {
           placeholder="Hledat modul..."
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          aria-label="Hledat modul v menu"
           className="h-10 w-full rounded-md border border-slate-200 bg-white pl-9 pr-8 text-sm text-slate-900 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-gray-800 dark:bg-gray-900/80 dark:text-gray-100"
         />
         {value && (
-          <button type="button" onClick={() => onChange('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+          <button
+            type="button"
+            onClick={() => onChange('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+            aria-label="Vymazat hledání v menu"
+          >
             <X className="h-3.5 w-3.5" />
           </button>
         )}
@@ -255,6 +300,7 @@ const QuickActions = ({ isCollapsed, onLinkClick }) => {
           }}
           className="flex min-w-0 flex-col items-center gap-1 rounded-md border border-slate-200/90 bg-white px-2 py-2 text-[10px] font-semibold text-slate-600 shadow-sm transition hover:border-primary/30 hover:bg-blue-50/50 hover:text-primary hover:shadow-md"
           title={action.label}
+          aria-label={action.label}
         >
           <action.icon className="h-4 w-4" />
           <span className="max-w-full truncate">{action.label.replace('Nový ', '').replace('Nová ', '')}</span>
@@ -271,15 +317,15 @@ const NavRow = ({ item, isCollapsed, isFavorite, onToggleFavorite, onLinkClick, 
   return (
     <NavLink
       to={item.path}
-      end={item.path === '/crm' && depth > 0}
+      end={Boolean(item.exact)}
       onClick={onLinkClick}
       title={isCollapsed ? item.label : undefined}
       className={({ isActive }) => cn(
-        'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all',
+        'group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold transition-all',
         isCollapsed && 'h-10 justify-center px-0',
         depth > 0 && !isCollapsed && 'ml-8 py-2 pl-3 text-xs font-medium',
         isActive
-          ? 'bg-blue-50 text-primary ring-1 ring-blue-100 dark:bg-gray-800 dark:text-white dark:ring-gray-700'
+          ? 'bg-blue-50 text-primary ring-1 ring-blue-100 before:absolute before:bottom-1.5 before:left-0 before:top-1.5 before:w-0.5 before:rounded-full before:bg-primary dark:bg-gray-800 dark:text-white dark:ring-gray-700'
           : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
       )}
     >
@@ -295,8 +341,9 @@ const NavRow = ({ item, isCollapsed, isFavorite, onToggleFavorite, onLinkClick, 
               event.stopPropagation();
               onToggleFavorite(item.path);
             }}
-            className={cn('rounded p-0.5 opacity-0 transition group-hover:opacity-100', isFavorite && 'opacity-100', hasChildren && depth === 0 && 'hidden')}
+            className={cn('rounded p-0.5 opacity-0 transition group-hover:opacity-100', isFavorite && 'opacity-100')}
             title={isFavorite ? 'Odebrat z oblíbených' : 'Přidat do oblíbených'}
+            aria-label={isFavorite ? `Odebrat ${item.label} z oblíbených` : `Přidat ${item.label} do oblíbených`}
           >
             <Star className={cn('h-3.5 w-3.5', isFavorite ? 'fill-amber-400 text-amber-500' : 'text-slate-400')} />
           </button>
@@ -309,7 +356,7 @@ const NavRow = ({ item, isCollapsed, isFavorite, onToggleFavorite, onLinkClick, 
 const NavGroup = ({ group, isCollapsed, favorites, onToggleFavorite, onLinkClick, query, hiddenPaths = [] }) => {
   const { hasPermission } = useAuth();
   const location = useLocation();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(!group.label);
 
   const visibleItems = group.items
     .filter(item => canSeeItem(item, hasPermission))
@@ -348,7 +395,7 @@ const NavGroup = ({ group, isCollapsed, favorites, onToggleFavorite, onLinkClick
         </button>
       )}
       <AnimatePresence initial={false}>
-        {(open || isCollapsed) && (
+        {(open || isCollapsed || query) && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
@@ -391,7 +438,7 @@ const NavGroup = ({ group, isCollapsed, favorites, onToggleFavorite, onLinkClick
 const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) => {
   const navigate = useNavigate();
   const { signOut, hasPermission, isPrivateMode } = useAuth();
-  const [query] = useState('');
+  const [query, setQuery] = useState('');
   const [favorites, setFavorites] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || DEFAULT_FAVORITES;
@@ -408,7 +455,10 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
   const favoriteItems = allItems
     .filter(item => favorites.includes(item.path))
     .filter(item => canSeeItem(item, hasPermission));
-  const hiddenFavoritePaths = [];
+  const showFavorites = favoriteItems.length > 0 && !query && !isCollapsed;
+  const hiddenFavoritePaths = showFavorites
+    ? favoriteItems.filter(item => !item.children?.length).map(item => item.path)
+    : [];
 
   const toggleFavorite = (path) => {
     setFavorites(current => (
@@ -460,10 +510,12 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
 
       {!isCollapsed && <div className="mb-3 border-b border-slate-200/80 dark:border-gray-800" />}
 
+      <SearchBox value={query} onChange={setQuery} isCollapsed={isCollapsed} />
+
       <nav className={cn('min-h-0 flex-1 overflow-y-auto', isCollapsed ? 'w-full space-y-2' : 'space-y-2 pr-1')}>
-        {false && favoriteItems.length > 0 && !query && !isCollapsed && (
-          <div className="space-y-1">
-            <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-normal text-slate-500">
+        {showFavorites && (
+          <div className="space-y-1 rounded-md border border-slate-200/80 bg-slate-50/70 p-1.5 dark:border-gray-800 dark:bg-gray-900/60">
+            <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-normal text-slate-500">
               Oblíbené
             </div>
             {favoriteItems.map(item => (
@@ -567,6 +619,8 @@ const MobileSidebar = () => {
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-[320px] max-w-[calc(100vw-1rem)] border-r-0 p-0">
+          <SheetTitle className="sr-only">Navigace portálu</SheetTitle>
+          <SheetDescription className="sr-only">Hlavní menu modulů, oblíbených položek a správy portálu.</SheetDescription>
           <SidebarShell onLinkClick={() => setIsOpen(false)} />
         </SheetContent>
       </Sheet>
