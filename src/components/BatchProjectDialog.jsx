@@ -8,10 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { createClientId } from '@/lib/id';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
 
 const createEmptyRow = () => ({
-  id: crypto.randomUUID(),
+  id: createClientId(),
   name: '',
   code: '',
   price: '',

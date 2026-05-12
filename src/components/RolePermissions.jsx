@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
+import { createClientId } from '@/lib/id';
 import { cn } from '@/lib/utils';
 
 const modules = [
@@ -90,7 +91,7 @@ const RolePermissions = () => {
             newPermissions[existingPermissionIndex] = applyDependency(newPermissions[existingPermissionIndex]);
         } else {
             const newPerm = applyDependency({ 
-                id: crypto.randomUUID(),
+                id: createClientId(),
                 role: roleName, 
                 module, 
                 can_read: false, 
