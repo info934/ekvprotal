@@ -19,7 +19,6 @@ import SendMessageDialog from '@/components/SendMessageDialog';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn, projectStatusConfig } from '@/lib/utils';
 import { sendEmail } from '@/lib/email';
-import { calculateProjectMemberRewardFromProject } from '@/domain/financials';
 
 const DetailSection = ({ title, icon: Icon, children, contentClassName = "" }) => (
   <motion.div
@@ -176,6 +175,7 @@ const MemberDetail = () => {
   const { hasPermission, user } = useAuth();
   const [member, setMember] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [projectRewards, setProjectRewards] = useState({});
   const [payouts, setPayouts] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -214,6 +214,20 @@ const MemberDetail = () => {
 
     if (!projectError) setProjects(projectAssignments.filter(Boolean));
 
+    const { data: projectRewardRows, error: projectRewardsError } = await supabase.rpc('get_member_project_rewards', {
+      p_member_id: memberId,
+    });
+    if (projectRewardsError) {
+      toast({ title: 'Chyba při načítání projektových odměn', variant: 'destructive', description: projectRewardsError.message });
+      setProjectRewards({});
+    } else {
+      const rewardsByProject = (projectRewardRows || []).reduce((acc, row) => {
+        acc[row.project_id] = row;
+        return acc;
+      }, {});
+      setProjectRewards(rewardsByProject);
+    }
+
     const { data: payoutsData, error: payoutsError } = await supabase
       .from('payouts')
       .select('*, payout_items(*, projects(name), realizations:realizations!payout_items_realizace_id_fkey(name), realization:realizations!payout_items_realization_id_fkey(name))')
@@ -241,7 +255,7 @@ const MemberDetail = () => {
 
   const getProjectReward = (projectAssignment) => {
     if (!projectAssignment || !projectAssignment.project || projectAssignment.reward_type === null) return 0;
-    return calculateProjectMemberRewardFromProject(projectAssignment);
+    return Number(projectRewards[projectAssignment.project_id]?.total_reward || 0);
   };
 
   const getOrderPrice = (order) => {
@@ -250,6 +264,7 @@ const MemberDetail = () => {
   };
 
   const getPaidAmount = (projectId) => {
+    if (projectRewards[projectId]) return Number(projectRewards[projectId].paid_amount || 0);
     let totalPaid = 0;
     payouts.forEach(payout => {
       if (payout.status === 'paid') {
@@ -265,6 +280,9 @@ const MemberDetail = () => {
 
   const getRemainingReward = (projectAssignment) => {
     if (!projectAssignment || !projectAssignment.project) return 0;
+    if (projectRewards[projectAssignment.project_id]) {
+      return Number(projectRewards[projectAssignment.project_id].available_balance || 0);
+    }
     const totalReward = getProjectReward(projectAssignment);
     const paidAmount = getPaidAmount(projectAssignment.project_id);
     return totalReward - paidAmount;
@@ -281,7 +299,7 @@ const MemberDetail = () => {
   };
 
   const getTotalRemaining = () => {
-    return getTotalRewards() - getTotalPaid();
+    return projects.reduce((sum, pa) => sum + getRemainingReward(pa), 0);
   };
 
   const payoutItemsSummary = useMemo(() => {

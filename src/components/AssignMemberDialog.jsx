@@ -14,7 +14,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { sendEmail } from '@/lib/email';
 import { calculateProjectBudget, calculateProjectMemberReward, toAmount } from '@/domain/financials';
 
-const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], project, projectSubcontractors = [] }) => {
+const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], project, projectSubcontractors = [], teamBudgetOverride = null }) => {
   const [formData, setFormData] = useState({
     member_id: '',
     is_hourly: false,
@@ -43,7 +43,10 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
     }
   }, [isOpen, team, member]);
 
-  const { teamBudget } = calculateProjectBudget(project, projectSubcontractors);
+  const { teamBudget: fallbackTeamBudget } = calculateProjectBudget(project, projectSubcontractors);
+  const teamBudget = teamBudgetOverride === null || teamBudgetOverride === undefined
+    ? fallbackTeamBudget
+    : toAmount(teamBudgetOverride);
 
   useEffect(() => {
     if (isOpen) {

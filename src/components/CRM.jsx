@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import SubjectSelect from '@/components/SubjectSelect';
+import { CrmCatalogProductMeta, CrmItemSnapshotBadges } from '@/components/CrmItemSnapshotBadges';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,6 +60,14 @@ import {
 } from '@/lib/documentGenerationService';
 import { DEFAULT_CRM_NUMBERING, formatCrmNumber, incrementCrmNumbering, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef } from '@/lib/crmRoutes';
+import {
+  buildCrmDocumentItemPayload,
+  buildCrmOpportunityItemPayload,
+  calculateCrmLineTotal,
+  calculateCrmTotals,
+  createCrmCatalogItem,
+  isMissingCrmRpcError,
+} from '@/lib/crmItemPayloads';
 import { cn } from '@/lib/utils';
 
 const subjectTypeLabels = {
@@ -165,48 +174,6 @@ const createEmptyCrmItem = () => ({
   sort_order: 0,
 });
 
-const calculateCrmItemLineTotal = (item) => {
-  const quantity = Number(item.quantity || 0);
-  const price = Number(item.unit_price || 0);
-  const discount = Math.min(100, Math.max(0, Number(item.discount_percent || 0)));
-  return Math.round(quantity * price * (1 - (discount / 100)) * 100) / 100;
-};
-
-const calculateCrmItemTotals = (items = []) => {
-  const total = items.reduce((sum, item) => sum + calculateCrmItemLineTotal(item), 0);
-  const taxTotal = items.reduce((sum, item) => sum + (calculateCrmItemLineTotal(item) * (Number(item.vat_rate || 0) / 100)), 0);
-  return {
-    subtotal: total,
-    discount_total: 0,
-    tax_total: Math.round(taxTotal * 100) / 100,
-    total,
-  };
-};
-
-const buildCrmOpportunityItemPayload = (item, opportunityId, index) => ({
-  opportunity_id: opportunityId,
-  catalog_item_id: item.catalog_item_id || null,
-  code: item.code || null,
-  name: item.name?.trim() || 'Položka',
-  description: item.description || null,
-  quantity: Number(item.quantity || 0),
-  unit: item.unit || 'ks',
-  unit_price: Number(item.unit_price || 0),
-  discount_percent: Number(item.discount_percent || 0),
-  vat_rate: Number(item.vat_rate || 0),
-  line_total: calculateCrmItemLineTotal(item),
-  sort_order: (index + 1) * 10,
-});
-
-const buildCrmDocumentItemPayload = (item, documentId, index) => {
-  const payload = buildCrmOpportunityItemPayload(item, null, index);
-  delete payload.opportunity_id;
-  return {
-    ...payload,
-    document_id: documentId,
-  };
-};
-
 const getStage = (value, stages = DEFAULT_STAGE_CONFIG) => stages.find((stage) => stage.value === value) || stages[0];
 
 const getPriority = (value, priorities = DEFAULT_PRIORITY_CONFIG) => (
@@ -296,14 +263,23 @@ const DealWorkspace = ({
 
     const fetchCatalogProducts = async () => {
       setCatalogLoading(true);
-      const { data, error } = await supabase
-        .from('commercial_item_catalog')
-        .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active')
-        .eq('is_active', true)
-        .order('name', { ascending: true });
+      const [catalogRes, stockRes] = await Promise.all([
+        supabase
+          .from('commercial_item_catalog')
+          .select('id, code, sku, name, description, category, unit, default_unit_price, default_vat_rate, product_type, is_active')
+          .eq('is_active', true)
+          .order('name', { ascending: true }),
+        supabase
+          .from('product_stock_status')
+          .select('catalog_item_id, available_qty'),
+      ]);
 
-      if (active && !error) {
-        setCatalogProducts(data || []);
+      if (active && !catalogRes.error) {
+        const stockByProductId = new Map((stockRes.data || []).map((row) => [row.catalog_item_id, row]));
+        setCatalogProducts((catalogRes.data || []).map((product) => ({
+          ...product,
+          available_qty: stockByProductId.get(product.id)?.available_qty ?? null,
+        })));
       }
       if (active) {
         setCatalogLoading(false);
@@ -348,7 +324,11 @@ const DealWorkspace = ({
     quantity: Number(item.quantity || 0),
     discount: Number(item.discount_percent || 0),
     vatRate: Number(item.vat_rate || 0),
-    total: calculateCrmItemLineTotal(item),
+    total: calculateCrmLineTotal(item),
+    product_type: item.product_type || null,
+    product_sku: item.product_sku || null,
+    stock_available_snapshot: item.stock_available_snapshot ?? null,
+    catalog_price_snapshot: item.catalog_price_snapshot ?? null,
   })) : [
     {
       id: 'fallback',
@@ -362,7 +342,7 @@ const DealWorkspace = ({
       total: value,
     },
   ];
-  const itemTotals = calculateCrmItemTotals(opportunityItems.length > 0 ? opportunityItems : productRows.map((item) => ({
+  const itemTotals = calculateCrmTotals(opportunityItems.length > 0 ? opportunityItems : productRows.map((item) => ({
     ...item,
     unit_price: item.unitPrice,
     discount_percent: item.discount,
@@ -392,7 +372,7 @@ const DealWorkspace = ({
         ? Number(nextValue || 0)
         : nextValue;
       const next = { ...item, [field]: valueToStore };
-      return { ...next, line_total: calculateCrmItemLineTotal(next) };
+      return { ...next, line_total: calculateCrmLineTotal(next) };
     });
     onUpdateOpportunityItems?.(opportunity.id, nextItems);
   };
@@ -416,18 +396,11 @@ const DealWorkspace = ({
     .slice(0, 12);
 
   const addCatalogProduct = (product) => {
-    const nextItem = {
+    const nextItem = createCrmCatalogItem(product, {
       ...createEmptyCrmItem(),
       id: `new-${Date.now()}-${product.id}`,
-      catalog_item_id: product.id,
-      code: product.code || '',
-              name: product.name || 'Položka',
-      description: product.description || '',
-      unit: product.unit || 'ks',
-      unit_price: Number(product.default_unit_price || 0),
-      vat_rate: Number(product.default_vat_rate || 21),
-    };
-    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, { ...nextItem, line_total: calculateCrmItemLineTotal(nextItem) }]);
+    });
+    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, { ...nextItem, line_total: calculateCrmLineTotal(nextItem) }]);
     setCatalogQuery('');
   };
 
@@ -850,6 +823,7 @@ const DealWorkspace = ({
                       <span className="text-xs text-muted-foreground">
                         {product.code || '-'} - {formatCurrency(product.default_unit_price)}
                       </span>
+                      <CrmCatalogProductMeta product={product} />
                     </DropdownMenuItem>
                   ))}
                   <DropdownMenuSeparator />
@@ -884,6 +858,7 @@ const DealWorkspace = ({
                     </TableCell>
                     <TableCell className="min-w-[320px]">
                       <Input value={item.name} onChange={(event) => updateOpportunityItem(item.id, 'name', event.target.value)} disabled={!canEdit || updatingOpportunity} />
+                      <CrmItemSnapshotBadges item={item} />
                     </TableCell>
                     <TableCell className="min-w-[130px]">
                       <Input className="text-right" type="number" value={item.unitPrice} onChange={(event) => updateOpportunityItem(item.id, 'unit_price', event.target.value)} disabled={!canEdit || updatingOpportunity} />
@@ -1658,7 +1633,7 @@ const CRM = () => {
         .limit(60),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)')
         .order('updated_at', { ascending: false }),
       supabase
         .from('crm_activities')
@@ -1667,7 +1642,7 @@ const CRM = () => {
         .limit(20),
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, items:crm_commercial_document_items(id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, items:crm_commercial_document_items(id, catalog_item_id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)')
         .order('created_at', { ascending: false }),
       supabase
         .from('crm_stage_definitions')
@@ -1910,15 +1885,40 @@ const CRM = () => {
     const normalizedItems = nextItems.map((item, index) => ({
       ...item,
       sort_order: (index + 1) * 10,
-      line_total: calculateCrmItemLineTotal(item),
+      line_total: calculateCrmLineTotal(item),
     }));
-    const totals = calculateCrmItemTotals(normalizedItems);
+    const totals = calculateCrmTotals(normalizedItems);
 
     updateOpportunityState(opportunityId, {
       items: normalizedItems,
       value: totals.total,
     });
     setUpdatingOpportunity(true);
+
+    const opportunityItemRows = normalizedItems.map((item, index) => buildCrmOpportunityItemPayload(item, opportunityId, index));
+    const rpcItems = opportunityItemRows.map(({ opportunity_id, ...item }) => item);
+    const { error: replaceError } = await supabase.rpc('replace_crm_opportunity_items', {
+      p_opportunity_id: opportunityId,
+      p_items: rpcItems,
+      p_sync_documents: true,
+    });
+
+    if (!replaceError) {
+      setCommercialDocuments((current) => current.map((document) => (
+        document.opportunity_id === opportunityId && (document.sync_items ?? true)
+          ? { ...document, ...totals, items: normalizedItems.map((item, index) => ({ ...item, sort_order: (index + 1) * 10 })) }
+          : document
+      )));
+      setUpdatingOpportunity(false);
+      return;
+    }
+
+    if (!isMissingCrmRpcError(replaceError)) {
+      setUpdatingOpportunity(false);
+      toast({ title: 'Položky OP se nepodařilo uložit', description: replaceError.message, variant: 'destructive' });
+      fetchCrmData();
+      return;
+    }
 
     const { error: deleteError } = await supabase
       .from('crm_opportunity_items')
@@ -1932,7 +1932,6 @@ const CRM = () => {
       return;
     }
 
-    const opportunityItemRows = normalizedItems.map((item, index) => buildCrmOpportunityItemPayload(item, opportunityId, index));
     if (opportunityItemRows.length > 0) {
       const { error: insertError } = await supabase
         .from('crm_opportunity_items')
@@ -2184,7 +2183,7 @@ const CRM = () => {
       unit_price: baseValue,
       line_total: baseValue,
     }];
-    const totals = calculateCrmItemTotals(sourceItems);
+    const totals = calculateCrmTotals(sourceItems);
     const vatRate = 21;
     const number = formatCrmNumber(crmNumbering, type);
 

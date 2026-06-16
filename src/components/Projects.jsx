@@ -26,7 +26,6 @@ import { formatCurrency, cn, projectStatusConfig } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { parseApiError } from '@/lib/apiValidation';
 import BatchProjectDialog from '@/components/BatchProjectDialog';
-import { calculateProjectMemberRewardFromProject } from '@/domain/financials';
 
 const Projects = () => {
   const navigate = useNavigate();
@@ -119,10 +118,9 @@ const Projects = () => {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('project_members')
-        .select('project_id, reward_percentage, reward_amount, reward_type, is_hourly, project:projects(id, price, budget_percentage, overhead_percentage, project_subcontractors(price))')
-        .eq('member_id', memberId);
+      const { data, error } = await supabase.rpc('get_member_project_rewards', {
+        p_member_id: memberId,
+      });
 
       if (error) throw error;
 
@@ -132,11 +130,7 @@ const Projects = () => {
       (data || []).forEach((assignment) => {
         const hasReward = assignment.reward_type === 'fixed' || assignment.reward_type === 'percentage';
         const isHourly = !!assignment.is_hourly && !hasReward;
-        let rewardAmount = 0;
-
-        if (assignment.project && hasReward) {
-          rewardAmount = calculateProjectMemberRewardFromProject(assignment);
-        }
+        const rewardAmount = hasReward ? Number(assignment.total_reward || 0) : 0;
 
         if (hasReward || isHourly) {
           rewardsByProject[assignment.project_id] = {

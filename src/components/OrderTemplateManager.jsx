@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
+import { sanitizeGeneratedDocumentHtml } from '@/lib/htmlSanitizer';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Plus, Edit2, Trash2, ShoppingCart, Search, FileText, Eye, Code2 } from 'lucide-react';
@@ -147,7 +148,7 @@ const buildTemplatePreviewHtml = (template) => {
     key === 'items_table' ? sampleItemsTable : previewValues[key] || match
   ));
 
-  return `<!doctype html>
+  return sanitizeGeneratedDocumentHtml(`<!doctype html>
     <html lang="cs">
       <head>
         <meta charset="utf-8" />
@@ -158,7 +159,7 @@ const buildTemplatePreviewHtml = (template) => {
         </style>
       </head>
       <body>${filledContent}</body>
-    </html>`;
+    </html>`);
 };
 
 const OrderTemplateManager = ({ embedded = false }) => {

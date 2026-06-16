@@ -2,66 +2,17 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { logHourlyPayoutApproval } from './payoutLogger';
 
 /**
- * Logs the payout approval action to the audit_logs table.
- */
-export const logPayoutApproval = async (payoutId, adminId, adminNote, approvedWithoutInvoice) => {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    
-    const action = approvedWithoutInvoice ? 'payout_approved_without_invoice' : 'payout_approved_with_invoice';
-    
-    await supabase.from('audit_logs').insert([{
-      user_id: adminId || user.id,
-      user_email: user.email,
-      action: action,
-      details: {
-        payout_id: payoutId,
-        admin_note: adminNote,
-        approved_without_invoice: approvedWithoutInvoice,
-        timestamp: new Date().toISOString()
-      }
-    }]);
-  } catch (error) {
-    console.error('Error logging payout approval:', error);
-  }
-};
-
-/**
  * Approves a payout, setting the required flags and logging the action.
  */
 export const approvePayout = async (payoutId, adminNote, approvedWithoutInvoice) => {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: currentPayout, error: fetchError } = await supabase
-      .from('payouts')
-      .select('variable_symbol')
-      .eq('id', payoutId)
-      .single();
-
-    if (fetchError) throw fetchError;
-    
-    const updateData = {
-      status: 'approved',
-      approved_without_invoice: approvedWithoutInvoice,
-      admin_note: adminNote,
-      approved_at: new Date().toISOString()
-    };
-
-    if (!currentPayout?.variable_symbol) {
-      updateData.variable_symbol = Math.floor(Math.random() * 10000000000).toString().padStart(10, '0');
-    }
-
-    const { data, error } = await supabase
-      .from('payouts')
-      .update(updateData)
-      .eq('id', payoutId)
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('approve_payout', {
+      p_payout_id: payoutId,
+      p_admin_note: adminNote,
+      p_approved_without_invoice: approvedWithoutInvoice,
+    });
 
     if (error) throw error;
-
-    await logPayoutApproval(payoutId, user?.id, adminNote, approvedWithoutInvoice);
     
     return { success: true, data };
   } catch (error) {

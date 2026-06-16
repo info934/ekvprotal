@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Clipboard, FileUp } from 'lucide-react';
 import { Badge } from './ui/badge';
 import JSZip from 'jszip';
+import { sanitizeDocumentTemplateHtml } from '@/lib/htmlSanitizer';
 
 const placeholders = [
   '{document_number}',
@@ -96,7 +97,12 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
       });
       return;
     }
-    onSave({ id: template?.id, name, description, content });
+    onSave({
+      id: template?.id,
+      name: name.trim(),
+      description: description.trim(),
+      content: sanitizeDocumentTemplateHtml(content),
+    });
   };
 
   const handleTemplateFile = async (event) => {
@@ -117,7 +123,8 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
         throw new Error('Podporované jsou soubory .html, .htm, .txt a .docx.');
       }
 
-      setContent(nextContent);
+      const sanitizedContent = sanitizeDocumentTemplateHtml(nextContent);
+      setContent(sanitizedContent);
       if (!name.trim()) setName(file.name.replace(/\.[^.]+$/, ''));
       toast({
         title: 'Šablona načtena',

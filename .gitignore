@@ -32,3 +32,5 @@ Thumbs.db
 supabase/.env
 supabase/.branches/
 supabase/.temp/
+supabase/seed.sql
+supabase/seed.*.sql

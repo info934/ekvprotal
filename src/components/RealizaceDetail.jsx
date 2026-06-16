@@ -24,6 +24,10 @@ import RealizaceTeam from './RealizaceTeam';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
+const toNumber = (value) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
+};
 
 const statusConfig = {
   'Připravuje se': { variant: 'info', label: 'Připravuje se' },
@@ -44,6 +48,7 @@ const RealizaceDetail = () => {
   const [loading, setLoading] = useState(true);
   const [costs, setCosts] = useState([]);
   const [extraCosts, setExtraCosts] = useState([]);
+  const [financialSummary, setFinancialSummary] = useState(null);
 
   // Hourly costs state (calculated)
   const [hourlyCostsTotal, setHourlyCostsTotal] = useState(0);
@@ -144,19 +149,40 @@ const RealizaceDetail = () => {
     setRealization(realData);
     setLinkedProjectId(realData.linked_project_id);
 
-    // Fetch Manual Costs and Extra Costs if allowed
-    if (canViewCosts) {
-      const [costsRes, extraRes] = await Promise.all([
-        supabase.from('realizace_costs').select(`*, supplier:subjects!realizace_costs_supplier_id_fkey(name)`).eq('realizace_id', realizaceId).order('created_at', { ascending: false }),
-        supabase.from('realizace_extra_costs').select('*').eq('realizace_id', realizaceId).order('created_at', { ascending: true })
-      ]);
+    const shouldLoadFinancialSummary = canViewAmounts || canViewCosts || canViewProfit;
+    const costsPromise = canViewCosts
+      ? supabase.from('realizace_costs').select(`*, supplier:subjects!realizace_costs_supplier_id_fkey(name)`).eq('realizace_id', realizaceId).order('created_at', { ascending: false })
+      : Promise.resolve({ data: [], error: null });
+    const extraCostsPromise = canViewCosts
+      ? supabase.from('realizace_extra_costs').select('*').eq('realizace_id', realizaceId).order('created_at', { ascending: true })
+      : Promise.resolve({ data: [], error: null });
+    const financialSummaryPromise = shouldLoadFinancialSummary
+      ? supabase.rpc('realization_financial_summary', { p_realization_id: realizaceId })
+      : Promise.resolve({ data: null, error: null });
 
+    const [costsRes, extraRes, financialSummaryRes] = await Promise.all([
+      costsPromise,
+      extraCostsPromise,
+      financialSummaryPromise
+    ]);
+
+    if (canViewCosts) {
       setCosts(costsRes.data || []);
       setExtraCosts(extraRes.data || []);
+    } else {
+      setCosts([]);
+      setExtraCosts([]);
+    }
+
+    if (financialSummaryRes.error) {
+      console.warn('realization_financial_summary failed, using local fallback:', financialSummaryRes.error.message);
+      setFinancialSummary(null);
+    } else {
+      setFinancialSummary(financialSummaryRes.data || null);
     }
 
     setLoading(false);
-  }, [realizaceId, navigate, toast, canViewCosts]);
+  }, [realizaceId, navigate, toast, canViewAmounts, canViewCosts, canViewProfit]);
 
   // Fetch Hourly Costs Total - Includes BOTH direct attendance and linked project attendance
   useEffect(() => {
@@ -210,12 +236,17 @@ const RealizaceDetail = () => {
 
   // --- Financial Calculations ---
   // Legacy Financial Calculations (for backwards compat)
-  const totalManualCosts = costs.reduce((sum, c) => sum + Number(c.amount || 0), 0);
-  const totalExtraCostsCost = extraCosts.reduce((sum, c) => sum + Number(c.cost_amount || 0), 0);
-  const totalExtraCostsSale = extraCosts.reduce((sum, c) => sum + Number(c.sale_amount || 0), 0);
-  const grandTotalCosts = totalManualCosts + hourlyCostsTotal + totalExtraCostsCost;
-  const contractAmountBase = Number(realization?.contract_amount || 0);
-  const totalRevenue = contractAmountBase + totalExtraCostsSale;
+  const localManualCosts = costs.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  const localExtraCostsCost = extraCosts.reduce((sum, c) => sum + Number(c.cost_amount || 0), 0);
+  const localExtraCostsSale = extraCosts.reduce((sum, c) => sum + Number(c.sale_amount || 0), 0);
+  const hasFinancialSummary = !!financialSummary;
+  const totalManualCosts = hasFinancialSummary ? toNumber(financialSummary.manual_costs) : localManualCosts;
+  const totalExtraCostsCost = hasFinancialSummary ? toNumber(financialSummary.extra_costs) : localExtraCostsCost;
+  const totalExtraCostsSale = hasFinancialSummary ? toNumber(financialSummary.extra_revenue) : localExtraCostsSale;
+  const effectiveHourlyCostsTotal = hasFinancialSummary ? toNumber(financialSummary.hourly_costs) : hourlyCostsTotal;
+  const grandTotalCosts = hasFinancialSummary ? toNumber(financialSummary.total_costs) : totalManualCosts + effectiveHourlyCostsTotal + totalExtraCostsCost;
+  const contractAmountBase = hasFinancialSummary ? toNumber(financialSummary.base_contract_amount) : Number(realization?.contract_amount || 0);
+  const totalRevenue = hasFinancialSummary ? toNumber(financialSummary.total_revenue) : contractAmountBase + totalExtraCostsSale;
   
   // Available "profit" in the old sense (Revenue - Costs)
   const profitAvailable = totalRevenue - grandTotalCosts;
@@ -296,7 +327,7 @@ const RealizaceDetail = () => {
       toast({ title: 'Chyba při mazání', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: 'Náklad smazán' });
-      setCosts(prev => prev.filter(c => c.id !== id));
+      fetchData();
     }
   };
 
@@ -364,7 +395,7 @@ const RealizaceDetail = () => {
               realization={realization}
               costStats={{
                 totalRecordedCosts: totalManualCosts,
-                hourlyCosts: hourlyCostsTotal,
+                hourlyCosts: effectiveHourlyCostsTotal,
                 extraCosts: totalExtraCostsCost,
                 grandTotal: grandTotalCosts,
                 costCount: costs.length,
@@ -426,11 +457,11 @@ const RealizaceDetail = () => {
                           <span className="text-muted-foreground">Vícenáklady:</span> <span className="font-bold">{formatCurrency(totalExtraCostsCost)}</span>
                         </div>
                         <div className="bg-blue-50 px-3 py-1 rounded text-blue-700">
-                          <span className="text-muted-foreground">Hodinové:</span> <span className="font-bold">{hourlyLoading ? '...' : formatCurrency(hourlyCostsTotal)}</span>
+                          <span className="text-muted-foreground">Hodinové:</span> <span className="font-bold">{hourlyLoading && !hasFinancialSummary ? '...' : formatCurrency(effectiveHourlyCostsTotal)}</span>
                         </div>
                         <div className="bg-green-50 px-3 py-1 rounded text-green-700 border border-green-200">
                           <span className="font-medium mr-1">CELKEM:</span>
-                          <span className="font-bold text-lg">{hourlyLoading ? '...' : formatCurrency(grandTotalCosts)}</span>
+                          <span className="font-bold text-lg">{hourlyLoading && !hasFinancialSummary ? '...' : formatCurrency(grandTotalCosts)}</span>
                         </div>
                       </div>
                     </div>

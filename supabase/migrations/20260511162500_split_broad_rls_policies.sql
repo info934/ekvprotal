@@ -3,6 +3,9 @@
 
 DROP POLICY IF EXISTS "Admin full access" ON public.project_stages;
 DROP POLICY IF EXISTS "Enable all for admins" ON public.project_stages;
+DROP POLICY IF EXISTS "Project stages insert for admins" ON public.project_stages;
+DROP POLICY IF EXISTS "Project stages update for admins" ON public.project_stages;
+DROP POLICY IF EXISTS "Project stages delete for admins" ON public.project_stages;
 CREATE POLICY "Project stages insert for admins" ON public.project_stages
 FOR INSERT TO authenticated
 WITH CHECK (get_user_role() = 'admin');
@@ -16,6 +19,9 @@ USING (get_user_role() = 'admin');
 
 DROP POLICY IF EXISTS "Admin full access" ON public.project_tags;
 DROP POLICY IF EXISTS "Enable all for admins" ON public.project_tags;
+DROP POLICY IF EXISTS "Project tags insert for admins" ON public.project_tags;
+DROP POLICY IF EXISTS "Project tags update for admins" ON public.project_tags;
+DROP POLICY IF EXISTS "Project tags delete for admins" ON public.project_tags;
 CREATE POLICY "Project tags insert for admins" ON public.project_tags
 FOR INSERT TO authenticated
 WITH CHECK (get_user_role() = 'admin');
@@ -37,6 +43,7 @@ DROP POLICY IF EXISTS "Enable full access for admins on realizations" ON public.
 
 DROP POLICY IF EXISTS "Allow admins full access" ON public.documents;
 DROP POLICY IF EXISTS "Allow project members with edit permission to manage" ON public.documents;
+DROP POLICY IF EXISTS "Allow project members with edit permission to delete" ON public.documents;
 CREATE POLICY "Allow project members with edit permission to delete"
 ON public.documents
 FOR DELETE
@@ -60,6 +67,12 @@ USING (
 
 DROP POLICY IF EXISTS "Enable all for admins" ON public.member_certifications;
 DROP POLICY IF EXISTS "Enable insert/update/delete for own records" ON public.member_certifications;
+DROP POLICY IF EXISTS "Member certifications insert for admins" ON public.member_certifications;
+DROP POLICY IF EXISTS "Member certifications update for admins" ON public.member_certifications;
+DROP POLICY IF EXISTS "Member certifications delete for admins" ON public.member_certifications;
+DROP POLICY IF EXISTS "Member certifications insert for own records" ON public.member_certifications;
+DROP POLICY IF EXISTS "Member certifications update for own records" ON public.member_certifications;
+DROP POLICY IF EXISTS "Member certifications delete for own records" ON public.member_certifications;
 CREATE POLICY "Member certifications insert for admins"
 ON public.member_certifications
 FOR INSERT TO authenticated
@@ -106,6 +119,12 @@ USING (
 
 DROP POLICY IF EXISTS "Admins can manage all templates" ON public.project_templates_custom;
 DROP POLICY IF EXISTS "Users can manage their own templates" ON public.project_templates_custom;
+DROP POLICY IF EXISTS "Project custom templates insert for admins" ON public.project_templates_custom;
+DROP POLICY IF EXISTS "Project custom templates update for admins" ON public.project_templates_custom;
+DROP POLICY IF EXISTS "Project custom templates delete for admins" ON public.project_templates_custom;
+DROP POLICY IF EXISTS "Project custom templates insert for owners" ON public.project_templates_custom;
+DROP POLICY IF EXISTS "Project custom templates update for owners" ON public.project_templates_custom;
+DROP POLICY IF EXISTS "Project custom templates delete for owners" ON public.project_templates_custom;
 CREATE POLICY "Project custom templates insert for admins"
 ON public.project_templates_custom
 FOR INSERT TO authenticated

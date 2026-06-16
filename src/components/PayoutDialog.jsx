@@ -16,7 +16,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { z } from 'zod';
 import { PayoutSchema } from '@/lib/validationSchemas';
 import { sendPayoutCreatedEmail } from '@/lib/payoutWorkflowEmailService';
-import { calculateRealizationMemberAvailableShare, toAmount } from '@/domain/financials';
+import { toAmount } from '@/domain/financials';
 
 const FormSection = ({ title, icon: Icon, children, className }) => (
   <div className={cn("space-y-4", className)}>
@@ -49,6 +49,19 @@ const projectStatusConfig = {
   delivered: { label: "Dodáno", color: "text-green-600" },
   closed: { label: "Uzavřeno", color: "text-purple-600" },
 };
+
+const mapRealizationForSelection = (realization, currentAmount = 0) => ({
+  realization_id: realization.id,
+  realization_name: realization.name,
+  realization_status: realization.status,
+  available_share: (realization.available_share || 0) + toAmount(currentAmount),
+  total_share: realization.total_share || 0,
+  team_budget: realization.team_budget || 0,
+  total_costs: realization.total_costs || 0,
+  total_revenue: realization.total_revenue || 0,
+  reserved_or_paid_amount: realization.reserved_or_paid_amount || 0,
+  availability_reason: realization.availability_reason,
+});
 
 const ProjectPayoutInput = ({ project, onAmountChange, amount, onRemove, onFillMax }) => {
   const [localAmount, setLocalAmount] = useState(amount);
@@ -100,7 +113,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
   const { memberId: currentMemberId, isSuperUser, hasPermission } = useAuth();
   const isEditMode = Boolean(payout);
   const canAdmin = hasPermission('payouts', 'can_admin');
-  const canDelete = Boolean(isEditMode && canAdmin && onDelete);
+  const canDelete = Boolean(isEditMode && onDelete && (canAdmin || (payout?.status === 'pending' && payout?.member_id === currentMemberId)));
   
   const [memberId, setMemberId] = useState('');
   const [requestDate, setRequestDate] = useState(new Date().toISOString().split('T')[0]);
@@ -109,8 +122,6 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
   const [validationErrors, setValidationErrors] = useState({});
   const [projectsWithBalance, setProjectsWithBalance] = useState([]);
   const [realizations, setRealizations] = useState([]);
-  const [realizationShares, setRealizationShares] = useState({});
-  const [realizationPaid, setRealizationPaid] = useState({});
   const [selectedProjects, setSelectedProjects] = useState([]);
   const [selectedRealizations, setSelectedRealizations] = useState([]);
   const [payoutAmounts, setPayoutAmounts] = useState({});
@@ -161,52 +172,19 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
   useEffect(() => {
     const fetchProjects = async () => {
       if (!memberId) {
-        setProjectsWithBalance([]); setSelectedProjects([]); setPayoutAmounts({}); setRealizations([]); setRealizationShares({}); setRealizationPaid({}); return;
+        setProjectsWithBalance([]); setSelectedProjects([]); setPayoutAmounts({}); setRealizations([]); return;
       }
       setIsLoadingProjects(true);
-      const { data, error } = await supabase.rpc('get_projects_with_balance', { p_member_id: memberId });
-      const { data: realizaceData } = await supabase
-        .from('realizations')
-        .select('id, name, status, contract_amount, expected_total_cost, actual_costs, budget, profit_margin_percent, overhead_percent')
-        .order('created_at', { ascending: false });
-      const { data: shareData } = await supabase.from('realization_profit_shares').select('realizace_id, share_type, share_value').eq('member_id', memberId);
-      
-      // FIXED: Explicit FK reference for payout_items
-      const { data: paidData } = await supabase
-        .from('payout_items')
-        .select('amount, realization_id, payouts!inner(member_id, status)')
-        .eq('payouts.member_id', memberId)
-        .in('payouts.status', ['pending', 'approved', 'invoice_uploaded', 'paid'])
-        .not('realization_id', 'is', null);
+      try {
+        const { data, error } = await supabase.rpc('get_payout_availability', {
+          p_member_id: memberId,
+          p_edit_payout_id: payout?.id || null,
+        });
+        if (error) throw error;
 
-      if (!error) {
-        const availableProjects = data || [];
-        const allRealizace = realizaceData || [];
-        const shareMap = (shareData || []).reduce((acc, share) => { acc[share.realizace_id] = share; return acc; }, {});
-        const paidMap = (paidData || []).reduce((acc, item) => {
-          acc[item.realization_id] = (acc[item.realization_id] || 0) + toAmount(item.amount);
-          return acc;
-        }, {});
-        const visibleRealizace = (isSuperUser ? allRealizace : allRealizace.filter((realizace) => shareMap[realizace.id]))
-          .map((realizace) => {
-            const share = shareMap[realizace.id];
-            const totalCosts = toAmount(realizace.actual_costs || realizace.expected_total_cost);
-            const availability = calculateRealizationMemberAvailableShare({
-              realization: realizace,
-              share,
-              totalCosts,
-              paidAmount: paidMap[realizace.id],
-            });
-
-            return {
-              ...realizace,
-              total_share: availability.totalShare,
-              paid_amount: availability.paidAmount,
-              available_share: availability.availableShare,
-              team_budget: availability.teamBudget,
-            };
-          });
-        setProjectsWithBalance(availableProjects); setRealizations(visibleRealizace); setRealizationShares(shareMap); setRealizationPaid(paidMap);
+        const availableProjects = data?.projects || [];
+        const visibleRealizace = data?.realizations || [];
+        setProjectsWithBalance(availableProjects); setRealizations(visibleRealizace);
 
         if (payout && payout.payout_items) {
           const projectItems = payout.payout_items.filter(i => i.project_id);
@@ -215,21 +193,36 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
             const projectData = availableProjects.find(p => p.project_id === item.project_id);
             return {
               project_id: item.project_id, project_name: item.projects?.name || projectData?.project_name || 'N/A', project_code: item.projects?.code || projectData?.project_code || 'N/A',
-              available_balance: (projectData?.available_balance || 0) + (parseFloat(payoutAmounts[item.project_id]) || 0), project_status: projectData?.project_status || 'unknown',
+              available_balance: projectData?.available_balance || 0, project_status: projectData?.project_status || 'unknown',
             };
           }));
           setSelectedRealizations(realizaceItems.map(item => {
-            const found = visibleRealizace.find(r => r.id === item.realization_id) || allRealizace.find(r => r.id === item.realization_id);
+            const found = visibleRealizace.find(r => r.id === item.realization_id);
+            const currentAmount = 0;
+            if (found) return mapRealizationForSelection({
+              ...found,
+              name: item.realizations?.name || item.realizations_legacy?.name || found.name || 'N/A',
+              status: found.status || 'unknown',
+            }, currentAmount);
             return {
               realization_id: item.realization_id,
-              realization_name: item.realizations?.name || item.realizations_legacy?.name || found?.name || 'N/A',
-              realization_status: found?.status || 'unknown',
-              available_share: (found?.available_share || 0) + (parseFloat(payoutAmounts[`r-${item.realization_id}`]) || 0),
+              realization_name: item.realizations?.name || item.realizations_legacy?.name || 'N/A',
+              realization_status: 'unknown',
+              available_share: toAmount(currentAmount),
+              availability_reason: 'Nelze načíst aktuální výpočet',
             };
           }));
         }
+      } catch (error) {
+        console.error('[PayoutDialog] Failed to load payout items:', error);
+        toast({
+          title: "Chyba načítání",
+          description: error.message || "Nepodařilo se načíst projekty a realizace pro výplatu.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsLoadingProjects(false);
       }
-      setIsLoadingProjects(false);
     };
     if (isOpen) fetchProjects();
   }, [memberId, payout, isOpen, toast, isSuperUser]);
@@ -250,12 +243,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
     if (!realizaceId || selectedRealizations.some(r => r.realization_id === realizaceId)) return;
     const found = realizations.find(r => r.id === realizaceId);
     if (found) {
-      setSelectedRealizations(prev => [...prev, {
-        realization_id: realizaceId,
-        realization_name: found.name,
-        realization_status: found.status,
-        available_share: found.available_share || 0,
-      }]);
+      setSelectedRealizations(prev => [...prev, mapRealizationForSelection(found)]);
       setPayoutAmounts(prev => ({ ...prev, [`r-${realizaceId}`]: '' }));
     }
   };
@@ -534,7 +522,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
                         <div className="max-h-56 overflow-y-auto rounded-lg border bg-white">
                           {filteredRealizaceToAdd.length > 0 ? filteredRealizaceToAdd.map(r => (
                               <button type="button" key={r.id} onClick={() => !isSubmitting && handleAddRealizace(r.id)} disabled={isSubmitting} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-                                <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{r.name}</span><span className="block truncate text-xs text-slate-500">Realizace</span></span><span className="ml-3 shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 font-mono text-xs font-semibold text-emerald-700">{(r.available_share || 0).toLocaleString('cs-CZ')} Kč</span>
+                                <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{r.name}</span><span className="block truncate text-xs text-slate-500">{r.availability_reason || 'Realizace'}</span></span><span className={cn("ml-3 shrink-0 rounded-full px-2.5 py-1 font-mono text-xs font-semibold", (r.available_share || 0) > 0 ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>{(r.available_share || 0).toLocaleString('cs-CZ')} Kč</span>
                               </button>
                             )) : <div className="px-3 py-2 text-sm text-muted-foreground">Nenalezeny žádné realizace</div>}
                         </div>
@@ -552,6 +540,12 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
                               <div><p className="font-semibold">{realizace.realization_name}</p><p className="text-xs text-muted-foreground uppercase">Realizace</p></div>
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRemoveRealizace(realizace.realization_id)} disabled={isSubmitting}><Trash2 className="w-4 h-4 text-red-500" /></Button>
                             </div>
+                            <div className="grid grid-cols-2 gap-2 rounded-md bg-white/70 p-3 text-xs md:grid-cols-4">
+                              <div><div className="text-muted-foreground">Výnos</div><div className="font-mono font-semibold">{(realizace.total_revenue || 0).toLocaleString('cs-CZ')} Kč</div></div>
+                              <div><div className="text-muted-foreground">Náklady</div><div className="font-mono font-semibold">{(realizace.total_costs || 0).toLocaleString('cs-CZ')} Kč</div></div>
+                              <div><div className="text-muted-foreground">Týmový rozpočet</div><div className="font-mono font-semibold">{(realizace.team_budget || 0).toLocaleString('cs-CZ')} Kč</div></div>
+                              <div><div className="text-muted-foreground">Rezervováno/vyplaceno</div><div className="font-mono font-semibold">{(realizace.reserved_or_paid_amount || 0).toLocaleString('cs-CZ')} Kč</div></div>
+                            </div>
                             <div className="flex items-end gap-4">
                               <div className="flex-1">
                                 <Label className="text-xs text-muted-foreground">Částka k vyplacení</Label>
@@ -563,6 +557,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
                                 <Button type="button" variant="link" size="sm" className="h-6 px-0 text-xs" onClick={() => setPayoutAmounts(prev => ({ ...prev, [`r-${realizace.realization_id}`]: String(realizace.available_share || 0) }))} disabled={isSubmitting}>Vyplnit max</Button>
                               </div>
                             </div>
+                            {realizace.availability_reason && <div className={cn("flex items-center gap-2 text-xs", (realizace.available_share || 0) > 0 ? "text-emerald-700" : "text-slate-600")}><Info className="w-4 h-4" />{realizace.availability_reason}</div>}
                             {(parseFloat(payoutAmounts[`r-${realizace.realization_id}`]) || 0) > (realizace.available_share || 0) && <div className="flex items-center gap-2 text-xs text-red-600"><AlertCircle className="w-4 h-4" />Částka překračuje dostupný zůstatek.</div>}
                           </motion.div>
                         ))}

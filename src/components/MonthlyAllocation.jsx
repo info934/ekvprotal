@@ -270,8 +270,11 @@ const MonthlyAllocation = () => {
 
     const { error } = await supabase.from('overhead_allocation_items').upsert(itemsToUpsert, { onConflict: 'overhead_monthly_allocation_id,overhead_cost_id,project_id' });
     
-    if (error) toast({ title: 'Chyba při ukládání', description: error.message, variant: 'destructive' });
-    else toast({ title: '✅ Koncept uložen' });
+    if (error) {
+      toast({ title: 'Chyba při ukládání', description: error.message, variant: 'destructive' });
+      throw error;
+    }
+    toast({ title: '✅ Koncept uložen' });
     await fetchMonthData(currentMonth);
   };
 

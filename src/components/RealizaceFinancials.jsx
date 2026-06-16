@@ -15,50 +15,22 @@ import { Dialog } from '@/components/ui/dialog';
 import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import SubjectDialog from './SubjectDialog';
-import { calculateFinancials } from './RealizaceFinancialCalculations';
 
 // Main Dashboard Component
 const RealizaceFinancials = () => {
     const [financials, setFinancials] = useState(null);
-    const [realizationData, setRealizationData] = useState([]); // Store details for local calc if needed
     const [loading, setLoading] = useState(true);
     const { toast } = useToast();
 
     useEffect(() => {
         const fetchFinancials = async () => {
             setLoading(true);
-            // We fetch the detailed view now to do client side aggregations if the RPC doesn't support the new breakdown
-            // For now, let's just stick to the RPC for global stats, but maybe we could enhance it later.
-            // But the request asks to "update to include breakdown... profit, overhead, distribution".
-            // Since RPC `get_realizace_financials` doesn't return these specific splits (it returns totals),
-            // we might need to fetch `realizations` table to sum them up manually for the dashboard.
-            
-            const { data, error } = await supabase.from('realizations').select('contract_amount, profit_margin_percent, overhead_percent');
+            const { data, error } = await supabase.rpc('get_realization_financial_overview');
             
             if (error) {
                 toast({ title: 'Chyba při načítání financí', description: error.message, variant: 'destructive' });
             } else {
-                // Calculate Aggregates
-                let totalContract = 0;
-                let totalProfit = 0;
-                let totalOverhead = 0;
-                let totalDistribution = 0;
-                
-                (data || []).forEach(r => {
-                    const calc = calculateFinancials(r.contract_amount, r.profit_margin_percent, r.overhead_percent);
-                    totalContract += calc.contractAmount;
-                    totalProfit += calc.profitAmount;
-                    totalOverhead += calc.overheadAmount;
-                    totalDistribution += calc.distributionAmount;
-                });
-
-                setFinancials({
-                    total_revenue: totalContract,
-                    total_profit: totalProfit,
-                    total_overhead: totalOverhead,
-                    total_distribution: totalDistribution,
-                    realization_count: data?.length || 0
-                });
+                setFinancials(data || {});
             }
             setLoading(false);
         };

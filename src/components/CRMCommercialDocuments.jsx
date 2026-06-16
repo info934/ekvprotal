@@ -5,6 +5,7 @@ import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CrmCatalogProductMeta, CrmItemSnapshotBadges } from '@/components/CrmItemSnapshotBadges';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +20,14 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { DEFAULT_CRM_NUMBERING, formatCrmNumber, incrementCrmNumbering, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmOpportunityPath, findCrmRecordByRef, getCrmRecordRef } from '@/lib/crmRoutes';
+import {
+  buildCrmDocumentItemPayload,
+  buildCrmOpportunityItemPayload,
+  calculateCrmLineTotal,
+  calculateCrmTotals,
+  createCrmCatalogItem,
+  isMissingCrmRpcError,
+} from '@/lib/crmItemPayloads';
 import {
   downloadGeneratedDocumentDocx,
   downloadGeneratedDocumentHtml,
@@ -97,48 +106,6 @@ const emptyItem = () => ({
   isNew: true,
 });
 
-const calculateLineTotal = (item) => {
-  const quantity = Number(item.quantity || 0);
-  const price = Number(item.unit_price || 0);
-  const discount = Math.min(100, Math.max(0, Number(item.discount_percent || 0)));
-  return Math.round(quantity * price * (1 - (discount / 100)) * 100) / 100;
-};
-
-const calculateTotals = (items) => {
-  const subtotal = items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
-  const taxTotal = items.reduce((sum, item) => sum + (calculateLineTotal(item) * (Number(item.vat_rate || 0) / 100)), 0);
-  return {
-    subtotal,
-    discount_total: 0,
-    tax_total: Math.round(taxTotal * 100) / 100,
-    total: subtotal,
-  };
-};
-
-const buildItemPayload = (item, documentId, index) => ({
-  document_id: documentId,
-  catalog_item_id: item.catalog_item_id || null,
-  code: item.code || null,
-  name: item.name?.trim() || 'Položka',
-  description: item.description || null,
-  quantity: Number(item.quantity || 0),
-  unit: item.unit || 'ks',
-  unit_price: Number(item.unit_price || 0),
-  discount_percent: Number(item.discount_percent || 0),
-  vat_rate: Number(item.vat_rate || 0),
-  line_total: calculateLineTotal(item),
-  sort_order: (index + 1) * 10,
-});
-
-const buildOpportunityItemPayload = (item, opportunityId, index) => {
-  const payload = buildItemPayload(item, null, index);
-  delete payload.document_id;
-  return {
-    ...payload,
-    opportunity_id: opportunityId,
-  };
-};
-
 const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const config = documentTypeConfig[type] || documentTypeConfig.offer;
   const Icon = config.icon;
@@ -164,12 +131,12 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     const [documentsRes, opportunitiesRes, numberingRes, templatesRes] = await Promise.all([
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)')
         .eq('type', type)
         .order('created_at', { ascending: false }),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, value, subject_id, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, number, title, value, subject_id, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)')
         .order('created_at', { ascending: false }),
       selectCrmNumberingSettings(supabase),
       supabase
@@ -209,12 +176,21 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     setNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
     setSelectedDocument(documentId ? findCrmRecordByRef(normalizedDocuments, documentId) : null);
 
-    const { data: catalogData, error: catalogError } = await supabase
-      .from('commercial_item_catalog')
-      .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active')
-      .eq('is_active', true)
-      .order('name', { ascending: true });
-    setCatalogProducts(catalogError ? [] : (catalogData || []));
+    const [catalogRes, stockRes] = await Promise.all([
+      supabase
+        .from('commercial_item_catalog')
+        .select('id, code, sku, name, description, category, unit, default_unit_price, default_vat_rate, product_type, is_active')
+        .eq('is_active', true)
+        .order('name', { ascending: true }),
+      supabase
+        .from('product_stock_status')
+        .select('catalog_item_id, available_qty'),
+    ]);
+    const stockByProductId = new Map((stockRes.data || []).map((row) => [row.catalog_item_id, row]));
+    setCatalogProducts(catalogRes.error ? [] : (catalogRes.data || []).map((product) => ({
+      ...product,
+      available_qty: stockByProductId.get(product.id)?.available_qty ?? null,
+    })));
 
     setLoading(false);
   }, [config.title, documentId, toast, type]);
@@ -333,7 +309,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         items: current.items.map((item) => {
           if (item.id !== itemId) return item;
           const next = { ...item, [field]: ['quantity', 'unit_price', 'discount_percent', 'vat_rate'].includes(field) ? Number(value || 0) : value };
-          return { ...next, line_total: calculateLineTotal(next) };
+          return { ...next, line_total: calculateCrmLineTotal(next) };
         }),
       };
     });
@@ -356,20 +332,13 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   }, [catalogProducts, catalogQuery]);
 
   const addCatalogItem = (product) => {
-    const nextItem = {
+    const nextItem = createCrmCatalogItem(product, {
       ...emptyItem(),
       id: `new-${Date.now()}-${product.id}`,
-      catalog_item_id: product.id,
-      code: product.code || '',
-              name: product.name || 'Položka',
-      description: product.description || '',
-      unit: product.unit || 'ks',
-      unit_price: Number(product.default_unit_price || 0),
-      vat_rate: Number(product.default_vat_rate || 21),
-    };
+    });
     setSelectedDocument((current) => current ? {
       ...current,
-      items: [...current.items, { ...nextItem, line_total: calculateLineTotal(nextItem) }],
+      items: [...current.items, { ...nextItem, line_total: calculateCrmLineTotal(nextItem) }],
     } : current);
     setCatalogQuery('');
   };
@@ -392,7 +361,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         document_id: target.id,
         sort_order: (index + 1) * 10,
       }));
-      const totals = calculateTotals(clonedItems);
+      const totals = calculateCrmTotals(clonedItems);
       const { error: deleteError } = await supabase
         .from('crm_commercial_document_items')
         .delete()
@@ -420,8 +389,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     if (!selectedDocument || !canEdit) return;
     setSaving(true);
 
-    const items = selectedDocument.items.map((item, index) => buildItemPayload(item, selectedDocument.id, index));
-    const totals = calculateTotals(items);
+    const items = selectedDocument.items.map((item, index) => buildCrmDocumentItemPayload(item, selectedDocument.id, index));
+    const totals = calculateCrmTotals(items);
     const { error: docError } = await supabase
       .from('crm_commercial_documents')
       .update({
@@ -448,8 +417,33 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     const itemFilterColumn = sourceIsOpportunity ? 'opportunity_id' : 'document_id';
     const itemFilterValue = sourceIsOpportunity ? selectedDocument.opportunity_id : selectedDocument.id;
     const itemRows = sourceIsOpportunity
-      ? selectedDocument.items.map((item, index) => buildOpportunityItemPayload(item, selectedDocument.opportunity_id, index))
+      ? selectedDocument.items.map((item, index) => buildCrmOpportunityItemPayload(item, selectedDocument.opportunity_id, index))
       : items;
+
+    const rpcPayload = itemRows.map(({ opportunity_id, document_id, ...item }) => item);
+    const { error: replaceError } = sourceIsOpportunity
+      ? await supabase.rpc('replace_crm_opportunity_items', {
+        p_opportunity_id: selectedDocument.opportunity_id,
+        p_items: rpcPayload,
+        p_sync_documents: true,
+      })
+      : await supabase.rpc('replace_crm_document_items', {
+        p_document_id: selectedDocument.id,
+        p_items: rpcPayload,
+      });
+
+    if (!replaceError) {
+      setSaving(false);
+      toast({ title: selectedDocument.sync_items ? 'Dokument uložen a položky synchronizovány' : 'Dokument uložen' });
+      fetchData();
+      return;
+    }
+
+    if (!isMissingCrmRpcError(replaceError)) {
+      setSaving(false);
+      toast({ title: 'Položky se nepodařilo uložit', description: replaceError.message, variant: 'destructive' });
+      return;
+    }
 
     const { error: deleteError } = await supabase
       .from(itemTable)
@@ -490,7 +484,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     const opportunity = opportunities[0];
     const number = formatCrmNumber(numbering, type);
     const sourceItems = [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-    const totals = calculateTotals(sourceItems.length > 0 ? sourceItems : [{
+    const totals = calculateCrmTotals(sourceItems.length > 0 ? sourceItems : [{
       quantity: 1,
       unit_price: Number(opportunity.value || 0),
       discount_percent: 0,
@@ -523,7 +517,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         unit_price: Number(opportunity.value || 0),
         discount_percent: 0,
         vat_rate: 21,
-      }]).map((item, index) => buildItemPayload(item, data.id, index));
+      }]).map((item, index) => buildCrmDocumentItemPayload(item, data.id, index));
       if (documentRows.length > 0) {
         await supabase.from('crm_commercial_document_items').insert(documentRows);
       }
@@ -746,6 +740,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                             <span className="text-xs text-muted-foreground">
                               {product.code || '-'} - {formatCurrency(product.default_unit_price)}
                             </span>
+                            <CrmCatalogProductMeta product={product} />
                           </DropdownMenuItem>
                         ))}
                       </DropdownMenuContent>
@@ -777,12 +772,15 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                       ) : selectedDocument.items.map((item) => (
                         <TableRow key={item.id}>
                           <TableCell><Input value={item.code || ''} onChange={(event) => updateItem(item.id, 'code', event.target.value)} disabled={!canEdit || saving} /></TableCell>
-                          <TableCell><Input value={item.name || ''} onChange={(event) => updateItem(item.id, 'name', event.target.value)} disabled={!canEdit || saving} /></TableCell>
+                          <TableCell>
+                            <Input value={item.name || ''} onChange={(event) => updateItem(item.id, 'name', event.target.value)} disabled={!canEdit || saving} />
+                            <CrmItemSnapshotBadges item={item} />
+                          </TableCell>
                           <TableCell><Input className="text-right" type="number" value={item.quantity || 0} onChange={(event) => updateItem(item.id, 'quantity', event.target.value)} disabled={!canEdit || saving} /></TableCell>
                           <TableCell><Input value={item.unit || 'ks'} onChange={(event) => updateItem(item.id, 'unit', event.target.value)} disabled={!canEdit || saving} /></TableCell>
                           <TableCell><Input className="text-right" type="number" value={item.unit_price || 0} onChange={(event) => updateItem(item.id, 'unit_price', event.target.value)} disabled={!canEdit || saving} /></TableCell>
                           <TableCell><Input className="text-right" type="number" value={item.discount_percent || 0} onChange={(event) => updateItem(item.id, 'discount_percent', event.target.value)} disabled={!canEdit || saving} /></TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(calculateLineTotal(item))}</TableCell>
+                          <TableCell className="text-right font-semibold">{formatCurrency(calculateCrmLineTotal(item))}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)} disabled={!canEdit || saving}>
                               <Trash2 className="h-4 w-4" />

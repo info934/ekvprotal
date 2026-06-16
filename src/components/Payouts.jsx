@@ -158,7 +158,10 @@ const Payouts = () => {
   const handleUpdateStatus = async (id, status, payout) => {
     try {
       if (status === 'rejected') {
-        const { error } = await supabase.from('payouts').update({ status }).eq('id', id);
+        const { error } = await supabase.rpc('reject_payout', {
+          p_payout_id: id,
+          p_admin_note: null
+        });
         if (error) throw error;
 
         toast({ title: "Žádost zamítnuta" });
@@ -270,10 +273,9 @@ const Payouts = () => {
   };
   const handleDelete = async (id) => { 
     try {
-      const { error: itemsError } = await supabase.from('payout_items').delete().eq('payout_id', id);
-      if (itemsError) throw itemsError;
-      
-      const { error: payoutError } = await supabase.from('payouts').delete().eq('id', id);
+      const { error: payoutError } = await supabase.rpc('delete_payout_request', {
+        p_payout_id: id
+      });
       if (payoutError) throw payoutError;
       
       toast({ title: "Žádost smazána" }); 

@@ -14,6 +14,7 @@
     "supabase:functions": "supabase functions list",
     "supabase:dump:schema": "supabase db dump --schema public --file supabase/migrations/00000000000000_baseline.sql",
     "supabase:dump:seed": "supabase db dump --data-only --schema public --file supabase/seed.sql",
+    "supabase:anonymize-seed": "node tools/anonymize-seed.mjs",
     "backend:check": "node tools/check-backend-env.mjs"
   },
   "dependencies": {
@@ -55,6 +56,7 @@
     "clsx": "^2.0.0",
     "cmdk": "^1.0.4",
     "date-fns": "^2.30.0",
+    "dompurify": "^2.5.9",
     "docx": "^9.6.1",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^10.16.4",

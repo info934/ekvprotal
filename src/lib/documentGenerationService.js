@@ -12,6 +12,7 @@ import {
   WidthType,
 } from 'docx';
 import { jsPDF } from 'jspdf';
+import { sanitizeDocumentTemplateHtml, sanitizeGeneratedDocumentHtml } from '@/lib/htmlSanitizer';
 
 const documentTypeLabels = {
   offer: 'Nabídka',
@@ -276,8 +277,9 @@ export const buildDocumentTemplatePlaceholders = (payload) => {
 
 export const fillDocumentTemplate = (templateContent, payload) => {
   const placeholders = buildDocumentTemplatePlaceholders(payload);
-  const withItemBlocks = fillItemsRepeatBlocks(templateContent, payload.items);
-  return replaceTemplatePlaceholders(withItemBlocks, placeholders);
+  const cleanTemplate = sanitizeDocumentTemplateHtml(templateContent);
+  const withItemBlocks = fillItemsRepeatBlocks(cleanTemplate, payload.items);
+  return sanitizeGeneratedDocumentHtml(replaceTemplatePlaceholders(withItemBlocks, placeholders));
 };
 
 const ensureHtmlDocument = (content, title = 'Dokument') => {
@@ -310,13 +312,13 @@ export const renderCommercialDocumentHtml = (payload, template = null) => {
   const totalWithTax = document.total + document.taxTotal;
 
   if (template?.content) {
-    return ensureHtmlDocument(
+    return sanitizeGeneratedDocumentHtml(ensureHtmlDocument(
       fillDocumentTemplate(template.content, payload),
       `${document.label} ${document.number || ''}`.trim()
-    );
+    ));
   }
 
-  return `<!doctype html>
+  return sanitizeGeneratedDocumentHtml(`<!doctype html>
 <html lang="cs">
 <head>
   <meta charset="utf-8" />
@@ -494,7 +496,7 @@ export const renderCommercialDocumentHtml = (payload, template = null) => {
     </footer>
   </main>
 </body>
-</html>`;
+</html>`);
 };
 
 export const generateDocumentFileName = (payload, extension = 'html') => {

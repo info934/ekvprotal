@@ -6,7 +6,6 @@ import { useToast } from '@/components/ui/use-toast';
 import { motion } from 'framer-motion';
 import { CheckCircle, Clock, FileText, User, DollarSign, AlertTriangle, CalendarX, Info, Calendar, Building, Star, ArrowLeft, Printer, Copy, ExternalLink, Building2, MapPin, Hash, CreditCard } from 'lucide-react';
 import { format } from 'date-fns';
-import { calculateProjectMemberRewardFromProject } from '@/domain/financials';
 
 const InfoCard = ({ icon: Icon, label, value, className = "" }) => (
     <div className={`bg-white border border-gray-200 rounded-lg p-4 ${className}`}>
@@ -84,20 +83,17 @@ const OrderPage = () => {
                 return;
             }
 
-            const { data: projectMemberData, error: projectMemberError } = await supabase
-                .from('project_members')
-                .select('reward_percentage, reward_amount, reward_type, project:projects(id, price, budget_percentage, overhead_percentage, project_subcontractors(price))')
-                .eq('project_id', data.project_id)
-                .eq('member_id', data.member_id)
-                .single();
+            const { data: rewardData, error: rewardError } = await supabase
+                .rpc('get_project_order_reward', { p_token: token })
+                .maybeSingle();
 
-            if (projectMemberError) {
+            if (rewardError) {
                 setError('Nepodařilo se načíst detaily odměny.');
                 setLoading(false);
                 return;
             }
 
-            setRewardAmount(calculateProjectMemberRewardFromProject(projectMemberData));
+            setRewardAmount(Number(rewardData?.reward_amount || 0));
 
             if (new Date(data.expires_at) < new Date() && data.status === 'pending') {
                 await supabase.from('project_orders').update({ status: 'expired' }).eq('id', data.id);

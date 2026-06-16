@@ -110,6 +110,7 @@ const ProjectDetail = () => {
     const [costs, setCosts] = useState([]);
     const [overheadCosts, setOverheadCosts] = useState([]);
     const [payoutItems, setPayoutItems] = useState([]);
+    const [projectFinancialSummary, setProjectFinancialSummary] = useState(null);
     const [projectLinks, setProjectLinks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [briefContent, setBriefContent] = useState('');
@@ -188,8 +189,9 @@ const ProjectDetail = () => {
             setBriefContent(projectData.brief || '');
 
             const payoutItemsPromise = canViewFinance ? supabase.from('payout_items').select('id, amount, project_id, payouts(status, member:members!payouts_member_id_fkey(name))').eq('project_id', projectId) : Promise.resolve({ data: [], error: null });
+            const financialSummaryPromise = canViewFinance ? supabase.rpc('project_financial_summary', { p_project_id: projectId }) : Promise.resolve({ data: null, error: null });
 
-            const [membersRes, subcontractorsRes, tasksRes, costsRes, linksRes, overheadCostsRes, payoutItemsRes] = await Promise.all([
+            const [membersRes, subcontractorsRes, tasksRes, costsRes, linksRes, overheadCostsRes, payoutItemsRes, financialSummaryRes] = await Promise.all([
                 supabase.from('project_members').select('id, project_id, member_id, reward_percentage, reward_amount, reward_type, is_hourly, member:members!project_members_member_id_fkey(id, name, email)').eq('project_id', projectId),
                 supabase.from('project_subcontractors').select('id, scope_of_work, price, subject:subjects!fk_subject(id, name)').eq('project_id', projectId),
                 supabase.from('project_tasks').select('*').eq('project_id', projectId),
@@ -197,6 +199,7 @@ const ProjectDetail = () => {
                 supabase.from('project_links').select('*').eq('project_id', projectId),
                 supabase.from('project_overhead_costs').select('*, overhead_allocation_items!inner(overhead_costs(name, category))').eq('project_id', projectId),
                 payoutItemsPromise,
+                financialSummaryPromise,
             ]);
 
             setMembers(membersRes.data || []);
@@ -206,6 +209,12 @@ const ProjectDetail = () => {
             setProjectLinks(linksRes.data || []);
             setOverheadCosts(overheadCostsRes.data || []);
             setPayoutItems(payoutItemsRes.data || []);
+            if (financialSummaryRes.error) {
+                console.warn('project_financial_summary failed, using local fallback:', financialSummaryRes.error.message);
+                setProjectFinancialSummary(null);
+            } else {
+                setProjectFinancialSummary(financialSummaryRes.data || null);
+            }
 
         } catch (error) {
             toast({ title: 'Chyba při načítání dat', variant: 'destructive', description: error.message });
@@ -284,8 +293,38 @@ const ProjectDetail = () => {
 
     const financials = useMemo(() => {
         if (!project || !canViewFinance) return {};
-        return calculateProjectFinancials({ project, members, subcontractors, costs, overheadCosts, paidOutAmount });
-    }, [project, members, subcontractors, costs, overheadCosts, canViewFinance, paidOutAmount]);
+        const fallbackFinancials = calculateProjectFinancials({ project, members, subcontractors, costs, overheadCosts, paidOutAmount });
+        if (!projectFinancialSummary) return fallbackFinancials;
+
+        const summary = projectFinancialSummary;
+        const teamBudget = toAmount(summary.team_budget);
+        const teamRewards = members.reduce((sum, member) => sum + calculateProjectMemberReward(member, teamBudget), 0);
+        const totalBudget = toAmount(summary.gross_project_budget);
+        const totalCosts = toAmount(summary.direct_costs);
+        const overheadBudget = toAmount(summary.planned_overhead_amount);
+        const totalAllocatedOverhead = toAmount(summary.allocated_overhead_costs);
+
+        return {
+            ...fallbackFinancials,
+            price: toAmount(summary.price),
+            budgetPercentage: toAmount(summary.budget_percentage),
+            overheadPercentage: toAmount(summary.overhead_percentage),
+            totalBudget,
+            overheadBudget,
+            subcontractorCosts: toAmount(summary.subcontractor_costs),
+            totalSubcontractorPrice: toAmount(summary.subcontractor_costs),
+            teamBudget,
+            teamRewards,
+            remainingTeamBudget: teamBudget - teamRewards,
+            totalCosts,
+            projectProfit: toAmount(summary.price) - totalBudget - totalCosts,
+            totalAllocatedOverhead,
+            remainingOverheadBudget: overheadBudget - totalAllocatedOverhead,
+            paidOutAmount: toAmount(summary.paid_payouts),
+            reservedOrPaidPayouts: toAmount(summary.reserved_or_paid_payouts),
+            remainingAfterCosts: toAmount(summary.remaining_after_costs),
+        };
+    }, [project, members, subcontractors, costs, overheadCosts, canViewFinance, paidOutAmount, projectFinancialSummary]);
 
     const financeDerivedRows = useMemo(() => {
         if (!canViewFinance) return [];
@@ -622,7 +661,7 @@ const ProjectDetail = () => {
                 </AlertDialogContent>
             </AlertDialog>
 
-            {isMemberDialogOpen && <AssignMemberDialog isOpen={isMemberDialogOpen} onClose={() => setIsMemberDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_members', data, editingMember?.id, () => setIsMemberDialogOpen(false), setEditingMember)} member={editingMember} team={members} project={project} projectSubcontractors={subcontractors} />}
+            {isMemberDialogOpen && <AssignMemberDialog isOpen={isMemberDialogOpen} onClose={() => setIsMemberDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_members', data, editingMember?.id, () => setIsMemberDialogOpen(false), setEditingMember)} member={editingMember} team={members} project={project} projectSubcontractors={subcontractors} teamBudgetOverride={canViewFinance ? financials.teamBudget : null} />}
             {isSubcontractorDialogOpen && <AssignSubcontractorDialog isOpen={isSubcontractorDialogOpen} onClose={() => setIsSubcontractorDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_subcontractors', data, editingSubcontractor?.id, () => setIsSubcontractorDialogOpen(false), setEditingSubcontractor)} assignedSubcontractor={editingSubcontractor} projectSubcontractors={subcontractors} />}
             {isCostDialogOpen && <ProjectCostDialog isOpen={isCostDialogOpen} onClose={() => setIsCostDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_costs', data, editingCost?.id, () => setIsCostDialogOpen(false), setEditingCost)} costData={editingCost} projectId={projectId} />}
             {isLinkDialogOpen && <ProjectLinkDialog isOpen={isLinkDialogOpen} onClose={() => setIsLinkDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_links', data, editingLink?.id, () => setIsLinkDialogOpen(false), setEditingLink)} linkData={editingLink} />}

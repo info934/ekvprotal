@@ -17,7 +17,6 @@ import PageHeader from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { calculateProjectMemberRewardFromProject } from '@/domain/financials';
 
 
 const getCertificationStatus = (certifications) => {
@@ -87,15 +86,9 @@ const Members = () => {
 
         if (!canViewFinance) return;
 
-        let assignmentsQuery = supabase
-            .from('project_members')
-            .select('member_id, reward_percentage, reward_amount, reward_type, project:projects(id, price, budget_percentage, overhead_percentage, project_subcontractors(price))');
-
-        if (!isSuperUser && memberId) {
-            assignmentsQuery = assignmentsQuery.eq('member_id', memberId);
-        }
-
-        const { data: assignmentsData, error: assignmentsError } = await assignmentsQuery;
+        const { data: assignmentsData, error: assignmentsError } = await supabase.rpc('get_member_project_rewards', {
+            p_member_id: isSuperUser ? null : memberId,
+        });
 
         if (assignmentsError) {
             toast({ title: "Chyba při načítání odměn", variant: "destructive", description: assignmentsError.message });
@@ -103,9 +96,7 @@ const Members = () => {
         }
 
         const totalRewardsByMember = assignmentsData.reduce((acc, assignment) => {
-            if (!assignment.project) return acc;
-
-            const reward = calculateProjectMemberRewardFromProject(assignment);
+            const reward = Number(assignment.total_reward || 0);
 
             acc[assignment.member_id] = (acc[assignment.member_id] || 0) + (reward > 0 ? reward : 0);
             return acc;

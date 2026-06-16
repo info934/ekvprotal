@@ -14,6 +14,17 @@ import {
   Upload,
   XCircle
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -26,7 +37,6 @@ import PayoutRequestsTable from '@/components/payouts/PayoutRequestsTable';
 const PayoutTableActions = ({
   item,
   canAdmin,
-  canEditOwn,
   onApproveWithDialog,
   onDelete,
   onDownloadInvoice,
@@ -41,7 +51,8 @@ const PayoutTableActions = ({
   const canUploadInvoice = item.status === 'approved' && isOwner && !item.approved_without_invoice && !item.invoice_url;
   const canMarkPaid = canAdmin && (item.status === 'invoice_uploaded' || (item.status === 'approved' && item.approved_without_invoice));
   const canManagePending = canAdmin && item.status === 'pending';
-  const canEditOrDelete = canAdmin || (isOwner && item.status === 'pending' && canEditOwn);
+  const canEditPending = item.status === 'pending' && (canAdmin || isOwner);
+  const canDeleteRequest = canAdmin || (item.status === 'pending' && isOwner);
 
   const handleFileChange = async (event) => {
     const file = event.target.files?.[0];
@@ -114,7 +125,7 @@ const PayoutTableActions = ({
         </Button>
       )}
 
-      {canEditOrDelete && (
+      {(canEditPending || canDeleteRequest) && (
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-950" title="Další akce">
@@ -122,14 +133,92 @@ const PayoutTableActions = ({
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-44 p-1.5" align="end">
-            <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => onEdit?.(item)}>
-              <Edit2 className="h-4 w-4 text-slate-400" />
-              Upravit
+            {canEditPending && (
+              <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => onEdit?.(item)}>
+                <Edit2 className="h-4 w-4 text-slate-400" />
+                Upravit
+              </Button>
+            )}
+            {canDeleteRequest && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-red-600 hover:bg-red-50 hover:text-red-700">
+                    <Trash2 className="h-4 w-4" />
+                    Smazat
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Smazat žádost o výplatu?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Žádost bude trvale odstraněna včetně všech položek. Vlastní žádosti lze mazat jen dokud čekají na schválení.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                    <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={() => onDelete?.(item.id)}>
+                      Smazat
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  );
+};
+
+const getPayoutItemTitle = (item) => item.projects?.name || item.realizations?.name || 'Položka výplaty';
+const getPayoutItemSubtitle = (item) => {
+  if (item.projects?.code) return item.projects.code;
+  if (item.realization_id) return 'Realizace';
+  return 'Projekt';
+};
+
+const PayoutItemsSummary = ({ items = [] }) => {
+  if (!items.length) return <span className="text-sm text-slate-400">Bez položek</span>;
+
+  const visibleItems = items.slice(0, 3);
+
+  return (
+    <div className="space-y-2">
+      {visibleItems.map((payoutItem) => (
+        <div key={payoutItem.id} className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-slate-800">{getPayoutItemTitle(payoutItem)}</div>
+              <div className="mt-0.5 text-xs text-slate-500">{getPayoutItemSubtitle(payoutItem)}</div>
+            </div>
+            <div className="shrink-0 text-right text-sm font-semibold tabular-nums text-slate-950">
+              {formatCurrency(payoutItem.amount)}
+            </div>
+          </div>
+        </div>
+      ))}
+      {items.length > visibleItems.length && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="link" className="h-auto p-0 text-xs font-medium text-slate-600">
+              Zobrazit všech {items.length} položek
             </Button>
-            <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => onDelete?.(item.id)}>
-              <Trash2 className="h-4 w-4" />
-              Smazat
-            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-96 p-0" align="start">
+            <div className="border-b bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-950">Obsah žádosti</div>
+            <div className="max-h-80 space-y-2 overflow-y-auto p-3">
+              {items.map((payoutItem) => (
+                <div key={payoutItem.id} className="rounded-lg border px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="break-words text-sm font-medium text-slate-900">{getPayoutItemTitle(payoutItem)}</div>
+                      <div className="mt-0.5 text-xs text-slate-500">{getPayoutItemSubtitle(payoutItem)}</div>
+                    </div>
+                    <div className="shrink-0 text-sm font-semibold tabular-nums text-slate-950">{formatCurrency(payoutItem.amount)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </PopoverContent>
         </Popover>
       )}
@@ -139,7 +228,6 @@ const PayoutTableActions = ({
 
 const PayoutTable = ({
   canAdmin,
-  canEditOwn,
   data,
   loading,
   onApproveWithDialog,
@@ -172,19 +260,8 @@ const PayoutTable = ({
     {
       key: 'items',
       header: 'Položky',
-      cellClassName: 'max-w-[360px]',
-      render: (item) => item.payout_items?.length ? (
-        <div className="space-y-1">
-          {item.payout_items.slice(0, 2).map((payoutItem) => (
-            <div key={payoutItem.id} className="truncate text-sm text-slate-600">
-              {payoutItem.projects?.name || payoutItem.realizations?.name || 'Položka výplaty'}
-            </div>
-          ))}
-          {item.payout_items.length > 2 && (
-            <div className="text-xs text-slate-400">+ {item.payout_items.length - 2} další položky</div>
-          )}
-        </div>
-      ) : <span className="text-sm text-slate-400">Bez položek</span>,
+      cellClassName: 'min-w-[320px] max-w-[460px]',
+      render: (item) => <PayoutItemsSummary items={item.payout_items || []} />,
     },
     {
       key: 'amount',
@@ -268,7 +345,6 @@ const PayoutTable = ({
           <PayoutTableActions
             item={item}
             canAdmin={canAdmin}
-            canEditOwn={canEditOwn}
             onApproveWithDialog={onApproveWithDialog}
             onDelete={onDelete}
             onDownloadInvoice={onDownloadInvoice}
