@@ -25,34 +25,186 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { calculateProjectBudget, calculateProjectFinancials, calculateProjectMemberReward, toAmount } from '@/domain/financials';
 
-const StatCard = ({ title, value, icon: Icon, color = "default" }) => (
-    <div className={cn("relative overflow-hidden transition-all duration-200 hover:shadow-lg bg-white rounded-lg border p-6")}>
-        <div className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
-            <Icon className={cn("h-4 w-4", color === "success" && "text-green-600", color === "warning" && "text-yellow-600", color === "danger" && "text-red-600", color === "info" && "text-blue-600")} />
+const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
+    const toneMap = {
+        default: "border-slate-200 bg-white text-slate-700",
+        success: "border-emerald-200 bg-emerald-50/60 text-emerald-700",
+        warning: "border-amber-200 bg-amber-50/70 text-amber-700",
+        danger: "border-red-200 bg-red-50/70 text-red-700",
+        info: "border-blue-200 bg-blue-50/70 text-blue-700",
+    };
+
+    return (
+        <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
+                    <div className="mt-2 truncate text-2xl font-bold tracking-tight text-slate-950">{value}</div>
+                    {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+                </div>
+                <div className={cn("rounded-lg border p-2.5", toneMap[color] || toneMap.default)}>
+                    <Icon className="h-5 w-5" />
+                </div>
+            </div>
+            {typeof progress === 'number' && (
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                        className={cn(
+                            "h-full rounded-full transition-all",
+                            color === "success" && "bg-emerald-500",
+                            color === "warning" && "bg-amber-500",
+                            color === "danger" && "bg-red-500",
+                            color === "info" && "bg-blue-500",
+                            color === "default" && "bg-slate-500"
+                        )}
+                        style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                    />
+                </div>
+            )}
         </div>
-        <div className="text-2xl font-bold">{value}</div>
-    </div>
-);
+    );
+};
 
 const InfoCard = ({ label, value, subValue, icon: Icon, isLink = false, to = '#' }) => (
-    <div className="transition-all duration-200 hover:shadow-md bg-white rounded-lg border p-4">
-        <div className="flex items-center gap-3">
-            {Icon && <Icon className="h-5 w-5 text-muted-foreground" />}
-            <div className="flex-1">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:border-blue-200 hover:shadow-md">
+        <div className="flex items-start gap-3">
+            {Icon && <div className="rounded-lg bg-slate-100 p-2 text-slate-600"><Icon className="h-4 w-4" /></div>}
+            <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
                 {isLink ? (
-                    <a href={to} className="font-semibold hover:text-primary transition-colors">{value || '-'}</a>
+                    <a href={to} className="mt-1 block truncate font-semibold text-slate-950 transition-colors hover:text-primary">{value || '-'}</a>
                 ) : (
-                    <p className="font-semibold">{value || '-'}</p>
+                    <p className="mt-1 truncate font-semibold text-slate-950">{value || '-'}</p>
                 )}
-                <p className="text-sm text-muted-foreground">{label}</p>
                 {subValue && (
-                    <p className="text-xs text-muted-foreground">{subValue}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{subValue}</p>
                 )}
             </div>
         </div>
     </div>
 );
+
+const ProjectDashboardPanel = ({ canViewFinance, financials, project, progress, taskStats, members, subcontractors }) => {
+    const hasCompletionDate = Boolean(project.completion_date);
+    const completionLabel = hasCompletionDate ? format(parseISO(project.completion_date), 'd. M. yyyy') : 'Bez termínu';
+    const taskCompletion = taskStats.total ? Math.round((taskStats.done / taskStats.total) * 100) : 0;
+    const remainingTeamBudget = toAmount(financials?.remainingTeamBudget);
+    const financeTone = remainingTeamBudget < 0 ? 'text-red-700 bg-red-50 border-red-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
+
+    return (
+        <div className="mb-8 grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="border-b border-slate-200 px-5 py-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 className="text-base font-semibold text-slate-950">Projektový dashboard</h2>
+                            <p className="mt-1 text-sm text-slate-500">Rychlý stav úkolů, termínů a obsazení projektu.</p>
+                        </div>
+                        <Badge variant="outline" className="w-fit rounded-full border-slate-200 bg-slate-50 px-3 py-1 text-slate-700">
+                            {project.stage?.name || 'Bez stupně dokumentace'}
+                        </Badge>
+                    </div>
+                </div>
+                <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_260px]">
+                    <div className="space-y-5">
+                        <div>
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                                <span className="text-sm font-semibold text-slate-700">Dokončení úkolů</span>
+                                <span className="text-sm font-bold tabular-nums text-slate-950">{taskCompletion}%</span>
+                            </div>
+                            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                                <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${taskCompletion}%` }} />
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                                <span>{taskStats.done} hotovo</span>
+                                <span>{taskStats.open} otevřeno</span>
+                                <span>{taskStats.overdue} po termínu</span>
+                            </div>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tým</div>
+                                <div className="mt-1 text-xl font-bold text-slate-950">{members.length}</div>
+                                <div className="text-xs text-slate-500">interních členů</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Subdodavatelé</div>
+                                <div className="mt-1 text-xl font-bold text-slate-950">{subcontractors.length}</div>
+                                <div className="text-xs text-slate-500">externích partnerů</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Termín</div>
+                                <div className="mt-1 text-xl font-bold text-slate-950">{completionLabel}</div>
+                                <div className="text-xs text-slate-500">{hasCompletionDate ? 'plánované dokončení' : 'doplnit v projektu'}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
+                        <div className="flex items-center gap-2">
+                            <Target className="h-4 w-4 text-blue-600" />
+                            <h3 className="text-sm font-semibold text-slate-950">Rizika a pozornost</h3>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                                <span className="text-slate-500">Úkoly po termínu</span>
+                                <Badge variant="outline" className={cn("rounded-full", taskStats.overdue ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700")}>{taskStats.overdue}</Badge>
+                            </div>
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                                <span className="text-slate-500">Bez termínu</span>
+                                <Badge variant="outline" className="rounded-full border-slate-200 bg-white text-slate-700">{taskStats.withoutDate}</Badge>
+                            </div>
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                                <span className="text-slate-500">Celkový progress</span>
+                                <span className="font-semibold text-slate-950">{progress}%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-emerald-600" />
+                    <h2 className="text-base font-semibold text-slate-950">Finance projektu</h2>
+                </div>
+                {canViewFinance ? (
+                    <div className="mt-4 space-y-3">
+                        <div className={cn("rounded-lg border p-3", financeTone)}>
+                            <div className="text-xs font-semibold uppercase tracking-wide">Zbývá týmu</div>
+                            <div className="mt-1 text-2xl font-bold tabular-nums">{remainingTeamBudget.toLocaleString('cs-CZ')} Kč</div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <div className="text-xs text-slate-500">Budget týmu</div>
+                                <div className="mt-1 font-bold tabular-nums text-slate-950">{toAmount(financials?.teamBudget).toLocaleString('cs-CZ')} Kč</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <div className="text-xs text-slate-500">Vyplaceno</div>
+                                <div className="mt-1 font-bold tabular-nums text-slate-950">{toAmount(financials?.paidOutAmount).toLocaleString('cs-CZ')} Kč</div>
+                            </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
+                                <span>Rezervováno / vyplaceno</span>
+                                <span>{toAmount(financials?.reservedOrPaidPayouts).toLocaleString('cs-CZ')} Kč</span>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-white">
+                                <div
+                                    className="h-full rounded-full bg-emerald-500"
+                                    style={{ width: `${Math.max(0, Math.min(100, toAmount(financials?.teamBudget) ? (toAmount(financials?.reservedOrPaidPayouts) / toAmount(financials?.teamBudget)) * 100 : 0))}%` }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                        Finanční souhrny jsou skryté podle oprávnění nebo soukromého režimu.
+                    </div>
+                )}
+            </section>
+        </div>
+    );
+};
 
 const StatusBadge = ({ status, config }) => (
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors", config?.color || "bg-gray-100 text-gray-800")}>

@@ -27,6 +27,23 @@ import {
   Users,
   Wrench,
 } from 'lucide-react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  PolarAngleAxis,
+  RadialBar,
+  RadialBarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -165,6 +182,187 @@ const WorkItem = ({ title, subtitle, meta, to, tone = 'slate' }) => {
 const EmptyBlock = ({ text }) => (
   <div className="rounded-md border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center text-sm text-slate-500">
     {text}
+  </div>
+);
+
+const chartPalette = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#64748b', '#8b5cf6'];
+
+const ChartTooltip = ({ active, payload, label, valueFormatter = (value) => value }) => {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-lg">
+      {label && <div className="mb-1 font-semibold text-slate-950">{label}</div>}
+      <div className="space-y-1">
+        {payload.map((item) => (
+          <div key={item.dataKey || item.name} className="flex items-center justify-between gap-4">
+            <span className="flex items-center gap-2 text-slate-500">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color || item.payload?.fill }} />
+              {item.name}
+            </span>
+            <span className="font-semibold tabular-nums text-slate-950">{valueFormatter(item.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const MoneyAxisTick = ({ x, y, payload }) => (
+  <text x={x} y={y} dy={12} textAnchor="middle" fill="#64748b" fontSize={11}>
+    {Math.round(Number(payload.value || 0) / 1000)}k
+  </text>
+);
+
+const MiniAreaChart = ({ data }) => (
+  <div className="h-48">
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
+        <defs>
+          <linearGradient id="dashboardPipelineFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#2563eb" stopOpacity={0.35} />
+            <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
+          </linearGradient>
+          <linearGradient id="dashboardWeightedFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#10b981" stopOpacity={0.28} />
+            <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+        <YAxis tickLine={false} axisLine={false} tick={<MoneyAxisTick />} width={42} />
+        <Tooltip content={<ChartTooltip valueFormatter={formatCurrency} />} />
+        <Area type="monotone" dataKey="pipeline" name="Pipeline" stroke="#2563eb" strokeWidth={2.5} fill="url(#dashboardPipelineFill)" />
+        <Area type="monotone" dataKey="weighted" name="Váženě" stroke="#10b981" strokeWidth={2.5} fill="url(#dashboardWeightedFill)" />
+      </AreaChart>
+    </ResponsiveContainer>
+  </div>
+);
+
+const WorkloadBarChart = ({ data }) => (
+  <div className="h-48">
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data} margin={{ top: 10, right: 8, left: -22, bottom: 0 }}>
+        <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+        <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+        <Tooltip content={<ChartTooltip />} />
+        <Bar dataKey="count" name="Počet" radius={[8, 8, 0, 0]}>
+          {data.map((entry, index) => <Cell key={entry.name} fill={chartPalette[index % chartPalette.length]} />)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+);
+
+const StageDonutChart = ({ data }) => (
+  <div className="grid gap-4 lg:grid-cols-[180px_minmax(0,1fr)]">
+    <div className="h-44">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie data={data} dataKey="value" nameKey="name" innerRadius={48} outerRadius={76} paddingAngle={3}>
+            {data.map((entry, index) => <Cell key={entry.name} fill={entry.fill || chartPalette[index % chartPalette.length]} />)}
+          </Pie>
+          <Tooltip content={<ChartTooltip valueFormatter={formatCurrency} />} />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
+    <div className="space-y-2 self-center">
+      {data.length ? data.map((item) => (
+        <div key={item.name} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.fill }} />
+            <span className="truncate font-medium text-slate-700">{item.name}</span>
+          </span>
+          <span className="shrink-0 font-semibold tabular-nums text-slate-950">{formatCurrency(item.value)}</span>
+        </div>
+      )) : <EmptyBlock text="Bez aktivní pipeline." />}
+    </div>
+  </div>
+);
+
+const HealthRadial = ({ score }) => {
+  const color = score >= 80 ? '#10b981' : score >= 55 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div className="relative h-44">
+      <ResponsiveContainer width="100%" height="100%">
+        <RadialBarChart innerRadius="72%" outerRadius="95%" data={[{ name: 'Zdraví', value: score, fill: color }]} startAngle={90} endAngle={-270}>
+          <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+          <RadialBar dataKey="value" cornerRadius={12} background={{ fill: '#e2e8f0' }} />
+        </RadialBarChart>
+      </ResponsiveContainer>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <div className="text-3xl font-bold tracking-tight text-slate-950">{score}%</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">zdraví portálu</div>
+      </div>
+    </div>
+  );
+};
+
+const ExecutiveDashboard = ({ chartData, isPrivateMode, isSuperUser, summary, data }) => (
+  <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.8fr)]">
+    <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <CardHeader className="border-b border-slate-200 bg-slate-50/70 px-5 py-4">
+        <SectionHeader
+          icon={BarChart3}
+          title="Výkon portálu"
+          description="CRM, projekce a realizace v jednom provozním pohledu."
+          action={<Badge variant="outline" className="rounded-full bg-white px-3 py-1">{summary.openOpportunities.length} otevřených OP</Badge>}
+        />
+      </CardHeader>
+      <CardContent className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-950">Pipeline a vážená hodnota</div>
+              <div className="text-xs text-slate-500">Porovnání hlavních finančních toků dashboardu.</div>
+            </div>
+          </div>
+          <MiniAreaChart data={chartData.pipelineTrend} />
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <HealthRadial score={chartData.healthScore} />
+          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-lg bg-slate-50 px-2 py-2">
+              <div className="font-bold text-slate-950">{summary.activeProjects.length}</div>
+              <div className="text-[11px] text-slate-500">projekty</div>
+            </div>
+            <div className="rounded-lg bg-slate-50 px-2 py-2">
+              <div className="font-bold text-slate-950">{summary.openTasks.length}</div>
+              <div className="text-[11px] text-slate-500">úkoly</div>
+            </div>
+            <div className="rounded-lg bg-slate-50 px-2 py-2">
+              <div className="font-bold text-slate-950">{summary.pendingApprovals}</div>
+              <div className="text-[11px] text-slate-500">schválení</div>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <CardHeader className="border-b border-slate-200 px-5 py-4">
+        <SectionHeader icon={Activity} title="Workload" description="Kde je teď nejvíc otevřené práce." />
+      </CardHeader>
+      <CardContent className="p-5">
+        <WorkloadBarChart data={chartData.workload} />
+      </CardContent>
+    </Card>
+
+    <Card className="rounded-xl border border-slate-200 bg-white shadow-sm xl:col-span-2">
+      <CardHeader className="border-b border-slate-200 px-5 py-4">
+        <SectionHeader
+          icon={Target}
+          title="Obchodní pipeline podle fáze"
+          description="Rychlá orientace, kde leží objem rozpracovaných obchodů."
+          action={!isPrivateMode && isSuperUser ? <Badge variant="outline" className="rounded-full px-3 py-1">Zisk {formatCurrency(data.companyFinance.realizedProfit)}</Badge> : null}
+        />
+      </CardHeader>
+      <CardContent className="p-5">
+        <StageDonutChart data={chartData.stageDonut} />
+      </CardContent>
+    </Card>
   </div>
 );
 
@@ -601,6 +799,38 @@ const Dashboard = () => {
     [summary.openOpportunities],
   );
 
+  const chartData = useMemo(() => {
+    const pipelineTrend = [
+      { name: 'CRM', pipeline: summary.pipelineValue, weighted: summary.weightedPipeline },
+      { name: 'Nabídky', pipeline: summary.offersValue, weighted: summary.ordersValue },
+      { name: 'Projekce', pipeline: summary.activeProjectsValue, weighted: data.companyFinance.potentialProfit },
+      { name: 'Realizace', pipeline: summary.activeRealizationsValue, weighted: data.companyFinance.realizedProfit },
+    ];
+
+    const workload = [
+      { name: 'Projekty', count: summary.activeProjects.length },
+      { name: 'Realizace', count: summary.activeRealizations.length },
+      { name: 'Úkoly', count: summary.openTasks.length },
+      { name: 'Inženýring', count: summary.activeEngineering.length },
+      { name: 'Schválení', count: summary.pendingApprovals },
+    ];
+
+    const stageDonut = stageSummary.map((item, index) => ({
+      name: stageLabels[item.stage] || item.stage,
+      value: item.value,
+      count: item.count,
+      fill: chartPalette[index % chartPalette.length],
+    }));
+
+    const riskPenalty =
+      Math.min(35, summary.overdueTasks.length * 5)
+      + Math.min(20, summary.overdueEngineering.length * 5)
+      + Math.min(20, summary.pendingApprovals * 3);
+    const healthScore = Math.max(0, Math.min(100, 100 - riskPenalty));
+
+    return { healthScore, pipelineTrend, stageDonut, workload };
+  }, [data.companyFinance.potentialProfit, data.companyFinance.realizedProfit, stageSummary, summary]);
+
   const moduleTiles = [
     {
       title: 'CRM',
@@ -739,6 +969,14 @@ const Dashboard = () => {
             </div>
           </div>
         )}
+
+        <ExecutiveDashboard
+          chartData={chartData}
+          data={data}
+          isPrivateMode={isPrivateMode}
+          isSuperUser={isSuperUser}
+          summary={summary}
+        />
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           <DashboardMetric icon={Target} label="CRM pipeline" value={formatCurrency(summary.pipelineValue)} detail={`${summary.openOpportunities.length} otevřených OP`} tone="blue" to="/crm" />

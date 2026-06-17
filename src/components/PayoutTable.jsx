@@ -1,17 +1,24 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
 import { cs } from 'date-fns/locale';
+import { Link } from 'react-router-dom';
 import {
+  Briefcase,
+  CalendarDays,
   Check,
   CheckCircle,
+  ChevronDown,
   Download,
   Edit2,
   Eye,
   FileWarning,
+  Hash,
   Loader2,
   MoreHorizontal,
+  DollarSign,
   Trash2,
   Upload,
+  User,
   XCircle
 } from 'lucide-react';
 import {
@@ -176,52 +183,152 @@ const getPayoutItemSubtitle = (item) => {
   if (item.realization_id) return 'Realizace';
   return 'Projekt';
 };
+const getPayoutItemHref = (item) => {
+  if (item.project_id) return `/projects/${item.project_id}`;
+  if (item.realization_id) return `/realizace/${item.realization_id}`;
+  return null;
+};
 
 const PayoutItemsSummary = ({ items = [] }) => {
   if (!items.length) return <span className="text-sm text-slate-400">Bez položek</span>;
 
-  const visibleItems = items.slice(0, 3);
+  const visibleItems = items.slice(0, 2);
+  const totalAmount = items.reduce((sum, payoutItem) => sum + Number(payoutItem.amount || 0), 0);
 
   return (
-    <div className="space-y-2">
-      {visibleItems.map((payoutItem) => (
-        <div key={payoutItem.id} className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2">
-          <div className="flex items-start justify-between gap-3">
+    <div className="min-w-0 space-y-1.5">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <Badge variant="outline" className="rounded-full border-slate-200 bg-white font-semibold text-slate-700">
+          {items.length} {items.length === 1 ? 'položka' : items.length < 5 ? 'položky' : 'položek'}
+        </Badge>
+        <span className="tabular-nums">Součet položek {formatCurrency(totalAmount)}</span>
+      </div>
+      <div className="space-y-1">
+        {visibleItems.map((payoutItem) => (
+          <div key={payoutItem.id} className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-slate-100 bg-slate-50/70 px-2.5 py-1.5">
             <div className="min-w-0">
               <div className="truncate text-sm font-medium text-slate-800">{getPayoutItemTitle(payoutItem)}</div>
-              <div className="mt-0.5 text-xs text-slate-500">{getPayoutItemSubtitle(payoutItem)}</div>
+              <div className="text-xs text-slate-500">{getPayoutItemSubtitle(payoutItem)}</div>
             </div>
             <div className="shrink-0 text-right text-sm font-semibold tabular-nums text-slate-950">
               {formatCurrency(payoutItem.amount)}
             </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
       {items.length > visibleItems.length && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="link" className="h-auto p-0 text-xs font-medium text-slate-600">
-              Zobrazit všech {items.length} položek
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-96 p-0" align="start">
-            <div className="border-b bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-950">Obsah žádosti</div>
-            <div className="max-h-80 space-y-2 overflow-y-auto p-3">
-              {items.map((payoutItem) => (
-                <div key={payoutItem.id} className="rounded-lg border px-3 py-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="break-words text-sm font-medium text-slate-900">{getPayoutItemTitle(payoutItem)}</div>
-                      <div className="mt-0.5 text-xs text-slate-500">{getPayoutItemSubtitle(payoutItem)}</div>
-                    </div>
-                    <div className="shrink-0 text-sm font-semibold tabular-nums text-slate-950">{formatCurrency(payoutItem.amount)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
+        <div className="text-xs font-medium text-slate-500">Další položky jsou v detailu žádosti.</div>
       )}
+    </div>
+  );
+};
+
+const DetailMetric = ({ icon: Icon, label, value }) => (
+  <div className="rounded-lg border border-slate-200 bg-white p-3">
+    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </div>
+    <div className="mt-1.5 break-words text-sm font-semibold text-slate-950">{value}</div>
+  </div>
+);
+
+const PayoutDetailPanel = ({ item, onDownloadInvoice }) => {
+  const payoutItems = item.payout_items || [];
+  const createdAt = item.created_at || item.request_date;
+  const approvedAt = item.approved_at;
+  const paidAt = item.paid_at;
+
+  return (
+    <div className="py-4">
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="grid gap-3 border-b border-slate-200 p-4 sm:grid-cols-2 xl:grid-cols-4">
+          <DetailMetric icon={User} label="Pracovník" value={item.members?.name || 'Neznámý pracovník'} />
+          <DetailMetric icon={Hash} label="Variabilní symbol" value={item.variable_symbol || 'Není vyplněn'} />
+          <DetailMetric icon={CalendarDays} label="Podáno" value={createdAt ? format(new Date(createdAt), 'd. MMMM yyyy', { locale: cs }) : 'Bez data'} />
+          <DetailMetric icon={DollarSign} label="Celkem" value={formatCurrency(item.total_amount || item.amount)} />
+        </div>
+
+        <div className="grid gap-5 p-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0">
+            <div className="mb-3 flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-slate-500" />
+              <h3 className="text-sm font-semibold text-slate-950">Položky úkolové mzdy</h3>
+            </div>
+            {payoutItems.length ? (
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="grid grid-cols-[minmax(0,1fr)_140px] bg-slate-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <div>Projekt / realizace</div>
+                  <div className="text-right">Částka</div>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {payoutItems.map((payoutItem) => {
+                    const href = getPayoutItemHref(payoutItem);
+                    const title = getPayoutItemTitle(payoutItem);
+
+                    return (
+                      <div key={payoutItem.id} className="grid grid-cols-[minmax(0,1fr)_140px] gap-3 px-3 py-2.5">
+                        <div className="min-w-0">
+                          {href ? (
+                            <Link to={href} className="break-words text-sm font-semibold text-slate-900 hover:text-primary">
+                              {title}
+                            </Link>
+                          ) : (
+                            <div className="break-words text-sm font-semibold text-slate-900">{title}</div>
+                          )}
+                          <div className="mt-0.5 text-xs text-slate-500">{getPayoutItemSubtitle(payoutItem)}</div>
+                        </div>
+                        <div className="text-right text-sm font-bold tabular-nums text-slate-950">{formatCurrency(payoutItem.amount)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-slate-300 p-5 text-sm text-slate-500">Žádost nemá rozepsané položky.</div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-slate-950">Stav a fakturace</h3>
+              <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-slate-500">Aktuální stav</span>
+                  <PayoutStatusBadge status={item.status} />
+                </div>
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-slate-500">Schváleno</span>
+                  <span className="font-medium text-slate-900">{approvedAt ? format(new Date(approvedAt), 'd. M. yyyy', { locale: cs }) : 'Zatím ne'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-slate-500">Vyplaceno</span>
+                  <span className="font-medium text-slate-900">{paidAt ? format(new Date(paidAt), 'd. M. yyyy', { locale: cs }) : 'Zatím ne'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-slate-500">Režim faktury</span>
+                  <span className="font-medium text-slate-900">{item.approved_without_invoice ? 'Bez faktury' : 'S fakturou'}</span>
+                </div>
+                {item.invoice_url ? (
+                  <Button variant="outline" size="sm" onClick={() => onDownloadInvoice?.(item.invoice_url, item.invoice_name)} className="mt-2 w-full justify-center gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100">
+                    <Download className="h-3.5 w-3.5" />
+                    Stáhnout fakturu
+                  </Button>
+                ) : (
+                  <div className="mt-2 rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-xs text-slate-500">Faktura zatím není nahraná.</div>
+                )}
+              </div>
+            </div>
+
+            {item.admin_note && (
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-950">Poznámka administrátora</h3>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">{item.admin_note}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -238,8 +345,30 @@ const PayoutTable = ({
   onUploadInvoice
 }) => {
   const [selectedAuditPayout, setSelectedAuditPayout] = useState(null);
+  const [expandedPayout, setExpandedPayout] = useState(null);
 
   const columns = [
+    {
+      key: 'expand',
+      header: '',
+      headerClassName: 'h-11 w-12 px-4',
+      cellClassName: 'w-12 px-4',
+      render: (item) => {
+        const isExpanded = expandedPayout === item.id;
+
+        return (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+            onClick={() => setExpandedPayout(isExpanded ? null : item.id)}
+            title={isExpanded ? 'Sbalit detail' : 'Zobrazit detail'}
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+          </Button>
+        );
+      },
+    },
     {
       key: 'date',
       header: 'Datum',
@@ -366,6 +495,9 @@ const PayoutTable = ({
       items={data}
       loading={loading}
       loadingLabel="Načítám úkolové výplaty..."
+      renderExpandedRow={(item) => (
+        expandedPayout === item.id ? <PayoutDetailPanel item={item} onDownloadInvoice={onDownloadInvoice} /> : null
+      )}
     />
   );
 };

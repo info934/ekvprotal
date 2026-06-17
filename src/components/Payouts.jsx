@@ -56,14 +56,21 @@ const Payouts = () => {
 
   const canAdmin = hasPermission('payouts', 'can_admin');
   const canEditOwn = hasPermission('payouts', 'can_edit');
+  const canCreateOwnPayout = canAdmin || Boolean(memberId);
 
   useEffect(() => { if(memberId) supabase.from('members').select('*').eq('id', memberId).single().then(({data}) => setMemberInfo(data)); }, [memberId]);
 
   const fetchPayouts = useCallback(async () => {
     setLoading(true);
     try {
+      if (!canAdmin && !memberId) {
+        setPayouts([]);
+        setHourlyRequests([]);
+        return;
+      }
+
       // FIXED: Explicit foreign key relationships for payouts table
-      const { data: fixedData } = await supabase
+      let fixedQuery = supabase
         .from('payouts')
         .select(`
           *,
@@ -76,11 +83,18 @@ const Payouts = () => {
           )
         `)
         .order('request_date', { ascending: false });
+
+      if (!canAdmin) {
+        fixedQuery = fixedQuery.eq('member_id', memberId);
+      }
+
+      const { data: fixedData, error: fixedError } = await fixedQuery;
+      if (fixedError) throw fixedError;
       
       setPayouts(fixedData || []);
       
       // FIXED: Explicit foreign key for hourly requests
-      const { data: hourlyData } = await supabase
+      let hourlyQuery = supabase
         .from('hourly_payout_requests')
         .select(`
           *,
@@ -88,6 +102,13 @@ const Payouts = () => {
           members:members!hourly_payout_requests_member_id_fkey(name, auth_user_id)
         `)
         .order('created_at', { ascending: false });
+
+      if (!canAdmin) {
+        hourlyQuery = hourlyQuery.eq('member_id', memberId);
+      }
+
+      const { data: hourlyData, error: hourlyError } = await hourlyQuery;
+      if (hourlyError) throw hourlyError;
       
       setHourlyRequests(hourlyData || []);
     } catch (error) { 
@@ -95,7 +116,7 @@ const Payouts = () => {
     } finally { 
       setLoading(false); 
     }
-  }, [toast]);
+  }, [canAdmin, memberId, toast]);
 
   useEffect(() => {
     fetchPayouts();
@@ -287,6 +308,8 @@ const Payouts = () => {
   };
 
   const isHourlyWorker = memberInfo?.hourly_rate > 0;
+  const overviewScopeLabel = canAdmin ? 'Celkový přehled' : 'Můj přehled';
+  const overviewCountLabel = canAdmin ? 'žádostí v evidenci' : 'mých žádostí';
   const defaultTab = canAdmin ? 'hourly_admin' : (isHourlyWorker ? 'hourly' : 'fixed');
   const payoutAgendaTabs = [
     { value: 'fixed', label: 'Úkolová mzda', icon: Target, show: true },
@@ -309,9 +332,11 @@ const Payouts = () => {
                 <Button variant="outline" onClick={fetchPayouts} className="bg-white shadow-sm border-slate-200 hidden sm:flex">
                   <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />Aktualizovat
                 </Button>
-                <Button onClick={() => navigate('/payouts/new')} className="shadow-sm w-full sm:w-auto">
-                  <Plus className="w-4 h-4 mr-2" />Nová žádost (úkol)
-                </Button>
+                {canCreateOwnPayout && (
+                  <Button onClick={() => navigate('/payouts/new')} className="shadow-sm w-full sm:w-auto">
+                    <Plus className="w-4 h-4 mr-2" />Nová žádost (úkol)
+                  </Button>
+                )}
               </>
             }
           />
@@ -323,8 +348,8 @@ const Payouts = () => {
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Celkový přehled úkolové mzdy</h2>
-                <p className="mt-1 text-sm text-slate-600">{stats.fixed.totalCount} žádostí v evidenci</p>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{overviewScopeLabel} úkolové mzdy</h2>
+                <p className="mt-1 text-sm text-slate-600">{stats.fixed.totalCount} {overviewCountLabel}</p>
               </div>
               <div className="rounded-lg border border-blue-100 bg-blue-50 p-2 text-blue-700">
                 <Target className="h-5 w-5" />
@@ -332,7 +357,7 @@ const Payouts = () => {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <PayoutMetricCard icon={Target} label="Aktivní úkolové" value={stats.fixed.activeCount.toString()} detail={formatCurrency(stats.fixed.activeAmount)} tone="blue" />
-              <PayoutMetricCard icon={Timer} label="Ke schválení" value={stats.fixed.pendingCount.toString()} detail="Nové úkolové žádosti" tone="amber" />
+              <PayoutMetricCard icon={Timer} label="Ke schválení" value={stats.fixed.pendingCount.toString()} detail={canAdmin ? 'Nové úkolové žádosti' : 'Moje nové žádosti'} tone="amber" />
               <PayoutMetricCard icon={FileText} label="Faktury ke kontrole" value={stats.fixed.invoiceReadyCount.toString()} detail="Úkolové faktury" tone="slate" />
               <PayoutMetricCard icon={PiggyBank} label="Vyplaceno úkolově" value={formatCurrency(stats.fixed.paidAmount)} detail={`${stats.fixed.paidCount} uzavřených`} tone="emerald" />
             </div>
@@ -341,8 +366,8 @@ const Payouts = () => {
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Celkový přehled hodinové mzdy</h2>
-                <p className="mt-1 text-sm text-slate-600">{stats.hourly.totalCount} žádostí v evidenci</p>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{overviewScopeLabel} hodinové mzdy</h2>
+                <p className="mt-1 text-sm text-slate-600">{stats.hourly.totalCount} {overviewCountLabel}</p>
               </div>
               <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-2 text-emerald-700">
                 <Timer className="h-5 w-5" />
@@ -350,7 +375,7 @@ const Payouts = () => {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <PayoutMetricCard icon={Timer} label="Aktivní hodinové" value={stats.hourly.activeCount.toString()} detail={formatCurrency(stats.hourly.activeAmount)} tone="blue" />
-              <PayoutMetricCard icon={CheckCircle2} label="Ke schválení" value={stats.hourly.pendingCount.toString()} detail="Nové hodinové žádosti" tone="amber" />
+              <PayoutMetricCard icon={CheckCircle2} label="Ke schválení" value={stats.hourly.pendingCount.toString()} detail={canAdmin ? 'Nové hodinové žádosti' : 'Moje nové žádosti'} tone="amber" />
               <PayoutMetricCard icon={FileText} label="Faktury ke kontrole" value={stats.hourly.invoiceReadyCount.toString()} detail="Hodinové faktury" tone="slate" />
               <PayoutMetricCard icon={Wallet} label="Vyplaceno hodinově" value={formatCurrency(stats.hourly.paidAmount)} detail={`${stats.hourly.paidCount} uzavřených`} tone="emerald" />
             </div>
@@ -458,7 +483,7 @@ const Payouts = () => {
                   <div className="relative w-full lg:max-w-md">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <Input
-                      placeholder="Hledat projekt, VS nebo zaměstnance..."
+                      placeholder={canAdmin ? 'Hledat projekt, VS nebo zaměstnance...' : 'Hledat projekt nebo VS...'}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-9"

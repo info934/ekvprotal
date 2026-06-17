@@ -12,6 +12,7 @@ const PayoutRequestsTable = ({
   items,
   loading,
   loadingLabel,
+  renderExpandedRow,
 }) => {
   if (loading) {
     return (
@@ -46,15 +47,29 @@ const PayoutRequestsTable = ({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item) => (
-            <TableRow key={getRowKey(item)} className={getRowClassName?.(item) || 'border-slate-100 hover:bg-slate-50/70'}>
-              {columns.map((column) => (
-                <TableCell key={column.key} className={column.cellClassName}>
-                  {column.render(item)}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
+          {items.map((item) => {
+            const rowKey = getRowKey(item);
+            const expandedContent = renderExpandedRow?.(item);
+
+            return (
+              <React.Fragment key={rowKey}>
+                <TableRow className={getRowClassName?.(item) || 'border-slate-100 hover:bg-slate-50/70'}>
+                  {columns.map((column) => (
+                    <TableCell key={column.key} className={column.cellClassName}>
+                      {column.render(item)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+                {expandedContent && (
+                  <TableRow className="border-slate-100 bg-slate-50/60 hover:bg-slate-50/60">
+                    <TableCell colSpan={columns.length} className="px-4 py-0">
+                      {expandedContent}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </React.Fragment>
+            );
+          })}
         </TableBody>
       </Table>
     </div>

@@ -1,6 +1,21 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HardHat, Plus, Search, LayoutGrid, List, Edit2, Trash2, RefreshCw, Columns, ChevronDown, Loader2, Activity, DollarSign } from 'lucide-react';
+import { HardHat, Plus, Search, LayoutGrid, List, Edit2, Trash2, RefreshCw, Columns, ChevronDown, Loader2, Activity, DollarSign, AlertTriangle, BarChart3, CalendarClock, CheckCircle, CircleDollarSign, PieChart as PieChartIcon } from 'lucide-react';
+import {
+    Bar,
+    BarChart,
+    CartesianGrid,
+    Cell,
+    Pie,
+    PieChart as RechartsPieChart,
+    PolarAngleAxis,
+    RadialBar,
+    RadialBarChart,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
+} from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -30,6 +45,199 @@ const statusConfig = {
 };
 
 const formatDateShort = (date) => date ? format(new Date(date), 'd.M.yyyy') : 'Neuvedeno';
+
+const chartPalette = ['#2563eb', '#f59e0b', '#10b981', '#ef4444', '#64748b', '#8b5cf6'];
+
+const RealizationMetric = ({ icon: Icon, label, value, detail, tone = 'slate', guarded = false }) => {
+    const tones = {
+        blue: 'border-blue-100 bg-blue-50 text-blue-700',
+        emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+        amber: 'border-amber-100 bg-amber-50 text-amber-700',
+        rose: 'border-rose-100 bg-rose-50 text-rose-700',
+        slate: 'border-slate-200 bg-slate-50 text-slate-700',
+    };
+
+    return (
+        <Card className="h-full rounded-xl border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+            <CardContent className="flex h-full flex-col justify-between gap-4 p-4">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+                        <div className="mt-2 break-words text-2xl font-bold tracking-tight text-slate-950">
+                            {guarded ? <FinancialValueGuard value={value} /> : value}
+                        </div>
+                    </div>
+                    <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border', tones[tone] || tones.slate)}>
+                        <Icon className="h-5 w-5" />
+                    </div>
+                </div>
+                {detail && <p className="text-sm text-slate-500">{detail}</p>}
+            </CardContent>
+        </Card>
+    );
+};
+
+const ChartTooltip = ({ active, payload, label, guarded = false }) => {
+    if (!active || !payload?.length) return null;
+
+    return (
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-lg">
+            {label && <div className="mb-1 font-semibold text-slate-950">{label}</div>}
+            <div className="space-y-1">
+                {payload.map((item) => (
+                    <div key={item.dataKey || item.name} className="flex items-center justify-between gap-4">
+                        <span className="flex items-center gap-2 text-slate-500">
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color || item.payload?.fill }} />
+                            {item.name}
+                        </span>
+                        <span className="font-semibold tabular-nums text-slate-950">
+                            {guarded ? <FinancialValueGuard value={formatCurrency(item.value)} /> : item.value}
+                        </span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const StatusDonut = ({ data }) => (
+    <div className="grid gap-4 lg:grid-cols-[180px_minmax(0,1fr)]">
+        <div className="h-44">
+            <ResponsiveContainer width="100%" height="100%">
+                <RechartsPieChart>
+                    <Pie data={data} dataKey="count" nameKey="label" innerRadius={48} outerRadius={76} paddingAngle={3}>
+                        {data.map((item) => <Cell key={item.status} fill={item.fill} />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip />} />
+                </RechartsPieChart>
+            </ResponsiveContainer>
+        </div>
+        <div className="space-y-2 self-center">
+            {data.map((item) => (
+                <div key={item.status} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm">
+                    <span className="flex min-w-0 items-center gap-2">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.fill }} />
+                        <span className="truncate font-medium text-slate-700">{item.label}</span>
+                    </span>
+                    <span className="font-semibold tabular-nums text-slate-950">{item.count}</span>
+                </div>
+            ))}
+        </div>
+    </div>
+);
+
+const ValueByStatusChart = ({ data, canViewAmounts }) => (
+    <div className="h-56">
+        <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 10, right: 12, left: -22, bottom: 0 }}>
+                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                <YAxis hide={!canViewAmounts} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                <Tooltip content={<ChartTooltip guarded={canViewAmounts} />} />
+                <Bar dataKey="value" name={canViewAmounts ? 'Hodnota' : 'Počet'} radius={[8, 8, 0, 0]}>
+                    {data.map((item) => <Cell key={item.status} fill={item.fill} />)}
+                </Bar>
+            </BarChart>
+        </ResponsiveContainer>
+    </div>
+);
+
+const RealizationHealth = ({ score }) => {
+    const fill = score >= 80 ? '#10b981' : score >= 55 ? '#f59e0b' : '#ef4444';
+
+    return (
+        <div className="relative h-48">
+            <ResponsiveContainer width="100%" height="100%">
+                <RadialBarChart innerRadius="72%" outerRadius="96%" data={[{ value: score, fill }]} startAngle={90} endAngle={-270}>
+                    <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                    <RadialBar dataKey="value" cornerRadius={12} background={{ fill: '#e2e8f0' }} />
+                </RadialBarChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div className="text-3xl font-bold tracking-tight text-slate-950">{score}%</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">zdraví realizací</div>
+            </div>
+        </div>
+    );
+};
+
+const RealizationExecutiveDashboard = ({ canViewAmounts, chartData, stats }) => (
+    <div className="space-y-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <RealizationMetric icon={HardHat} label="Celkem realizací" value={stats.total} detail={`${stats.active} aktivních zakázek`} tone="slate" />
+            <RealizationMetric icon={Activity} label="Probíhající" value={stats.running} detail={`${stats.paused} pozastaveno`} tone="blue" />
+            <RealizationMetric icon={CalendarClock} label="Čeká / připravuje se" value={stats.pendingOrPreparing} detail="zásobník práce pro tým" tone="amber" />
+            <RealizationMetric icon={CircleDollarSign} label="Hodnota zakázek" value={formatCurrency(stats.value)} detail="součet smluvních částek" tone="emerald" guarded />
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+            <Card className="rounded-xl border-slate-200 bg-white shadow-sm">
+                <CardHeader className="border-b border-slate-200 px-5 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="flex items-center gap-2 text-base">
+                                <BarChart3 className="h-4 w-4 text-primary" />
+                                {canViewAmounts ? 'Hodnota podle stavu' : 'Počet podle stavu'}
+                            </CardTitle>
+                            <p className="mt-1 text-sm text-slate-500">{canViewAmounts ? 'Finanční objem realizací rozdělený podle workflow.' : 'Rozložení realizací podle workflow bez finančních částek.'}</p>
+                        </div>
+                        {!canViewAmounts && <MemoBadge variant="secondary">Skryto</MemoBadge>}
+                    </div>
+                </CardHeader>
+                <CardContent className="p-5">
+                    <ValueByStatusChart data={chartData.statusValue} canViewAmounts={canViewAmounts} />
+                </CardContent>
+            </Card>
+
+            <Card className="rounded-xl border-slate-200 bg-white shadow-sm">
+                <CardHeader className="border-b border-slate-200 px-5 py-4">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                        <PieChartIcon className="h-4 w-4 text-primary" />
+                        Rozložení stavů
+                    </CardTitle>
+                    <p className="mt-1 text-sm text-slate-500">Kolik realizací je v jednotlivých fázích.</p>
+                </CardHeader>
+                <CardContent className="p-5">
+                    <StatusDonut data={chartData.statusCounts} />
+                </CardContent>
+            </Card>
+
+            <Card className="rounded-xl border-slate-200 bg-white shadow-sm xl:col-span-2">
+                <CardContent className="grid gap-5 p-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                        <RealizationHealth score={chartData.healthScore} />
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-red-800">
+                                <AlertTriangle className="h-4 w-4" />
+                                Pozastaveno
+                            </div>
+                            <div className="mt-2 text-3xl font-bold text-red-950">{stats.paused}</div>
+                            <p className="mt-1 text-sm text-red-700">zakázky potřebují rozhodnutí</p>
+                        </div>
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                                <CalendarClock className="h-4 w-4" />
+                                Příprava
+                            </div>
+                            <div className="mt-2 text-3xl font-bold text-amber-950">{stats.preparing}</div>
+                            <p className="mt-1 text-sm text-amber-700">před spuštěním realizace</p>
+                        </div>
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+                                <CheckCircle className="h-4 w-4" />
+                                Uzavřeno
+                            </div>
+                            <div className="mt-2 text-3xl font-bold text-emerald-950">{stats.closed}</div>
+                            <p className="mt-1 text-sm text-emerald-700">dokončeno nebo předáno</p>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+        </div>
+    </div>
+);
 
 const Realizace = () => {
     const [realizations, setRealizations] = useState([]);
@@ -82,7 +290,7 @@ const Realizace = () => {
     const fetchRealizations = useCallback(async () => {
         setLoading(true);
         let query = supabase.from('realizations').select(`
-      id, name, status, type, start_date, team_members,
+      id, name, status, type, start_date, planned_end_date, actual_end_date, team_members,
       contract_amount, expected_total_cost, actual_costs, budget,
       investor:investor_id (id, name),
       lead_person:lead_person_id (id, name)
@@ -273,11 +481,53 @@ const Realizace = () => {
         return searchMatch && statusMatch;
     });
 
-    const stats = {
-        total: realizations.length,
-        running: realizations.filter(r => r.status === 'Probíhá').length,
-        value: realizations.reduce((acc, r) => acc + (Number(r.contract_amount) || 0), 0)
-    };
+    const stats = useMemo(() => {
+        const running = realizations.filter(r => r.status === 'Probíhá').length;
+        const preparing = realizations.filter(r => r.status === 'Připravuje se').length;
+        const paused = realizations.filter(r => r.status === 'Pozastaveno').length;
+        const waiting = realizations.filter(r => r.status === 'waiting_for_approval').length;
+        const closed = realizations.filter(r => ['Dokončeno', 'Předáno'].includes(r.status)).length;
+        const active = realizations.filter(r => !['Dokončeno', 'Předáno'].includes(r.status)).length;
+
+        return {
+            total: realizations.length,
+            running,
+            preparing,
+            paused,
+            waiting,
+            active,
+            closed,
+            pendingOrPreparing: preparing + waiting,
+            value: realizations.reduce((acc, r) => acc + (Number(r.contract_amount) || 0), 0),
+        };
+    }, [realizations]);
+
+    const chartData = useMemo(() => {
+        const statusCounts = statusOrder.map((statusKey, index) => {
+            const items = realizations.filter((item) => item.status === statusKey);
+            return {
+                status: statusKey,
+                label: statusConfig[statusKey]?.label || statusKey,
+                count: items.length,
+                fill: chartPalette[index % chartPalette.length],
+            };
+        }).filter((item) => item.count > 0);
+
+        const statusValue = statusOrder.map((statusKey, index) => {
+            const items = realizations.filter((item) => item.status === statusKey);
+            return {
+                status: statusKey,
+                label: statusConfig[statusKey]?.label || statusKey,
+                value: canViewAmounts ? items.reduce((sum, item) => sum + Number(item.contract_amount || 0), 0) : items.length,
+                fill: chartPalette[index % chartPalette.length],
+            };
+        }).filter((item) => item.value > 0 || statusCounts.some((count) => count.status === item.status));
+
+        const riskPenalty = Math.min(35, stats.paused * 12) + Math.min(25, stats.waiting * 7);
+        const healthScore = Math.max(0, Math.min(100, 100 - riskPenalty));
+
+        return { healthScore, statusCounts, statusValue };
+    }, [canViewAmounts, realizations, stats.paused, stats.waiting, statusOrder]);
 
     return (
         <div className="app-page">
@@ -295,43 +545,7 @@ const Realizace = () => {
                 }
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card>
-                    <CardContent className="p-6 flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-muted-foreground">Celkem realizací</p>
-                            <p className="text-2xl font-bold">{stats.total}</p>
-                        </div>
-                        <div className="p-3 bg-slate-100 rounded-full">
-                            <HardHat className="w-6 h-6 text-slate-600" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-6 flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-muted-foreground">Probíhající</p>
-                            <p className="text-2xl font-bold text-blue-600">{stats.running}</p>
-                        </div>
-                        <div className="p-3 bg-blue-50 rounded-full">
-                            <Activity className="w-6 h-6 text-blue-600" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-6 flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-muted-foreground">Hodnota zakázek</p>
-                            <p className="text-2xl font-bold text-green-600">
-                                <FinancialValueGuard value={formatCurrency(stats.value)} />
-                            </p>
-                        </div>
-                        <div className="p-3 bg-green-50 rounded-full">
-                            <DollarSign className="w-6 h-6 text-green-600" />
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+            <RealizationExecutiveDashboard canViewAmounts={canViewAmounts} chartData={chartData} stats={stats} />
 
             <div className="app-surface sticky top-0 z-10 flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-2 flex-1 w-full md:w-auto">
