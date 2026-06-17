@@ -134,12 +134,9 @@ const RealizaceDetail = () => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    // Fetch Realization with linked_project_id AND new percentage fields
-    const { data: realData, error: realError } = await supabase
-      .from('realizations')
-      .select(`*, investor:subjects!realizations_investor_id_fkey(name), lead_person:members!realizations_lead_person_id_fkey(name)`)
-      .eq('id', realizaceId)
-      .single();
+    const { data: realData, error: realError } = await supabase.rpc('get_realization_safe', {
+      p_realization_id: realizaceId,
+    });
 
     if (realError) {
       toast({ title: 'Chyba', description: 'Nepodařilo se načíst realizaci.', variant: 'destructive' });
@@ -187,7 +184,11 @@ const RealizaceDetail = () => {
   // Fetch Hourly Costs Total - Includes BOTH direct attendance and linked project attendance
   useEffect(() => {
     const fetchHourlyTotal = async () => {
-      if (!realizaceId) return;
+      if (!realizaceId || !canViewCosts) {
+        setHourlyCostsTotal(0);
+        setHourlyLoading(false);
+        return;
+      }
       setHourlyLoading(true);
       try {
         // 1. Direct Realization Attendance
@@ -228,7 +229,7 @@ const RealizaceDetail = () => {
     };
 
     fetchHourlyTotal();
-  }, [realizaceId, linkedProjectId]);
+  }, [realizaceId, linkedProjectId, canViewCosts]);
 
   useEffect(() => {
     fetchData();
@@ -332,8 +333,8 @@ const RealizaceDetail = () => {
   };
 
   const filteredCosts = costs.filter(c =>
-    c.description.toLowerCase().includes(costSearch.toLowerCase()) ||
-    c.supplier?.name?.toLowerCase().includes(costSearch.toLowerCase())
+    (c.description || '').toLowerCase().includes(costSearch.toLowerCase()) ||
+    (c.supplier?.name || '').toLowerCase().includes(costSearch.toLowerCase())
   );
 
   const handleLinkProjectUpdate = (newProjectId) => {

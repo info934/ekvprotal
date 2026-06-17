@@ -465,9 +465,9 @@ const Projects = () => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(p =>
-        p.name.toLowerCase().includes(q) ||
-        p.code.toLowerCase().includes(q) ||
-        p.investor?.name?.toLowerCase().includes(q)
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.code || '').toLowerCase().includes(q) ||
+        (p.investor?.name || '').toLowerCase().includes(q)
       );
     }
 

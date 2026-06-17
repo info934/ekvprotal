@@ -286,7 +286,7 @@ const Realizace = () => {
     const [dragOverStatusKey, setDragOverStatusKey] = useState(null);
     const { toast } = useToast();
     const navigate = useNavigate();
-    const { hasPermission, memberId, isSuperUser, userRole } = useAuth();
+    const { hasPermission, userRole } = useAuth();
     const statusOrder = useMemo(() => Object.keys(statusConfig), []);
     
     const { canViewAmounts } = getFinancialVisibility(userRole);
@@ -324,18 +324,7 @@ const Realizace = () => {
 
     const fetchRealizations = useCallback(async () => {
         setLoading(true);
-        let query = supabase.from('realizations').select(`
-      id, name, status, type, start_date, planned_end_date, actual_end_date, team_members,
-      contract_amount, expected_total_cost, actual_costs, budget,
-      investor:investor_id (id, name),
-      lead_person:lead_person_id (id, name)
-    `).order('created_at', { ascending: false });
-
-        if (!isSuperUser && memberId) {
-            query = query.or(`lead_person_id.eq.${memberId},team_members.cs.{${memberId}}`);
-        }
-
-        const { data, error } = await query;
+        const { data, error } = await supabase.rpc('list_realizations_safe');
 
         if (error) {
             toast({
@@ -347,7 +336,7 @@ const Realizace = () => {
             setRealizations(data || []);
         }
         setLoading(false);
-    }, [toast, isSuperUser, memberId]);
+    }, [toast]);
 
     useEffect(() => {
         fetchRealizations();
@@ -507,10 +496,11 @@ const Realizace = () => {
     }, [fetchRealizations, toast]);
 
     const filteredRealizations = realizations.filter(r => {
+        const q = debouncedSearchTerm.toLowerCase();
         const searchMatch = debouncedSearchTerm === '' ||
-            r.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-            r.investor?.name?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-            r.type?.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
+            (r.name || '').toLowerCase().includes(q) ||
+            (r.investor?.name || '').toLowerCase().includes(q) ||
+            (r.type || '').toLowerCase().includes(q);
 
         const statusMatch = statusFilter === 'all' || r.status === statusFilter;
         return searchMatch && statusMatch;

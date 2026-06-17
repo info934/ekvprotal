@@ -31,10 +31,11 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
             if (!realizaceId) return;
             setLoading(true);
             try {
+                const memberSelect = canViewAmounts ? 'members(name, hourly_rate)' : 'members(name)';
                 // 1. Fetch direct attendance on this Realization
                 const { data: directData, error: directError } = await supabase
                     .from('attendance')
-                    .select('*, members(name, hourly_rate)')
+                    .select(`*, ${memberSelect}`)
                     .eq('realizace_id', realizaceId)
                     .order('date', { ascending: false });
 
@@ -45,7 +46,7 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                 if (linkedProjectId) {
                      const { data: pData, error: pError } = await supabase
                         .from('attendance')
-                        .select('*, members(name, hourly_rate)')
+                        .select(`*, ${memberSelect}`)
                         .eq('project_id', linkedProjectId)
                         .order('date', { ascending: false });
                      if (!pError) projectData = pData || [];
@@ -64,10 +65,12 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
 
                 // Calc totals
                 const tHours = combined.reduce((acc, r) => acc + Number(r.hours), 0);
-                const tCost = combined.reduce((acc, r) => {
-                    const rate = r.members?.hourly_rate ? Number(r.members.hourly_rate) : 0;
-                    return acc + (Number(r.hours) * rate);
-                }, 0);
+                const tCost = canViewAmounts
+                    ? combined.reduce((acc, r) => {
+                        const rate = r.members?.hourly_rate ? Number(r.members.hourly_rate) : 0;
+                        return acc + (Number(r.hours) * rate);
+                    }, 0)
+                    : 0;
                 
                 setTotalHours(tHours);
                 setTotalCost(tCost);
@@ -80,7 +83,7 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
         };
 
         fetchAttendance();
-    }, [realizaceId, linkedProjectId]);
+    }, [realizaceId, linkedProjectId, canViewAmounts]);
 
     // Fetch projects for linking
     useEffect(() => {
@@ -112,13 +115,13 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
             const name = r.members?.name || 'Neznámý';
             if (!summary[name]) summary[name] = { hours: 0, cost: 0, count: 0 };
             const h = Number(r.hours);
-            const rate = r.members?.hourly_rate ? Number(r.members.hourly_rate) : 0;
+            const rate = canViewAmounts && r.members?.hourly_rate ? Number(r.members.hourly_rate) : 0;
             summary[name].hours += h;
             summary[name].cost += h * rate;
             summary[name].count += 1;
         });
         return Object.entries(summary).sort((a,b) => b[1].hours - a[1].hours);
-    }, [records]);
+    }, [records, canViewAmounts]);
 
     return (
         <div className="space-y-6">
