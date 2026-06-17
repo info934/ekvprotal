@@ -34,6 +34,10 @@ import { useDebouncedValue } from '@/hooks/useDebounce';
 import { cn, formatCurrency } from '@/lib/utils';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialValueGuard from './FinancialValueGuard';
+import {
+    buildRealizationProjectionChartData,
+    calculateRealizationProjectionStats,
+} from '@/domain/realizationProjections';
 
 const statusConfig = {
     'Připravuje se': { variant: 'info', label: 'Připravuje se' },
@@ -47,6 +51,23 @@ const statusConfig = {
 const formatDateShort = (date) => date ? format(new Date(date), 'd.M.yyyy') : 'Neuvedeno';
 
 const chartPalette = ['#2563eb', '#f59e0b', '#10b981', '#ef4444', '#64748b', '#8b5cf6'];
+
+const formatChartAxisValue = (value, money) => {
+    if (!money) return value;
+    const amount = Number(value) || 0;
+    if (Math.abs(amount) >= 1000000) return `${Number((amount / 1000000).toFixed(1))} mil.`;
+    if (Math.abs(amount) >= 1000) return `${Math.round(amount / 1000)} tis.`;
+    return amount;
+};
+
+const formatStatusAxisLabel = (label) => {
+    const labels = {
+        'Připravuje se': 'Příprava',
+        'Čeká na schválení': 'Čeká',
+        'Pozastaveno': 'Pauza',
+    };
+    return labels[label] || label;
+};
 
 const RealizationMetric = ({ icon: Icon, label, value, detail, tone = 'slate', guarded = false }) => {
     const tones = {
@@ -129,10 +150,24 @@ const StatusDonut = ({ data }) => (
 const ValueByStatusChart = ({ data, canViewAmounts }) => (
     <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 10, right: 12, left: -22, bottom: 0 }}>
+            <BarChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                <YAxis hide={!canViewAmounts} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                <XAxis
+                    dataKey="label"
+                    interval={0}
+                    tickFormatter={formatStatusAxisLabel}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 10, fill: '#64748b' }}
+                />
+                <YAxis
+                    hide={!canViewAmounts}
+                    width={canViewAmounts ? 62 : 0}
+                    tickFormatter={(value) => formatChartAxisValue(value, canViewAmounts)}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                />
                 <Tooltip content={<ChartTooltip guarded={canViewAmounts} />} />
                 <Bar dataKey="value" name={canViewAmounts ? 'Hodnota' : 'Počet'} radius={[8, 8, 0, 0]}>
                     {data.map((item) => <Cell key={item.status} fill={item.fill} />)}
@@ -155,7 +190,7 @@ const RealizationHealth = ({ score }) => {
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <div className="text-3xl font-bold tracking-tight text-slate-950">{score}%</div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">zdraví realizací</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">zdraví</div>
             </div>
         </div>
     );
@@ -481,53 +516,16 @@ const Realizace = () => {
         return searchMatch && statusMatch;
     });
 
-    const stats = useMemo(() => {
-        const running = realizations.filter(r => r.status === 'Probíhá').length;
-        const preparing = realizations.filter(r => r.status === 'Připravuje se').length;
-        const paused = realizations.filter(r => r.status === 'Pozastaveno').length;
-        const waiting = realizations.filter(r => r.status === 'waiting_for_approval').length;
-        const closed = realizations.filter(r => ['Dokončeno', 'Předáno'].includes(r.status)).length;
-        const active = realizations.filter(r => !['Dokončeno', 'Předáno'].includes(r.status)).length;
+    const stats = useMemo(() => calculateRealizationProjectionStats(realizations), [realizations]);
 
-        return {
-            total: realizations.length,
-            running,
-            preparing,
-            paused,
-            waiting,
-            active,
-            closed,
-            pendingOrPreparing: preparing + waiting,
-            value: realizations.reduce((acc, r) => acc + (Number(r.contract_amount) || 0), 0),
-        };
-    }, [realizations]);
-
-    const chartData = useMemo(() => {
-        const statusCounts = statusOrder.map((statusKey, index) => {
-            const items = realizations.filter((item) => item.status === statusKey);
-            return {
-                status: statusKey,
-                label: statusConfig[statusKey]?.label || statusKey,
-                count: items.length,
-                fill: chartPalette[index % chartPalette.length],
-            };
-        }).filter((item) => item.count > 0);
-
-        const statusValue = statusOrder.map((statusKey, index) => {
-            const items = realizations.filter((item) => item.status === statusKey);
-            return {
-                status: statusKey,
-                label: statusConfig[statusKey]?.label || statusKey,
-                value: canViewAmounts ? items.reduce((sum, item) => sum + Number(item.contract_amount || 0), 0) : items.length,
-                fill: chartPalette[index % chartPalette.length],
-            };
-        }).filter((item) => item.value > 0 || statusCounts.some((count) => count.status === item.status));
-
-        const riskPenalty = Math.min(35, stats.paused * 12) + Math.min(25, stats.waiting * 7);
-        const healthScore = Math.max(0, Math.min(100, 100 - riskPenalty));
-
-        return { healthScore, statusCounts, statusValue };
-    }, [canViewAmounts, realizations, stats.paused, stats.waiting, statusOrder]);
+    const chartData = useMemo(() => buildRealizationProjectionChartData({
+        realizations,
+        stats,
+        statusConfig,
+        statusOrder,
+        palette: chartPalette,
+        canViewAmounts,
+    }), [canViewAmounts, realizations, stats, statusOrder]);
 
     return (
         <div className="app-page">

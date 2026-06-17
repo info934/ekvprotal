@@ -28,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import PageHeader from '@/components/ui/page-header';
 import AttendanceDialog from './AttendanceDialog';
 import { sendAttendanceApprovalRequestEmail } from '@/lib/email';
+import { deleteAttendanceRecord, saveAttendanceRecords, submitAttendanceMonth } from '@/lib/attendanceWorkflowService';
 
 const StatCard = ({ icon: Icon, title, value, subtitle, trend, color = "text-blue-600", className, ...props }) => (
   <motion.div
@@ -150,40 +151,23 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
   }, [fetchAttendanceAndSubmission, toast]);
 
   const handleSaveAttendance = async (recordData) => {
-    let error;
     const isBatchInsert = Array.isArray(recordData);
-    if (editingRecord) {
-      if (isBatchInsert) {
-        error = { message: 'Nelze hromadně ukládat při úpravě existujícího záznamu.' };
-      } else {
-        // Update
-        ({ error } = await supabase.from('attendance').update({
-          project_id: recordData.project_id,
-          realizace_id: recordData.realizace_id,
-          date: recordData.date,
-          hours: recordData.hours,
-          description: recordData.description
-        }).eq('id', editingRecord.id));
-      }
-    } else {
-      // Insert (single or batch)
-      if (isBatchInsert) {
-        const payloads = recordData.map((row) => ({ ...row, member_id: row.member_id || memberId }));
-        ({ error } = await supabase.from('attendance').insert(payloads));
-      } else {
-        // Ensure member_id is set if passed from the child dialog, or fallback
-        const payload = { ...recordData, member_id: recordData.member_id || memberId };
-        ({ error } = await supabase.from('attendance').insert(payload));
-      }
-    }
 
-    if (error) {
-      toast({ title: 'Chyba při ukládání', description: error.message, variant: 'destructive' });
-    } else {
+    try {
+      if (editingRecord && isBatchInsert) {
+        throw new Error('Nelze hromadně ukládat při úpravě existujícího záznamu.');
+      }
+
+      const payload = isBatchInsert
+        ? recordData.map((row) => ({ ...row, member_id: row.member_id || memberId }))
+        : { ...recordData, member_id: recordData.member_id || memberId };
+
+      await saveAttendanceRecords(payload, editingRecord?.id || null);
+
       if (Array.isArray(recordData)) {
-        toast({ title: `✅ Přidáno záznamů: ${recordData.length}` });
+        toast({ title: `Přidáno záznamů: ${recordData.length}` });
       } else {
-        toast({ title: editingRecord ? '✅ Záznam aktualizován' : '✅ Záznam přidán' });
+        toast({ title: editingRecord ? 'Záznam aktualizován' : 'Záznam přidán' });
       }
       setIsAttendanceDialogOpen(false);
       setEditingRecord(null);
@@ -194,48 +178,33 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
         if (result.submissionRes.data) setSubmission(result.submissionRes.data);
         if (result.attendanceRes.data) setAttendance(result.attendanceRes.data);
       }
+    } catch (error) {
+      toast({ title: 'Chyba při ukládání', description: error.message, variant: 'destructive' });
     }
   };
 
   const handleDeleteConfirmed = async () => {
     if (!deletingRecord) return;
-    const { error } = await supabase.from('attendance').delete().eq('id', deletingRecord.id);
-
-    if (error) {
-      toast({ title: 'Chyba při mazání', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: '🗑️ Záznam smazán' });
+    try {
+      await deleteAttendanceRecord(deletingRecord.id);
+      toast({ title: 'Záznam smazán' });
       const result = await fetchAttendanceAndSubmission();
       if (result) {
         if (result.attendanceRes.data) setAttendance(result.attendanceRes.data);
       }
+    } catch (error) {
+      toast({ title: 'Chyba při mazání', description: error.message, variant: 'destructive' });
     }
     setDeletingRecord(null);
   }
 
   const handleSubmitForApproval = async () => {
-    const totalHours = attendance.reduce((sum, record) => sum + Number(record.hours), 0);
     const month_date = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
 
-    const submissionData = {
-      member_id: memberId,
-      month_date,
-      total_hours: totalHours,
-      status: 'submitted',
-      submitted_at: new Date().toISOString(),
-    };
+    try {
+      const savedSubmission = await submitAttendanceMonth(memberId, month_date);
+      const totalHours = Number(savedSubmission?.total_hours || attendance.reduce((sum, record) => sum + Number(record.hours), 0));
 
-    let error;
-    if (submission) {
-      ({ error } = await supabase.from('attendance_submissions').update(submissionData).eq('id', submission.id));
-    } else {
-      ({ error } = await supabase.from('attendance_submissions').insert(submissionData));
-    }
-
-    if (error) {
-      toast({ title: 'Chyba při odesílání ke schválení', description: error.message, variant: 'destructive' });
-    } else {
-      
       try {
         const { data: mData } = await supabase.from('members').select('name').eq('id', memberId).single();
         const memberName = mData?.name || 'Neznámý';
@@ -253,12 +222,14 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
         console.error('Failed to send attendance approval email:', emailError);
       }
 
-      toast({ title: '✅ Docházka odeslána ke schválení!' });
+      toast({ title: 'Docházka odeslána ke schválení' });
       const result = await fetchAttendanceAndSubmission();
       if (result) {
         if (result.submissionRes.data) setSubmission(result.submissionRes.data);
         if (result.attendanceRes.data) setAttendance(result.attendanceRes.data);
       }
+    } catch (error) {
+      toast({ title: 'Chyba při odesílání ke schválení', description: error.message, variant: 'destructive' });
     }
   };
 

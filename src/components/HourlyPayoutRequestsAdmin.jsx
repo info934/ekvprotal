@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import {
+  AlertTriangle,
   CheckCircle,
   Download,
   Eye,
@@ -14,11 +15,15 @@ import {
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { sendHourlyPayoutPaidEmail, sendPayoutApprovalEmail } from '@/lib/email';
-import { updateHourlyPayoutRequestStatus } from '@/lib/hourlyPayoutService';
 import { logPayoutAction } from '@/lib/payoutLogger';
-import { approveHourlyPayoutRequest } from '@/lib/PayoutApprovalService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import { auditInvoiceUrls } from '@/lib/invoiceAudit';
+import {
+  approveHourlyPayoutRequestWorkflow,
+  getHourlyPayoutDiscrepancies,
+  markHourlyPayoutPaid,
+  rejectHourlyPayoutRequestWorkflow,
+} from '@/lib/hourlyPayoutWorkflowService';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +61,12 @@ const InvoiceLink = ({ url, onDownload, isDownloading }) => {
   );
 };
 
+const requestTypeLabels = {
+  regular: 'Běžná',
+  supplement: 'Doplatek',
+  correction: 'Oprava',
+};
+
 const HourlyPayoutRequestsAdmin = () => {
   const { toast } = useToast();
   const [requests, setRequests] = useState([]);
@@ -75,17 +86,29 @@ const HourlyPayoutRequestsAdmin = () => {
   const fetchRequests = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('hourly_payout_requests')
-        .select(`
-          *,
-          members:members!hourly_payout_requests_member_id_fkey(name, email, auth_user_id),
-          projects(name)
-        `)
-        .order('created_at', { ascending: false });
+      const [requestsResult, discrepancies] = await Promise.all([
+        supabase
+          .from('hourly_payout_requests')
+          .select(`
+            *,
+            members:members!hourly_payout_requests_member_id_fkey(name, email, auth_user_id),
+            projects(name)
+          `)
+          .order('created_at', { ascending: false }),
+        getHourlyPayoutDiscrepancies().catch((error) => {
+          console.warn('Hourly payout discrepancy load failed:', error);
+          return [];
+        })
+      ]);
 
+      const { data, error } = requestsResult;
       if (error) throw error;
-      setRequests(data || []);
+
+      const discrepancyById = new Map(discrepancies.map((item) => [item.request_id, item]));
+      setRequests((data || []).map((request) => ({
+        ...request,
+        discrepancy: discrepancyById.get(request.id) || null,
+      })));
     } catch (error) {
       console.error('Error fetching hourly payout requests:', error);
       toast({ title: 'Chyba', description: 'Nepodařilo se načíst hodinové žádosti.', variant: 'destructive' });
@@ -141,11 +164,10 @@ const HourlyPayoutRequestsAdmin = () => {
   const handleApproveConfirm = async (requestId, adminNote, approvedWithoutInvoice) => {
     setProcessingId(requestId);
 
-    const result = await approveHourlyPayoutRequest(requestId, adminNote, approvedWithoutInvoice);
-
-    if (result.success) {
+    try {
+      const approvedRequest = await approveHourlyPayoutRequestWorkflow(requestId, adminNote, approvedWithoutInvoice);
       const memberName = approvalRequest?.members?.name || 'Pracovník';
-      const amount = approvalRequest?.total_amount || 0;
+      const amount = approvedRequest?.total_amount || approvalRequest?.total_amount || 0;
       const memberEmailResult = await sendPayoutApprovalEmail({
         memberId: approvalRequest?.member_id,
         amount,
@@ -167,8 +189,8 @@ const HourlyPayoutRequestsAdmin = () => {
         toast({ title: 'Schváleno', description: 'Hodinová žádost byla schválena.' });
       }
       fetchRequests();
-    } else {
-      toast({ title: 'Chyba', description: `Nepodařilo se schválit žádost: ${result.error}`, variant: 'destructive' });
+    } catch (error) {
+      toast({ title: 'Chyba', description: `Nepodařilo se schválit žádost: ${error.message}`, variant: 'destructive' });
     }
 
     setProcessingId(null);
@@ -186,18 +208,18 @@ const HourlyPayoutRequestsAdmin = () => {
     setProcessingId(selectedRequest.id);
     await logPayoutAction('reject_attempt', selectedRequest.id, { reason });
 
-    const { success, error } = await updateHourlyPayoutRequestStatus(selectedRequest.id, 'rejected', reason, selectedRequest);
-    setProcessingId(null);
-    setIsRejectDialogOpen(false);
-    setSelectedRequest(null);
-
-    if (success) {
-      await logPayoutAction('reject_success', selectedRequest?.id);
+    try {
+      await rejectHourlyPayoutRequestWorkflow(selectedRequest.id, reason);
+      await logPayoutAction('reject_success', selectedRequest.id);
       toast({ title: 'Zamítnuto', description: 'Hodinová žádost byla zamítnuta.' });
       fetchRequests();
-    } else {
-      await logPayoutAction('reject_failure', selectedRequest?.id, { error });
-      toast({ title: 'Chyba', description: error, variant: 'destructive' });
+    } catch (error) {
+      await logPayoutAction('reject_failure', selectedRequest.id, { error: error.message });
+      toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
+    } finally {
+      setProcessingId(null);
+      setIsRejectDialogOpen(false);
+      setSelectedRequest(null);
     }
   };
 
@@ -217,21 +239,14 @@ const HourlyPayoutRequestsAdmin = () => {
     await logPayoutAction('mark_paid_attempt', request.id);
 
     try {
-      const paidDate = new Date().toISOString();
-
-      const { error: dbError } = await supabase
-        .from('hourly_payout_requests')
-        .update({ status: 'paid', paid_at: paidDate, updated_at: paidDate })
-        .eq('id', request.id)
-        .select();
-
-      if (dbError) throw dbError;
+      const paidRequest = await markHourlyPayoutPaid(request.id);
+      const paidDate = paidRequest?.paid_at || new Date().toISOString();
 
       await sendHourlyPayoutPaidEmail({
         email: request.members?.email,
         memberName: request.members?.name || 'Pracovník',
-        amount: request.total_amount,
-        hours: request.hours,
+        amount: paidRequest?.total_amount || request.total_amount,
+        hours: paidRequest?.total_hours || paidRequest?.hours || request.total_hours || request.hours,
         paidAt: paidDate
       });
 
@@ -312,6 +327,24 @@ const HourlyPayoutRequestsAdmin = () => {
       render: (request) => (
         <div className="flex flex-col items-start gap-1">
           <PayoutStatusBadge status={request.status} />
+          <Badge variant="outline" className="h-7 rounded-full border-slate-200 bg-slate-50 px-2.5 text-slate-600">
+            {requestTypeLabels[request.request_type] || 'Běžná'}
+          </Badge>
+          {request.discrepancy?.has_discrepancy && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="h-7 cursor-help gap-1.5 rounded-full border-red-200 bg-red-50 px-2.5 text-red-700">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Nesoulad
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Snapshot {formatHours(request.discrepancy.snapshot_total_hours)} / aktuálně {formatHours(request.discrepancy.current_total_hours)}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           {request.approved_without_invoice && (
             <TooltipProvider>
               <Tooltip>

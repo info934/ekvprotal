@@ -6,8 +6,24 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FolderPlus, Search, SlidersHorizontal, ArrowUpDown, ChevronDown,
-  ChevronUp, LayoutGrid, List as ListIcon, Loader2, X, Building as BuildingIcon, DollarSign, Activity, Columns, CopyPlus
+  ChevronUp, LayoutGrid, List as ListIcon, Loader2, X, Building as BuildingIcon, DollarSign, Activity, Columns, CopyPlus,
+  AlertTriangle, BarChart3, CheckCircle, CircleDollarSign, PieChart as PieChartIcon, Target
 } from 'lucide-react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart as RechartsPieChart,
+  PolarAngleAxis,
+  RadialBar,
+  RadialBarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -26,6 +42,234 @@ import { formatCurrency, cn, projectStatusConfig } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { parseApiError } from '@/lib/apiValidation';
 import BatchProjectDialog from '@/components/BatchProjectDialog';
+import {
+  buildProjectProjectionChartData,
+  calculateProjectProjectionStats,
+  getEmptyProjectProjectionStats,
+} from '@/domain/projectProjections';
+
+const chartPalette = ['#64748b', '#2563eb', '#f59e0b', '#10b981', '#8b5cf6'];
+
+const formatChartAxisValue = (value, money) => {
+  if (!money) return value;
+  const amount = Number(value) || 0;
+  if (Math.abs(amount) >= 1000000) return `${Number((amount / 1000000).toFixed(1))} mil.`;
+  if (Math.abs(amount) >= 1000) return `${Math.round(amount / 1000)} tis.`;
+  return amount;
+};
+
+const formatStatusAxisLabel = (label) => {
+  if (label === 'Připraveno k dodání') return 'K dodání';
+  return label;
+};
+
+const ProjectMetric = ({ icon: Icon, label, value, detail, tone = 'slate' }) => {
+  const tones = {
+    blue: 'border-blue-100 bg-blue-50 text-blue-700',
+    emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+    amber: 'border-amber-100 bg-amber-50 text-amber-700',
+    rose: 'border-rose-100 bg-rose-50 text-rose-700',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700',
+    violet: 'border-violet-100 bg-violet-50 text-violet-700',
+  };
+
+  return (
+    <Card className="h-full rounded-xl border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+      <CardContent className="flex h-full flex-col justify-between gap-4 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+            <div className="mt-2 break-words text-2xl font-bold tracking-tight text-slate-950">{value}</div>
+          </div>
+          <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border', tones[tone] || tones.slate)}>
+            <Icon className="h-5 w-5" />
+          </div>
+        </div>
+        {detail && <p className="text-sm text-slate-500">{detail}</p>}
+      </CardContent>
+    </Card>
+  );
+};
+
+const ChartTooltip = ({ active, payload, label, money = false }) => {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-lg">
+      {label && <div className="mb-1 font-semibold text-slate-950">{label}</div>}
+      <div className="space-y-1">
+        {payload.map((item) => (
+          <div key={item.dataKey || item.name} className="flex items-center justify-between gap-4">
+            <span className="flex items-center gap-2 text-slate-500">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color || item.payload?.fill }} />
+              {item.name}
+            </span>
+            <span className="font-semibold tabular-nums text-slate-950">{money ? formatCurrency(item.value) : item.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const StatusDonut = ({ data }) => (
+  <div className="grid gap-4 lg:grid-cols-[180px_minmax(0,1fr)]">
+    <div className="h-44">
+      <ResponsiveContainer width="100%" height="100%">
+        <RechartsPieChart>
+          <Pie data={data} dataKey="count" nameKey="label" innerRadius={48} outerRadius={76} paddingAngle={3}>
+            {data.map((item) => <Cell key={item.status} fill={item.fill} />)}
+          </Pie>
+          <Tooltip content={<ChartTooltip />} />
+        </RechartsPieChart>
+      </ResponsiveContainer>
+    </div>
+    <div className="space-y-2 self-center">
+      {data.map((item) => (
+        <div key={item.status} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.fill }} />
+            <span className="truncate font-medium text-slate-700">{item.label}</span>
+          </span>
+          <span className="font-semibold tabular-nums text-slate-950">{item.count}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const ValueByStatusChart = ({ data, showFinance }) => (
+  <div className="h-56">
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+        <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+        <XAxis
+          dataKey="label"
+          interval={0}
+          tickFormatter={formatStatusAxisLabel}
+          tickLine={false}
+          axisLine={false}
+          tick={{ fontSize: 10, fill: '#64748b' }}
+        />
+        <YAxis
+          hide={!showFinance}
+          width={showFinance ? 62 : 0}
+          tickFormatter={(value) => formatChartAxisValue(value, showFinance)}
+          tickLine={false}
+          axisLine={false}
+          tick={{ fontSize: 11, fill: '#64748b' }}
+        />
+        <Tooltip content={<ChartTooltip money={showFinance} />} />
+        <Bar dataKey="value" name={showFinance ? 'Hodnota' : 'Počet'} radius={[8, 8, 0, 0]}>
+          {data.map((item) => <Cell key={item.status} fill={item.fill} />)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+);
+
+const ProjectionCompletion = ({ score }) => {
+  const fill = score >= 80 ? '#10b981' : score >= 55 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div className="relative h-48">
+      <ResponsiveContainer width="100%" height="100%">
+        <RadialBarChart innerRadius="72%" outerRadius="96%" data={[{ value: score, fill }]} startAngle={90} endAngle={-270}>
+          <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+          <RadialBar dataKey="value" cornerRadius={12} background={{ fill: '#e2e8f0' }} />
+        </RadialBarChart>
+      </ResponsiveContainer>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <div className="text-3xl font-bold tracking-tight text-slate-950">{score}%</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">uzavřenost</div>
+      </div>
+    </div>
+  );
+};
+
+const ProjectionExecutiveDashboard = ({ chartData, showFinance, showReward, stats, totalReward }) => (
+  <div className="space-y-5">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <ProjectMetric icon={FolderPlus} label="Celkem projektů" value={stats.total} detail={`${stats.open} otevřených projektů`} tone="slate" />
+      <ProjectMetric icon={Activity} label="Aktivní" value={stats.active} detail={`${stats.ready} připraveno k dodání`} tone="blue" />
+      <ProjectMetric icon={Target} label="Nabídky" value={stats.offers} detail="rozpracované nabídky a poptávky" tone="amber" />
+      {showFinance ? (
+        <ProjectMetric icon={CircleDollarSign} label="Hodnota projekce" value={formatCurrency(stats.value)} detail="součet cen projektů" tone="emerald" />
+      ) : showReward ? (
+        <ProjectMetric icon={DollarSign} label="Moje odměna" value={formatCurrency(totalReward)} detail="odměny z přiřazených projektů" tone="emerald" />
+      ) : (
+        <ProjectMetric icon={CircleDollarSign} label="Finance" value="Skryto" detail="soukromý režim nebo bez oprávnění" tone="slate" />
+      )}
+    </div>
+
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+      <Card className="rounded-xl border-slate-200 bg-white shadow-sm">
+        <CardHeader className="border-b border-slate-200 px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BarChart3 className="h-4 w-4 text-primary" />
+                {showFinance ? 'Hodnota podle stavu' : 'Počet podle stavu'}
+              </CardTitle>
+              <p className="mt-1 text-sm text-slate-500">{showFinance ? 'Finanční objem projektů rozdělený podle workflow.' : 'Rozložení projektů podle workflow bez finančních částek.'}</p>
+            </div>
+            {!showFinance && <Badge variant="outline">Bez částek</Badge>}
+          </div>
+        </CardHeader>
+        <CardContent className="p-5">
+          <ValueByStatusChart data={chartData.statusValue} showFinance={showFinance} />
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-xl border-slate-200 bg-white shadow-sm">
+        <CardHeader className="border-b border-slate-200 px-5 py-4">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <PieChartIcon className="h-4 w-4 text-primary" />
+            Rozložení stavů
+          </CardTitle>
+          <p className="mt-1 text-sm text-slate-500">Kolik projektů je v jednotlivých fázích projekce.</p>
+        </CardHeader>
+        <CardContent className="p-5">
+          <StatusDonut data={chartData.statusCounts} />
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-xl border-slate-200 bg-white shadow-sm xl:col-span-2">
+        <CardContent className="grid gap-5 p-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+            <ProjectionCompletion score={chartData.completionScore} />
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                <AlertTriangle className="h-4 w-4" />
+                Připraveno k dodání
+              </div>
+              <div className="mt-2 text-3xl font-bold text-amber-950">{stats.ready}</div>
+              <p className="mt-1 text-sm text-amber-700">projekty čekají na expedici</p>
+            </div>
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
+                <Activity className="h-4 w-4" />
+                Aktivní práce
+              </div>
+              <div className="mt-2 text-3xl font-bold text-blue-950">{stats.active}</div>
+              <p className="mt-1 text-sm text-blue-700">projekty jsou v řešení</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+                <CheckCircle className="h-4 w-4" />
+                Dokončeno
+              </div>
+              <div className="mt-2 text-3xl font-bold text-emerald-950">{stats.closed}</div>
+              <p className="mt-1 text-sm text-emerald-700">dodáno nebo uzavřeno</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  </div>
+);
 
 const Projects = () => {
   const navigate = useNavigate();
@@ -39,7 +283,7 @@ const Projects = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
   const [filterOpen, setFilterOpen] = useState(false);
-  const [projectStats, setProjectStats] = useState({ total: 0, active: 0, value: 0 });
+  const [projectStats, setProjectStats] = useState(getEmptyProjectProjectionStats);
   const [memberRewards, setMemberRewards] = useState({});
   const [totalReward, setTotalReward] = useState(0);
   const [updatingProjectId, setUpdatingProjectId] = useState(null);
@@ -101,14 +345,6 @@ const Projects = () => {
         return null;
     }
   };
-
-  const computeProjectStats = useCallback((items) => {
-    return (items || []).reduce((acc, curr) => ({
-      total: acc.total + 1,
-      active: curr.status === 'active' ? acc.active + 1 : acc.active,
-      value: acc.value + (curr.price || 0)
-    }), { total: 0, active: 0, value: 0 });
-  }, []);
 
   const fetchMemberRewards = useCallback(async () => {
     if (!memberId || !showReward) {
@@ -179,7 +415,7 @@ const Projects = () => {
         const nextProjects = prev.map((project) =>
           project.id === projectId ? { ...project, status: nextStatus } : project
         );
-        setProjectStats(computeProjectStats(nextProjects));
+        setProjectStats(calculateProjectProjectionStats(nextProjects));
         return nextProjects;
       });
 
@@ -193,7 +429,7 @@ const Projects = () => {
     } finally {
       setUpdatingProjectId(null);
     }
-  }, [computeProjectStats, toast, updatingProjectId]);
+  }, [toast, updatingProjectId]);
 
   const fetchProjects = useCallback(async () => {
     setLoading(true);
@@ -206,14 +442,14 @@ const Projects = () => {
       if (error) throw error;
 
       setProjects(data || []);
-      setProjectStats(computeProjectStats(data || []));
+      setProjectStats(calculateProjectProjectionStats(data || []));
     } catch (error) {
       console.error('Error fetching projects:', error);
       toast({ title: 'Chyba načítání projektů', description: error.message, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
-  }, [computeProjectStats, toast]);
+  }, [toast]);
 
   useEffect(() => {
     fetchProjects();
@@ -256,6 +492,15 @@ const Projects = () => {
 
     return result;
   }, [projects, searchQuery, statusFilter, sortConfig]);
+
+  const chartData = useMemo(() => buildProjectProjectionChartData({
+    projects,
+    projectStats,
+    projectStatusConfig,
+    statusOrder,
+    palette: chartPalette,
+    showFinance,
+  }), [projects, projectStats, showFinance, statusOrder]);
 
   const handleSort = (key) => {
     setSortConfig(current => ({
@@ -365,59 +610,14 @@ const Projects = () => {
         onProjectsCreated={fetchProjects} 
       />
 
-      {/* Stats Cards and Filters omitted for brevity, but they are preserved from original file logic */}
-      
       {!isPrivateMode && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="p-6 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Celkem projektů</p>
-                <p className="text-2xl font-bold">{projectStats.total}</p>
-              </div>
-              <div className="p-3 bg-slate-100 rounded-full">
-                <FolderPlus className="w-6 h-6 text-slate-600" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-6 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Aktivní</p>
-                <p className="text-2xl font-bold text-blue-600">{projectStats.active}</p>
-              </div>
-              <div className="p-3 bg-blue-50 rounded-full">
-                <Activity className="w-6 h-6 text-blue-600" />
-              </div>
-            </CardContent>
-          </Card>
-          {showFinance && (
-            <Card>
-              <CardContent className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Hodnota (Aktivní)</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(projectStats.value)}</p>
-                </div>
-                <div className="p-3 bg-green-50 rounded-full">
-                  <DollarSign className="w-6 h-6 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          {showReward && (
-            <Card>
-              <CardContent className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Moje odměna</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(totalReward)}</p>
-                </div>
-                <div className="p-3 bg-green-50 rounded-full">
-                  <DollarSign className="w-6 h-6 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+        <ProjectionExecutiveDashboard
+          chartData={chartData}
+          showFinance={showFinance}
+          showReward={showReward}
+          stats={projectStats}
+          totalReward={totalReward}
+        />
       )}
 
       {/* Filters & Controls */}

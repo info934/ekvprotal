@@ -19,6 +19,7 @@ import * as XLSX from 'xlsx';
 import AttendanceDialog from './AttendanceDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { deleteAttendanceRecord, saveAttendanceRecords } from '@/lib/attendanceWorkflowService';
 
 // Row component for react-window
 const Row = ({ index, style, data }) => {
@@ -222,20 +223,12 @@ const GlobalAttendanceOptimized = () => {
         description: formData.description
       };
 
-      let error;
       if (editingRecord) {
         if (isBatchInsert) throw new Error('Nelze hromadně ukládat při úpravě existujícího záznamu.');
-        ({ error } = await supabase
-          .from('attendance')
-          .update(payload)
-          .eq('id', editingRecord.id));
+        await saveAttendanceRecords(payload, editingRecord.id);
       } else {
-        ({ error } = await supabase
-          .from('attendance')
-          .insert(payload));
+        await saveAttendanceRecords(payload);
       }
-
-      if (error) throw error;
 
       toast({
         title: editingRecord ? 'Záznam aktualizován' : 'Záznam vytvořen',
@@ -256,12 +249,7 @@ const GlobalAttendanceOptimized = () => {
   const handleDeleteConfirm = async () => {
     if (!deleteDialogRecord) return;
     try {
-      const { error } = await supabase
-        .from('attendance')
-        .delete()
-        .eq('id', deleteDialogRecord.id);
-
-      if (error) throw error;
+      await deleteAttendanceRecord(deleteDialogRecord.id);
 
       toast({ title: 'Záznam smazán' });
       setDeleteDialogRecord(null);

@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { motion } from 'framer-motion';
 import { logPayoutAction } from '@/lib/payoutLogger';
 import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
+import { uploadHourlyPayoutInvoice } from '@/lib/hourlyPayoutWorkflowService';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_RETRIES = 3;
@@ -74,31 +75,23 @@ const InvoiceUpload = ({ requestId, memberId, onUploadSuccess }) => {
 
       setUploadProgress(80);
 
-      // Update database record
-      const updateData = { 
-        invoice_url: dbUrlPath,
-        invoice_uploaded_at: new Date().toISOString(),
-        status: 'invoice_uploaded' // Ensure status advances
-      };
-
-      const { data: dbData, error: dbError } = await supabase
-        .from('hourly_payout_requests')
-        .update(updateData)
-        .eq('id', requestId)
-        .select('*, members:members!hourly_payout_requests_member_id_fkey(name)')
-        .single();
-
-      if (dbError) {
-          console.error("[InvoiceUpload] Database update error:", dbError);
-          // Attempt rollback if DB fails
-          await supabase.storage.from(bucketName).remove([filePath]).catch(console.error);
-          throw dbError;
+      let dbData;
+      try {
+        dbData = await uploadHourlyPayoutInvoice(requestId, dbUrlPath);
+      } catch (dbError) {
+        console.error("[InvoiceUpload] Database update error:", dbError);
+        await supabase.storage.from(bucketName).remove([filePath]).catch(console.error);
+        throw dbError;
       }
 
       await logPayoutAction('invoice_upload_success', requestId, { dbUrlPath });
 
+      const { data: memberData } = dbData?.member_id
+        ? await supabase.from('members').select('name').eq('id', dbData.member_id).maybeSingle()
+        : { data: null };
+
       const emailResult = await sendAdminPayoutNotification({
-        memberName: dbData?.members?.name || 'Pracovnik',
+        memberName: memberData?.name || 'Pracovnik',
         amount: dbData?.total_amount || 0,
         action: 'Faktura nahrana k hodinove zadosti'
       });

@@ -19,6 +19,11 @@ import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { sendEmail } from '@/lib/email';
+import {
+  approveAttendanceSubmission,
+  rejectAttendanceSubmission,
+  revertAttendanceSubmission,
+} from '@/lib/attendanceWorkflowService';
 
 // --- Memoized Components ---
 const escapeHtml = (value) => String(value ?? '')
@@ -181,7 +186,7 @@ SubmissionCard.displayName = 'SubmissionCard';
 
 const AttendanceSubmissionsOptimized = () => {
   const { toast } = useToast();
-  const { user, hasPermission } = useAuth();
+  const { hasPermission } = useAuth();
   
   // Data State
   const [submissions, setSubmissions] = useState([]);
@@ -263,7 +268,7 @@ const AttendanceSubmissionsOptimized = () => {
     try {
       const { data, error } = await supabase
         .from('attendance')
-        .select('date, hours, description, project:projects(name, code)')
+        .select('date, hours, description, project:projects(name, code), realization:realizations(name)')
         .eq('member_id', submission.member_id)
         .gte('date', format(start, 'yyyy-MM-dd'))
         .lte('date', format(end, 'yyyy-MM-dd'))
@@ -287,16 +292,7 @@ const AttendanceSubmissionsOptimized = () => {
   const handleApprove = useCallback(async (submission) => {
     if (!canAdmin) return;
     try {
-      const { error } = await supabase
-        .from('attendance_submissions')
-        .update({
-          status: 'approved',
-          approver_id: user.id, // Assuming user.id maps to auth_user_id, might need member id
-          approved_at: new Date().toISOString()
-        })
-        .eq('id', submission.id);
-
-      if (error) throw error;
+      await approveAttendanceSubmission(submission.id);
 
       toast({ title: 'Schváleno', className: 'bg-green-100 text-green-800' });
       fetchSubmissions();
@@ -335,21 +331,12 @@ const AttendanceSubmissionsOptimized = () => {
     } catch (error) {
       toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
     }
-  }, [canAdmin, user, fetchSubmissions, toast]);
+  }, [canAdmin, fetchSubmissions, toast]);
 
   const handleRejectConfirm = useCallback(async () => {
     if (!canAdmin || !rejectDialog) return;
     try {
-      const { error } = await supabase
-        .from('attendance_submissions')
-        .update({
-          status: 'rejected',
-          notes: rejectReason,
-          approver_id: user.id
-        })
-        .eq('id', rejectDialog.id);
-
-      if (error) throw error;
+      await rejectAttendanceSubmission(rejectDialog.id, rejectReason);
 
       toast({ title: 'Zamítnuto', description: 'Uživatel byl notifikován.' });
       setRejectDialog(null);
@@ -366,17 +353,12 @@ const AttendanceSubmissionsOptimized = () => {
     } catch (error) {
       toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
     }
-  }, [canAdmin, rejectDialog, rejectReason, user, fetchSubmissions, toast]);
+  }, [canAdmin, rejectDialog, rejectReason, fetchSubmissions, toast]);
 
   const handleRevert = useCallback(async (submission) => {
     if (!canAdmin) return;
     try {
-      const { error } = await supabase
-        .from('attendance_submissions')
-        .update({ status: 'submitted', approver_id: null, approved_at: null })
-        .eq('id', submission.id);
-
-      if (error) throw error;
+      await revertAttendanceSubmission(submission.id);
       toast({ title: 'Vráceno do schvalování' });
       fetchSubmissions();
     } catch (error) {
@@ -481,7 +463,9 @@ const AttendanceSubmissionsOptimized = () => {
                   <div key={idx} className="flex flex-col gap-2 rounded-md border border-slate-100 bg-white p-3 text-sm sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="font-medium">{format(parseISO(record.date), 'd.M.yyyy')}</div>
-                      <div className="truncate text-xs text-muted-foreground">{record.project?.name} ({record.project?.code})</div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {record.project ? `${record.project.name} (${record.project.code})` : record.realization?.name || 'Bez přiřazení'}
+                      </div>
                       {record.description && <div className="mt-0.5 break-words text-xs italic">{record.description}</div>}
                     </div>
                     <div className="shrink-0 font-bold">{Number(record.hours).toFixed(1)} h</div>

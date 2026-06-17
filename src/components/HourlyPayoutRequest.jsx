@@ -7,6 +7,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import InvoiceUpload from './InvoiceUpload';
 import InvoicePreview from './InvoicePreview';
 import DeletePayoutRequestDialog from './DeletePayoutRequestDialog';
@@ -14,6 +15,7 @@ import MonthSelector from './MonthSelector';
 import HoursTable from './HoursTable';
 import { auditInvoiceUrls } from '@/lib/invoiceAudit';
 import { sendHourlyPayoutRequestEmail, sendPayoutRequestEmail } from '@/lib/email';
+import { createHourlyPayoutRequest } from '@/lib/hourlyPayoutWorkflowService';
 import {
   EmptyPayoutState,
   formatCurrency,
@@ -33,6 +35,9 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => startOfMonth(new Date()).toISOString());
   const [monthData, setMonthData] = useState({ records: [], totalHours: 0, breakdown: {} });
+  const [attendanceSubmission, setAttendanceSubmission] = useState(null);
+  const [submissionLoading, setSubmissionLoading] = useState(false);
+  const [requestType, setRequestType] = useState('regular');
   const [deleteRequestId, setDeleteRequestId] = useState(null);
   const [isDeletingRequest, setIsDeletingRequest] = useState(false);
 
@@ -63,6 +68,32 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
     fetchBaseData();
   }, [memberId]);
 
+  useEffect(() => {
+    const fetchSubmission = async () => {
+      if (!memberId || !selectedMonth) return;
+      setSubmissionLoading(true);
+      try {
+        const monthDate = format(startOfMonth(new Date(selectedMonth)), 'yyyy-MM-dd');
+        const { data, error } = await supabase
+          .from('attendance_submissions')
+          .select('id, status, total_hours, month_date')
+          .eq('member_id', memberId)
+          .eq('month_date', monthDate)
+          .maybeSingle();
+
+        if (error) throw error;
+        setAttendanceSubmission(data || null);
+      } catch (error) {
+        console.error('Attendance submission load failed:', error);
+        setAttendanceSubmission(null);
+      } finally {
+        setSubmissionLoading(false);
+      }
+    };
+
+    fetchSubmission();
+  }, [memberId, selectedMonth]);
+
   const grandTotalHours = monthData.totalHours;
   const grandTotalAmount = grandTotalHours * (member?.hourly_rate || 0);
 
@@ -79,37 +110,49 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
 
   const handleRequestPayout = async () => {
     if (grandTotalHours <= 0) return;
+    if (attendanceSubmission?.status !== 'approved') {
+      toast({
+        title: 'Docházka není schválená',
+        description: 'Hodinovou žádost lze vytvořit až po schválení docházky za vybraný měsíc.',
+        variant: 'warning'
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const targetDate = new Date(selectedMonth);
-      const payload = {
-        member_id: memberId,
-        project_id: null,
-        hours: grandTotalHours,
-        hourly_rate: member?.hourly_rate || 0,
-        total_amount: grandTotalAmount,
-        status: 'pending',
-        notes: `Vygenerováno z docházky za ${format(targetDate, 'LLLL yyyy', { locale: cs })}`,
-        payout_month: getMonth(targetDate) + 1,
-        payout_year: getYear(targetDate),
-        total_hours: grandTotalHours,
-        breakdown: monthData.breakdown
-      };
-
-      const { error } = await supabase.from('hourly_payout_requests').insert([payload]).select().single();
-      if (error) throw error;
-
-      await sendHourlyPayoutRequestEmail({
-        memberName: member?.name || 'Neznámý pracovník',
-        hours: grandTotalHours,
-        projects: Object.keys(monthData.breakdown).join(', ') || 'Všechny projekty',
-        totalAmount: grandTotalAmount,
-        createdAt: new Date().toISOString()
+      const request = await createHourlyPayoutRequest({
+        memberId,
+        payoutMonth: getMonth(targetDate) + 1,
+        payoutYear: getYear(targetDate),
+        requestType,
       });
 
-      await sendPayoutRequestEmail({ memberId, amount: grandTotalAmount });
+      const requestHours = Number(request?.total_hours || request?.hours || grandTotalHours);
+      const requestAmount = Number(request?.total_amount || grandTotalAmount);
+      const requestBreakdown = request?.breakdown || monthData.breakdown;
 
-      toast({ title: 'Žádost odeslána', description: 'Žádost byla předána ke schválení a emaily byly odeslány.' });
+      try {
+        await sendHourlyPayoutRequestEmail({
+          memberName: member?.name || 'Neznámý pracovník',
+          hours: requestHours,
+          projects: Object.keys(requestBreakdown || {}).join(', ') || 'Všechny projekty',
+          totalAmount: requestAmount,
+          createdAt: new Date().toISOString()
+        });
+
+        await sendPayoutRequestEmail({ memberId, amount: requestAmount });
+        toast({ title: 'Žádost odeslána', description: 'Žádost byla předána ke schválení a emaily byly odeslány.' });
+      } catch (emailError) {
+        console.error('Hourly payout notification failed:', emailError);
+        toast({
+          title: 'Žádost odeslána',
+          description: 'Žádost byla vytvořena, ale emailová notifikace se nepodařila odeslat.',
+          variant: 'warning'
+        });
+      }
+
       fetchBaseData();
       if (onPayoutRequested) onPayoutRequested();
     } catch (error) {
@@ -190,8 +233,21 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
           )
         }
       >
-        <div className="border-b border-slate-200 bg-slate-50/60 p-4">
+        <div className="grid gap-3 border-b border-slate-200 bg-slate-50/60 p-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
           <MonthSelector value={selectedMonth} onChange={setSelectedMonth} />
+          <div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Typ žádosti</div>
+            <Select value={requestType} onValueChange={setRequestType}>
+              <SelectTrigger className="bg-white">
+                <SelectValue placeholder="Typ žádosti" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="regular">Běžná</SelectItem>
+                <SelectItem value="supplement">Doplatek</SelectItem>
+                <SelectItem value="correction">Oprava</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <div className="space-y-5 p-5">
           <div>
@@ -201,8 +257,17 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
             </div>
             <HoursTable selectedMonth={selectedMonth} memberId={memberId} onDataFetched={setMonthData} />
           </div>
+          {attendanceSubmission?.status !== 'approved' && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <div className="font-semibold">Vybraný měsíc není schválený</div>
+                <div className="mt-0.5 text-amber-800">Hodinovou žádost lze odeslat až po schválení docházky.</div>
+              </div>
+            </div>
+          )}
           <div className="flex justify-end border-t border-slate-100 pt-5">
-            <Button onClick={handleRequestPayout} disabled={grandTotalHours <= 0 || isSubmitting} className="gap-2 shadow-sm">
+            <Button onClick={handleRequestPayout} disabled={grandTotalHours <= 0 || isSubmitting || submissionLoading || attendanceSubmission?.status !== 'approved'} className="gap-2 shadow-sm">
               {isSubmitting ? <Clock className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Odeslat žádost
             </Button>
@@ -229,6 +294,9 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
                         Bez faktury
                       </Badge>
                     )}
+                    <Badge variant="outline" className="h-7 rounded-full border-slate-200 bg-slate-50 px-2.5 text-slate-600">
+                      {request.request_type === 'supplement' ? 'Doplatek' : request.request_type === 'correction' ? 'Oprava' : 'Běžná'}
+                    </Badge>
                   </div>
                   <div>
                     <h3 className="text-base font-semibold text-slate-950">
