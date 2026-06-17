@@ -122,8 +122,7 @@ const ProjectForm = () => {
             setProjectCodePattern(patternRes.data?.value || '');
             
             if (isEditing) {
-                // Updated: Ensure we use 'id'
-                const { data, error } = await supabase.from('projects').select('*').eq('id', projectId).single();
+                const { data, error } = await supabase.rpc('get_project_safe', { p_project_id: projectId });
                 if (error) throw error;
                 
                 Object.keys(data).forEach(key => {
@@ -208,19 +207,21 @@ const ProjectForm = () => {
 
         try {
             if (isEditing) {
-                // Updated: Ensure we use 'id'
-                const { error } = await supabase.from('projects').update(dataToSave).eq('id', projectId);
+                const { status: nextStatus, ...projectPayload } = dataToSave;
+                const { error } = await supabase.rpc('save_project_safe', {
+                    p_project_id: projectId,
+                    p_payload: projectPayload,
+                    p_next_status: nextStatus || null,
+                });
                 if (error) throw error;
                 toast({ title: 'Projekt úspěšně aktualizován', variant: 'default' }); 
                 navigate(`/projects/${projectId}`);
             } else {
-                let { data: newProject, error } = await supabase.from('projects').insert(dataToSave).select().single();
-                if (error && ['42703', 'PGRST204'].includes(error.code) && sourceOpportunityId) {
-                    const { crm_opportunity_id, ...legacyData } = dataToSave;
-                    const legacyResult = await supabase.from('projects').insert(legacyData).select().single();
-                    newProject = legacyResult.data;
-                    error = legacyResult.error;
-                }
+                let { data: newProject, error } = await supabase.rpc('save_project_safe', {
+                    p_project_id: null,
+                    p_payload: dataToSave,
+                    p_next_status: null,
+                });
                 if (error) throw error;
 
                 if (sourceOpportunityId) {

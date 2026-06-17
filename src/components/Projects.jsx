@@ -403,17 +403,16 @@ const Projects = () => {
     if (updatingProjectId) return;
     setUpdatingProjectId(projectId);
     try {
-      // Updated: Ensure we use 'id'
-      const { error } = await supabase
-        .from('projects')
-        .update({ status: nextStatus })
-        .eq('id', projectId);
+      const { data, error } = await supabase.rpc('update_project_status', {
+        p_project_id: projectId,
+        p_next_status: nextStatus,
+      });
 
       if (error) throw error;
 
       setProjects((prev) => {
         const nextProjects = prev.map((project) =>
-          project.id === projectId ? { ...project, status: nextStatus } : project
+          project.id === projectId ? { ...project, ...data } : project
         );
         setProjectStats(calculateProjectProjectionStats(nextProjects));
         return nextProjects;
@@ -421,7 +420,7 @@ const Projects = () => {
 
       toast({
         title: 'Stav projektu aktualizován',
-        description: projectStatusConfig[nextStatus]?.label || nextStatus,
+        description: projectStatusConfig[data?.status || nextStatus]?.label || data?.status || nextStatus,
       });
     } catch (error) {
       const msg = parseApiError(error);
@@ -434,10 +433,7 @@ const Projects = () => {
   const fetchProjects = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*, investor:investor_id(name), client:client_id(name)')
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.rpc('list_projects_safe');
 
       if (error) throw error;
 

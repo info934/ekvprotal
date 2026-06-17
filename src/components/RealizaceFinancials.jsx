@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
-import { BarChart, DollarSign, TrendingUp, TrendingDown, HardHat, Plus, Edit2, FileText, Upload, X } from 'lucide-react';
+import { AlertTriangle, BarChart, DollarSign, TrendingUp, TrendingDown, HardHat, Plus, Edit2, FileText, Upload, X } from 'lucide-react';
 import RealizaceFinancialChart from './RealizaceFinancialChart';
 import RealizaceFinancialTable from './RealizaceFinancialTable';
 import RealizaceOverheadSummary from './RealizaceOverheadSummary';
@@ -15,14 +15,23 @@ import { Dialog } from '@/components/ui/dialog';
 import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import SubjectDialog from './SubjectDialog';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 
 // Main Dashboard Component
 const RealizaceFinancials = () => {
     const [financials, setFinancials] = useState(null);
     const [loading, setLoading] = useState(true);
     const { toast } = useToast();
+    const { userRole } = useAuth();
+    const { canViewAmounts } = getFinancialVisibility(userRole);
 
     useEffect(() => {
+        if (!canViewAmounts) {
+            setLoading(false);
+            return;
+        }
+
         const fetchFinancials = async () => {
             setLoading(true);
             const { data, error } = await supabase.rpc('get_realization_financial_overview');
@@ -35,9 +44,20 @@ const RealizaceFinancials = () => {
             setLoading(false);
         };
         fetchFinancials();
-    }, [toast]);
+    }, [canViewAmounts, toast]);
 
     if (loading) return <div className="p-8 text-center">Načítání...</div>;
+    if (!canViewAmounts) {
+        return (
+            <div className="app-page">
+                <Card className="p-12 text-center">
+                    <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                    <h1 className="text-2xl font-bold text-red-600 mb-2">Přístup odepřen</h1>
+                    <p className="text-muted-foreground">Nemáte oprávnění zobrazit finanční přehled realizací.</p>
+                </Card>
+            </div>
+        );
+    }
     const formatCurrency = (val) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(val || 0);
 
     return (

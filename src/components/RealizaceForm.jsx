@@ -283,8 +283,17 @@ const RealizaceForm = () => {
         try {
             let targetId = realizaceId;
             if (isEditing) {
-                const { error } = await supabase.from('realizations').update(dataToSave).eq('id', realizaceId);
+                const { status: nextStatus, ...realizationPayload } = dataToSave;
+                const { error } = await supabase.from('realizations').update(realizationPayload).eq('id', realizaceId);
                 if (error) throw error;
+                if (nextStatus) {
+                    const { error: statusError } = await supabase.rpc('update_realization_status', {
+                        p_realization_id: realizaceId,
+                        p_next_status: nextStatus,
+                        p_note: 'realization_form_update',
+                    });
+                    if (statusError) throw statusError;
+                }
             } else {
                 let { data: newRealization, error } = await supabase.from('realizations').insert(dataToSave).select().single();
                 if (error && ['42703', 'PGRST204'].includes(error.code) && sourceOpportunityId) {

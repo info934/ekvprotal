@@ -9,12 +9,15 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { format } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import { formatCurrency } from '@/lib/utils';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 export const PendingApprovalsWidget = () => {
     const [activeTab, setActiveTab] = useState('payouts');
     const [payouts, setPayouts] = useState([]);
     const [attendance, setAttendance] = useState([]);
     const [loading, setLoading] = useState(true);
+    const { isSuperUser, isPrivateMode } = useAuth();
+    const canViewApprovalAmounts = isSuperUser && !isPrivateMode;
 
     useEffect(() => {
         const fetchData = async () => {
@@ -23,7 +26,10 @@ export const PendingApprovalsWidget = () => {
             // FIXED: Explicit FK reference for payouts
             const { data: payoutsData } = await supabase
                 .from('payouts')
-                .select('id, amount, request_date, members:members!payouts_member_id_fkey(name)')
+                .select(canViewApprovalAmounts
+                    ? 'id, amount, request_date, members:members!payouts_member_id_fkey(name)'
+                    : 'id, request_date, members:members!payouts_member_id_fkey(name)'
+                )
                 .eq('status', 'pending')
                 .order('request_date', { ascending: true })
                 .limit(5);
@@ -51,7 +57,7 @@ export const PendingApprovalsWidget = () => {
             .subscribe();
 
         return () => supabase.removeChannel(channel);
-    }, []);
+    }, [canViewApprovalAmounts]);
 
     const renderEmptyState = (message) => (
         <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
@@ -110,7 +116,9 @@ export const PendingApprovalsWidget = () => {
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-sm font-semibold text-emerald-700">{formatCurrency(item.amount)}</p>
+                                            {canViewApprovalAmounts && (
+                                                <p className="text-sm font-semibold text-emerald-700">{formatCurrency(item.amount)}</p>
+                                            )}
                                             <Button variant="link" size="sm" className="h-auto p-0 text-xs" asChild>
                                                 <Link to="/payouts">Detail</Link>
                                             </Button>

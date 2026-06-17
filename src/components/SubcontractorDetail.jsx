@@ -7,6 +7,7 @@ import { ArrowLeft, Briefcase, FileText, ClipboardList, Copy, AlertTriangle, Cir
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { format, parseISO } from 'date-fns';
 
 const orderStatusConfig = {
@@ -19,6 +20,7 @@ const orderStatusConfig = {
 const SubcontractorDetail = () => {
     const { subcontractorId } = useParams();
     const { toast } = useToast();
+    const { hasPermission, isSuperUser } = useAuth();
     const [subcontractor, setSubcontractor] = useState(null);
     const [projects, setProjects] = useState([]);
     const [orders, setOrders] = useState([]);
@@ -29,6 +31,11 @@ const SubcontractorDetail = () => {
         navigator.clipboard.writeText(orderUrl);
         toast({ title: '✅ Odkaz na objednávku zkopírován!' });
     };
+
+    const canViewProjectFinance = isSuperUser
+        || hasPermission('finance', 'can_read')
+        || hasPermission('projects', 'can_admin')
+        || hasPermission('projects', 'can_edit');
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -46,15 +53,19 @@ const SubcontractorDetail = () => {
         }
         setSubcontractor(subData);
 
-        const { data: projectData, error: projectError } = await supabase
-            .from('project_subcontractors')
-            .select('*, projects(*)')
-            .eq('subcontractor_id', subcontractorId);
+        if (canViewProjectFinance) {
+            const { data: projectData, error: projectError } = await supabase
+                .from('project_subcontractors')
+                .select('id, project_id, subcontractor_id, scope_of_work, status, price, projects(id, name)')
+                .eq('subcontractor_id', subcontractorId);
 
-        if (projectError) {
-            toast({ title: 'Chyba při načítání projektů', variant: 'destructive' });
+            if (projectError) {
+                toast({ title: 'Chyba při načítání projektů', variant: 'destructive' });
+            } else {
+                setProjects(projectData);
+            }
         } else {
-            setProjects(projectData);
+            setProjects([]);
         }
 
         const { data: ordersData, error: ordersError } = await supabase
@@ -70,7 +81,7 @@ const SubcontractorDetail = () => {
         }
 
         setLoading(false);
-    }, [subcontractorId, toast]);
+    }, [canViewProjectFinance, subcontractorId, toast]);
 
     useEffect(() => {
         fetchData();
@@ -131,7 +142,7 @@ const SubcontractorDetail = () => {
                             <TableRow>
                                 <TableHead>Název projektu</TableHead>
                                 <TableHead>Stav</TableHead>
-                                <TableHead>Cena</TableHead>
+                                {canViewProjectFinance && <TableHead>Cena</TableHead>}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -144,7 +155,7 @@ const SubcontractorDetail = () => {
                                             </Link>
                                         </TableCell>
                                         <TableCell>{p.status}</TableCell>
-                                        <TableCell className="font-semibold">{(p.price || 0).toLocaleString('cs-CZ')} Kč</TableCell>
+                                        {canViewProjectFinance && <TableCell className="font-semibold">{(p.price || 0).toLocaleString('cs-CZ')} Kč</TableCell>}
                                     </TableRow>
                                 ))
                             ) : (

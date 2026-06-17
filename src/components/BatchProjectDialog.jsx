@@ -112,7 +112,9 @@ export default function BatchProjectDialog({ open, onOpenChange, onProjectsCreat
         type: 'Nezadáno'
       }));
 
-      const { error } = await supabase.from('projects').insert(projectsToInsert);
+      const { error } = await supabase.rpc('create_projects_batch_safe', {
+        p_projects: projectsToInsert,
+      });
       if (error) throw error;
 
       toast({ title: 'Úspěch', description: `Vytvořeno ${rows.length} projektů.`, variant: 'default' });

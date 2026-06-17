@@ -50,8 +50,8 @@ const ProjectContacts = ({ projectId }) => {
 
         const [contactsRes, membersRes, subcontractorsRes] = await Promise.all([
             supabase.from('project_contacts').select('*').eq('project_id', projectId),
-            supabase.from('project_members').select('*, member:members(*, role:member_roles(name))').eq('project_id', projectId),
-            supabase.from('project_subcontractors').select('*, subject:subjects(name, email, phone, contact_person)').eq('project_id', projectId)
+            supabase.rpc('list_project_members_safe', { p_project_id: projectId }),
+            supabase.rpc('list_project_subcontractors_safe', { p_project_id: projectId })
         ]);
 
         if (contactsRes.error) {
@@ -64,11 +64,11 @@ const ProjectContacts = ({ projectId }) => {
             toast({ title: 'Chyba při načítání týmu', variant: 'destructive', description: membersRes.error.message });
         } else {
             setTeamMembers(membersRes.data.map(m => ({
-                id: m.member.id,
-                name: m.member.name,
-                role: m.member.role?.name || 'Člen týmu',
-                email: m.member.email,
-                phone: m.member.phone,
+                id: m.member?.id || m.member_id,
+                name: m.member?.name || 'Člen týmu',
+                role: m.member?.role?.name || 'Člen týmu',
+                email: m.member?.email,
+                phone: m.member?.phone,
                 type: 'team'
             })));
         }

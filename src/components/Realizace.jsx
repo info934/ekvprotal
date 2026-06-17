@@ -346,20 +346,20 @@ const Realizace = () => {
         if (updatingRealizationId) return;
         setUpdatingRealizationId(realizationId);
         try {
-            const { error } = await supabase
-                .from('realizations')
-                .update({ status: nextStatus })
-                .eq('id', realizationId);
+            const { data, error } = await supabase.rpc('update_realization_status', {
+                p_realization_id: realizationId,
+                p_next_status: nextStatus,
+            });
 
             if (error) throw error;
 
             setRealizations((prev) => prev.map((item) => (
-                item.id === realizationId ? { ...item, status: nextStatus } : item
+                item.id === realizationId ? { ...item, ...data } : item
             )));
 
             toast({
                 title: 'Stav realizace aktualizován',
-                description: statusConfig[nextStatus]?.label || nextStatus,
+                description: statusConfig[data?.status || nextStatus]?.label || data?.status || nextStatus,
             });
         } catch (error) {
             toast({ title: 'Chyba změny stavu', description: error.message, variant: 'destructive' });

@@ -160,7 +160,7 @@ const VatStatusBadge = ({ status }) => {
   );
 };
 
-const RelatedProjectsTable = ({ projects, emptyText }) => (
+const RelatedProjectsTable = ({ projects, emptyText, canViewFinance }) => (
   projects.length ? (
     <Table>
       <TableHeader>
@@ -168,7 +168,7 @@ const RelatedProjectsTable = ({ projects, emptyText }) => (
           <TableHead>Projekt</TableHead>
           <TableHead>Stav</TableHead>
           <TableHead>Termín</TableHead>
-          <TableHead className="text-right">Cena</TableHead>
+          {canViewFinance && <TableHead className="text-right">Cena</TableHead>}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -182,7 +182,7 @@ const RelatedProjectsTable = ({ projects, emptyText }) => (
             </TableCell>
             <TableCell>{project.status || '-'}</TableCell>
             <TableCell>{formatDate(project.completion_date)}</TableCell>
-            <TableCell className="text-right font-semibold">{formatCurrency(project.price)}</TableCell>
+            {canViewFinance && <TableCell className="text-right font-semibold">{formatCurrency(project.price)}</TableCell>}
           </TableRow>
         ))}
       </TableBody>
@@ -196,7 +196,7 @@ const SubjectDetail = () => {
   const { subjectId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { hasPermission } = useAuth();
+  const { hasPermission, isSuperUser } = useAuth();
 
   const [subject, setSubject] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
@@ -210,6 +210,10 @@ const SubjectDetail = () => {
   const [aresInfo, setAresInfo] = useState(null);
 
   const canEdit = hasPermission('subjects', 'can_edit');
+  const canViewProjectFinance = isSuperUser
+    || hasPermission('finance', 'can_read')
+    || hasPermission('projects', 'can_admin')
+    || hasPermission('projects', 'can_edit');
   const subjectKind = formData.subject_kind || getSubjectKind(subject);
   const isPerson = subjectKind === 'person';
 
@@ -240,7 +244,12 @@ const SubjectDetail = () => {
       const [subjectRes, typesRes, subcontractorRes, ordersRes] = await Promise.all([
         supabase.from('subjects').select('*, subject_types(name)').eq('id', subjectId).single(),
         supabase.from('subject_types').select('*').order('name'),
-        supabase.from('project_subcontractors').select('*, projects(*)').eq('subject_id', subjectId),
+        canViewProjectFinance
+          ? supabase
+            .from('project_subcontractors')
+            .select('id, project_id, subject_id, scope_of_work, price, projects(id, name, code)')
+            .eq('subject_id', subjectId)
+          : Promise.resolve({ data: [], error: null }),
         supabase.from('subcontractor_orders').select('*, projects(name)').eq('subject_id', subjectId).order('created_at', { ascending: false }),
       ]);
 
@@ -253,11 +262,12 @@ const SubjectDetail = () => {
       setOrders(ordersRes.data || []);
 
       if (hasPermission('projects', 'can_read')) {
-        const { data, error } = await supabase
+        let query = supabase
           .from('projects')
-          .select('*')
+          .select(canViewProjectFinance ? '*' : 'id, name, code, status, completion_date, created_at')
           .or(`investor_id.eq.${subjectId},client_id.eq.${subjectId}`)
           .order('created_at', { ascending: false });
+        const { data, error } = await query;
         if (error) throw error;
         setProjectsAsInvestor(data || []);
       }
@@ -266,22 +276,22 @@ const SubjectDetail = () => {
     } finally {
       setLoading(false);
     }
-  }, [applySubjectToForm, hasPermission, subjectId, toast]);
+  }, [applySubjectToForm, canViewProjectFinance, hasPermission, subjectId, toast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const metrics = useMemo(() => {
-    const investorValue = projectsAsInvestor.reduce((sum, project) => sum + Number(project.price || 0), 0);
-    const subcontractorValue = projectsAsSubcontractor.reduce((sum, row) => sum + Number(row.price || 0), 0);
+    const investorValue = canViewProjectFinance ? projectsAsInvestor.reduce((sum, project) => sum + Number(project.price || 0), 0) : 0;
+    const subcontractorValue = canViewProjectFinance ? projectsAsSubcontractor.reduce((sum, row) => sum + Number(row.price || 0), 0) : 0;
     return {
       investorProjects: projectsAsInvestor.length,
       subcontractorProjects: projectsAsSubcontractor.length,
       orders: orders.length,
       value: investorValue + subcontractorValue,
     };
-  }, [orders.length, projectsAsInvestor, projectsAsSubcontractor]);
+  }, [canViewProjectFinance, orders.length, projectsAsInvestor, projectsAsSubcontractor]);
 
   const handleChange = (field, value) => {
     setFormData((current) => ({ ...current, [field]: value }));
@@ -464,7 +474,7 @@ const SubjectDetail = () => {
           <InfoTile icon={Briefcase} label="Projekty jako klient" value={metrics.investorProjects} tone="blue" />
           <InfoTile icon={FileText} label="Subdodávky" value={metrics.subcontractorProjects} tone="amber" />
           <InfoTile icon={ClipboardList} label="Objednávky" value={metrics.orders} tone="green" />
-          <InfoTile icon={Building2} label="Objem vazeb" value={formatCurrency(metrics.value)} />
+          {canViewProjectFinance && <InfoTile icon={Building2} label="Objem vazeb" value={formatCurrency(metrics.value)} />}
         </div>
 
         <Tabs defaultValue="basic" className="space-y-4">
@@ -704,7 +714,7 @@ const SubjectDetail = () => {
                 <CardDescription>Projekty, kde je subjekt vedený jako investor nebo klient.</CardDescription>
               </CardHeader>
               <CardContent>
-                <RelatedProjectsTable projects={projectsAsInvestor} emptyText="Subjekt zatím není navázaný na žádný projekt jako klient nebo investor." />
+                <RelatedProjectsTable projects={projectsAsInvestor} emptyText="Subjekt zatím není navázaný na žádný projekt jako klient nebo investor." canViewFinance={canViewProjectFinance} />
               </CardContent>
             </Card>
 
@@ -720,7 +730,7 @@ const SubjectDetail = () => {
                       <TableRow>
                         <TableHead>Projekt</TableHead>
                         <TableHead>Rozsah</TableHead>
-                        <TableHead className="text-right">Cena</TableHead>
+                        {canViewProjectFinance && <TableHead className="text-right">Cena</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -732,7 +742,7 @@ const SubjectDetail = () => {
                             </Link>
                           </TableCell>
                           <TableCell className="min-w-[260px]">{row.scope_of_work || '-'}</TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(row.price)}</TableCell>
+                          {canViewProjectFinance && <TableCell className="text-right font-semibold">{formatCurrency(row.price)}</TableCell>}
                         </TableRow>
                       ))}
                     </TableBody>

@@ -282,19 +282,21 @@ const ProjectDetail = () => {
     const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
 
     const canEdit = useMemo(() => hasPermission('projects', 'can_edit'), [hasPermission]);
-    const canViewFinance = useMemo(() => hasPermission('projects', 'can_edit') && !isPrivateMode, [hasPermission, isPrivateMode]);
+    const canViewFinance = useMemo(() => (
+        (hasPermission('finance', 'can_read') || hasPermission('projects', 'can_edit')) && !isPrivateMode
+    ), [hasPermission, isPrivateMode]);
 
     const updateProjectStatus = useCallback(async (nextStatus) => {
         if (!project || isUpdatingStatus) return;
         setIsUpdatingStatus(true);
         try {
-            const { error } = await supabase
-                .from('projects')
-                .update({ status: nextStatus })
-                .eq('id', project.id);
+            const { data, error } = await supabase.rpc('update_project_status', {
+                p_project_id: project.id,
+                p_next_status: nextStatus,
+            });
             if (error) throw error;
-            setProject((prev) => (prev ? { ...prev, status: nextStatus } : prev));
-            toast({ title: 'Stav projektu aktualizován', description: projectStatusConfig[nextStatus]?.label || nextStatus });
+            setProject((prev) => (prev ? { ...prev, ...data } : prev));
+            toast({ title: 'Stav projektu aktualizován', description: projectStatusConfig[data?.status || nextStatus]?.label || data?.status || nextStatus });
         } catch (error) {
             toast({ title: 'Chyba změny stavu', description: error.message, variant: 'destructive' });
         } finally {
@@ -330,11 +332,9 @@ const ProjectDetail = () => {
     const refreshData = useCallback(async () => {
         setLoading(true);
         try {
-            const { data: projectData, error: projectError } = await supabase
-              .from('projects')
-              .select(`*, investor:subjects!projects_investor_id_fkey(id, name), client:subjects!projects_client_id_fkey(id, name), stage:project_stages(name), project_manager:members!projects_created_by_member_id_fkey(id, name, email)`)
-              .eq('id', projectId)
-              .single();
+            const { data: projectData, error: projectError } = await supabase.rpc('get_project_safe', {
+                p_project_id: projectId,
+            });
               
             if (projectError) { toast({ title: 'Chyba při načítání projektu', variant: 'destructive', description: projectError.message }); navigate('/projects'); return; }
             setProject(projectData);
@@ -342,14 +342,18 @@ const ProjectDetail = () => {
 
             const payoutItemsPromise = canViewFinance ? supabase.from('payout_items').select('id, amount, project_id, payouts(status, member:members!payouts_member_id_fkey(name))').eq('project_id', projectId) : Promise.resolve({ data: [], error: null });
             const financialSummaryPromise = canViewFinance ? supabase.rpc('project_financial_summary', { p_project_id: projectId }) : Promise.resolve({ data: null, error: null });
+            const costsPromise = canViewFinance ? supabase.from('project_costs').select('*').eq('project_id', projectId) : Promise.resolve({ data: [], error: null });
+            const overheadCostsPromise = canViewFinance
+                ? supabase.from('project_overhead_costs').select('*, overhead_allocation_items!inner(overhead_costs(name, category))').eq('project_id', projectId)
+                : Promise.resolve({ data: [], error: null });
 
             const [membersRes, subcontractorsRes, tasksRes, costsRes, linksRes, overheadCostsRes, payoutItemsRes, financialSummaryRes] = await Promise.all([
-                supabase.from('project_members').select('id, project_id, member_id, reward_percentage, reward_amount, reward_type, is_hourly, member:members!project_members_member_id_fkey(id, name, email)').eq('project_id', projectId),
-                supabase.from('project_subcontractors').select('id, scope_of_work, price, subject:subjects!fk_subject(id, name)').eq('project_id', projectId),
+                supabase.rpc('list_project_members_safe', { p_project_id: projectId }),
+                supabase.rpc('list_project_subcontractors_safe', { p_project_id: projectId }),
                 supabase.from('project_tasks').select('*').eq('project_id', projectId),
-                supabase.from('project_costs').select('*').eq('project_id', projectId),
+                costsPromise,
                 supabase.from('project_links').select('*').eq('project_id', projectId),
-                supabase.from('project_overhead_costs').select('*, overhead_allocation_items!inner(overhead_costs(name, category))').eq('project_id', projectId),
+                overheadCostsPromise,
                 payoutItemsPromise,
                 financialSummaryPromise,
             ]);
@@ -379,8 +383,30 @@ const ProjectDetail = () => {
 
     const handleSaveGeneric = async (table, data, id, dialogSetter, editingState) => {
         const payload = { ...data, project_id: projectId };
-        let query = id ? supabase.from(table).update(payload).eq('id', id) : supabase.from(table).insert(payload);
-        const { error } = await query;
+        let result;
+        if (table === 'projects') {
+            result = await supabase.rpc('save_project_safe', {
+                p_project_id: projectId,
+                p_payload: data,
+                p_next_status: null,
+            });
+        } else if (table === 'project_members') {
+            result = await supabase.rpc('save_project_member_safe', {
+                p_project_id: projectId,
+                p_assignment_id: id || null,
+                p_payload: data,
+            });
+        } else if (table === 'project_subcontractors') {
+            result = await supabase.rpc('save_project_subcontractor_safe', {
+                p_project_id: projectId,
+                p_assignment_id: id || null,
+                p_payload: data,
+            });
+        } else {
+            const query = id ? supabase.from(table).update(payload).eq('id', id) : supabase.from(table).insert(payload);
+            result = await query;
+        }
+        const { error } = result;
         if (error) toast({ title: `Chyba při ukládání`, variant: 'destructive', description: error.message });
         else { toast({ title: '✅ Uloženo' }); if (dialogSetter) dialogSetter(false); if (editingState) editingState(null); refreshData(); }
     };
@@ -388,7 +414,21 @@ const ProjectDetail = () => {
     const handleDeleteGeneric = async () => {
         if (!itemToDelete) return;
         const { table, id } = itemToDelete;
-        const { error } = await supabase.from(table).delete().eq('id', id);
+        let result;
+        if (table === 'project_members') {
+            result = await supabase.rpc('delete_project_member_safe', {
+                p_project_id: projectId,
+                p_assignment_id: id,
+            });
+        } else if (table === 'project_subcontractors') {
+            result = await supabase.rpc('delete_project_subcontractor_safe', {
+                p_project_id: projectId,
+                p_assignment_id: id,
+            });
+        } else {
+            result = await supabase.from(table).delete().eq('id', id);
+        }
+        const { error } = result;
         if (error) toast({ title: `Chyba při mazání`, variant: 'destructive', description: error.message });
         else { toast({ title: '🗑️ Smazáno' }); refreshData(); }
         setItemToDelete(null);

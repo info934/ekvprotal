@@ -32,7 +32,7 @@ const statusConfig = {
 
 const Documents = () => {
   const { toast } = useToast();
-  const { hasPermission, memberId, isSuperUser } = useAuth();
+  const { hasPermission, isSuperUser } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [projects, setProjects] = useState([]);
   const [filteredProjects, setFilteredProjects] = useState([]);
@@ -52,7 +52,7 @@ const Documents = () => {
     if (selectedProject) {
       query = query.eq('project_id', selectedProject);
     } else if (!isSuperUser) {
-        const { data: userProjects } = await supabase.rpc('get_user_projects', { p_member_id: memberId });
+        const { data: userProjects } = await supabase.rpc('list_projects_safe');
         const projectIds = userProjects.map(p => p.id);
         query = query.in('project_id', projectIds);
     }
@@ -64,21 +64,22 @@ const Documents = () => {
     } else {
       setDocuments(data);
     }
-  }, [searchTerm, selectedProject, toast, isSuperUser, memberId]);
+  }, [searchTerm, selectedProject, toast, isSuperUser]);
 
   const fetchProjects = useCallback(async () => {
     let projectQuery;
     if (isSuperUser) {
         projectQuery = supabase.from('projects').select('id, name, code');
     } else {
-        projectQuery = supabase.rpc('get_user_projects', { p_member_id: memberId });
+        projectQuery = supabase.rpc('list_projects_safe');
     }
-    const { data, error } = await projectQuery.order('code');
+    const { data, error } = isSuperUser ? await projectQuery.order('code') : await projectQuery;
     if (!error) {
-      setProjects(data);
-      setFilteredProjects(data);
+      const nextProjects = [...(data || [])].sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'cs'));
+      setProjects(nextProjects);
+      setFilteredProjects(nextProjects);
     }
-  }, [isSuperUser, memberId]);
+  }, [isSuperUser]);
 
   useEffect(() => {
     fetchProjects();

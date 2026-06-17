@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import PageHeader from '@/components/ui/page-header';
 
 const ReportCard = ({ report, onDelete, onDownload }) => {
-  const { hasPermission } = useAuth();
+  const { hasPermission, isSuperUser } = useAuth();
 
   return (
     <motion.div
@@ -77,9 +77,16 @@ const Reports = () => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
-  const { hasPermission } = useAuth();
+  const { hasPermission, isSuperUser } = useAuth();
+  const canViewReports = isSuperUser || hasPermission('reports', 'can_admin');
 
   const fetchReports = useCallback(async () => {
+    if (!canViewReports) {
+      setReports([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     const { data, error } = await supabase
       .from('reports')
@@ -96,7 +103,7 @@ const Reports = () => {
       setReports(data);
     }
     setLoading(false);
-  }, [toast]);
+  }, [canViewReports, toast]);
 
   useEffect(() => {
     fetchReports();
@@ -146,7 +153,7 @@ const Reports = () => {
     }
   };
 
-  if (!hasPermission('reports', 'can_read')) {
+  if (!canViewReports) {
     return (
       <div className="app-page">
         <div className="space-y-6">

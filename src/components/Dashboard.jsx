@@ -64,6 +64,15 @@ import { cn, formatCurrency } from '@/lib/utils';
 const today = new Date();
 today.setHours(0, 0, 0, 0);
 
+const emptyCompanyFinance = {
+  realizedProfit: 0,
+  potentialProfit: 0,
+  totalProjectValue: 0,
+  unallocatedBudget: 0,
+  overheadAllocated: 0,
+  overheadAccounted: 0,
+};
+
 const isOpenStatus = (status) => {
   const value = String(status || '').toLowerCase();
   return !['done', 'completed', 'complete', 'finished', 'closed', 'archived', 'cancelled', 'canceled', 'paid'].includes(value);
@@ -300,7 +309,7 @@ const HealthRadial = ({ score }) => {
   );
 };
 
-const ExecutiveDashboard = ({ chartData, isPrivateMode, isSuperUser, summary, data }) => (
+const ExecutiveDashboard = ({ canViewCompanyFinance, chartData, summary, data }) => (
   <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.8fr)]">
     <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <CardHeader className="border-b border-slate-200 bg-slate-50/70 px-5 py-4">
@@ -316,10 +325,16 @@ const ExecutiveDashboard = ({ chartData, isPrivateMode, isSuperUser, summary, da
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-slate-950">Pipeline a vážená hodnota</div>
-              <div className="text-xs text-slate-500">Porovnání hlavních finančních toků dashboardu.</div>
+              <div className="text-xs text-slate-500">
+                {canViewCompanyFinance ? 'Porovnání hlavních finančních toků dashboardu.' : 'Provozní pohled bez finančních částek.'}
+              </div>
             </div>
           </div>
-          <MiniAreaChart data={chartData.pipelineTrend} />
+          {canViewCompanyFinance ? (
+            <MiniAreaChart data={chartData.pipelineTrend} />
+          ) : (
+            <WorkloadBarChart data={chartData.workload} />
+          )}
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <HealthRadial score={chartData.healthScore} />
@@ -354,19 +369,23 @@ const ExecutiveDashboard = ({ chartData, isPrivateMode, isSuperUser, summary, da
       <CardHeader className="border-b border-slate-200 px-5 py-4">
         <SectionHeader
           icon={Target}
-          title="Obchodní pipeline podle fáze"
-          description="Rychlá orientace, kde leží objem rozpracovaných obchodů."
-          action={!isPrivateMode && isSuperUser ? <Badge variant="outline" className="rounded-full px-3 py-1">Zisk {formatCurrency(data.companyFinance.realizedProfit)}</Badge> : null}
+          title={canViewCompanyFinance ? 'Obchodní pipeline podle fáze' : 'Obchodní případy podle fáze'}
+          description={canViewCompanyFinance ? 'Rychlá orientace, kde leží objem rozpracovaných obchodů.' : 'Rychlá orientace bez finančních objemů.'}
+          action={canViewCompanyFinance ? <Badge variant="outline" className="rounded-full px-3 py-1">Zisk {formatCurrency(data.companyFinance.realizedProfit)}</Badge> : null}
         />
       </CardHeader>
       <CardContent className="p-5">
-        <StageDonutChart data={chartData.stageDonut} />
+        {canViewCompanyFinance ? (
+          <StageDonutChart data={chartData.stageDonut} />
+        ) : (
+          <WorkloadBarChart data={chartData.stageCounts} />
+        )}
       </CardContent>
     </Card>
   </div>
 );
 
-const DashboardTable = ({ opportunities }) => (
+const DashboardTable = ({ canViewCompanyFinance, opportunities }) => (
   <Card className="crm-panel">
     <CardHeader className="border-b border-slate-200 bg-white px-4 py-3 sm:px-5">
       <SectionHeader
@@ -414,7 +433,7 @@ const DashboardTable = ({ opportunities }) => (
               <th className="px-4 py-3 text-left font-semibold">Předmět</th>
               <th className="px-4 py-3 text-left font-semibold">Klient</th>
               <th className="px-4 py-3 text-left font-semibold">Stav</th>
-              <th className="px-4 py-3 text-right font-semibold">Konečná cena</th>
+              {canViewCompanyFinance && <th className="px-4 py-3 text-right font-semibold">Konečná cena</th>}
               <th className="px-4 py-3 text-left font-semibold">Odhad uzavření</th>
               <th className="w-12 px-4 py-3" />
             </tr>
@@ -436,14 +455,16 @@ const DashboardTable = ({ opportunities }) => (
                       {stageLabels[stage] || opportunity.stage || 'Aktivní'}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-950">{formatCurrency(opportunity.value || 0)}</td>
+                  {canViewCompanyFinance && (
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-950">{formatCurrency(opportunity.value || 0)}</td>
+                  )}
                   <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(opportunity.expected_close_date)}</td>
                   <td className="px-4 py-3 text-right text-slate-400"><MoreHorizontal className="h-4 w-4" /></td>
                 </tr>
               );
             }) : (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">Zatím nejsou dostupné obchodní případy.</td>
+                <td colSpan={canViewCompanyFinance ? 7 : 6} className="px-4 py-8 text-center text-sm text-slate-500">Zatím nejsou dostupné obchodní případy.</td>
               </tr>
             )}
           </tbody>
@@ -552,19 +573,13 @@ const Dashboard = () => {
     commercialDocuments: [],
     products: [],
     documents: [],
-    companyFinance: {
-      realizedProfit: 0,
-      potentialProfit: 0,
-      totalProjectValue: 0,
-      unallocatedBudget: 0,
-      overheadAllocated: 0,
-      overheadAccounted: 0,
-    },
+    companyFinance: emptyCompanyFinance,
   });
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
+      const canViewCompanyFinance = isSuperUser && !isPrivateMode;
       const next = {
         userProjects: [],
         projects: [],
@@ -577,14 +592,33 @@ const Dashboard = () => {
         commercialDocuments: [],
         products: [],
         documents: [],
-        companyFinance: data.companyFinance,
+        companyFinance: canViewCompanyFinance ? data.companyFinance : emptyCompanyFinance,
       };
 
       const commonQueries = [
-        supabase.from('payouts').select('id, amount, status, request_date, member:members!payouts_member_id_fkey(name)').eq('status', 'pending').order('request_date', { ascending: true }).limit(20),
+        supabase.from('payouts')
+          .select(canViewCompanyFinance
+            ? 'id, amount, status, request_date, member:members!payouts_member_id_fkey(name)'
+            : 'id, status, request_date, member:members!payouts_member_id_fkey(name)'
+          )
+          .eq('status', 'pending')
+          .order('request_date', { ascending: true })
+          .limit(20),
         supabase.from('attendance_submissions').select('id, total_hours, status, month_date, member:members!attendance_submissions_member_id_fkey(name)').eq('status', 'submitted').order('submitted_at', { ascending: true }).limit(20),
-        supabase.from('crm_opportunities').select('id, number, title, value, probability, stage, expected_close_date, created_at, subject:subject_id(name)').order('created_at', { ascending: false }).limit(100),
-        supabase.from('crm_commercial_documents').select('id, type, status, title, number, total, valid_until, created_at').order('created_at', { ascending: false }).limit(100),
+        supabase.from('crm_opportunities')
+          .select(canViewCompanyFinance
+            ? 'id, number, title, value, probability, stage, expected_close_date, created_at, subject:subject_id(name)'
+            : 'id, number, title, stage, expected_close_date, created_at, subject:subject_id(name)'
+          )
+          .order('created_at', { ascending: false })
+          .limit(100),
+        supabase.from('crm_commercial_documents')
+          .select(canViewCompanyFinance
+            ? 'id, type, status, title, number, total, valid_until, created_at'
+            : 'id, type, status, title, number, valid_until, created_at'
+          )
+          .order('created_at', { ascending: false })
+          .limit(100),
         supabase.from('commercial_item_catalog').select('id, code, name, category, is_active').limit(500),
         supabase.from('documents').select('id, name, created_at').order('created_at', { ascending: false }).limit(50),
       ];
@@ -607,7 +641,11 @@ const Dashboard = () => {
 
       if (memberId) {
         const [userProjectsRes, userTasksRes, userActivitiesRes, userRealizationsRes] = await Promise.all([
-          supabase.rpc('get_user_projects', { p_member_id: memberId }),
+          supabase
+            .from('projects')
+            .select('id, name, code, status, start_date, completion_date, created_at')
+            .order('created_at', { ascending: false })
+            .limit(500),
           supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').eq('member_id', memberId).order('end_date', { ascending: true }).limit(100),
           supabase.rpc('get_user_activities', { p_member_id: memberId }),
           supabase.from('realizations').select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, team_members').contains('team_members', [memberId]).order('created_at', { ascending: false }).limit(100),
@@ -618,7 +656,7 @@ const Dashboard = () => {
         next.realizations = safeArray(userRealizationsRes);
       }
 
-      if (isSuperUser) {
+      if (canViewCompanyFinance) {
         const [
           projectsRes,
           realizationsRes,
@@ -663,7 +701,7 @@ const Dashboard = () => {
   useEffect(() => {
     fetchDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperUser, memberId]);
+  }, [isSuperUser, memberId, isPrivateMode]);
 
   const summary = useMemo(() => {
     const visibleProjects = isSuperUser ? data.projects : data.userProjects;
@@ -744,7 +782,7 @@ const Dashboard = () => {
     data.payouts.slice(0, 2).forEach((payout) => {
       items.push({
         title: payout.member?.name || 'Žádost o výplatu',
-        subtitle: `Čeká na schválení: ${formatCurrency(payout.amount)}`,
+        subtitle: isSuperUser && !isPrivateMode ? `Čeká na schválení: ${formatCurrency(payout.amount)}` : 'Čeká na schválení',
         meta: 'Výplata',
         tone: 'rose',
         to: '/payouts',
@@ -800,6 +838,7 @@ const Dashboard = () => {
   );
 
   const chartData = useMemo(() => {
+    const canViewCompanyFinance = isSuperUser && !isPrivateMode;
     const pipelineTrend = [
       { name: 'CRM', pipeline: summary.pipelineValue, weighted: summary.weightedPipeline },
       { name: 'Nabídky', pipeline: summary.offersValue, weighted: summary.ordersValue },
@@ -821,6 +860,10 @@ const Dashboard = () => {
       count: item.count,
       fill: chartPalette[index % chartPalette.length],
     }));
+    const stageCounts = stageSummary.map((item) => ({
+      name: stageLabels[item.stage] || item.stage,
+      count: item.count,
+    }));
 
     const riskPenalty =
       Math.min(35, summary.overdueTasks.length * 5)
@@ -828,13 +871,16 @@ const Dashboard = () => {
       + Math.min(20, summary.pendingApprovals * 3);
     const healthScore = Math.max(0, Math.min(100, 100 - riskPenalty));
 
-    return { healthScore, pipelineTrend, stageDonut, workload };
-  }, [data.companyFinance.potentialProfit, data.companyFinance.realizedProfit, stageSummary, summary]);
+    return { healthScore, pipelineTrend: canViewCompanyFinance ? pipelineTrend : [], stageCounts, stageDonut, workload };
+  }, [data.companyFinance.potentialProfit, data.companyFinance.realizedProfit, isPrivateMode, isSuperUser, stageSummary, summary]);
 
+  const canViewCompanyFinance = isSuperUser && !isPrivateMode;
   const moduleTiles = [
     {
       title: 'CRM',
-      description: `${summary.openOpportunities.length} otevřených OP, váženě ${formatCurrency(summary.weightedPipeline)}`,
+      description: canViewCompanyFinance
+        ? `${summary.openOpportunities.length} otevřených OP, váženě ${formatCurrency(summary.weightedPipeline)}`
+        : `${summary.openOpportunities.length} otevřených OP`,
       icon: Target,
       to: '/crm',
       tone: 'blue',
@@ -971,22 +1017,28 @@ const Dashboard = () => {
         )}
 
         <ExecutiveDashboard
+          canViewCompanyFinance={canViewCompanyFinance}
           chartData={chartData}
           data={data}
-          isPrivateMode={isPrivateMode}
-          isSuperUser={isSuperUser}
           summary={summary}
         />
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-          <DashboardMetric icon={Target} label="CRM pipeline" value={formatCurrency(summary.pipelineValue)} detail={`${summary.openOpportunities.length} otevřených OP`} tone="blue" to="/crm" />
+          <DashboardMetric
+            icon={Target}
+            label={canViewCompanyFinance ? 'CRM pipeline' : 'CRM případy'}
+            value={canViewCompanyFinance ? formatCurrency(summary.pipelineValue) : summary.openOpportunities.length}
+            detail={canViewCompanyFinance ? `${summary.openOpportunities.length} otevřených OP` : 'otevřené obchodní případy'}
+            tone="blue"
+            to="/crm"
+          />
           <DashboardMetric icon={Briefcase} label="Aktivní projekce" value={summary.activeProjects.length} detail={`${summary.visibleProjects.length} projektů celkem`} tone="slate" to="/projects" />
           <DashboardMetric icon={Wrench} label="Aktivní realizace" value={summary.activeRealizations.length} detail="stav realizací a harmonogram" tone="amber" to="/realizace" />
           <DashboardMetric icon={AlertTriangle} label="Vyžaduje pozornost" value={attentionItems.length} detail={`${summary.pendingApprovals} schválení, ${summary.overdueTasks.length} úkolů po termínu`} tone={attentionItems.length ? 'rose' : 'emerald'} />
-          {!isPrivateMode && isSuperUser && (
+          {canViewCompanyFinance && (
             <DashboardMetric icon={CircleDollarSign} label="Realizovaný zisk" value={formatCurrency(data.companyFinance.realizedProfit)} tone="emerald" to="/reports" />
           )}
-          {!isPrivateMode && isSuperUser && (
+          {canViewCompanyFinance && (
             <DashboardMetric icon={FileText} label="Režie bilance" value={formatCurrency(data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted)} tone={(data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted) < 0 ? 'rose' : 'amber'} to="/overhead-costs" />
           )}
         </div>
@@ -997,7 +1049,7 @@ const Dashboard = () => {
           </div>
         )}
 
-        {!isPrivateMode && isSuperUser && (
+        {canViewCompanyFinance && (
           <div className="grid gap-5">
             {financialSections.map((section) => (
               <FinancialModuleSection key={section.title} {...section} />
@@ -1028,20 +1080,23 @@ const Dashboard = () => {
             <CardHeader className="crm-panel-header">
               <SectionHeader
                 icon={BarChart3}
-                title="Pipeline podle stavu"
-                description="Hodnota otevřených obchodních případů."
+                title={canViewCompanyFinance ? 'Pipeline podle stavu' : 'Obchodní případy podle stavu'}
+                description={canViewCompanyFinance ? 'Hodnota otevřených obchodních případů.' : 'Počet otevřených obchodních případů bez částek.'}
               />
             </CardHeader>
             <CardContent className="space-y-4 p-4">
               {stageSummary.length > 0 ? (
                 stageSummary.map((item) => {
-                  const maxValue = Math.max(...stageSummary.map((stage) => stage.value), 1);
-                  const width = Math.max(8, Math.round((item.value / maxValue) * 100));
+                  const visibleValue = canViewCompanyFinance ? item.value : item.count;
+                  const maxValue = Math.max(...stageSummary.map((stage) => (canViewCompanyFinance ? stage.value : stage.count)), 1);
+                  const width = Math.max(8, Math.round((visibleValue / maxValue) * 100));
                   return (
                     <div key={item.stage} className="space-y-2">
                       <div className="flex items-center justify-between gap-3 text-sm">
                         <span className="font-semibold text-slate-700">{stageLabels[item.stage] || item.stage}</span>
-                        <span className="whitespace-nowrap font-semibold text-slate-950">{formatCurrency(item.value)}</span>
+                        <span className="whitespace-nowrap font-semibold text-slate-950">
+                          {canViewCompanyFinance ? formatCurrency(item.value) : item.count}
+                        </span>
                       </div>
                       <div className="h-2.5 rounded-full bg-slate-100">
                         <div className="h-2.5 rounded-full bg-primary" style={{ width: `${width}%` }} />
@@ -1093,7 +1148,7 @@ const Dashboard = () => {
           </Card>
         </div>
 
-        <DashboardTable opportunities={topOpportunities} />
+        <DashboardTable canViewCompanyFinance={canViewCompanyFinance} opportunities={topOpportunities} />
 
         <Tabs defaultValue="operations" className="space-y-5">
           <TabsList className="h-auto w-full justify-start overflow-x-auto sm:w-auto">

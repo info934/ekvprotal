@@ -72,17 +72,17 @@ const RealizaceDetail = () => {
     if (!realization || isUpdatingStatus) return;
     setIsUpdatingStatus(true);
     try {
-      const { error } = await supabase
-        .from('realizations')
-        .update({ status: nextStatus })
-        .eq('id', realization.id);
+      const { data, error } = await supabase.rpc('update_realization_status', {
+        p_realization_id: realization.id,
+        p_next_status: nextStatus,
+      });
 
       if (error) throw error;
 
-      setRealization((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      setRealization((prev) => (prev ? { ...prev, ...data } : prev));
       toast({
         title: 'Stav realizace aktualizován',
-        description: statusConfig[nextStatus]?.label || nextStatus,
+        description: statusConfig[data?.status || nextStatus]?.label || data?.status || nextStatus,
       });
     } catch (error) {
       toast({ title: 'Chyba změny stavu', description: error.message, variant: 'destructive' });

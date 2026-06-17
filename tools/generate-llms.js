@@ -148,18 +148,15 @@ function main() {
   const pagesDir = path.join(process.cwd(), 'src', 'pages');
   const appJsxPath = path.join(process.cwd(), 'src', 'App.jsx');
 
-  let pages = [];
+  let pages = [processPageFile(appJsxPath, [])].filter(Boolean);
   
-  if (!fs.existsSync(pagesDir)) {
-    pages.push(processPageFile(appJsxPath, []))
-    pages = pages.filter(Boolean);
-  } else {
+  if (fs.existsSync(pagesDir)) {
     const routes = extractRoutes(appJsxPath);
     const reactFiles = findReactFiles(pagesDir);
 
-    pages = reactFiles
+    pages = pages.concat(reactFiles
       .map(filePath => processPageFile(filePath, routes))
-      .filter(Boolean);
+      .filter(Boolean));
   }
 
   if (pages.length === 0) {
