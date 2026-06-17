@@ -3,15 +3,23 @@ import { Loader2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EmptyPayoutState } from '@/components/payouts/PayoutShared';
 
+const isInteractiveRowTarget = (target) => {
+  if (!(target instanceof Element)) return false;
+
+  return Boolean(target.closest('a, button, input, select, textarea, label, [role="button"], [role="menuitem"]'));
+};
+
 const PayoutRequestsTable = ({
   columns,
   emptyDescription,
   emptyTitle,
   getRowClassName,
+  getRowAriaLabel,
   getRowKey,
   items,
   loading,
   loadingLabel,
+  onRowClick,
   renderExpandedRow,
 }) => {
   if (loading) {
@@ -50,10 +58,33 @@ const PayoutRequestsTable = ({
           {items.map((item) => {
             const rowKey = getRowKey(item);
             const expandedContent = renderExpandedRow?.(item);
+            const isClickable = typeof onRowClick === 'function';
+            const baseRowClassName = getRowClassName?.(item) || 'border-slate-100 hover:bg-slate-50/70';
+            const rowClassName = isClickable ? `${baseRowClassName} cursor-pointer` : baseRowClassName;
+
+            const handleRowClick = (event) => {
+              if (!isClickable || isInteractiveRowTarget(event.target)) return;
+              onRowClick(item, event);
+            };
+
+            const handleRowKeyDown = (event) => {
+              if (!isClickable || isInteractiveRowTarget(event.target)) return;
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+
+              event.preventDefault();
+              onRowClick(item, event);
+            };
 
             return (
               <React.Fragment key={rowKey}>
-                <TableRow className={getRowClassName?.(item) || 'border-slate-100 hover:bg-slate-50/70'}>
+                <TableRow
+                  aria-label={isClickable ? getRowAriaLabel?.(item) : undefined}
+                  className={rowClassName}
+                  onClick={handleRowClick}
+                  onKeyDown={handleRowKeyDown}
+                  role={isClickable ? 'button' : undefined}
+                  tabIndex={isClickable ? 0 : undefined}
+                >
                   {columns.map((column) => (
                     <TableCell key={column.key} className={column.cellClassName}>
                       {column.render(item)}

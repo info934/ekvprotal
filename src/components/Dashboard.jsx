@@ -34,8 +34,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Pie,
-  PieChart,
   PolarAngleAxis,
   RadialBar,
   RadialBarChart,
@@ -46,7 +44,7 @@ import {
 } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import PageHeader from '@/components/ui/page-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PortalStatusChart from '@/components/PortalStatusChart';
@@ -119,24 +117,24 @@ const stageClasses = {
 
 const DashboardMetric = ({ icon: Icon, label, value, detail, tone = 'blue', to }) => {
   const tones = {
-    blue: 'border-blue-100 bg-blue-50 text-blue-700',
-    emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700',
-    amber: 'border-amber-100 bg-amber-50 text-amber-700',
-    rose: 'border-rose-100 bg-rose-50 text-rose-700',
-    slate: 'border-slate-200 bg-slate-50 text-slate-700',
+    blue: 'border-blue-100 bg-blue-50 text-blue-700 shadow-blue-100/60',
+    emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700 shadow-emerald-100/60',
+    amber: 'border-amber-100 bg-amber-50 text-amber-700 shadow-amber-100/60',
+    rose: 'border-rose-100 bg-rose-50 text-rose-700 shadow-rose-100/60',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700 shadow-slate-100/60',
   };
 
   const content = (
-    <Card className="crm-panel h-full min-h-[118px] transition-colors hover:border-primary/30">
+    <Card className="h-full min-h-[112px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
       <CardContent className="flex h-full flex-col justify-between gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
-          <p className="min-w-0 text-[11px] font-semibold uppercase leading-4 tracking-normal text-slate-500">{label}</p>
-          <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border', tones[tone])}>
+          <p className="min-w-0 text-[11px] font-semibold uppercase leading-4 tracking-[0.04em] text-slate-500">{label}</p>
+          <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-md border shadow-sm', tones[tone])}>
             <Icon className="h-4 w-4" />
           </div>
         </div>
         <div className="min-w-0">
-          <p className="break-words text-[1.15rem] font-semibold leading-6 tracking-tight text-slate-950 2xl:text-[1.35rem]">{value}</p>
+          <p className="break-words text-[1.35rem] font-semibold leading-7 tracking-tight text-slate-950 2xl:text-[1.5rem]">{value}</p>
           {detail && <p className="mt-1 line-clamp-2 text-xs leading-4 text-slate-500">{detail}</p>}
         </div>
       </CardContent>
@@ -264,32 +262,6 @@ const WorkloadBarChart = ({ data }) => (
   </div>
 );
 
-const StageDonutChart = ({ data }) => (
-  <div className="grid gap-4 lg:grid-cols-[180px_minmax(0,1fr)]">
-    <div className="h-44">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" innerRadius={48} outerRadius={76} paddingAngle={3}>
-            {data.map((entry, index) => <Cell key={entry.name} fill={entry.fill || chartPalette[index % chartPalette.length]} />)}
-          </Pie>
-          <Tooltip content={<ChartTooltip valueFormatter={formatCurrency} />} />
-        </PieChart>
-      </ResponsiveContainer>
-    </div>
-    <div className="space-y-2 self-center">
-      {data.length ? data.map((item) => (
-        <div key={item.name} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.fill }} />
-            <span className="truncate font-medium text-slate-700">{item.name}</span>
-          </span>
-          <span className="shrink-0 font-semibold tabular-nums text-slate-950">{formatCurrency(item.value)}</span>
-        </div>
-      )) : <EmptyBlock text="Bez aktivní pipeline." />}
-    </div>
-  </div>
-);
-
 const HealthRadial = ({ score }) => {
   const color = score >= 80 ? '#10b981' : score >= 55 ? '#f59e0b' : '#ef4444';
 
@@ -309,76 +281,104 @@ const HealthRadial = ({ score }) => {
   );
 };
 
-const ExecutiveDashboard = ({ canViewCompanyFinance, chartData, summary, data }) => (
-  <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.8fr)]">
-    <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <CardHeader className="border-b border-slate-200 bg-slate-50/70 px-5 py-4">
+const StatusLine = ({ icon: Icon, label, value, tone = 'slate' }) => {
+  const tones = {
+    blue: 'bg-blue-50 text-blue-700 border-blue-100',
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    amber: 'bg-amber-50 text-amber-700 border-amber-100',
+    rose: 'bg-rose-50 text-rose-700 border-rose-100',
+    slate: 'bg-slate-50 text-slate-700 border-slate-200',
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
+      <span className="flex min-w-0 items-center gap-2 text-sm text-slate-600">
+        <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-md border', tones[tone])}>
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+        <span className="truncate">{label}</span>
+      </span>
+      <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-950">{value}</span>
+    </div>
+  );
+};
+
+const ExecutiveDashboard = ({ canViewCompanyFinance, chartData, summary, data, attentionItems }) => (
+  <div className="grid gap-4 xl:grid-cols-[310px_minmax(0,1fr)_360px]">
+    <Card className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <CardHeader className="border-b border-slate-200 bg-slate-50/70 px-4 py-3">
+        <SectionHeader icon={ShieldAlert} title="Zdraví portálu" description="Aktuální provozní tlak a rizika." />
+      </CardHeader>
+      <CardContent className="space-y-4 p-4">
+        <HealthRadial score={chartData.healthScore} />
+        <div className="space-y-2">
+          <StatusLine icon={Briefcase} label="Aktivní projekce" value={summary.activeProjects.length} tone="blue" />
+          <StatusLine icon={Wrench} label="Aktivní realizace" value={summary.activeRealizations.length} tone="amber" />
+          <StatusLine icon={ClipboardList} label="Úkoly po termínu" value={summary.overdueTasks.length} tone={summary.overdueTasks.length ? 'rose' : 'emerald'} />
+          <StatusLine icon={CheckCircle} label="Ke schválení" value={summary.pendingApprovals} tone={summary.pendingApprovals ? 'amber' : 'emerald'} />
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <CardHeader className="border-b border-slate-200 bg-white px-4 py-3">
         <SectionHeader
           icon={BarChart3}
-          title="Výkon portálu"
-          description="CRM, projekce a realizace v jednom provozním pohledu."
-          action={<Badge variant="outline" className="rounded-full bg-white px-3 py-1">{summary.openOpportunities.length} otevřených OP</Badge>}
+          title={canViewCompanyFinance ? 'Výkon a cashflow práce' : 'Výkon a workload'}
+          description={canViewCompanyFinance ? 'CRM, projekce a realizace v jedné provozní křivce.' : 'Počty práce bez finančních částek.'}
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="rounded-md bg-blue-50 px-2.5 py-1 text-blue-700">{summary.openOpportunities.length} otevřených OP</Badge>
+              {canViewCompanyFinance && <Badge variant="outline" className="rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700">Zisk {formatCurrency(data.companyFinance.realizedProfit)}</Badge>}
+            </div>
+          }
         />
       </CardHeader>
-      <CardContent className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_260px]">
-        <div>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-950">Pipeline a vážená hodnota</div>
-              <div className="text-xs text-slate-500">
-                {canViewCompanyFinance ? 'Porovnání hlavních finančních toků dashboardu.' : 'Provozní pohled bez finančních částek.'}
-              </div>
-            </div>
-          </div>
+      <CardContent className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/40 p-3">
           {canViewCompanyFinance ? (
             <MiniAreaChart data={chartData.pipelineTrend} />
           ) : (
             <WorkloadBarChart data={chartData.workload} />
           )}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <HealthRadial score={chartData.healthScore} />
-          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-lg bg-slate-50 px-2 py-2">
-              <div className="font-bold text-slate-950">{summary.activeProjects.length}</div>
-              <div className="text-[11px] text-slate-500">projekty</div>
-            </div>
-            <div className="rounded-lg bg-slate-50 px-2 py-2">
-              <div className="font-bold text-slate-950">{summary.openTasks.length}</div>
-              <div className="text-[11px] text-slate-500">úkoly</div>
-            </div>
-            <div className="rounded-lg bg-slate-50 px-2 py-2">
-              <div className="font-bold text-slate-950">{summary.pendingApprovals}</div>
-              <div className="text-[11px] text-slate-500">schválení</div>
+        <div className="space-y-3">
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.04em] text-slate-500">Dnešní stav</p>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-md bg-slate-50 px-2 py-2">
+                <div className="font-bold text-slate-950">{summary.activeProjects.length}</div>
+                <div className="text-[11px] text-slate-500">projekty</div>
+              </div>
+              <div className="rounded-md bg-slate-50 px-2 py-2">
+                <div className="font-bold text-slate-950">{summary.openTasks.length}</div>
+                <div className="text-[11px] text-slate-500">úkoly</div>
+              </div>
+              <div className="rounded-md bg-slate-50 px-2 py-2">
+                <div className="font-bold text-slate-950">{summary.activeEngineering.length}</div>
+                <div className="text-[11px] text-slate-500">inž.</div>
+              </div>
             </div>
           </div>
+          <WorkloadBarChart data={chartData.workload} />
         </div>
       </CardContent>
     </Card>
 
-    <Card className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <CardHeader className="border-b border-slate-200 px-5 py-4">
-        <SectionHeader icon={Activity} title="Workload" description="Kde je teď nejvíc otevřené práce." />
-      </CardHeader>
-      <CardContent className="p-5">
-        <WorkloadBarChart data={chartData.workload} />
-      </CardContent>
-    </Card>
-
-    <Card className="rounded-xl border border-slate-200 bg-white shadow-sm xl:col-span-2">
-      <CardHeader className="border-b border-slate-200 px-5 py-4">
+    <Card className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <CardHeader className="border-b border-slate-200 bg-white px-4 py-3">
         <SectionHeader
-          icon={Target}
-          title={canViewCompanyFinance ? 'Obchodní pipeline podle fáze' : 'Obchodní případy podle fáze'}
-          description={canViewCompanyFinance ? 'Rychlá orientace, kde leží objem rozpracovaných obchodů.' : 'Rychlá orientace bez finančních objemů.'}
-          action={canViewCompanyFinance ? <Badge variant="outline" className="rounded-full px-3 py-1">Zisk {formatCurrency(data.companyFinance.realizedProfit)}</Badge> : null}
+          icon={Timer}
+          title="Co řešit teď"
+          description="Blokery, schválení a termíny."
+          action={<Button asChild variant="outline" size="sm"><Link to="/tasks">Úkoly</Link></Button>}
         />
       </CardHeader>
-      <CardContent className="p-5">
-        {canViewCompanyFinance ? (
-          <StageDonutChart data={chartData.stageDonut} />
+      <CardContent className="space-y-2 p-4">
+        {attentionItems.length > 0 ? (
+          attentionItems.slice(0, 6).map((item, index) => <WorkItem key={`${item.title}-${index}`} {...item} />)
         ) : (
-          <WorkloadBarChart data={chartData.stageCounts} />
+          <EmptyBlock text="Aktuálně není nic kritického k řešení." />
         )}
       </CardContent>
     </Card>
@@ -540,19 +540,6 @@ const AdminFinancials = ({ companyFinance, approvals }) => {
     </div>
   );
 };
-
-const FinancialModuleSection = ({ title, description, metrics }) => (
-  <Card className="crm-panel">
-    <CardHeader className="crm-panel-header">
-      <SectionHeader icon={CircleDollarSign} title={title} description={description} />
-    </CardHeader>
-    <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
-      {metrics.map((metric) => (
-        <DashboardMetric key={metric.label} {...metric} />
-      ))}
-    </CardContent>
-  </Card>
-);
 
 const TrendingIcon = (props) => <BarChart3 {...props} />;
 
@@ -854,12 +841,6 @@ const Dashboard = () => {
       { name: 'Schválení', count: summary.pendingApprovals },
     ];
 
-    const stageDonut = stageSummary.map((item, index) => ({
-      name: stageLabels[item.stage] || item.stage,
-      value: item.value,
-      count: item.count,
-      fill: chartPalette[index % chartPalette.length],
-    }));
     const stageCounts = stageSummary.map((item) => ({
       name: stageLabels[item.stage] || item.stage,
       count: item.count,
@@ -871,7 +852,7 @@ const Dashboard = () => {
       + Math.min(20, summary.pendingApprovals * 3);
     const healthScore = Math.max(0, Math.min(100, 100 - riskPenalty));
 
-    return { healthScore, pipelineTrend: canViewCompanyFinance ? pipelineTrend : [], stageCounts, stageDonut, workload };
+    return { healthScore, pipelineTrend: canViewCompanyFinance ? pipelineTrend : [], stageCounts, workload };
   }, [data.companyFinance.potentialProfit, data.companyFinance.realizedProfit, isPrivateMode, isSuperUser, stageSummary, summary]);
 
   const canViewCompanyFinance = isSuperUser && !isPrivateMode;
@@ -936,39 +917,6 @@ const Dashboard = () => {
     },
   ];
 
-  const financialSections = [
-    {
-      title: 'CRM finance',
-      description: 'Obchodní pipeline, nabídky a objednávky.',
-      metrics: [
-        { icon: Target, label: 'Pipeline otevřených OP', value: formatCurrency(summary.pipelineValue), detail: `${summary.openOpportunities.length} otevřených obchodních případů`, tone: 'blue', to: '/crm' },
-        { icon: BarChart3, label: 'Vážená pipeline', value: formatCurrency(summary.weightedPipeline), detail: 'hodnota podle pravděpodobnosti', tone: 'emerald', to: '/crm' },
-        { icon: FileText, label: 'Nabídky celkem', value: formatCurrency(summary.offersValue), detail: `${summary.offers.length} ${pluralizeCs(summary.offers.length, 'nabídka', 'nabídky', 'nabídek')}`, tone: 'slate', to: '/crm/offers' },
-        { icon: ShoppingCart, label: 'Objednávky celkem', value: formatCurrency(summary.ordersValue), detail: `${summary.orders.length} ${pluralizeCs(summary.orders.length, 'objednávka', 'objednávky', 'objednávek')}`, tone: 'amber', to: '/crm/orders' },
-      ],
-    },
-    {
-      title: 'Projekce finance',
-      description: 'Hodnota projekčních zakázek a aktivní rozpracovanost.',
-      metrics: [
-        { icon: Briefcase, label: 'Hodnota projektů', value: formatCurrency(data.companyFinance.totalProjectValue || summary.activeProjectsValue), detail: `${summary.visibleProjects.length} projektů celkem`, tone: 'slate', to: '/projects' },
-        { icon: Activity, label: 'Aktivní projekce', value: formatCurrency(summary.activeProjectsValue), detail: `${summary.activeProjects.length} aktivních projektů`, tone: 'blue', to: '/projects' },
-        { icon: CircleDollarSign, label: 'Potenciální zisk', value: formatCurrency(data.companyFinance.potentialProfit), detail: 'výhled podle projektů', tone: 'emerald', to: '/reports' },
-        { icon: AlertTriangle, label: 'Úkoly po termínu', value: summary.overdueTasks.length, detail: `${summary.openTasks.length} otevřených úkolů`, tone: summary.overdueTasks.length ? 'rose' : 'emerald', to: '/tasks' },
-      ],
-    },
-    {
-      title: 'Realizace finance',
-      description: 'Smluvní objem realizací, skutečný zisk a provozní bilance.',
-      metrics: [
-        { icon: Wrench, label: 'Aktivní realizace', value: formatCurrency(summary.activeRealizationsValue), detail: `${summary.activeRealizations.length} aktivních realizací`, tone: 'amber', to: '/realizace' },
-        { icon: CircleDollarSign, label: 'Realizovaný zisk', value: formatCurrency(data.companyFinance.realizedProfit), detail: 'výsledek z realizací', tone: 'emerald', to: '/reports' },
-        { icon: Banknote, label: 'Objem realizací', value: formatCurrency(summary.allRealizationsValue), detail: `${data.realizations.length} realizací celkem`, tone: 'slate', to: '/realizace' },
-        { icon: PiggyBank, label: 'Režie bilance', value: formatCurrency(data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted), detail: 'alokováno minus zaúčtováno', tone: (data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted) < 0 ? 'rose' : 'amber', to: '/overhead-costs' },
-      ],
-    },
-  ];
-
   if (loading) {
     return (
       <div className="app-page-wide space-y-5">
@@ -1018,6 +966,7 @@ const Dashboard = () => {
 
         <ExecutiveDashboard
           canViewCompanyFinance={canViewCompanyFinance}
+          attentionItems={attentionItems}
           chartData={chartData}
           data={data}
           summary={summary}
@@ -1049,34 +998,8 @@ const Dashboard = () => {
           </div>
         )}
 
-        {canViewCompanyFinance && (
-          <div className="grid gap-5">
-            {financialSections.map((section) => (
-              <FinancialModuleSection key={section.title} {...section} />
-            ))}
-          </div>
-        )}
-
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.15fr)_minmax(340px,0.75fr)]">
-          <Card className="crm-panel xl:order-3">
-            <CardHeader className="crm-panel-header">
-              <SectionHeader
-                icon={Timer}
-                title="Co řešit teď"
-                description="Termíny, schválení a obchodní případy, které mohou blokovat další práci."
-                action={<Button asChild variant="outline" size="sm"><Link to="/tasks">Všechny úkoly</Link></Button>}
-              />
-            </CardHeader>
-            <CardContent className="space-y-2 p-4">
-              {attentionItems.length > 0 ? (
-                attentionItems.map((item, index) => <WorkItem key={`${item.title}-${index}`} {...item} />)
-              ) : (
-                <EmptyBlock text="Aktuálně není nic kritického k řešení." />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="crm-panel xl:order-1">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)_minmax(340px,0.8fr)]">
+          <Card className="crm-panel">
             <CardHeader className="crm-panel-header">
               <SectionHeader
                 icon={BarChart3}
@@ -1110,7 +1033,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="crm-panel xl:order-2">
+          <Card className="crm-panel">
             <CardHeader className="crm-panel-header">
               <SectionHeader
                 icon={Activity}
@@ -1144,6 +1067,29 @@ const Dashboard = () => {
                   <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
                 </Link>
               ))}
+            </CardContent>
+          </Card>
+
+          <Card className="crm-panel">
+            <CardHeader className="crm-panel-header">
+              <SectionHeader
+                icon={ClipboardList}
+                title="Provozní přehled"
+                description="Nejbližší práce a schvalování."
+                action={<Button asChild variant="outline" size="sm"><Link to="/attendance">Docházka</Link></Button>}
+              />
+            </CardHeader>
+            <CardContent className="space-y-3 p-4">
+              <StatusLine icon={ClipboardList} label="Otevřené úkoly" value={summary.openTasks.length} tone={summary.overdueTasks.length ? 'amber' : 'blue'} />
+              <StatusLine icon={AlertTriangle} label="Po termínu" value={summary.overdueTasks.length + summary.overdueEngineering.length} tone={(summary.overdueTasks.length + summary.overdueEngineering.length) ? 'rose' : 'emerald'} />
+              <StatusLine icon={CheckCircle} label="Schválení" value={summary.pendingApprovals} tone={summary.pendingApprovals ? 'amber' : 'emerald'} />
+              <StatusLine icon={FileText} label="Dokumenty" value={data.documents.length} tone="slate" />
+              <Button asChild className="w-full justify-between" variant={summary.pendingApprovals ? 'default' : 'outline'}>
+                <Link to="/payouts">
+                  Otevřít schvalování
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
             </CardContent>
           </Card>
         </div>

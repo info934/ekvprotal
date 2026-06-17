@@ -346,6 +346,9 @@ const PayoutTable = ({
 }) => {
   const [selectedAuditPayout, setSelectedAuditPayout] = useState(null);
   const [expandedPayout, setExpandedPayout] = useState(null);
+  const togglePayoutDetail = (item) => {
+    setExpandedPayout((current) => (current === item.id ? null : item.id));
+  };
 
   const columns = [
     {
@@ -361,7 +364,7 @@ const PayoutTable = ({
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-950"
-            onClick={() => setExpandedPayout(isExpanded ? null : item.id)}
+            onClick={() => togglePayoutDetail(item)}
             title={isExpanded ? 'Sbalit detail' : 'Zobrazit detail'}
           >
             <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
@@ -491,10 +494,16 @@ const PayoutTable = ({
       columns={columns}
       emptyDescription="Aktuální filtry nevrátily žádný záznam."
       emptyTitle="Žádné úkolové žádosti"
+      getRowAriaLabel={(item) => {
+        const worker = item.members?.name || 'neznámý pracovník';
+        const action = expandedPayout === item.id ? 'Sbalit detail žádosti' : 'Zobrazit detail žádosti';
+        return `${action}: ${worker}, ${formatCurrency(item.total_amount || item.amount)}`;
+      }}
       getRowKey={(item) => item.id}
       items={data}
       loading={loading}
       loadingLabel="Načítám úkolové výplaty..."
+      onRowClick={togglePayoutDetail}
       renderExpandedRow={(item) => (
         expandedPayout === item.id ? <PayoutDetailPanel item={item} onDownloadInvoice={onDownloadInvoice} /> : null
       )}
