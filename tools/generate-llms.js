@@ -163,8 +163,11 @@ function main() {
   }
 
   if (pages.length === 0) {
-    console.error('❌ No pages with Helmet components found!');
-    process.exit(1);
+    console.info('No page-level Helmet components found; skipping llms.txt page index.');
+    const outputPath = path.join(process.cwd(), 'public', 'llms.txt');
+    ensureDirectoryExists(path.dirname(outputPath));
+    fs.writeFileSync(outputPath, '## Pages\n', 'utf8');
+    return;
   }
 
 
