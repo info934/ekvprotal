@@ -51,7 +51,7 @@ export const DataVizCard = ({
   className,
   contentClassName,
 }) => (
-  <section className={cn('rounded-xl border border-slate-200 bg-white shadow-sm', className)}>
+  <section className={cn('min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm', className)}>
     <header className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex min-w-0 items-start gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
@@ -64,7 +64,7 @@ export const DataVizCard = ({
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </header>
-    <div className={cn('p-5', contentClassName)}>{children}</div>
+    <div className={cn('min-w-0 p-5', contentClassName)}>{children}</div>
   </section>
 );
 
@@ -81,6 +81,7 @@ export const StatusDonutChart = ({
   emptyLabel,
   valueFormatter = formatVizNumber,
   className,
+  layout = 'split',
 }) => {
   const safeTotal = Number(total) || 0;
   const items = (data || [])
@@ -106,19 +107,21 @@ export const StatusDonutChart = ({
     })
     .join(', ');
 
+  const isStacked = layout === 'stacked';
+
   return (
-    <div className={cn('grid gap-5 md:grid-cols-[auto,1fr] md:items-center', className)}>
-      <div className="relative mx-auto h-36 w-36 shrink-0 rounded-full shadow-inner" style={{ background: `conic-gradient(${gradient})` }} aria-label={`${centerLabel}: ${safeTotal}`}>
+    <div className={cn(isStacked ? 'grid min-w-0 justify-items-center gap-4' : 'grid min-w-0 gap-5 md:grid-cols-[auto,minmax(0,1fr)] md:items-center', className)}>
+      <div className={cn('relative mx-auto shrink-0 rounded-full shadow-inner', isStacked ? 'h-32 w-32 sm:h-36 sm:w-36' : 'h-36 w-36')} style={{ background: `conic-gradient(${gradient})` }} aria-label={`${centerLabel}: ${safeTotal}`}>
         <div className="absolute inset-4 flex flex-col items-center justify-center rounded-full bg-white text-center shadow-sm">
           <span className="text-3xl font-semibold tracking-tight text-slate-950">{valueFormatter(safeTotal)}</span>
           <span className="mt-1 text-xs font-medium text-slate-500">{centerLabel}</span>
         </div>
       </div>
-      <div className="space-y-2">
+      <div className={cn('min-w-0 space-y-2', isStacked ? 'w-full max-w-full' : 'w-full')}>
         {items.map((item) => {
           const percentage = safeTotal ? (item.count / safeTotal) * 100 : 0;
           return (
-            <div key={item.label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+            <div key={item.label} className="min-w-0 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
               <div className="flex items-center justify-between gap-3 text-sm">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />

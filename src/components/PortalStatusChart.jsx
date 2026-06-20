@@ -92,15 +92,15 @@ const PortalStatusChart = () => {
   }
 
   return (
-    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-      <DataVizCard title="Projekty" description="Rozložení podle aktuálního stavu." icon={Briefcase}>
-        <StatusDonutChart data={chartData.projects.data} total={chartData.projects.total} emptyLabel="Žádné projekty k zobrazení." />
+    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
+      <DataVizCard className="min-w-0" contentClassName="p-4" title="Projekty" description="Rozložení podle aktuálního stavu." icon={Briefcase}>
+        <StatusDonutChart layout="stacked" data={chartData.projects.data} total={chartData.projects.total} emptyLabel="Žádné projekty k zobrazení." />
       </DataVizCard>
-      <DataVizCard title="Inženýring" description="Aktivity podle stavu zpracování." icon={Wrench}>
-        <StatusDonutChart data={chartData.engineering.data} total={chartData.engineering.total} emptyLabel="Žádné inženýrské aktivity k zobrazení." />
+      <DataVizCard className="min-w-0" contentClassName="p-4" title="Inženýring" description="Aktivity podle stavu zpracování." icon={Wrench}>
+        <StatusDonutChart layout="stacked" data={chartData.engineering.data} total={chartData.engineering.total} emptyLabel="Žádné inženýrské aktivity k zobrazení." />
       </DataVizCard>
-      <DataVizCard title="Úkoly" description="Přehled otevřených a hotových úkolů." icon={ListTodo}>
-        <StatusDonutChart data={chartData.tasks.data} total={chartData.tasks.total} emptyLabel="Žádné úkoly k zobrazení." />
+      <DataVizCard className="min-w-0" contentClassName="p-4" title="Úkoly" description="Přehled otevřených a hotových úkolů." icon={ListTodo}>
+        <StatusDonutChart layout="stacked" data={chartData.tasks.data} total={chartData.tasks.total} emptyLabel="Žádné úkoly k zobrazení." />
       </DataVizCard>
     </motion.div>
   );
