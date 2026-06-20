@@ -212,6 +212,24 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     ].filter(Boolean).some((value) => String(value).toLowerCase().includes(needle)));
   }, [documents, query]);
 
+  const documentSummary = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return documents.reduce((acc, document) => {
+      const isDraft = document.status === 'draft';
+      const isSent = document.status === 'sent';
+      const isExpired = Boolean(document.valid_until && document.valid_until < today && !['accepted', 'closed', 'rejected'].includes(document.status));
+      const hasItems = (document.items || []).length > 0;
+      return {
+        total: acc.total + 1,
+        draft: acc.draft + (isDraft ? 1 : 0),
+        sent: acc.sent + (isSent ? 1 : 0),
+        expired: acc.expired + (isExpired ? 1 : 0),
+        withoutItems: acc.withoutItems + (!hasItems ? 1 : 0),
+        value: acc.value + Number(document.total || 0),
+      };
+    }, { total: 0, draft: 0, sent: 0, expired: 0, withoutItems: 0, value: 0 });
+  }, [documents]);
+
   const listColumns = useMemo(() => [
     { id: 'number', label: 'Kód', hideable: false },
     { id: 'title', label: 'Předmět' },
@@ -818,6 +836,37 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           </div>
         )}
       />
+
+      <Card className="crm-panel">
+        <CardHeader className="crm-panel-header">
+          <CardTitle className="text-base">Freeze kontrola dokladů</CardTitle>
+          <CardDescription>Rychlý stav rozpracovaných nabídek/objednávek před uzavřením baseline.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
+          {[
+            { label: 'Návrhy', value: documentSummary.draft, tone: 'amber' },
+            { label: 'Odesláno', value: documentSummary.sent, tone: 'blue' },
+            { label: 'Po platnosti', value: documentSummary.expired, tone: documentSummary.expired > 0 ? 'rose' : 'emerald' },
+            { label: 'Bez položek', value: documentSummary.withoutItems, tone: documentSummary.withoutItems > 0 ? 'rose' : 'emerald' },
+            { label: 'Hodnota celkem', value: formatCurrency(documentSummary.value), tone: 'slate' },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className={cn(
+                'rounded-md border p-3',
+                item.tone === 'rose' ? 'border-rose-200 bg-rose-50 text-rose-900' :
+                  item.tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-900' :
+                    item.tone === 'blue' ? 'border-blue-200 bg-blue-50 text-blue-900' :
+                      item.tone === 'emerald' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' :
+                        'border-slate-200 bg-slate-50 text-slate-900'
+              )}
+            >
+              <p className="text-xs font-semibold uppercase">{item.label}</p>
+              <p className="mt-1 text-2xl font-semibold">{item.value}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <Card className="crm-panel overflow-hidden">
         <CardHeader className="border-b border-slate-200 bg-white px-4 py-3">

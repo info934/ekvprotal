@@ -1308,6 +1308,7 @@ const CrmDashboardInsights = ({
   opportunities,
   commercialDocuments,
   upcomingActivities,
+  productSummary,
   onOpenOpportunity,
 }) => {
   const stageRows = uniqueByValue(stages)
@@ -1345,9 +1346,14 @@ const CrmDashboardInsights = ({
     .filter((opportunity) => !opportunity.next_step)
     .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
     .slice(0, 5);
+  const overdueClose = openOpportunities
+    .filter((opportunity) => opportunity.expected_close_date && new Date(opportunity.expected_close_date) < now)
+    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
 
   const offers = commercialDocuments.filter((document) => document.type === 'offer');
   const orders = commercialDocuments.filter((document) => document.type === 'order');
+  const draftOffers = offers.filter((document) => document.status === 'draft');
+  const openDocuments = commercialDocuments.filter((document) => !['accepted', 'signed', 'completed', 'cancelled'].includes(document.status));
   const documentStats = [
     {
       label: 'Nabídky',
@@ -1368,6 +1374,40 @@ const CrmDashboardInsights = ({
   return (
     <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.75fr)]">
       <div className="grid gap-5 xl:grid-cols-3">
+        <Card className="crm-panel xl:col-span-3">
+          <CardHeader className="crm-panel-header">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              Freeze readiness CRM
+            </CardTitle>
+            <CardDescription>Operativní signály, které musí být před freeze jasné a bez tichých regresí.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-md border border-amber-200 bg-amber-50/70 p-3">
+              <p className="text-xs font-semibold uppercase text-amber-800">OP bez dalšího kroku</p>
+              <p className="mt-1 text-2xl font-semibold text-amber-950">{withoutNextStep.length}</p>
+              <p className="mt-1 truncate text-xs text-amber-800">Priorita pro obchodní follow-up</p>
+            </div>
+            <div className="rounded-md border border-rose-200 bg-rose-50/70 p-3">
+              <p className="text-xs font-semibold uppercase text-rose-800">Po termínu uzavření</p>
+              <p className="mt-1 text-2xl font-semibold text-rose-950">{overdueClose.length}</p>
+              <p className="mt-1 truncate text-xs text-rose-800">Aktivní OP s prošlým odhadem</p>
+            </div>
+            <div className="rounded-md border border-blue-200 bg-blue-50/70 p-3">
+              <p className="text-xs font-semibold uppercase text-blue-800">Rozpracované doklady</p>
+              <p className="mt-1 text-2xl font-semibold text-blue-950">{openDocuments.length}</p>
+              <p className="mt-1 truncate text-xs text-blue-800">{draftOffers.length} návrhů nabídek</p>
+            </div>
+            <div className="rounded-md border border-emerald-200 bg-emerald-50/70 p-3">
+              <p className="text-xs font-semibold uppercase text-emerald-800">Aktivní produkty</p>
+              <p className="mt-1 text-2xl font-semibold text-emerald-950">{productSummary.available ? productSummary.active : '-'}</p>
+              <p className="mt-1 truncate text-xs text-emerald-800">
+                {productSummary.available ? `${productSummary.manufactured} skladových, ${productSummary.lowStock} pod minimem` : 'Katalog se nepodařilo načíst'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="crm-panel xl:col-span-2">
           <CardHeader className="crm-panel-header">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -1568,6 +1608,13 @@ const CRM = () => {
   const [opportunities, setOpportunities] = useState([]);
   const [activities, setActivities] = useState([]);
   const [commercialDocuments, setCommercialDocuments] = useState([]);
+  const [productSummary, setProductSummary] = useState({
+    available: false,
+    total: 0,
+    active: 0,
+    manufactured: 0,
+    lowStock: 0,
+  });
   const [documentTemplates, setDocumentTemplates] = useState([]);
   const [crmNumbering, setCrmNumbering] = useState(() => normalizeCrmNumbering(Object.values(DEFAULT_CRM_NUMBERING)));
   const [crmTablesReady, setCrmTablesReady] = useState(true);
@@ -1616,7 +1663,7 @@ const CRM = () => {
   const fetchCrmData = useCallback(async () => {
     setLoading(true);
 
-    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, commercialDocumentsRes, stagesRes, prioritiesRes, templatesRes, numberingRes] = await Promise.all([
+    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, commercialDocumentsRes, stagesRes, prioritiesRes, templatesRes, numberingRes, productsRes, stockRes] = await Promise.all([
       supabase
         .from('subjects')
         .select('id, name, ico, email, phone, contact_person, created_at, subject_types(name)')
@@ -1659,6 +1706,13 @@ const CRM = () => {
         .select('id, name, description, content, created_at')
         .order('created_at', { ascending: false }),
       selectCrmNumberingSettings(supabase),
+      supabase
+        .from('commercial_item_catalog')
+        .select('id, product_type, is_active, archived_at, stock_min_qty')
+        .order('name', { ascending: true }),
+      supabase
+        .from('product_stock_status')
+        .select('catalog_item_id, available_qty'),
     ]);
 
     const coreError = subjectsRes.error || projectsRes.error || contactsRes.error;
@@ -1713,6 +1767,28 @@ const CRM = () => {
       setDocumentTemplates(templatesRes.data || []);
     }
     setCrmNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
+    if (productsRes.error) {
+      setProductSummary({ available: false, total: 0, active: 0, manufactured: 0, lowStock: 0 });
+    } else {
+      const stockByProduct = (stockRes.data || []).reduce((acc, row) => ({
+        ...acc,
+        [row.catalog_item_id]: row,
+      }), {});
+      const summary = (productsRes.data || []).reduce((acc, product) => {
+        const isActive = product.is_active && !product.archived_at;
+        const availableQty = Number(stockByProduct[product.id]?.available_qty || 0);
+        const minQty = Number(product.stock_min_qty || 0);
+        const isManufactured = product.product_type === 'manufactured';
+        return {
+          available: true,
+          total: acc.total + 1,
+          active: acc.active + (isActive ? 1 : 0),
+          manufactured: acc.manufactured + (isManufactured ? 1 : 0),
+          lowStock: acc.lowStock + (isManufactured && minQty > 0 && availableQty <= minQty ? 1 : 0),
+        };
+      }, { available: true, total: 0, active: 0, manufactured: 0, lowStock: 0 });
+      setProductSummary(summary);
+    }
 
     setLoading(false);
   }, [toast]);
@@ -2419,6 +2495,7 @@ const CRM = () => {
           opportunities={opportunities}
           commercialDocuments={commercialDocuments}
           upcomingActivities={upcomingActivities}
+          productSummary={productSummary}
           onOpenOpportunity={openOpportunityDetail}
         />
           </>

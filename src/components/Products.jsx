@@ -150,17 +150,27 @@ const Products = () => {
   }, [fetchProducts]);
 
   const stats = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
     return products.reduce((acc, product) => {
       const stock = stockByProduct[product.id];
       const available = Number(stock?.available_qty || 0);
       const minQty = Number(product.stock_min_qty || 0);
+      const isActive = product.is_active && !product.archived_at;
+      const hasCode = Boolean(product.sku || product.code);
+      const hasPrice = Number(product.default_unit_price || 0) > 0;
+      const hasDatasheet = Boolean(product.datasheet_external_web_url || product.datasheet_file_name || product.datasheet_preview_image_url || product.image_url);
+      const expired = Boolean(product.valid_until && product.valid_until < today);
       return {
         total: acc.total + 1,
-        active: acc.active + (product.is_active && !product.archived_at ? 1 : 0),
+        active: acc.active + (isActive ? 1 : 0),
         manufactured: acc.manufactured + (product.product_type === 'manufactured' ? 1 : 0),
         lowStock: acc.lowStock + (product.product_type === 'manufactured' && minQty > 0 && available <= minQty ? 1 : 0),
+        missingCode: acc.missingCode + (!hasCode ? 1 : 0),
+        missingPrice: acc.missingPrice + (isActive && !hasPrice ? 1 : 0),
+        missingDatasheet: acc.missingDatasheet + (isActive && product.product_type === 'manufactured' && !hasDatasheet ? 1 : 0),
+        expired: acc.expired + (isActive && expired ? 1 : 0),
       };
-    }, { total: 0, active: 0, manufactured: 0, lowStock: 0 });
+    }, { total: 0, active: 0, manufactured: 0, lowStock: 0, missingCode: 0, missingPrice: 0, missingDatasheet: 0, expired: 0 });
   }, [products, stockByProduct]);
 
   const filteredProducts = useMemo(() => {
@@ -286,6 +296,33 @@ const Products = () => {
             </Card>
           ))}
         </div>
+
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardHeader className="border-b bg-slate-50/80 p-4">
+            <CardTitle className="text-base">Freeze kontrola katalogu</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              { label: 'Bez kódu', value: stats.missingCode, tone: stats.missingCode > 0 ? 'rose' : 'emerald' },
+              { label: 'Aktivní bez ceny', value: stats.missingPrice, tone: stats.missingPrice > 0 ? 'amber' : 'emerald' },
+              { label: 'Skladové bez datasheetu', value: stats.missingDatasheet, tone: stats.missingDatasheet > 0 ? 'amber' : 'emerald' },
+              { label: 'Po platnosti', value: stats.expired, tone: stats.expired > 0 ? 'rose' : 'emerald' },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className={cn(
+                  'rounded-md border p-3',
+                  item.tone === 'rose' ? 'border-rose-200 bg-rose-50 text-rose-900' :
+                    item.tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-900' :
+                      'border-emerald-200 bg-emerald-50 text-emerald-900'
+                )}
+              >
+                <p className="text-xs font-semibold uppercase">{item.label}</p>
+                <p className="mt-1 text-2xl font-semibold">{item.value}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
 
         <Card className="border-slate-200 bg-white shadow-sm">
           <CardHeader className="border-b bg-white p-4">
@@ -485,4 +522,3 @@ const Products = () => {
 };
 
 export default Products;
-
