@@ -442,6 +442,10 @@ DECLARE
   v_current_member_id uuid;
   v_can_admin boolean;
 BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
   v_current_member_id := public.get_member_id();
   v_can_admin := COALESCE(public.get_user_role() = 'admin', false)
     OR EXISTS (
@@ -453,6 +457,9 @@ BEGIN
     );
 
   IF p_member_id IS NULL AND NOT v_can_admin THEN
+    IF v_current_member_id IS NULL THEN
+      RAISE EXCEPTION 'Member profile not found';
+    END IF;
     p_member_id := v_current_member_id;
   END IF;
 
@@ -553,6 +560,10 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION public.replace_crm_opportunity_items(uuid, jsonb, boolean) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.replace_crm_document_items(uuid, jsonb) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.project_financial_summary(uuid) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.get_member_project_rewards(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.replace_crm_opportunity_items(uuid, jsonb, boolean) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.replace_crm_document_items(uuid, jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.project_financial_summary(uuid) TO authenticated;
