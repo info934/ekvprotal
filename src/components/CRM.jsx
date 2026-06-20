@@ -69,6 +69,7 @@ import {
   isMissingCrmRpcError,
 } from '@/lib/crmItemPayloads';
 import { cn } from '@/lib/utils';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const subjectTypeLabels = {
   customer: 'Zákazníci',

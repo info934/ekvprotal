@@ -23,6 +23,7 @@ import { logAction } from '@/lib/logger';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { cn } from '@/lib/utils';
 import PageHeader from '@/components/ui/page-header';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const StatCard = ({ icon: Icon, title, value, subtitle, color = "text-blue-600", className, ...props }) => (
   <motion.button

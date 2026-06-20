@@ -38,6 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const emptyForm = {
   name: '',
@@ -100,28 +101,9 @@ const Field = ({ label, children, className }) => (
   </div>
 );
 
-const InfoTile = ({ icon: Icon, label, value, tone = 'default' }) => {
-  const tones = {
-    default: 'bg-white text-slate-700 border-slate-200',
-    blue: 'bg-blue-50 text-blue-700 border-blue-100',
-    green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    amber: 'bg-amber-50 text-amber-700 border-amber-100',
-  };
-
-  return (
-    <Card className={cn('overflow-hidden shadow-sm', tones[tone])}>
-      <CardContent className="flex min-w-0 items-center gap-3 p-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white/70 ring-1 ring-black/5">
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-xs font-semibold uppercase tracking-[0.02em] opacity-75">{label}</p>
-          <p className="mt-1 truncate text-lg font-semibold text-slate-950">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
+const InfoTile = ({ icon: Icon, label, value, tone = 'default' }) => (
+  <DataVizMetricCard icon={Icon} label={label} value={value} tone={tone === 'green' ? 'emerald' : tone} />
+);
 
 const StatusBadge = ({ status }) => {
   const config = orderStatusConfig[status] || { label: status || '-', icon: AlertTriangle, className: 'bg-slate-50 text-slate-700 border-slate-200' };

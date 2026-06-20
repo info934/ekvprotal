@@ -16,6 +16,7 @@ import * as XLSX from 'xlsx';
 import { useToast } from '@/components/ui/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { sendEmail } from '@/lib/email';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const escapeHtml = (value) => String(value ?? '')
   .replaceAll('&', '&amp;')
@@ -412,31 +413,10 @@ const AttendanceReporting = () => {
       </Card>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Card className="border-blue-200 bg-blue-50">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-blue-800">
-              <Calculator className="h-4 w-4" /> Celkem hodin
-            </CardTitle>
-          </CardHeader>
-          <CardContent><div className="text-3xl font-bold text-blue-950">{loading ?'...' : totals.hours.toFixed(1)} h</div></CardContent>
-        </Card>
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
-              <DollarSign className="h-4 w-4" /> Celkové náklady
-            </CardTitle>
-          </CardHeader>
-          <CardContent><div className="text-3xl font-bold text-emerald-950">{loading ?'...' : formatCurrency(totals.cost)}</div></CardContent>
-        </Card>
-        <Card className="border-purple-200 bg-purple-50">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-purple-800">
-              <Users className="h-4 w-4" /> Průměrná sazba
-            </CardTitle>
-          </CardHeader>
-          <CardContent><div className="text-3xl font-bold text-purple-950">{loading ?'...' : `${formatCurrency(averageRate)} /h`}</div></CardContent>
-        </Card>
-      </div>
+  <DataVizMetricCard icon={Calculator} label="Celkem hodin" value={loading ? '...' : `${totals.hours.toFixed(1)} h`} tone="blue" />
+  <DataVizMetricCard icon={DollarSign} label="Celkové náklady" value={loading ? '...' : formatCurrency(totals.cost)} tone="emerald" />
+  <DataVizMetricCard icon={Users} label="Průměrná sazba" value={loading ? '...' : `${formatCurrency(averageRate)} /h`} tone="violet" />
+</div>
 
       <Card className="overflow-hidden rounded-xl border-slate-200 bg-white shadow-sm">
         <CardHeader className="border-b border-slate-200 bg-white">

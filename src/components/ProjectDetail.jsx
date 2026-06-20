@@ -24,45 +24,22 @@ import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { calculateProjectBudget, calculateProjectFinancials, calculateProjectMemberReward, toAmount } from '@/domain/financials';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
-    const toneMap = {
-        default: "border-slate-200 bg-white text-slate-700",
-        success: "border-emerald-200 bg-emerald-50/60 text-emerald-700",
-        warning: "border-amber-200 bg-amber-50/70 text-amber-700",
-        danger: "border-red-200 bg-red-50/70 text-red-700",
-        info: "border-blue-200 bg-blue-50/70 text-blue-700",
-    };
+  const tone = color === 'success' ? 'emerald' : color === 'warning' ? 'amber' : color === 'danger' ? 'rose' : color === 'info' ? 'blue' : 'slate';
+  const barTone = color === 'success' ? 'bg-emerald-500' : color === 'warning' ? 'bg-amber-500' : color === 'danger' ? 'bg-rose-500' : color === 'info' ? 'bg-blue-500' : 'bg-slate-500';
 
-    return (
-        <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
-                    <div className="mt-2 truncate text-2xl font-bold tracking-tight text-slate-950">{value}</div>
-                    {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
-                </div>
-                <div className={cn("rounded-lg border p-2.5", toneMap[color] || toneMap.default)}>
-                    <Icon className="h-5 w-5" />
-                </div>
-            </div>
-            {typeof progress === 'number' && (
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                        className={cn(
-                            "h-full rounded-full transition-all",
-                            color === "success" && "bg-emerald-500",
-                            color === "warning" && "bg-amber-500",
-                            color === "danger" && "bg-red-500",
-                            color === "info" && "bg-blue-500",
-                            color === "default" && "bg-slate-500"
-                        )}
-                        style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
-                    />
-                </div>
-            )}
+  return (
+    <div className="relative">
+      <DataVizMetricCard icon={Icon} label={title} value={value} detail={subtitle} tone={tone} className={typeof progress === 'number' ? 'pb-8' : undefined} />
+      {typeof progress === 'number' && (
+        <div className="absolute inset-x-4 bottom-4 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div className={cn('h-full rounded-full transition-all', barTone)} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
         </div>
-    );
+      )}
+    </div>
+  );
 };
 
 const InfoCard = ({ label, value, subValue, icon: Icon, isLink = false, to = '#' }) => (

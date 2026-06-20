@@ -58,6 +58,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { crmOpportunityPath } from '@/lib/crmRoutes';
 import { cn, formatCurrency } from '@/lib/utils';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const today = new Date();
 today.setHours(0, 0, 0, 0);
@@ -116,31 +117,7 @@ const stageClasses = {
 };
 
 const DashboardMetric = ({ icon: Icon, label, value, detail, tone = 'blue', to }) => {
-  const tones = {
-    blue: 'border-blue-100 bg-blue-50 text-blue-700 shadow-blue-100/60',
-    emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700 shadow-emerald-100/60',
-    amber: 'border-amber-100 bg-amber-50 text-amber-700 shadow-amber-100/60',
-    rose: 'border-rose-100 bg-rose-50 text-rose-700 shadow-rose-100/60',
-    slate: 'border-slate-200 bg-slate-50 text-slate-700 shadow-slate-100/60',
-  };
-
-  const content = (
-    <Card className="h-full min-h-[112px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
-      <CardContent className="flex h-full flex-col justify-between gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <p className="min-w-0 text-[11px] font-semibold uppercase leading-4 tracking-[0.04em] text-slate-500">{label}</p>
-          <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-md border shadow-sm', tones[tone])}>
-            <Icon className="h-4 w-4" />
-          </div>
-        </div>
-        <div className="min-w-0">
-          <p className="break-words text-[1.35rem] font-semibold leading-7 tracking-tight text-slate-950 2xl:text-[1.5rem]">{value}</p>
-          {detail && <p className="mt-1 line-clamp-2 text-xs leading-4 text-slate-500">{detail}</p>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-
+  const content = <DataVizMetricCard icon={Icon} label={label} value={value} detail={detail} tone={tone} />;
   return to ? <Link to={to} className="block h-full">{content}</Link> : content;
 };
 
