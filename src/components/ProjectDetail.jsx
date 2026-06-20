@@ -24,16 +24,12 @@ import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { calculateProjectBudget, calculateProjectFinancials, calculateProjectMemberReward, toAmount } from '@/domain/financials';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
-const StatCard = ({ title, value, icon: Icon, color = "default" }) => (
-    <div className={cn("relative overflow-hidden transition-all duration-200 hover:shadow-lg bg-white rounded-lg border p-6")}>
-        <div className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
-            <Icon className={cn("h-4 w-4", color === "success" && "text-green-600", color === "warning" && "text-yellow-600", color === "danger" && "text-red-600", color === "info" && "text-blue-600")} />
-        </div>
-        <div className="text-2xl font-bold">{value}</div>
-    </div>
-);
+const StatCard = ({ title, value, icon: Icon, color = "default" }) => {
+  const tone = color === 'success' ? 'emerald' : color === 'warning' ? 'amber' : color === 'danger' ? 'rose' : color === 'info' ? 'blue' : 'slate';
+  return <DataVizMetricCard icon={Icon} label={title} value={value} tone={tone} />;
+};
 
 const InfoCard = ({ label, value, subValue, icon: Icon, isLink = false, to = '#' }) => (
     <div className="transition-all duration-200 hover:shadow-md bg-white rounded-lg border p-4">

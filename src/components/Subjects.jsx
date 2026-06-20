@@ -22,6 +22,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuChe
 import * as XLSX from 'xlsx';
 import PageHeader from '@/components/ui/page-header';
 import { getVatStatusLabel } from '@/lib/ares';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const subjectTypeConfig = {
   customer: { label: 'Zákazník', icon: User2, color: 'text-emerald-700', surface: 'bg-emerald-50 ring-emerald-100', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' },

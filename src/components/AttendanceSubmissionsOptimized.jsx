@@ -19,6 +19,7 @@ import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { sendEmail } from '@/lib/email';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 // --- Memoized Components ---
 const escapeHtml = (value) => String(value ?? '')
@@ -91,28 +92,9 @@ const StatusBadge = React.memo(({ status }) => {
 
 StatusBadge.displayName = 'StatusBadge';
 
-const StatCard = ({ label, value, icon: Icon, tone }) => {
-  const tones = {
-    orange: 'border-orange-100 bg-orange-50 text-orange-700',
-    green: 'border-emerald-100 bg-emerald-50 text-emerald-700',
-    red: 'border-rose-100 bg-rose-50 text-rose-700',
-    slate: 'border-slate-200 bg-white text-slate-700',
-  };
-
-  return (
-    <Card className={cn('overflow-hidden shadow-sm', tones[tone])}>
-      <CardContent className="flex min-h-[84px] items-center justify-between gap-3 p-4">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-semibold uppercase tracking-[0.02em] opacity-80">{label}</p>
-          <p className="mt-1 text-2xl font-semibold leading-none text-slate-950">{value}</p>
-        </div>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white/70">
-          <Icon className="h-5 w-5" />
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
+const StatCard = ({ label, value, icon: Icon, tone }) => (
+  <DataVizMetricCard icon={Icon} label={label} value={value} tone={tone} />
+);
 
 const SubmissionCard = React.memo(({ submission, onDetail, onApprove, onReject, onRevert, showActions }) => {
   const memberName = submission.member?.name || 'Neznámý uživatel';

@@ -19,6 +19,7 @@ import { useDebouncedValue } from '@/hooks/useDebounce';
 import { cn, formatCurrency } from '@/lib/utils';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialValueGuard from './FinancialValueGuard';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const statusConfig = {
     'Připravuje se': { variant: 'info', label: 'Připravuje se' },
@@ -295,43 +296,11 @@ const Realizace = () => {
                 }
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card>
-                    <CardContent className="p-6 flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-muted-foreground">Celkem realizací</p>
-                            <p className="text-2xl font-bold">{stats.total}</p>
-                        </div>
-                        <div className="p-3 bg-slate-100 rounded-full">
-                            <HardHat className="w-6 h-6 text-slate-600" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-6 flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-muted-foreground">Probíhající</p>
-                            <p className="text-2xl font-bold text-blue-600">{stats.running}</p>
-                        </div>
-                        <div className="p-3 bg-blue-50 rounded-full">
-                            <Activity className="w-6 h-6 text-blue-600" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-6 flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-muted-foreground">Hodnota zakázek</p>
-                            <p className="text-2xl font-bold text-green-600">
-                                <FinancialValueGuard value={formatCurrency(stats.value)} />
-                            </p>
-                        </div>
-                        <div className="p-3 bg-green-50 rounded-full">
-                            <DollarSign className="w-6 h-6 text-green-600" />
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+  <DataVizMetricCard icon={HardHat} label="Celkem realizací" value={stats.total} tone="slate" />
+  <DataVizMetricCard icon={Activity} label="Probíhající" value={stats.running} tone="blue" />
+  <DataVizMetricCard icon={DollarSign} label="Hodnota zakázek" value={<FinancialValueGuard value={formatCurrency(stats.value)} />} tone="emerald" />
+</div>
 
             <div className="app-surface sticky top-0 z-10 flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-2 flex-1 w-full md:w-auto">

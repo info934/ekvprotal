@@ -2,6 +2,7 @@ import React from 'react';
 import { AlertTriangle, CheckCircle2, Clock, FileText, Upload, XCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 export const payoutStatusMeta = {
   pending: {
@@ -63,31 +64,9 @@ export const PayoutStatusBadge = ({ status, className }) => {
   );
 };
 
-export const PayoutMetricCard = ({ icon: Icon, label, value, detail, tone = 'blue' }) => {
-  const tones = {
-    blue: 'border-blue-100 bg-blue-50/70 text-blue-700',
-    emerald: 'border-emerald-100 bg-emerald-50/70 text-emerald-700',
-    amber: 'border-amber-100 bg-amber-50/70 text-amber-700',
-    slate: 'border-slate-200 bg-slate-50 text-slate-700'
-  };
-
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-slate-500">{label}</div>
-          <div className="mt-2 truncate text-2xl font-bold tracking-tight text-slate-950">{value}</div>
-          {detail && <div className="mt-2 text-sm text-slate-500">{detail}</div>}
-        </div>
-        {Icon && (
-          <div className={cn('rounded-xl border p-3', tones[tone] || tones.blue)}>
-            <Icon className="h-5 w-5" />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
+export const PayoutMetricCard = ({ icon: Icon, label, value, detail, tone = 'blue' }) => (
+  <DataVizMetricCard icon={Icon} label={label} value={value} detail={detail} tone={tone} />
+);
 
 export const PayoutPanel = ({ title, description, actions, children, className }) => (
   <section className={cn('overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm', className)}>

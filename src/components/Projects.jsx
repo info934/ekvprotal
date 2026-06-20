@@ -16,6 +16,7 @@ import {
 import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import PageHeader from '@/components/ui/page-header';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import {
@@ -374,56 +375,12 @@ const Projects = () => {
       {/* Stats Cards and Filters omitted for brevity, but they are preserved from original file logic */}
       
       {!isPrivateMode && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="p-6 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Celkem projektů</p>
-                <p className="text-2xl font-bold">{projectStats.total}</p>
-              </div>
-              <div className="p-3 bg-slate-100 rounded-full">
-                <FolderPlus className="w-6 h-6 text-slate-600" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-6 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Aktivní</p>
-                <p className="text-2xl font-bold text-blue-600">{projectStats.active}</p>
-              </div>
-              <div className="p-3 bg-blue-50 rounded-full">
-                <Activity className="w-6 h-6 text-blue-600" />
-              </div>
-            </CardContent>
-          </Card>
-          {showFinance && (
-            <Card>
-              <CardContent className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Hodnota (Aktivní)</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(projectStats.value)}</p>
-                </div>
-                <div className="p-3 bg-green-50 rounded-full">
-                  <DollarSign className="w-6 h-6 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          {showReward && (
-            <Card>
-              <CardContent className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Moje odměna</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(totalReward)}</p>
-                </div>
-                <div className="p-3 bg-green-50 rounded-full">
-                  <DollarSign className="w-6 h-6 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-4">
+  <DataVizMetricCard icon={FolderPlus} label="Celkem projektů" value={projectStats.total} tone="slate" />
+  <DataVizMetricCard icon={Activity} label="Aktivní" value={projectStats.active} tone="blue" />
+  {showFinance && <DataVizMetricCard icon={DollarSign} label="Hodnota aktivních" value={formatCurrency(projectStats.value)} tone="emerald" />}
+  {showReward && <DataVizMetricCard icon={DollarSign} label="Moje odměna" value={formatCurrency(totalReward)} tone="emerald" />}
+</div>
       )}
 
       {/* Filters & Controls */}

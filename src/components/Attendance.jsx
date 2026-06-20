@@ -28,32 +28,31 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import PageHeader from '@/components/ui/page-header';
 import AttendanceDialog from './AttendanceDialog';
 import { sendAttendanceApprovalRequestEmail } from '@/lib/email';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
+
+const metricToneFromColor = (color = '') => {
+  if (color.includes('green')) return 'emerald';
+  if (color.includes('purple')) return 'violet';
+  if (color.includes('orange') || color.includes('yellow')) return 'amber';
+  if (color.includes('red')) return 'rose';
+  return 'blue';
+};
 
 const StatCard = ({ icon: Icon, title, value, subtitle, trend, color = "text-blue-600", className, ...props }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
+  <DataVizMetricCard
+    as={motion.div}
+    initial={{ opacity: 0, y: 16 }}
     animate={{ opacity: 1, y: 0 }}
-    whileHover={{ y: -4, scale: 1.02 }}
-    className={cn("group bg-white border rounded-xl p-6 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all duration-200", className)}
+    whileHover={{ y: -2 }}
+    icon={Icon}
+    label={title}
+    value={value}
+    detail={subtitle}
+    trend={trend}
+    tone={metricToneFromColor(color)}
+    className={className}
     {...props}
-  >
-    <div className="flex items-center justify-between mb-4">
-      <div className={cn("p-3 bg-muted rounded-lg", color)}>
-        <Icon className="w-6 h-6" />
-      </div>
-      {trend && (
-        <Badge variant={trend > 0 ? "success" : "warning"} className="text-xs">
-          <TrendingUp className="w-3 h-3 mr-1" />
-          {trend > 0 ? '+' : ''}{trend}%
-        </Badge>
-      )}
-    </div>
-    <div className="space-y-2">
-      <h3 className="font-semibold text-lg">{title}</h3>
-      <p className="text-3xl font-bold">{value}</p>
-      {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
-    </div>
-  </motion.div>
+  />
 );
 
 const statusConfig = {

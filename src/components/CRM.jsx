@@ -60,6 +60,7 @@ import {
 import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef } from '@/lib/crmRoutes';
 import { cn } from '@/lib/utils';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const subjectTypeLabels = {
   customer: 'Zákazníci',

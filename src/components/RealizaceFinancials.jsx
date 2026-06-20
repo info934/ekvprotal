@@ -16,6 +16,7 @@ import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import SubjectDialog from './SubjectDialog';
 import { calculateFinancials } from './RealizaceFinancialCalculations';
+import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 // Main Dashboard Component
 const RealizaceFinancials = () => {
@@ -71,13 +72,13 @@ const RealizaceFinancials = () => {
     return (
         <div className="space-y-6 p-6">
             <h2 className="text-2xl font-bold flex items-center gap-2"><BarChart className="w-6 h-6"/> Finance Realizace (Přehled)</h2>
-            <div className="grid gap-4 md:grid-cols-5">
-                <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Celkové Smlouvy</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{formatCurrency(financials?.total_revenue)}</CardContent></Card>
-                <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Zisk Firmy</CardTitle></CardHeader><CardContent className="text-2xl font-bold text-green-600">{formatCurrency(financials?.total_profit)}</CardContent></Card>
-                <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Režie Firmy</CardTitle></CardHeader><CardContent className="text-2xl font-bold text-purple-600">{formatCurrency(financials?.total_overhead)}</CardContent></Card>
-                <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Rozpočet Týmů</CardTitle></CardHeader><CardContent className="text-2xl font-bold text-blue-600">{formatCurrency(financials?.total_distribution)}</CardContent></Card>
-                <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Počet Realizací</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{financials?.realization_count || 0}</CardContent></Card>
-            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+  <DataVizMetricCard icon={DollarSign} label="Celkové smlouvy" value={formatCurrency(financials?.total_revenue)} tone="slate" />
+  <DataVizMetricCard icon={TrendingUp} label="Zisk firmy" value={formatCurrency(financials?.total_profit)} tone="emerald" />
+  <DataVizMetricCard icon={FileText} label="Režie firmy" value={formatCurrency(financials?.total_overhead)} tone="violet" />
+  <DataVizMetricCard icon={TrendingDown} label="Rozpočet týmů" value={formatCurrency(financials?.total_distribution)} tone="blue" />
+  <DataVizMetricCard icon={HardHat} label="Počet realizací" value={financials?.realization_count || 0} tone="slate" />
+</div>
             <RealizaceOverheadSummary />
             <RealizaceFinancialChart />
             <RealizaceFinancialTable />
