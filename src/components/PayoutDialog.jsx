@@ -499,7 +499,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <div className="font-medium text-slate-800">Projekty</div>
-                            <div className="text-xs text-slate-500">Vyberte projekt s dostupným zůstatkem.</div>
+                            <div className="text-xs text-slate-500">Dostupné částky už odečítají přímé náklady, alokované režie a rezervované výplaty.</div>
                           </div>
                         </div>
                         <Input value={projectSearch} onChange={(e) => setProjectSearch(e.target.value)} placeholder="Hledat projekt..." disabled={isSubmitting} />

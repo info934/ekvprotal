@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host :: --port 3000",
     "build": "node tools/build.mjs",
+    "financial:check": "node tools/check-financial-calculations.mjs",
     "preview": "vite preview --host :: --port 3000",
     "lint": "eslint . --quiet",
     "supabase:start": "supabase start",

@@ -707,9 +707,12 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   <CardTitle className="text-base">Souhrn</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 p-4 text-sm">
+                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">Před slevou bez DPH</span><strong>{formatCurrency(selectedDocument.subtotal)}</strong></div>
+                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">Sleva bez DPH</span><strong>{formatCurrency(selectedDocument.discount_total)}</strong></div>
                   <div className="flex justify-between gap-3"><span className="text-muted-foreground">Bez DPH</span><strong>{formatCurrency(selectedDocument.total)}</strong></div>
                   <div className="flex justify-between gap-3"><span className="text-muted-foreground">DPH</span><strong>{formatCurrency(selectedDocument.tax_total)}</strong></div>
-                  <div className="flex justify-between gap-3 rounded-md bg-primary px-3 py-2 text-primary-foreground"><span>Celkem</span><strong>{formatCurrency(totalWithTax)}</strong></div>
+                  <div className="flex justify-between gap-3 rounded-md bg-primary px-3 py-2 text-primary-foreground"><span>Celkem s DPH</span><strong>{formatCurrency(totalWithTax)}</strong></div>
+                  <p className="text-xs text-muted-foreground">Souhrn rozlišuje základ bez DPH před slevou, slevu a výsledný základ pro DPH.</p>
                 </CardContent>
               </Card>
               <Card className="crm-panel">

@@ -5,15 +5,22 @@ export const calculateCrmLineTotal = (item) => {
   return Math.round(quantity * price * (1 - (discount / 100)) * 100) / 100;
 };
 
+export const calculateCrmLineSubtotal = (item) => {
+  const quantity = Number(item?.quantity || 0);
+  const price = Number(item?.unit_price || 0);
+  return Math.round(quantity * price * 100) / 100;
+};
+
 export const calculateCrmTotals = (items = []) => {
-  const subtotal = items.reduce((sum, item) => sum + calculateCrmLineTotal(item), 0);
+  const subtotal = items.reduce((sum, item) => sum + calculateCrmLineSubtotal(item), 0);
+  const total = items.reduce((sum, item) => sum + calculateCrmLineTotal(item), 0);
   const taxTotal = items.reduce((sum, item) => sum + (calculateCrmLineTotal(item) * (Number(item?.vat_rate || 0) / 100)), 0);
 
   return {
-    subtotal,
-    discount_total: 0,
+    subtotal: Math.round(subtotal * 100) / 100,
+    discount_total: Math.round((subtotal - total) * 100) / 100,
     tax_total: Math.round(taxTotal * 100) / 100,
-    total: subtotal,
+    total: Math.round(total * 100) / 100,
   };
 };
 

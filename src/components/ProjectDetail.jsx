@@ -210,7 +210,7 @@ const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = true, a
     );
 };
 
-const FinancialCard = ({ title, value, icon: Icon, colorClass, subValue }) => (
+const FinancialCard = ({ title, value, icon: Icon, colorClass, subValue, description }) => (
     <div className="p-4 bg-white border rounded-lg">
         <div className="flex items-center gap-3">
             <div className={cn("p-2 rounded-full", colorClass)}>
@@ -220,6 +220,7 @@ const FinancialCard = ({ title, value, icon: Icon, colorClass, subValue }) => (
                 <p className="text-sm text-muted-foreground">{title}</p>
                 <p className="text-lg font-bold">{value.toLocaleString('cs-CZ')} Kč</p>
                 {subValue && <p className="text-xs text-muted-foreground">{subValue}</p>}
+                {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
             </div>
         </div>
     </div>
@@ -486,7 +487,8 @@ const ProjectDetail = () => {
             teamRewards,
             remainingTeamBudget: teamBudget - teamRewards,
             totalCosts,
-            projectProfit: toAmount(summary.price) - totalBudget - totalCosts,
+            plannedMargin: toAmount(summary.price) - totalBudget,
+            projectProfit: toAmount(summary.price) - totalBudget,
             totalAllocatedOverhead,
             remainingOverheadBudget: overheadBudget - totalAllocatedOverhead,
             paidOutAmount: toAmount(summary.paid_payouts),
@@ -731,12 +733,13 @@ const ProjectDetail = () => {
                     <TabsContent value="contacts"><ProjectContacts projectId={projectId} /></TabsContent>
 
                     {canViewFinance && <TabsContent value="finance" className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6">
                             <FinancialCard title="Celkový budget" value={financials.totalBudget} subValue={`${project.budget_percentage}% z ceny`} icon={Wallet} colorClass="bg-blue-500" />
                             <FinancialCard title="Budget na tým" value={financials.teamBudget} subValue={`Zbývá: ${financials.remainingTeamBudget.toLocaleString('cs-CZ')} Kč`} icon={Users} colorClass="bg-teal-500" />
                             <FinancialCard title="Budget na subdodavatele" value={financials.totalSubcontractorPrice} icon={Briefcase} colorClass="bg-yellow-500" />
                             <FinancialCard title="Rozpočet na režie" value={financials.overheadBudget} subValue={`${project.overhead_percentage}% z budgetu`} icon={ClipboardList} colorClass="bg-purple-500" />
-                            <FinancialCard title="Zisk projektu" value={financials.projectProfit} icon={DollarSign} colorClass="bg-green-500" />
+                            <FinancialCard title="Plánovaná marže" value={financials.plannedMargin ?? financials.projectProfit} icon={DollarSign} colorClass="bg-green-500" description="Cena projektu minus hrubý projektový budget." />
+                            <FinancialCard title="Zůstatek po nákladech" value={financials.remainingAfterCosts ?? 0} icon={Wallet} colorClass="bg-emerald-500" description="Týmový budget po přímých nákladech a alokovaných režiích." />
                         </div>
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 h-4 mr-2" />Přidat náklad</Button>}>
                             <Table>

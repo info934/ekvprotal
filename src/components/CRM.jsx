@@ -885,10 +885,11 @@ const DealWorkspace = ({
             </Table>
           </div>
           <div className="grid gap-2 border-t bg-slate-50 p-5 text-sm md:ml-auto md:w-[480px]">
-            <div className="flex justify-between"><span>Cena celkem pred slevou</span><strong>{formatCurrency(subtotal)}</strong></div>
-            <div className="flex justify-between"><span>Celkova sleva</span><strong>{formatCurrency(discountTotal)}</strong></div>
-            <div className="flex justify-between text-base"><span>Konečná cena</span><strong>{formatCurrency(total)}</strong></div>
-            <div className="flex justify-between text-muted-foreground"><span>Celkem s dani</span><strong>{formatCurrency(taxValue)}</strong></div>
+            <div className="flex justify-between"><span>Cena před slevou bez DPH</span><strong>{formatCurrency(subtotal)}</strong></div>
+            <div className="flex justify-between"><span>Sleva celkem bez DPH</span><strong>{formatCurrency(discountTotal)}</strong></div>
+            <div className="flex justify-between text-base"><span>Celkem bez DPH po slevě</span><strong>{formatCurrency(total)}</strong></div>
+            <div className="flex justify-between text-muted-foreground"><span>Celkem s DPH</span><strong>{formatCurrency(taxValue)}</strong></div>
+            <p className="text-xs text-muted-foreground">DPH se počítá z částek po řádkových slevách.</p>
           </div>
         </CardContent>
       </Card>
@@ -1038,7 +1039,8 @@ const DealWorkspace = ({
                           <div className="flex items-center justify-between gap-3 lg:justify-end">
                             <div className="text-left lg:text-right">
                               <div className="font-semibold text-slate-950">{formatCurrency(document.total)}</div>
-                              <div className="mt-1 text-xs text-muted-foreground">celkem</div>
+                              <div className="mt-1 text-xs text-muted-foreground">bez DPH</div>
+                              <div className="mt-1 text-xs text-muted-foreground">s DPH {formatCurrency(Number(document.total || 0) + Number(document.tax_total || 0))}</div>
                             </div>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>

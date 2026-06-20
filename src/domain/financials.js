@@ -28,6 +28,21 @@ export const calculateProjectBudget = (project = {}, subcontractors = []) => {
   };
 };
 
+export const calculateCostAdjustedTeamBudget = ({
+  project = {},
+  subcontractors = [],
+  directCosts = 0,
+  allocatedOverheadCosts = 0,
+} = {}) => {
+  const budget = calculateProjectBudget(project, subcontractors);
+  return {
+    ...budget,
+    directCosts: toAmount(directCosts),
+    allocatedOverheadCosts: toAmount(allocatedOverheadCosts),
+    costAdjustedTeamBudget: budget.teamBudget - toAmount(directCosts) - toAmount(allocatedOverheadCosts),
+  };
+};
+
 export const calculateProjectMemberReward = (assignment = {}, teamBudget = 0) => {
   if (!assignment?.reward_type) return 0;
   if (assignment.reward_type === 'fixed') return toAmount(assignment.reward_amount);
@@ -52,8 +67,9 @@ export const calculateProjectFinancials = ({
   const budget = calculateProjectBudget(project, subcontractors);
   const teamRewards = sumByAmount(members, (member) => calculateProjectMemberReward(member, budget.teamBudget));
   const totalCosts = sumByAmount(costs, (cost) => cost?.amount);
-  const projectProfit = budget.price - budget.totalBudget - totalCosts;
   const totalAllocatedOverhead = sumByAmount(overheadCosts, (cost) => cost?.amount);
+  const plannedMargin = budget.price - budget.totalBudget;
+  const remainingAfterCosts = budget.teamBudget - totalCosts - totalAllocatedOverhead;
   const remainingOverheadBudget = budget.overheadBudget - totalAllocatedOverhead;
 
   return {
@@ -62,7 +78,9 @@ export const calculateProjectFinancials = ({
     teamRewards,
     remainingTeamBudget: budget.teamBudget - teamRewards,
     totalCosts,
-    projectProfit,
+    plannedMargin,
+    projectProfit: plannedMargin,
+    remainingAfterCosts,
     totalAllocatedOverhead,
     remainingOverheadBudget,
     paidOutAmount: toAmount(paidOutAmount),
