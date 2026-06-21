@@ -6,6 +6,7 @@ import {
 import {
   calculateCostAdjustedTeamBudget,
   calculateProjectMemberReward,
+  calculateRealizationMemberShare,
 } from '../src/domain/financials.js';
 
 const round = (value) => Math.round(value * 100) / 100;
@@ -82,5 +83,9 @@ const reservedPayouts = 2000;
 const teamBudgetAfterPaidPayouts = adjusted.costAdjustedTeamBudget - paidPayoutCosts;
 assertMoney(teamBudgetAfterPaidPayouts, 17000, 'team budget after paid payouts');
 assertMoney(Math.max(0, teamBudgetAfterPaidPayouts - reservedPayouts), 15000, 'available pool after paid payouts and reservations');
+
+assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 50000 }, 12000), 12000, 'fixed realization share is capped by team budget');
+assertMoney(calculateRealizationMemberShare({ share_type: 'percent', share_value: 25 }, 12000), 3000, 'percentage realization share uses non-negative team budget');
+assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 50000 }, -1000), 0, 'fixed realization share is zero when team budget is exhausted');
 
 console.log('Financial calculation checks passed');

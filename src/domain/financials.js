@@ -117,8 +117,9 @@ export const areRealizationPercentagesValid = (profitMarginPercent, overheadPerc
 
 export const calculateRealizationMemberShare = (share = {}, teamBudget = 0) => {
   if (!share?.share_type) return 0;
-  if (share.share_type === 'fixed') return toAmount(share.share_value);
-  if (share.share_type === 'percent') return Math.max(0, toAmount(teamBudget) * (toAmount(share.share_value) / 100));
+  const availableBudget = Math.max(0, toAmount(teamBudget));
+  if (share.share_type === 'fixed') return Math.min(toAmount(share.share_value), availableBudget);
+  if (share.share_type === 'percent') return availableBudget * (toAmount(share.share_value) / 100);
   return 0;
 };
 

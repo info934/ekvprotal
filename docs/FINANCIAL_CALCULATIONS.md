@@ -66,6 +66,8 @@ costs_after_paid_payouts = costs_before_paid_payouts + paid_payouts
 team_budget_after_paid_payouts = remaining_after_costs - paid_payouts
 ```
 
+`direct_costs` zde znamená ručně zadané projektové náklady bez položek označených jako docházka (`is_attendance_cost`). Docházka je na projektu evidovaná jako `attendance_costs` / `hourly_payout_exposure`, ale do nákladů vstoupí až ve chvíli, kdy odpovídající hodinová výplata přejde do stavu `paid`.
+
 V UI se proto oddělují dvě různé hodnoty:
 
 - Plánovaná marže: firemní marže z ceny projektu před reálnými náklady.
@@ -106,3 +108,12 @@ available_share = max(0, total_share - reserved_or_paid_amount)
 ```
 
 Hodinová docházka je v realizaci evidovaná jako potenciální hodinová mzda. Do nákladů vstupuje až ve chvíli, kdy je odpovídající hodinová výplata ve stavu `paid`.
+
+Fixní realizační podíl je omezen dostupným týmovým budgetem stejně jako fixní projektová odměna:
+
+```text
+fixed_realization_share = min(share_value, max(0, team_budget))
+percentage_realization_share = max(0, team_budget) * share_value / 100
+```
+
+Při schválení i zaplacení úkolové výplaty se dostupnost znovu validuje proti aktuálním nákladům, rezervacím a paid výplatám. Pokud se budget mezi vytvořením žádosti a schválením sníží, workflow výplatu nepustí dál.
