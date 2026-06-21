@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EKV Portal - přehled výplat a finančních toků</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --ink: #172033;
+      --muted: #647086;
+      --line: #d9e0ea;
+      --panel: #ffffff;
+      --blue: #2563eb;
+      --green: #059669;
+      --amber: #d97706;
+      --red: #dc2626;
+      --slate: #475569;
+      --cyan: #0891b2;
+      --shadow: 0 12px 30px rgba(15, 23, 42, .08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 Arial, Helvetica, sans-serif;
+    }
+    header {
+      background: #0f172a;
+      color: #fff;
+      padding: 34px 24px 28px;
+      border-bottom: 5px solid var(--blue);
+    }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+    h1, h2, h3 { margin: 0; line-height: 1.18; }
+    h1 { font-size: 30px; letter-spacing: 0; }
+    h2 { font-size: 22px; margin-bottom: 14px; }
+    h3 { font-size: 17px; margin-bottom: 10px; }
+    p { margin: 0 0 12px; }
+    main { padding: 24px; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      margin: 0 auto 20px;
+      padding: 22px;
+      max-width: 1180px;
+    }
+    .lede {
+      max-width: 880px;
+      color: #cbd5e1;
+      margin-top: 10px;
+      font-size: 16px;
+    }
+    .meta {
+      margin-top: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: #e2e8f0;
+      color: #172033;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    header .pill { background: rgba(255,255,255,.12); color: #fff; }
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+    .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 16px;
+    }
+    .card h3 { color: #0f172a; }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 9px 0;
+      border-bottom: 1px solid #edf1f6;
+    }
+    .metric:last-child { border-bottom: 0; }
+    .metric span:first-child { color: var(--muted); }
+    .metric strong { text-align: right; font-variant-numeric: tabular-nums; }
+    .note {
+      border-left: 4px solid var(--blue);
+      background: #eff6ff;
+      padding: 12px 14px;
+      border-radius: 6px;
+      color: #1e3a8a;
+    }
+    .warn {
+      border-left-color: var(--amber);
+      background: #fffbeb;
+      color: #92400e;
+    }
+    .ok {
+      border-left-color: var(--green);
+      background: #ecfdf5;
+      color: #065f46;
+    }
+    .bad {
+      border-left-color: var(--red);
+      background: #fef2f2;
+      color: #991b1b;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f1f5f9;
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #475569;
+      letter-spacing: .02em;
+    }
+    tr:last-child td { border-bottom: 0; }
+    code {
+      background: #eef2f7;
+      border: 1px solid #dbe3ee;
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(150px, 1fr));
+      gap: 12px;
+      align-items: stretch;
+      margin-top: 12px;
+    }
+    .step {
+      position: relative;
+      border: 1px solid var(--line);
+      border-top: 5px solid var(--blue);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+      min-height: 128px;
+    }
+    .step.green { border-top-color: var(--green); }
+    .step.amber { border-top-color: var(--amber); }
+    .step.red { border-top-color: var(--red); }
+    .step.cyan { border-top-color: var(--cyan); }
+    .step:after {
+      content: "→";
+      position: absolute;
+      right: -13px;
+      top: 44%;
+      color: #94a3b8;
+      font-size: 20px;
+      font-weight: 700;
+      z-index: 2;
+    }
+    .step:last-child:after { content: ""; }
+    .step-title {
+      display: block;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+    .step small {
+      color: var(--muted);
+      display: block;
+    }
+    .bars {
+      display: grid;
+      gap: 9px;
+      margin-top: 10px;
+    }
+    .bar {
+      display: grid;
+      grid-template-columns: 180px 1fr 96px;
+      gap: 12px;
+      align-items: center;
+    }
+    .bar-label { color: var(--muted); }
+    .track {
+      height: 16px;
+      background: #e2e8f0;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid #d7dee9;
+    }
+    .fill {
+      height: 100%;
+      background: var(--blue);
+      border-radius: 999px;
+    }
+    .fill.green { background: var(--green); }
+    .fill.amber { background: var(--amber); }
+    .fill.red { background: var(--red); }
+    .amount {
+      text-align: right;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .dot {
+      width: 11px;
+      height: 11px;
+      display: inline-block;
+      border-radius: 999px;
+      margin-right: 5px;
+      vertical-align: -1px;
+      background: var(--blue);
+    }
+    .dot.green { background: var(--green); }
+    .dot.amber { background: var(--amber); }
+    .dot.red { background: var(--red); }
+    .finding {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 12px;
+      padding: 13px 0;
+      border-top: 1px solid var(--line);
+    }
+    .finding:first-child { border-top: 0; }
+    .tag {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 12px;
+      height: 26px;
+      padding: 0 9px;
+      color: #fff;
+      background: var(--slate);
+      white-space: nowrap;
+    }
+    .tag.high { background: var(--red); }
+    .tag.medium { background: var(--amber); }
+    .tag.low { background: var(--green); }
+    .tag.info { background: var(--blue); }
+    .formula {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 13px 14px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .status strong { display: block; }
+    .status span { color: var(--muted); font-size: 13px; }
+    footer {
+      color: var(--muted);
+      text-align: center;
+      padding: 20px 24px 40px;
+      font-size: 13px;
+    }
+    @media (max-width: 900px) {
+      .grid.cols-2, .grid.cols-3, .flow, .status-grid { grid-template-columns: 1fr; }
+      .step:after { content: ""; }
+      .bar { grid-template-columns: 1fr; gap: 5px; }
+      .amount { text-align: left; }
+      .finding { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>EKV Portal - výplaty, náklady a finanční výpočty</h1>
+      <p class="lede">Přehled aktuálního chování po lokálním testu a návrh cílového chování: úkolová výplata se má propsat do nákladů až ve chvíli, kdy je skutečně označena jako vyplacená.</p>
+      <div class="meta">
+        <span class="pill">Stav: ověřeno lokálně</span>
+        <span class="pill">Datum: 2026-06-21</span>
+        <span class="pill">Demo účet: demo.financial.admin@ekv.local</span>
+        <span class="pill">Zdroj: .codex-financial-demo.sql</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Krátké Shrnutí</h2>
+      <div class="grid cols-3">
+        <div class="note ok">
+          <strong>Hodinové mzdy</strong>
+          <p>U realizace se započítávají do nákladů automaticky z docházky. U projekce jen tehdy, když existuje odpovídající řádek v <code>project_costs</code>.</p>
+        </div>
+        <div class="note warn">
+          <strong>Úkolové výplaty teď</strong>
+          <p>Teď se používají hlavně pro dostupnost k výplatě. Do nákladů projektu ani realizace se samy po vyplacení nepromítají.</p>
+        </div>
+        <div class="note">
+          <strong>Požadovaný cílový stav</strong>
+          <p>Úkolová výplata má ovlivnit náklady až po stavu <code>paid</code>, aby nesnižovala rozpočet už při žádosti nebo schválení.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Aktuální Tok Výplaty</h2>
+      <div class="flow">
+        <div class="step">
+          <span class="step-title">1. Nárok</span>
+          <small>Projektová odměna nebo realizační podíl se vypočítá z týmového rozpočtu.</small>
+        </div>
+        <div class="step amber">
+          <span class="step-title">2. Žádost</span>
+          <small>Vznikne <code>payout</code> a <code>payout_items</code>. Částka se začne rezervovat.</small>
+        </div>
+        <div class="step amber">
+          <span class="step-title">3. Schválení</span>
+          <small>Stavy <code>pending</code>, <code>approved</code>, <code>invoice_uploaded</code> rezervují dostupnost.</small>
+        </div>
+        <div class="step green">
+          <span class="step-title">4. Vyplaceno</span>
+          <small>Stav <code>paid</code> se počítá do vyplaceno a stále snižuje dostupnost.</small>
+        </div>
+        <div class="step red">
+          <span class="step-title">5. Náklady</span>
+          <small>Úkolové payouty se dnes automaticky nepropsují do nákladů.</small>
+        </div>
+      </div>
+
+      <div class="status-grid">
+        <div class="status">
+          <strong>pending</strong>
+          <span>Rezervuje dostupnou částku, nemá být náklad.</span>
+        </div>
+        <div class="status">
+          <strong>approved</strong>
+          <span>Rezervuje dostupnou částku, nemá být náklad.</span>
+        </div>
+        <div class="status">
+          <strong>invoice_uploaded</strong>
+          <span>Rezervuje dostupnou částku, nemá být náklad.</span>
+        </div>
+        <div class="status">
+          <strong>paid</strong>
+          <span>Má být náklad podle požadovaného cílového chování.</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Aktuální Výpočty Na Demo Datech</h2>
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Projekce / projekt DEMO-FIN-001</h3>
+          <div class="metric"><span>Cena projektu</span><strong>100 000 Kč</strong></div>
+          <div class="metric"><span>Hrubý projektový budget</span><strong>60 000 Kč</strong></div>
+          <div class="metric"><span>Plánovaná režie</span><strong>6 000 Kč</strong></div>
+          <div class="metric"><span>Subdodávka</span><strong>10 000 Kč</strong></div>
+          <div class="metric"><span>Týmový budget</span><strong>44 000 Kč</strong></div>
+          <div class="metric"><span>Manuální náklad</span><strong>15 000 Kč</strong></div>
+          <div class="metric"><span>Hodinový náklad</span><strong>6 400 Kč</strong></div>
+          <div class="metric"><span>Alokovaná režie</span><strong>5 000 Kč</strong></div>
+          <div class="metric"><span>Zůstatek po nákladech</span><strong>17 600 Kč</strong></div>
+        </div>
+        <div class="card">
+          <h3>Realizace DEMO-FIN Realizace</h3>
+          <div class="metric"><span>Celkový výnos</span><strong>230 000 Kč</strong></div>
+          <div class="metric"><span>Zisk firmy 15 %</span><strong>34 500 Kč</strong></div>
+          <div class="metric"><span>Režie firmy 5 %</span><strong>11 500 Kč</strong></div>
+          <div class="metric"><span>Manuální náklad</span><strong>20 000 Kč</strong></div>
+          <div class="metric"><span>Vícenáklad</span><strong>10 000 Kč</strong></div>
+          <div class="metric"><span>Hodinové náklady</span><strong>11 200 Kč</strong></div>
+          <div class="metric"><span>Celkové náklady</span><strong>41 200 Kč</strong></div>
+          <div class="metric"><span>Týmový rozpočet</span><strong>142 800 Kč</strong></div>
+        </div>
+      </div>
+
+      <div class="bars" aria-label="Vizualizace nákladů">
+        <div class="bar">
+          <div class="bar-label">Projekt: týmový budget</div>
+          <div class="track"><div class="fill green" style="width: 100%"></div></div>
+          <div class="amount">44 000 Kč</div>
+        </div>
+        <div class="bar">
+          <div class="bar-label">Projekt: náklady + režie</div>
+          <div class="track"><div class="fill amber" style="width: 60%"></div></div>
+          <div class="amount">26 400 Kč</div>
+        </div>
+        <div class="bar">
+          <div class="bar-label">Projekt: zůstatek</div>
+          <div class="track"><div class="fill blue" style="width: 40%"></div></div>
+          <div class="amount">17 600 Kč</div>
+        </div>
+        <div class="bar">
+          <div class="bar-label">Realizace: týmový rozpočet</div>
+          <div class="track"><div class="fill green" style="width: 100%"></div></div>
+          <div class="amount">142 800 Kč</div>
+        </div>
+        <div class="bar">
+          <div class="bar-label">Realizace: náklady</div>
+          <div class="track"><div class="fill amber" style="width: 29%"></div></div>
+          <div class="amount">41 200 Kč</div>
+        </div>
+      </div>
+      <div class="legend">
+        <span><span class="dot green"></span>Rozpočet</span>
+        <span><span class="dot amber"></span>Náklady</span>
+        <span><span class="dot"></span>Zůstatek</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Hodinová Mzda vs. Úkolová Výplata</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Typ</th>
+            <th>Aktuální výpočet</th>
+            <th>Aktuálně jde do nákladů?</th>
+            <th>Poznámka</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Hodinová práce na realizaci</td>
+            <td><code>attendance.hours * members.hourly_rate</code></td>
+            <td>Ano, automaticky</td>
+            <td>Realizace bere přímé hodiny a také hodiny z navázaného projektu přes <code>linked_project_id</code>.</td>
+          </tr>
+          <tr>
+            <td>Hodinová práce na projekci</td>
+            <td><code>project_costs.amount</code> s <code>is_attendance_cost = true</code></td>
+            <td>Ano, pokud existuje projektový náklad</td>
+            <td>Samotná tabulka <code>attendance</code> projektový summary automaticky nezvyšuje.</td>
+          </tr>
+          <tr>
+            <td>Úkolová výplata projektu</td>
+            <td><code>total_reward - reserved_or_paid_amount</code></td>
+            <td>Ne</td>
+            <td>Dnes snižuje dostupnost k výplatě, ale nevytváří nákladový řádek.</td>
+          </tr>
+          <tr>
+            <td>Úkolová výplata realizace</td>
+            <td><code>total_share - reserved_or_paid_amount</code></td>
+            <td>Ne</td>
+            <td>Dnes snižuje dostupnost podílu, ale nevstupuje do <code>total_costs</code>.</td>
+          </tr>
+          <tr>
+            <td>Hodinová výplata</td>
+            <td><code>total_hours * hourly_rate</code></td>
+            <td>Částečně dle modulu</td>
+            <td>Má vlastní workflow v <code>hourly_payout_requests</code>; realizace počítá náklad z docházky, ne ze stavu hodinové výplaty.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Cílový Návrh: Úkolová Výplata Jako Náklad Až Po Vyplacení</h2>
+      <div class="note ok">
+        <strong>Pravidlo</strong>
+        <p>Úkolová výplata nesmí ovlivnit náklady ve stavech <code>pending</code>, <code>approved</code> ani <code>invoice_uploaded</code>. Do nákladů se započítá až ve stavu <code>paid</code>.</p>
+      </div>
+
+      <div class="flow">
+        <div class="step">
+          <span class="step-title">Nárok</span>
+          <small>Výpočet odměny nebo podílu.</small>
+        </div>
+        <div class="step amber">
+          <span class="step-title">Rezervace</span>
+          <small>Žádost snižuje jen dostupnost k další výplatě.</small>
+        </div>
+        <div class="step amber">
+          <span class="step-title">Schválení</span>
+          <small>Stále jen rezervace, bez dopadu do nákladů.</small>
+        </div>
+        <div class="step green">
+          <span class="step-title">Paid</span>
+          <small>Vytvořit nebo započítat nákladový dopad.</small>
+        </div>
+        <div class="step cyan">
+          <span class="step-title">Audit</span>
+          <small>Uložit zdroj payoutu a zabránit dvojímu započtení.</small>
+        </div>
+      </div>
+
+      <div class="grid cols-2" style="margin-top: 14px;">
+        <div class="card">
+          <h3>Varianta A: počítat paid payouty v read modelech</h3>
+          <p>Do SQL summary funkcí přidat samostatnou položku <code>paid_task_payout_costs</code>. Náklady se pak počítají bez fyzického kopírování do cost ledgeru.</p>
+          <div class="formula">project_total_costs =
+manual_costs
++ attendance_costs
++ allocated_overhead_costs
++ paid_task_payout_costs</div>
+        </div>
+        <div class="card">
+          <h3>Varianta B: po paid vytvořit cost ledger řádek</h3>
+          <p>Při přechodu payoutu na <code>paid</code> vytvořit řádek v <code>project_costs</code> nebo realizačním cost ledgeru s vazbou na payout item.</p>
+          <div class="formula">on payout.status = 'paid':
+insert cost(source = 'task_payout', payout_item_id, amount)
+on rollback/unpaid:
+reverse or remove generated cost</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>List Of Findings</h2>
+      <div class="finding">
+        <span class="tag high">High</span>
+        <div>
+          <strong>Úkolové výplaty nejsou náklad</strong>
+          <p>Projektové a realizační úkolové výplaty dnes ovlivňují dostupnost k výplatě, ale po vyplacení automaticky nezvyšují náklady. To může zkreslit skutečnou ziskovost.</p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="tag high">High</span>
+        <div>
+          <strong>Riziko dvojího započtení hodin u navázané realizace</strong>
+          <p>Realizace s <code>linked_project_id</code> bere i hodiny z navázaného projektu. Pokud se stejné hodiny zároveň ručně propsaly do <code>project_costs</code>, je potřeba jasně oddělit reporting projektu a realizace.</p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="tag medium">Medium</span>
+        <div>
+          <strong>Projektové hodiny nejsou přímo propojené s docházkou</strong>
+          <p>Projektový financial summary používá <code>project_costs.is_attendance_cost</code>, ne přímo <code>attendance</code>. Bez automatizace může docházka existovat bez nákladového dopadu na projekt.</p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="tag medium">Medium</span>
+        <div>
+          <strong>Payout availability slučuje rezervované a vyplacené částky</strong>
+          <p>Pro dostupnost je to správné, ale pro reporting je vhodné samostatně ukazovat <code>reserved</code>, <code>paid</code> a <code>available</code>.</p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="tag medium">Medium</span>
+        <div>
+          <strong>Chybí jednotný cost source model</strong>
+          <p>Náklady vznikají z více míst: project costs, realizace costs, attendance, overhead, payouts. Bez jednotného zdroje a vazeb se obtížně audituje původ částky.</p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="tag low">Low</span>
+        <div>
+          <strong>UI popisky by měly přesně rozlišovat rezervaci a náklad</strong>
+          <p>U výplat je vhodné jasně označit, kdy částka jen blokuje dostupnost a kdy už je účetním/provozním nákladem.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Doporučená Vylepšení</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Priorita</th>
+            <th>Vylepšení</th>
+            <th>Dopad</th>
+            <th>Doporučení</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag high">P1</span></td>
+            <td>Započítat paid úkolové payouty do nákladů</td>
+            <td>Skutečná ziskovost projektu a realizace bude odpovídat vyplaceným penězům.</td>
+            <td>Začít read-modelem nebo ledgerem se zdrojovou vazbou na <code>payout_items.id</code>.</td>
+          </tr>
+          <tr>
+            <td><span class="tag high">P1</span></td>
+            <td>Zabránit dvojímu započtení</td>
+            <td>Stejná výplata nebo hodina se nesmí objevit v nákladech dvakrát.</td>
+            <td>Přidat unikátní vazby <code>source_type</code> + <code>source_id</code> pro generované náklady.</td>
+          </tr>
+          <tr>
+            <td><span class="tag medium">P2</span></td>
+            <td>Automatizovat projektové hodinové náklady</td>
+            <td>Docházka na projekt bude mít konzistentní finanční dopad.</td>
+            <td>Po schválení docházky generovat nebo číst attendance costs z jednotného modelu.</td>
+          </tr>
+          <tr>
+            <td><span class="tag medium">P2</span></td>
+            <td>Rozdělit reserved vs paid v UI</td>
+            <td>Uživatel uvidí, co je jen blokované a co už bylo vyplaceno.</td>
+            <td>Na detailu projektu/realizace a v žádosti o výplatu ukázat tři sloupce: nárok, rezervováno, vyplaceno.</td>
+          </tr>
+          <tr>
+            <td><span class="tag medium">P2</span></td>
+            <td>Auditní ledger pro finanční pohyby</td>
+            <td>Jednodušší dohledatelnost a méně speciálních případů v SQL funkcích.</td>
+            <td>Zavést read-only nebo append-only pohled <code>financial_movements</code>.</td>
+          </tr>
+          <tr>
+            <td><span class="tag low">P3</span></td>
+            <td>Dokumentovat linked realizace</td>
+            <td>Menší riziko nepochopení, proč se hodiny z projektu objevují v realizaci.</td>
+            <td>Přidat help text do detailu realizace a reportů.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Doporučený Implementační Postup</h2>
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>1. Bezpečná změna výpočtu</h3>
+          <p>Přidat paid úkolové payouty jako samostatnou položku v read modelech: <code>paid_task_payout_costs</code>. Tím se změní reporting nákladů až po vyplacení, bez zásahu do historických ledgerů.</p>
+        </div>
+        <div class="card">
+          <h3>2. Audit a UI</h3>
+          <p>V UI zobrazit odděleně: náklady bez úkolových výplat, paid úkolové výplaty, celkové náklady po vyplacení. Přidat testy na stavy <code>pending</code>, <code>approved</code>, <code>paid</code>.</p>
+        </div>
+      </div>
+      <div class="note warn" style="margin-top: 14px;">
+        <strong>Rozhodnutí k potvrzení</strong>
+        <p>Je potřeba rozhodnout, jestli paid úkolová výplata má snižovat týmový rozpočet jako náklad práce, nebo být samostatná položka pod náklady pro ziskovost. Technicky je obojí možné, ale reporting musí být konzistentní.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Vygenerováno pro lokální audit EKV Portalu. Soubor je statický a nevolá žádné externí zdroje.
+  </footer>
+</body>
+</html>
