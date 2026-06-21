@@ -11,6 +11,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { Loader2, LogOut, RefreshCw, ShieldCheck } from 'lucide-react';
 
 const Dashboard = lazy(() => import('@/components/Dashboard'));
+const WorkspaceLanding = lazy(() => import('@/components/WorkspaceLanding'));
 const Projects = lazy(() => import('@/components/Projects'));
 const Documents = lazy(() => import('@/components/Documents'));
 const CRM = lazy(() => import('@/components/CRM'));
@@ -214,7 +215,7 @@ function AppContent() {
             <ErrorBoundary>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
-                  <Route path="/" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />
+                  <Route path="/" element={<WorkspaceLanding />} />
                   <Route path="/dashboard" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />
                   <Route path="/projects" element={<PrivateRoute module="projects"><Projects /></PrivateRoute>} />
                   <Route path="/projects/new" element={<PrivateRoute module="projects" level="can_edit"><ProjectForm /></PrivateRoute>} />

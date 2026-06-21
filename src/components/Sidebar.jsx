@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
+  ArrowLeftRight,
   BarChart,
   Briefcase,
   Building,
@@ -43,6 +44,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { cn } from '@/lib/utils';
+import { WORKSPACES, canAccessWorkspace, getWorkspaceFromPathname } from '@/lib/workspaces';
 
 const FAVORITES_KEY = 'ekv-sidebar-favorites';
 const DEFAULT_FAVORITES = ['/dashboard', '/projects', '/realizace'];
@@ -78,17 +80,18 @@ const NAV_GROUPS = [
     id: 'home',
     label: null,
     items: [
-      { icon: Home, label: 'Přehled', path: '/dashboard', module: 'dashboard' },
+      { icon: Home, label: 'Rozcestník', path: '/', workspace: 'global', exact: true },
+      { icon: Home, label: 'Přehled', path: '/dashboard', module: 'dashboard', workspace: 'portal' },
     ],
   },
   {
     id: 'work',
     label: 'Práce',
     items: [
-      { icon: Folder, label: 'Projekce', path: '/projects', module: 'projects' },
-      { icon: HardHat, label: 'Realizace', path: '/realizace', module: 'realizace' },
-      { icon: Wrench, label: 'Inženýring', path: '/engineering', module: 'engineering' },
-      { icon: ListTodo, label: 'Úkoly', path: '/tasks', module: 'tasks' },
+      { icon: Folder, label: 'Projekce', path: '/projects', module: 'projects', workspace: 'portal' },
+      { icon: HardHat, label: 'Realizace', path: '/realizace', module: 'realizace', workspace: 'portal' },
+      { icon: Wrench, label: 'Inženýring', path: '/engineering', module: 'engineering', workspace: 'portal' },
+      { icon: ListTodo, label: 'Úkoly', path: '/tasks', module: 'tasks', workspace: 'portal' },
     ],
   },
   {
@@ -100,25 +103,26 @@ const NAV_GROUPS = [
         label: 'CRM nástěnka',
         path: '/crm',
         module: 'crm',
+        workspace: 'crm',
         exact: true,
         children: [
-          { icon: Target, label: 'Obchodní případy', path: '/crm/opportunities', module: 'crm' },
-          { icon: FileText, label: 'Nabídky', path: '/crm/offers', module: 'crm' },
-          { icon: ClipboardList, label: 'Objednávky', path: '/crm/orders', module: 'crm' },
-          { icon: Building, label: 'Subjekty', path: '/subjects', module: 'subjects' },
+          { icon: Target, label: 'Obchodní případy', path: '/crm/opportunities', module: 'crm', workspace: 'crm' },
+          { icon: FileText, label: 'Nabídky', path: '/crm/offers', module: 'crm', workspace: 'crm' },
+          { icon: ClipboardList, label: 'Objednávky', path: '/crm/orders', module: 'crm', workspace: 'crm' },
+          { icon: Building, label: 'Subjekty', path: '/subjects', module: 'subjects', workspace: 'crm' },
         ],
       },
-      { icon: Package, label: 'Produkty', path: '/products', module: 'crm' },
+      { icon: Package, label: 'Produkty', path: '/products', module: 'crm', workspace: 'crm' },
     ],
   },
   {
     id: 'operations',
     label: 'Provoz',
     items: [
-      { icon: Clock, label: 'Docházka', path: '/attendance', module: 'attendance' },
-      { icon: Users, label: 'Zaměstnanci', path: '/members', module: 'members' },
-      { icon: FileText, label: 'Dokumenty', path: '/documents', module: 'documents' },
-      { icon: Copy, label: 'Šablony projektu', path: '/templates', module: 'projects' },
+      { icon: Clock, label: 'Docházka', path: '/attendance', module: 'attendance', workspace: 'portal' },
+      { icon: Users, label: 'Zaměstnanci', path: '/members', module: 'members', workspace: 'portal' },
+      { icon: FileText, label: 'Dokumenty', path: '/documents', module: 'documents', workspace: 'portal' },
+      { icon: Copy, label: 'Šablony projektu', path: '/templates', module: 'projects', workspace: 'portal' },
     ],
   },
   {
@@ -130,6 +134,7 @@ const NAV_GROUPS = [
         label: 'Výplaty',
         path: '/payouts',
         module: 'payouts',
+        workspace: 'portal',
       },
       {
         icon: FilePieChart,
@@ -137,12 +142,14 @@ const NAV_GROUPS = [
         path: '/overhead-costs',
         module: 'finance',
         level: 'can_admin',
+        workspace: 'portal',
       },
       {
         icon: BarChart,
         label: 'Reporty',
         path: '/reports',
         module: 'reports',
+        workspace: 'portal',
       },
     ],
   },
@@ -150,24 +157,41 @@ const NAV_GROUPS = [
     id: 'admin',
     label: 'Správa',
     items: [
-      { icon: Settings, label: 'Nastavení', path: '/settings', module: 'settings', exact: true },
-      { icon: UserCog, label: 'Správa uživatelů', path: '/settings/users', module: 'settings', level: 'can_admin' },
-      { icon: Shield, label: 'Oprávnění', path: '/settings/permissions', module: 'settings', level: 'can_admin' },
+      { icon: Settings, label: 'Nastavení', path: '/settings', module: 'settings', exact: true, workspace: 'portal' },
+      { icon: UserCog, label: 'Správa uživatelů', path: '/settings/users', module: 'settings', level: 'can_admin', workspace: 'portal' },
+      { icon: Shield, label: 'Oprávnění', path: '/settings/permissions', module: 'settings', level: 'can_admin', workspace: 'portal' },
     ],
   },
 ];
 
 const QUICK_ACTIONS = [
-  { icon: Plus, label: 'Nový projekt', path: '/projects/new', module: 'projects', level: 'can_edit' },
-  { icon: Briefcase, label: 'Nová realizace', path: '/realizace/new', module: 'realizace', level: 'can_edit' },
-  { icon: ClipboardList, label: 'Nový úkol', path: '/tasks', module: 'tasks', level: 'can_edit' },
+  { icon: Plus, label: 'Nový projekt', path: '/projects/new', module: 'projects', level: 'can_edit', workspace: 'portal' },
+  { icon: Briefcase, label: 'Nová realizace', path: '/realizace/new', module: 'realizace', level: 'can_edit', workspace: 'portal' },
+  { icon: ClipboardList, label: 'Nový úkol', path: '/tasks', module: 'tasks', level: 'can_edit', workspace: 'portal' },
+  { icon: Target, label: 'Nový případ', path: '/crm/new', module: 'crm', level: 'can_edit', workspace: 'crm' },
+  { icon: FileText, label: 'Nabídky', path: '/crm/offers', module: 'crm', workspace: 'crm' },
+  { icon: Building, label: 'Subjekty', path: '/subjects', module: 'subjects', workspace: 'crm' },
 ];
 
 const flattenItems = (groups) => groups.flatMap(group =>
   group.items.flatMap(item => [item, ...(item.children || [])])
 );
 
-const canSeeItem = (item, hasPermission) => hasPermission(item.module, item.level || 'can_read');
+const canSeeItem = (item, hasPermission) => !item.module || hasPermission(item.module, item.level || 'can_read');
+
+const belongsToWorkspace = (item, workspace) => item.workspace === 'global' || item.workspace === workspace;
+
+const filterGroupsForWorkspace = (groups, workspace) => groups
+  .map(group => ({
+    ...group,
+    items: group.items
+      .filter(item => belongsToWorkspace(item, workspace))
+      .map(item => ({
+        ...item,
+        children: (item.children || []).filter(child => belongsToWorkspace(child, workspace)),
+      })),
+  }))
+  .filter(group => group.items.length > 0);
 
 const UserProfile = React.memo(({ isCollapsed }) => {
   const { user, isPrivateMode, togglePrivateMode, isAdmin } = useAuth();
@@ -281,10 +305,12 @@ const SearchBox = ({ value, onChange, isCollapsed }) => {
   );
 };
 
-const QuickActions = ({ isCollapsed, onLinkClick }) => {
+const QuickActions = ({ isCollapsed, onLinkClick, workspace }) => {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
-  const visibleActions = QUICK_ACTIONS.filter(action => canSeeItem(action, hasPermission));
+  const visibleActions = QUICK_ACTIONS
+    .filter(action => belongsToWorkspace(action, workspace))
+    .filter(action => canSeeItem(action, hasPermission));
 
   if (isCollapsed || visibleActions.length === 0) return null;
 
@@ -437,6 +463,7 @@ const NavGroup = ({ group, isCollapsed, favorites, onToggleFavorite, onLinkClick
 
 const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signOut, hasPermission, isPrivateMode } = useAuth();
   const [query, setQuery] = useState('');
   const [favorites, setFavorites] = useState(() => {
@@ -451,7 +478,16 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
   }, [favorites]);
 
-  const allItems = useMemo(() => flattenItems(NAV_GROUPS), []);
+  const activeWorkspace = getWorkspaceFromPathname(location.pathname);
+  const activeWorkspaceConfig = WORKSPACES[activeWorkspace];
+  const activeNavGroups = useMemo(() => filterGroupsForWorkspace(NAV_GROUPS, activeWorkspace), [activeWorkspace]);
+  const allItems = useMemo(() => flattenItems(activeNavGroups), [activeNavGroups]);
+  const availableWorkspaces = useMemo(() => (
+    Object.values(WORKSPACES).map(workspace => ({
+      ...workspace,
+      canAccess: canAccessWorkspace(workspace, hasPermission),
+    }))
+  ), [hasPermission]);
   const favoriteItems = allItems
     .filter(item => favorites.includes(item.path))
     .filter(item => canSeeItem(item, hasPermission));
@@ -474,6 +510,14 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
     navigate('/login');
   };
 
+  const handleWorkspaceNavigate = (workspace) => {
+    if (!workspace.canAccess) return;
+    onLinkClick?.();
+    navigate(workspace.path);
+  };
+
+  const otherWorkspace = availableWorkspaces.find(workspace => workspace.id !== activeWorkspace && workspace.canAccess);
+
   return (
     <div className={cn(
       'flex h-full min-h-0 flex-col border-r border-slate-200/90 bg-white px-2.5 py-3 shadow-[1px_0_2px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-950',
@@ -490,7 +534,7 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
             className={cn('w-auto', isCollapsed ? 'h-6' : 'h-7')}
             loading="lazy"
           />
-          {!isCollapsed && <span className="text-xl font-semibold tracking-tight text-slate-950">Portal</span>}
+          {!isCollapsed && <span className="text-xl font-semibold tracking-tight text-slate-950">{activeWorkspaceConfig.title}</span>}
           <div className={cn('absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white dark:border-gray-900', isPrivateMode ? 'bg-red-500' : 'bg-green-500')} />
         </div>
 
@@ -510,7 +554,45 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
 
       {!isCollapsed && <div className="mb-3 border-b border-slate-200/80 dark:border-gray-800" />}
 
+      <div className={cn('mb-3', isCollapsed && 'w-full')}>
+        {isCollapsed ? (
+          <button
+            type="button"
+            onClick={() => otherWorkspace && handleWorkspaceNavigate(otherWorkspace)}
+            disabled={!otherWorkspace}
+            className="flex h-10 w-full items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            title={otherWorkspace ? `Přepnout na ${otherWorkspace.label}` : 'Žádná další dostupná zóna'}
+            aria-label={otherWorkspace ? `Přepnout na ${otherWorkspace.label}` : 'Žádná další dostupná zóna'}
+          >
+            <ArrowLeftRight className="h-4 w-4" />
+          </button>
+        ) : (
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-1 shadow-sm dark:border-gray-800 dark:bg-gray-900/70">
+            <div className="grid grid-cols-2 gap-1">
+              {availableWorkspaces.map(workspace => (
+                <button
+                  key={workspace.id}
+                  type="button"
+                  onClick={() => handleWorkspaceNavigate(workspace)}
+                  disabled={!workspace.canAccess}
+                  className={cn(
+                    'rounded px-2 py-2 text-xs font-semibold transition',
+                    workspace.id === activeWorkspace
+                      ? 'bg-white text-primary shadow-sm ring-1 ring-slate-200 dark:bg-gray-800 dark:text-white dark:ring-gray-700'
+                      : 'text-slate-500 hover:bg-white/70 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800'
+                  )}
+                >
+                  {workspace.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       <SearchBox value={query} onChange={setQuery} isCollapsed={isCollapsed} />
+
+      <QuickActions isCollapsed={isCollapsed} onLinkClick={onLinkClick} workspace={activeWorkspace} />
 
       <nav className={cn('min-h-0 flex-1 overflow-y-auto', isCollapsed ? 'w-full space-y-2' : 'space-y-2 pr-1')}>
         {showFavorites && (
@@ -531,7 +613,7 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
           </div>
         )}
 
-        {NAV_GROUPS.map(group => (
+        {activeNavGroups.map(group => (
           <NavGroup
             key={group.id}
             group={group}

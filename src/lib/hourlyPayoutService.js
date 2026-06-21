@@ -1,5 +1,9 @@
-import { supabase } from '@/lib/customSupabaseClient';
 import { sendHourlyApprovalEmail, sendHourlyRejectionEmail } from './hourlyPayoutEmailService';
+import {
+  approveHourlyPayoutRequestWorkflow,
+  markHourlyPayoutPaid,
+  rejectHourlyPayoutRequestWorkflow,
+} from './hourlyPayoutWorkflowService';
 
 /**
  * Updates the status of an hourly payout request and triggers corresponding emails.
@@ -12,24 +16,15 @@ import { sendHourlyApprovalEmail, sendHourlyRejectionEmail } from './hourlyPayou
  */
 export const updateHourlyPayoutRequestStatus = async (id, status, rejectionReason = null, requestData = null) => {
   try {
-    const updatePayload = {
-      status,
-      updated_at: new Date().toISOString()
-    };
-
     if (status === 'approved') {
-      updatePayload.approved_at = new Date().toISOString();
+      await approveHourlyPayoutRequestWorkflow(id, null, false);
     } else if (status === 'rejected') {
-      updatePayload.rejected_at = new Date().toISOString();
-      updatePayload.rejection_reason = rejectionReason;
+      await rejectHourlyPayoutRequestWorkflow(id, rejectionReason);
+    } else if (status === 'paid') {
+      await markHourlyPayoutPaid(id);
+    } else {
+      throw new Error(`Unsupported hourly payout status: ${status}`);
     }
-
-    const { error } = await supabase
-      .from('hourly_payout_requests')
-      .update(updatePayload)
-      .eq('id', id);
-
-    if (error) throw error;
 
     // Handle Emails
     if (requestData && requestData.members?.email) {

@@ -59,6 +59,8 @@ const mapRealizationForSelection = (realization, currentAmount = 0) => ({
   team_budget: realization.team_budget || 0,
   total_costs: realization.total_costs || 0,
   total_revenue: realization.total_revenue || 0,
+  reserved_payouts: realization.reserved_payouts || 0,
+  paid_payout_costs: realization.paid_payout_costs || realization.paid_amount || 0,
   reserved_or_paid_amount: realization.reserved_or_paid_amount || 0,
   availability_reason: realization.availability_reason,
 });
@@ -100,6 +102,16 @@ const ProjectPayoutInput = ({ project, onAmountChange, amount, onRemove, onFillM
           <p className="text-xs text-muted-foreground">Dostupné</p>
           <p className="font-semibold text-green-600">{project.available_balance.toLocaleString('cs-CZ')} Kč</p>
           <Button type="button" variant="link" size="sm" className="h-6 px-0 text-xs" onClick={() => onFillMax(project.project_id, project.available_balance)}>Vyplnit max</Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 rounded-md bg-white/70 p-3 text-xs">
+        <div>
+          <div className="text-muted-foreground">Rezervováno</div>
+          <div className="font-mono font-semibold">{toAmount(project.reserved_payouts).toLocaleString('cs-CZ')} Kč</div>
+        </div>
+        <div>
+          <div className="text-muted-foreground">Vyplaceno</div>
+          <div className="font-mono font-semibold">{toAmount(project.paid_payouts).toLocaleString('cs-CZ')} Kč</div>
         </div>
       </div>
       {isOverBudget && <div className="flex items-center gap-2 text-xs text-red-600"><AlertCircle className="w-4 h-4" />Částka překračuje dostupný zůstatek.</div>}
@@ -540,11 +552,12 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
                               <div><p className="font-semibold">{realizace.realization_name}</p><p className="text-xs text-muted-foreground uppercase">Realizace</p></div>
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRemoveRealizace(realizace.realization_id)} disabled={isSubmitting}><Trash2 className="w-4 h-4 text-red-500" /></Button>
                             </div>
-                            <div className="grid grid-cols-2 gap-2 rounded-md bg-white/70 p-3 text-xs md:grid-cols-4">
+                            <div className="grid grid-cols-2 gap-2 rounded-md bg-white/70 p-3 text-xs md:grid-cols-5">
                               <div><div className="text-muted-foreground">Výnos</div><div className="font-mono font-semibold">{(realizace.total_revenue || 0).toLocaleString('cs-CZ')} Kč</div></div>
                               <div><div className="text-muted-foreground">Náklady</div><div className="font-mono font-semibold">{(realizace.total_costs || 0).toLocaleString('cs-CZ')} Kč</div></div>
                               <div><div className="text-muted-foreground">Týmový rozpočet</div><div className="font-mono font-semibold">{(realizace.team_budget || 0).toLocaleString('cs-CZ')} Kč</div></div>
-                              <div><div className="text-muted-foreground">Rezervováno/vyplaceno</div><div className="font-mono font-semibold">{(realizace.reserved_or_paid_amount || 0).toLocaleString('cs-CZ')} Kč</div></div>
+                              <div><div className="text-muted-foreground">Rezervováno</div><div className="font-mono font-semibold">{(realizace.reserved_payouts || 0).toLocaleString('cs-CZ')} Kč</div></div>
+                              <div><div className="text-muted-foreground">Vyplaceno</div><div className="font-mono font-semibold">{(realizace.paid_payout_costs || 0).toLocaleString('cs-CZ')} Kč</div></div>
                             </div>
                             <div className="flex items-end gap-4">
                               <div className="flex-1">

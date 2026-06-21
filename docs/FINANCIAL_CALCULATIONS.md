@@ -13,7 +13,9 @@ Tento dokument popisuje aktuální výpočty CRM dokladů, projektových financ�
 - `planned_overhead`: plánovaný rozpočet na režie projektu.
 - `planned_team_budget`: týmový budget po odečtení plánovaných režií a subdodavatelů.
 - `cost_adjusted_team_budget`: týmový budget po odečtení reálných přímých nákladů a alokovaných režií.
-- `reserved_or_paid_amount`: součet výplat ve stavech `pending`, `approved`, `invoice_uploaded` a `paid`.
+- `reserved_payouts`: výplaty ve stavech `pending`, `approved` a `invoice_uploaded`; blokují další žádost, ale nejsou náklad.
+- `paid_payouts`: výplaty ve stavu `paid`; vstupují do nákladového výsledku.
+- `reserved_or_paid_amount`: součet aktivních rezervací a paid výplat pro kontrolu dostupnosti.
 
 ## CRM Položky A Doklady
 
@@ -59,6 +61,9 @@ planned_overhead = gross_project_budget * overhead_percentage / 100
 planned_team_budget = gross_project_budget - planned_overhead - subcontractor_costs
 planned_margin = price - gross_project_budget
 remaining_after_costs = planned_team_budget - direct_costs - allocated_overhead_costs
+costs_before_paid_payouts = direct_costs + subcontractor_costs + allocated_overhead_costs
+costs_after_paid_payouts = costs_before_paid_payouts + paid_payouts
+team_budget_after_paid_payouts = remaining_after_costs - paid_payouts
 ```
 
 V UI se proto oddělují dvě různé hodnoty:
@@ -72,17 +77,20 @@ Výplaty projektových odměn vychází z nákladově upraveného týmového bud
 
 ```text
 cost_adjusted_team_budget = planned_team_budget - direct_costs - allocated_overhead_costs
+team_budget_after_paid_payouts = cost_adjusted_team_budget - paid_payouts
 ```
 
 Odměny:
 
 ```text
-percentage_reward = max(0, cost_adjusted_team_budget) * reward_percentage / 100
-fixed_reward = min(reward_fixed_amount, max(0, cost_adjusted_team_budget))
+percentage_reward = max(0, team_budget_after_paid_payouts) * reward_percentage / 100
+fixed_reward = min(reward_fixed_amount, max(0, team_budget_after_paid_payouts))
 available_balance = max(0, calculated_reward - reserved_or_paid_amount)
 ```
 
 Pokud náklady překročí týmový budget, `cost_adjusted_team_budget` je záporný a dostupná projektová výplata je `0 Kč`.
+
+Rezervované výplaty (`pending`, `approved`, `invoice_uploaded`) snižují dostupnost pro další žádost, ale nezvyšují náklady projektu. Do nákladového výsledku vstupují až po stavu `paid`.
 
 ## Realizační Výplaty
 
@@ -90,7 +98,11 @@ Realizační výpočty se nemění. Stále vychází z celkového výnosu realiz
 
 ```text
 total_revenue = base_contract_amount + extra_revenue
-total_costs = manual_costs + hourly_costs + extra_costs
-team_budget = total_revenue - profit_amount - overhead_amount - total_costs
+operational_costs = manual_costs + extra_costs
+paid_payout_costs = paid_task_payouts + paid_hourly_payouts
+costs_after_paid_payouts = operational_costs + paid_payout_costs
+team_budget = total_revenue - profit_amount - overhead_amount - operational_costs - paid_payout_costs
 available_share = max(0, total_share - reserved_or_paid_amount)
 ```
+
+Hodinová docházka je v realizaci evidovaná jako potenciální hodinová mzda. Do nákladů vstupuje až ve chvíli, kdy je odpovídající hodinová výplata ve stavu `paid`.

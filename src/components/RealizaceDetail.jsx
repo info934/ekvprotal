@@ -245,7 +245,12 @@ const RealizaceDetail = () => {
   const totalExtraCostsCost = hasFinancialSummary ? toNumber(financialSummary.extra_costs) : localExtraCostsCost;
   const totalExtraCostsSale = hasFinancialSummary ? toNumber(financialSummary.extra_revenue) : localExtraCostsSale;
   const effectiveHourlyCostsTotal = hasFinancialSummary ? toNumber(financialSummary.hourly_costs) : hourlyCostsTotal;
-  const grandTotalCosts = hasFinancialSummary ? toNumber(financialSummary.total_costs) : totalManualCosts + effectiveHourlyCostsTotal + totalExtraCostsCost;
+  const reservedPayouts = hasFinancialSummary ? toNumber(financialSummary.reserved_payouts) : 0;
+  const paidTaskPayouts = hasFinancialSummary ? toNumber(financialSummary.paid_task_payouts) : 0;
+  const paidHourlyPayouts = hasFinancialSummary ? toNumber(financialSummary.paid_hourly_payouts) : 0;
+  const paidPayoutCosts = hasFinancialSummary ? toNumber(financialSummary.paid_payout_costs) : 0;
+  const costsBeforePaidPayouts = hasFinancialSummary ? toNumber(financialSummary.costs_before_paid_payouts) : totalManualCosts + totalExtraCostsCost;
+  const grandTotalCosts = hasFinancialSummary ? toNumber(financialSummary.costs_after_paid_payouts) : totalManualCosts + totalExtraCostsCost;
   const contractAmountBase = hasFinancialSummary ? toNumber(financialSummary.base_contract_amount) : Number(realization?.contract_amount || 0);
   const totalRevenue = hasFinancialSummary ? toNumber(financialSummary.total_revenue) : contractAmountBase + totalExtraCostsSale;
   
@@ -399,6 +404,9 @@ const RealizaceDetail = () => {
                 hourlyCosts: effectiveHourlyCostsTotal,
                 extraCosts: totalExtraCostsCost,
                 grandTotal: grandTotalCosts,
+                costsBeforePaidPayouts,
+                paidPayoutCosts,
+                reservedPayouts,
                 costCount: costs.length,
                 extraCostsSale: totalExtraCostsSale
               }}
@@ -412,7 +420,9 @@ const RealizaceDetail = () => {
                 teamBudget: calculatedFinancials.teamBudget,
                 profitAmount: calculatedFinancials.profitAmount,
                 overheadAmount: calculatedFinancials.overheadAmount,
-                totalCosts: calculatedFinancials.totalCosts
+                totalCosts: calculatedFinancials.totalCosts,
+                paidPayoutCosts,
+                reservedPayouts
               }}
               loading={hourlyLoading}
               onRealizationUpdate={handleRealizationUpdate}
@@ -458,10 +468,17 @@ const RealizaceDetail = () => {
                           <span className="text-muted-foreground">Vícenáklady:</span> <span className="font-bold">{formatCurrency(totalExtraCostsCost)}</span>
                         </div>
                         <div className="bg-blue-50 px-3 py-1 rounded text-blue-700">
-                          <span className="text-muted-foreground">Hodinové:</span> <span className="font-bold">{hourlyLoading && !hasFinancialSummary ? '...' : formatCurrency(effectiveHourlyCostsTotal)}</span>
+                          <span className="text-muted-foreground">Hodinová mzda evid.:</span> <span className="font-bold">{hourlyLoading && !hasFinancialSummary ? '...' : formatCurrency(effectiveHourlyCostsTotal)}</span>
+                        </div>
+                        <div className="bg-amber-50 px-3 py-1 rounded text-amber-700">
+                          <span className="text-muted-foreground">Rezervováno:</span> <span className="font-bold">{formatCurrency(reservedPayouts)}</span>
+                        </div>
+                        <div className="bg-rose-50 px-3 py-1 rounded text-rose-700">
+                          <span className="text-muted-foreground">Paid výplaty:</span> <span className="font-bold">{formatCurrency(paidPayoutCosts)}</span>
+                          <span className="ml-2 text-xs text-rose-600">úkolové {formatCurrency(paidTaskPayouts)} / hodinové {formatCurrency(paidHourlyPayouts)}</span>
                         </div>
                         <div className="bg-green-50 px-3 py-1 rounded text-green-700 border border-green-200">
-                          <span className="font-medium mr-1">CELKEM:</span>
+                          <span className="font-medium mr-1">NÁKLADY PO PAID:</span>
                           <span className="font-bold text-lg">{hourlyLoading && !hasFinancialSummary ? '...' : formatCurrency(grandTotalCosts)}</span>
                         </div>
                       </div>

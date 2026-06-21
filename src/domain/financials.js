@@ -45,8 +45,9 @@ export const calculateCostAdjustedTeamBudget = ({
 
 export const calculateProjectMemberReward = (assignment = {}, teamBudget = 0) => {
   if (!assignment?.reward_type) return 0;
-  if (assignment.reward_type === 'fixed') return toAmount(assignment.reward_amount);
-  if (assignment.reward_type === 'percentage') return toAmount(teamBudget) * (toAmount(assignment.reward_percentage) / 100);
+  const availableBudget = Math.max(0, toAmount(teamBudget));
+  if (assignment.reward_type === 'fixed') return Math.min(toAmount(assignment.reward_amount), availableBudget);
+  if (assignment.reward_type === 'percentage') return availableBudget * (toAmount(assignment.reward_percentage) / 100);
   return 0;
 };
 

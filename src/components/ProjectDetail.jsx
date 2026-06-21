@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { format, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle, Clock } from 'lucide-react';
 import AssignMemberDialog from '@/components/AssignMemberDialog';
 import AssignSubcontractorDialog from '@/components/AssignSubcontractorDialog';
 import ProjectCostDialog from '@/components/ProjectCostDialog';
@@ -473,6 +473,11 @@ const ProjectDetail = () => {
         const totalCosts = toAmount(summary.direct_costs);
         const overheadBudget = toAmount(summary.planned_overhead_amount);
         const totalAllocatedOverhead = toAmount(summary.allocated_overhead_costs);
+        const paidPayoutCosts = toAmount(summary.paid_payout_costs);
+        const reservedPayouts = toAmount(summary.reserved_payouts);
+        const costsBeforePaidPayouts = toAmount(summary.costs_before_paid_payouts);
+        const costsAfterPaidPayouts = toAmount(summary.costs_after_paid_payouts);
+        const teamBudgetAfterPaidPayouts = toAmount(summary.team_budget_after_paid_payouts);
 
         return {
             ...fallbackFinancials,
@@ -492,8 +497,16 @@ const ProjectDetail = () => {
             totalAllocatedOverhead,
             remainingOverheadBudget: overheadBudget - totalAllocatedOverhead,
             paidOutAmount: toAmount(summary.paid_payouts),
+            paidTaskPayouts: toAmount(summary.paid_task_payouts),
+            paidHourlyPayouts: toAmount(summary.paid_hourly_payouts),
+            paidPayoutCosts,
+            reservedPayouts,
             reservedOrPaidPayouts: toAmount(summary.reserved_or_paid_payouts),
             remainingAfterCosts: toAmount(summary.remaining_after_costs),
+            costsBeforePaidPayouts,
+            costsAfterPaidPayouts,
+            teamBudgetAfterPaidPayouts,
+            availableForPayout: toAmount(summary.available_for_payout),
         };
     }, [project, members, subcontractors, costs, overheadCosts, canViewFinance, paidOutAmount, projectFinancialSummary]);
 
@@ -507,7 +520,8 @@ const ProjectDetail = () => {
         });
         return [
             { key: 'subcontractor-costs', label: 'Náklady na subdodavatele', note: subcontractors.length ? `${subcontractors.length} aktivních subdodavatelů v týmu` : 'Zatím nebyl přiřazen žádný subdodavatel', amount: financials.totalSubcontractorPrice || 0, details: subcontractorDetails },
-            { key: 'paid-payouts', label: 'Vyplacené peníze', note: payoutDetails.length ? `${payoutDetails.length} položek ve stavu "paid"` : 'Ještě nebyla proplacena žádná položka', amount: financials.paidOutAmount || 0, details: payoutDetails },
+            { key: 'paid-payouts', label: 'Vyplacené úkolové odměny', note: payoutDetails.length ? `${payoutDetails.length} položek ve stavu "paid"` : 'Ještě nebyla proplacena žádná úkolová odměna', amount: financials.paidTaskPayouts ?? financials.paidOutAmount ?? 0, details: payoutDetails },
+            { key: 'paid-hourly-payouts', label: 'Vyplacené hodinové mzdy', note: 'Do nákladů vstupují až po označení hodinové výplaty jako paid.', amount: financials.paidHourlyPayouts || 0, details: [] },
         ];
     }, [canViewFinance, subcontractors, paidPayoutItems, financials]);
 
@@ -740,6 +754,10 @@ const ProjectDetail = () => {
                             <FinancialCard title="Rozpočet na režie" value={financials.overheadBudget} subValue={`${project.overhead_percentage}% z budgetu`} icon={ClipboardList} colorClass="bg-purple-500" />
                             <FinancialCard title="Plánovaná marže" value={financials.plannedMargin ?? financials.projectProfit} icon={DollarSign} colorClass="bg-green-500" description="Cena projektu minus hrubý projektový budget." />
                             <FinancialCard title="Zůstatek po nákladech" value={financials.remainingAfterCosts ?? 0} icon={Wallet} colorClass="bg-emerald-500" description="Týmový budget po přímých nákladech a alokovaných režiích." />
+                            <FinancialCard title="Rezervované výplaty" value={financials.reservedPayouts ?? 0} icon={Clock} colorClass="bg-amber-500" description="Blokují další žádost, ale nejsou náklad." />
+                            <FinancialCard title="Vyplacené výplaty" value={financials.paidPayoutCosts ?? 0} icon={DollarSign} colorClass="bg-rose-500" description="Do nákladů vstupují až ve stavu paid." />
+                            <FinancialCard title="Náklady po vyplacení" value={financials.costsAfterPaidPayouts ?? 0} icon={Wallet} colorClass="bg-slate-600" description="Provozní náklady plus paid výplaty." />
+                            <FinancialCard title="Tým po vyplacení" value={financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts ?? 0} icon={Users} colorClass="bg-indigo-500" description="Zůstatek po provozních nákladech a paid výplatách." />
                         </div>
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 h-4 mr-2" />Přidat náklad</Button>}>
                             <Table>

@@ -66,6 +66,7 @@ const adjusted = calculateCostAdjustedTeamBudget({
 assertMoney(adjusted.teamBudget, 44000, 'planned team budget');
 assertMoney(adjusted.costAdjustedTeamBudget, 24000, 'cost adjusted team budget');
 assertMoney(calculateProjectMemberReward({ reward_type: 'percentage', reward_percentage: 50 }, adjusted.costAdjustedTeamBudget), 12000, 'percentage reward after costs');
+assertMoney(calculateProjectMemberReward({ reward_type: 'fixed', reward_amount: 30000 }, adjusted.costAdjustedTeamBudget), 24000, 'fixed reward is capped by adjusted budget');
 
 const exhausted = calculateCostAdjustedTeamBudget({
   project,
@@ -73,6 +74,13 @@ const exhausted = calculateCostAdjustedTeamBudget({
   directCosts: 50000,
   allocatedOverheadCosts: 5000,
 });
-assert.equal(Math.max(0, calculateProjectMemberReward({ reward_type: 'percentage', reward_percentage: 50 }, exhausted.costAdjustedTeamBudget)), 0, 'exhausted percentage payout');
+assert.equal(calculateProjectMemberReward({ reward_type: 'percentage', reward_percentage: 50 }, exhausted.costAdjustedTeamBudget), 0, 'exhausted percentage payout');
+assert.equal(calculateProjectMemberReward({ reward_type: 'fixed', reward_amount: 30000 }, exhausted.costAdjustedTeamBudget), 0, 'exhausted fixed payout');
+
+const paidPayoutCosts = 7000;
+const reservedPayouts = 2000;
+const teamBudgetAfterPaidPayouts = adjusted.costAdjustedTeamBudget - paidPayoutCosts;
+assertMoney(teamBudgetAfterPaidPayouts, 17000, 'team budget after paid payouts');
+assertMoney(Math.max(0, teamBudgetAfterPaidPayouts - reservedPayouts), 15000, 'available pool after paid payouts and reservations');
 
 console.log('Financial calculation checks passed');
