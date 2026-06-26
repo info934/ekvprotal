@@ -29,9 +29,9 @@ const ProjectTasks = ({ project }) => {
     const canEdit = useMemo(() => hasPermission('projects', 'can_edit'), [hasPermission]);
 
     const fetchData = useCallback(async () => {
-        const { data, error } = await supabase.from('project_tasks').select('*, member:members!project_tasks_member_id_fkey(name)').eq('project_id', projectId).order('end_date', { ascending: true });
+        const { data, error } = await supabase.from('project_tasks').select('*, member:members(name)').eq('project_id', projectId).order('end_date', { ascending: true });
         if (error) {
-            toast({ title: "Chyba při načítání úkolů.", variant: "destructive" });
+            toast({ title: "Chyba při načítání úkolů.", description: error.message, variant: "destructive" });
         } else {
             setTasks(data);
         }
