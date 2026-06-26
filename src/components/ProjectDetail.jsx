@@ -369,6 +369,16 @@ const ProjectDetail = () => {
 
     useEffect(() => { refreshData(); }, [refreshData]);
 
+    const paidPayoutItems = useMemo(() => {
+        if (!canViewFinance || payoutItems.length === 0) return [];
+        return payoutItems.filter((item) => {
+            const relatedPayout = Array.isArray(item.payouts) ? item.payouts[0] : item.payouts;
+            return relatedPayout?.status === 'paid';
+        });
+    }, [payoutItems, canViewFinance]);
+
+    const paidOutAmount = useMemo(() => paidPayoutItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0), [paidPayoutItems]);
+
     const buildRewardSnapshot = useCallback((sourceMembers = members, sourceCosts = costs, sourceSummary = projectFinancialSummary) => {
         if (!canViewFinance || !project) return [];
         const fallbackFinancials = calculateProjectFinancials({
@@ -563,16 +573,6 @@ const ProjectDetail = () => {
         if (parts.length === 0) return 'Není specifikováno';
         return parts.join(' + ');
     };
-
-    const paidPayoutItems = useMemo(() => {
-        if (!canViewFinance || payoutItems.length === 0) return [];
-        return payoutItems.filter((item) => {
-            const relatedPayout = Array.isArray(item.payouts) ? item.payouts[0] : item.payouts;
-            return relatedPayout?.status === 'paid';
-        });
-    }, [payoutItems, canViewFinance]);
-
-    const paidOutAmount = useMemo(() => paidPayoutItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0), [paidPayoutItems]);
 
     const financials = useMemo(() => {
         if (!project || !canViewFinance) return {};
