@@ -8,19 +8,25 @@ import { Textarea } from '@/components/ui/textarea';
 import { DollarSign, FileText, Plus, Edit2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '@/components/ui/use-toast';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-const ProjectCostDialog = ({ isOpen, onClose, onSave, costData, projectId }) => {
+const UNASSIGNED_MEMBER_VALUE = 'unassigned';
+
+const ProjectCostDialog = ({ isOpen, onClose, onSave, costData, projectId, members = [] }) => {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  const [memberId, setMemberId] = useState(UNASSIGNED_MEMBER_VALUE);
   const { toast } = useToast();
 
   useEffect(() => {
     if (costData) {
       setDescription(costData.description || '');
       setAmount(costData.amount || '');
+      setMemberId(costData.member_id || UNASSIGNED_MEMBER_VALUE);
     } else {
       setDescription('');
       setAmount('');
+      setMemberId(UNASSIGNED_MEMBER_VALUE);
     }
   }, [costData, isOpen]);
 
@@ -47,6 +53,7 @@ const ProjectCostDialog = ({ isOpen, onClose, onSave, costData, projectId }) => 
       project_id: projectId,
       description: description.trim(),
       amount: parseFloat(amount),
+      member_id: memberId === UNASSIGNED_MEMBER_VALUE ? null : memberId,
     };
 
     onSave(newCostData);
@@ -115,6 +122,26 @@ const ProjectCostDialog = ({ isOpen, onClose, onSave, costData, projectId }) => 
               step="0.01"
               className="text-right font-mono"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Odečíst z odměny</Label>
+            <Select value={memberId} onValueChange={setMemberId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Nepřiřazeno" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNASSIGNED_MEMBER_VALUE}>Nepřiřazeno - odečíst ze společného budgetu</SelectItem>
+                {members.map((assignment) => (
+                  <SelectItem key={assignment.member_id} value={assignment.member_id}>
+                    {assignment.member?.name || assignment.member?.email || 'Neznámý člen'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Přiřazený náklad sníží odměnu vybraného člena. Nepřiřazený náklad snižuje společný budget projektu.
+            </p>
           </div>
         </motion.div>
         </FormDialogBody>

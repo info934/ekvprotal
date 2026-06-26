@@ -14,6 +14,32 @@ const statusLabels = {
   closed: 'Uzavřeno'
 };
 
+const sourceTableLabels = {
+  project_members: 'týmu',
+  project_subcontractors: 'subdodavatelů',
+  project_costs: 'ostatních nákladů',
+};
+
+const formatCurrency = (value) => `${Number(value || 0).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč`;
+
+const getRewardChangeRows = (details = {}) => {
+  const before = Array.isArray(details.before) ? details.before : [];
+  const after = Array.isArray(details.after) ? details.after : [];
+  const ids = new Set([...before.map((row) => row.member_id), ...after.map((row) => row.member_id)].filter(Boolean));
+
+  return Array.from(ids).map((id) => {
+    const beforeRow = before.find((row) => row.member_id === id) || {};
+    const afterRow = after.find((row) => row.member_id === id) || {};
+    return {
+      id,
+      name: afterRow.member_name || beforeRow.member_name || id,
+      before: Number(beforeRow.total_reward || 0),
+      after: Number(afterRow.total_reward || 0),
+      assignedCosts: Number(afterRow.assigned_costs || 0),
+    };
+  }).filter((row) => Math.abs(row.before - row.after) > 0.01 || row.assignedCosts > 0);
+};
+
 const ProjectHistory = () => {
     const { projectId } = useParams();
     const { toast } = useToast();
@@ -63,6 +89,10 @@ const ProjectHistory = () => {
                 return `změnil stav úkolu "${log.details.task_name}" z "${log.details.old_status}" na "${log.details.new_status}"`;
             case 'update_activity_status':
                 return `změnil stav činnosti "${log.details.activity_subject}" z "${getActivityStatusConfig(log.details.old_status).label || log.details.old_status}" na "${getActivityStatusConfig(log.details.new_status).label || log.details.new_status}"`;
+            case 'project_reward_snapshot': {
+                const actionLabels = { create: 'vytvořil', update: 'upravil', delete: 'smazal' };
+                return `${actionLabels[log.details.source_action] || 'změnil'} položku ${sourceTableLabels[log.details.source_table] || 'projektových financí'} a přepočítal odměny týmu`;
+            }
             default:
                 return 'provedl neznámou akci';
         }
@@ -103,6 +133,25 @@ const ProjectHistory = () => {
                                     <p className="font-medium mt-1">
                                         <span className="font-bold text-purple-700">{log.user_email}</span> {renderLogDetails(log)}
                                     </p>
+                                    {log.action === 'project_reward_snapshot' && (
+                                        <div className="mt-3 rounded-lg border bg-slate-50 p-3">
+                                            {getRewardChangeRows(log.details).length > 0 ? (
+                                                <div className="space-y-2">
+                                                    {getRewardChangeRows(log.details).map((row) => (
+                                                        <div key={row.id} className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between">
+                                                            <span className="font-medium text-slate-800">{row.name}</span>
+                                                            <span className="font-mono text-slate-700">
+                                                                {formatCurrency(row.before)} → {formatCurrency(row.after)}
+                                                                {row.assignedCosts > 0 && <span className="ml-2 text-xs text-muted-foreground">(náklady {formatCurrency(row.assignedCosts)})</span>}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-muted-foreground">Odměny členů zůstaly beze změny.</p>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             ))
                         ) : (

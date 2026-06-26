@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -9,12 +9,16 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/components/ui/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { uuidv4 } from '@/lib/uuid';
+import SubjectDialog from '@/components/SubjectDialog';
+import { Plus } from 'lucide-react';
 
 
 const AssignSubcontractorDialog = ({ isOpen, onClose, onSave, assignedSubcontractor, projectSubcontractors, projectId }) => {
   const { toast } = useToast();
   const [allSubcontractors, setAllSubcontractors] = useState([]);
   const [availableSubcontractors, setAvailableSubcontractors] = useState([]);
+  const [subcontractorTypeId, setSubcontractorTypeId] = useState('');
+  const [isSubjectDialogOpen, setIsSubjectDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     id: null,
     subject_id: '',
@@ -24,6 +28,10 @@ const AssignSubcontractorDialog = ({ isOpen, onClose, onSave, assignedSubcontrac
     createOrder: false,
     orderValidity: 7,
   });
+  const defaultSubcontractorSubject = useMemo(() => ({
+    type_id: subcontractorTypeId,
+    subject_kind: 'company',
+  }), [subcontractorTypeId]);
 
   const fetchSubcontractorSubjects = useCallback(async () => {
     const { data: subType, error: typeError } = await supabase
@@ -36,6 +44,7 @@ const AssignSubcontractorDialog = ({ isOpen, onClose, onSave, assignedSubcontrac
       toast({ title: "Chyba: Typ 'Subdodavatel' nenalezen.", variant: "destructive" });
       return;
     }
+    setSubcontractorTypeId(subType.id);
 
     const { data, error } = await supabase
       .from('subjects')
@@ -80,16 +89,15 @@ const AssignSubcontractorDialog = ({ isOpen, onClose, onSave, assignedSubcontrac
   }, [isOpen, assignedSubcontractor, fetchSubcontractorSubjects]);
 
   useEffect(() => {
-    if (isOpen && !assignedSubcontractor && allSubcontractors.length > 0 && projectSubcontractors) {
-      const assignedIds = new Set((projectSubcontractors || []).map(ps => ps.subject_id));
+    if (isOpen && allSubcontractors.length > 0 && projectSubcontractors) {
+      const currentSubjectId = assignedSubcontractor?.subject_id || null;
+      const assignedIds = new Set(
+        (projectSubcontractors || [])
+          .filter(ps => ps.subject_id && ps.subject_id !== currentSubjectId)
+          .map(ps => ps.subject_id)
+      );
       const filtered = allSubcontractors.filter(sub => !assignedIds.has(sub.id));
       setAvailableSubcontractors(filtered);
-    } else if (isOpen && assignedSubcontractor) {
-      // When editing, show only the currently assigned subject in the dropdown
-      const currentSubject = allSubcontractors.find(sub => sub.id === assignedSubcontractor.subject_id);
-      if (currentSubject) {
-        setAvailableSubcontractors([currentSubject]);
-      }
     } else {
        setAvailableSubcontractors(allSubcontractors);
     }
@@ -106,6 +114,29 @@ const AssignSubcontractorDialog = ({ isOpen, onClose, onSave, assignedSubcontrac
 
   const handleCheckboxChange = (checked) => {
     setFormData(prev => ({ ...prev, createOrder: checked }));
+  };
+
+  const handleQuickSubjectSave = async (subject) => {
+    const payload = {
+      ...subject,
+      type_id: subcontractorTypeId || subject.type_id,
+    };
+    const { data, error } = await supabase
+      .from('subjects')
+      .insert([payload])
+      .select('id, name')
+      .single();
+
+    if (error) {
+      toast({ title: 'Chyba při vytvoření subdodavatele', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    setAllSubcontractors(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name, 'cs')));
+    setAvailableSubcontractors(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name, 'cs')));
+    setFormData(prev => ({ ...prev, subject_id: data.id }));
+    setIsSubjectDialogOpen(false);
+    toast({ title: 'Subdodavatel vytvořen' });
   };
 
   const handleSubmit = (e) => {
@@ -142,23 +173,27 @@ const AssignSubcontractorDialog = ({ isOpen, onClose, onSave, assignedSubcontrac
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="subject_id">Subdodavatel *</Label>
-            <Select
-              value={formData.subject_id}
-              onValueChange={(value) => handleSelectChange('subject_id', value)}
-              required
-              disabled={!!assignedSubcontractor}
-            >
-              <SelectTrigger className="w-full bg-white dark:bg-gray-700">
-                <SelectValue placeholder="Vyberte subdodavatele..." />
-              </SelectTrigger>
-              <SelectContent>
-                {availableSubcontractors.map((sub) => (
-                    <SelectItem key={sub.id} value={sub.id}>
-                      {sub.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <Select
+                value={formData.subject_id}
+                onValueChange={(value) => handleSelectChange('subject_id', value)}
+                required
+              >
+                <SelectTrigger className="w-full bg-white dark:bg-gray-700">
+                  <SelectValue placeholder="Vyberte subdodavatele..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSubcontractors.map((sub) => (
+                      <SelectItem key={sub.id} value={sub.id}>
+                        {sub.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Button type="button" variant="outline" size="icon" onClick={() => setIsSubjectDialogOpen(true)} aria-label="Vytvořit nového subdodavatele">
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           <div>
             <Label htmlFor="scope_of_work">Rozsah práce</Label>
@@ -235,6 +270,12 @@ const AssignSubcontractorDialog = ({ isOpen, onClose, onSave, assignedSubcontrac
           </DialogFooter>
         </form>
       </DialogContent>
+      <SubjectDialog
+        isOpen={isSubjectDialogOpen}
+        onClose={() => setIsSubjectDialogOpen(false)}
+        onSave={handleQuickSubjectSave}
+        defaultSubject={defaultSubcontractorSubject}
+      />
     </Dialog>
   );
 };

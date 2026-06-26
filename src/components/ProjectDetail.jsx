@@ -23,7 +23,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFoo
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { calculateProjectBudget, calculateProjectFinancials, calculateProjectMemberReward, toAmount } from '@/domain/financials';
+import {
+    calculateProjectBudget,
+    calculateProjectFinancials,
+    calculateProjectMemberNetReward,
+    calculateProjectMemberReward,
+    sumProjectCostsForMember,
+    sumUnassignedProjectCosts,
+    toAmount
+} from '@/domain/financials';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
@@ -231,7 +239,7 @@ const ProjectDetail = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { toast } = useToast();
-    const { hasPermission, isPrivateMode, memberId } = useAuth();
+    const { hasPermission, isPrivateMode, memberId, user } = useAuth();
 
     const [project, setProject] = useState(null);
     const [members, setMembers] = useState([]);
@@ -320,7 +328,9 @@ const ProjectDetail = () => {
 
             const payoutItemsPromise = canViewFinance ? supabase.from('payout_items').select('id, amount, project_id, payouts(status, member:members!payouts_member_id_fkey(name))').eq('project_id', projectId) : Promise.resolve({ data: [], error: null });
             const financialSummaryPromise = canViewFinance ? supabase.rpc('project_financial_summary', { p_project_id: projectId }) : Promise.resolve({ data: null, error: null });
-            const costsPromise = canViewFinance ? supabase.from('project_costs').select('*').eq('project_id', projectId) : Promise.resolve({ data: [], error: null });
+            const costsPromise = canViewFinance
+                ? supabase.from('project_costs').select('*, member:members!project_costs_member_id_fkey(id, name, email)').eq('project_id', projectId)
+                : Promise.resolve({ data: [], error: null });
             const overheadCostsPromise = canViewFinance
                 ? supabase.from('project_overhead_costs').select('*, overhead_allocation_items!inner(overhead_costs(name, category))').eq('project_id', projectId)
                 : Promise.resolve({ data: [], error: null });
@@ -359,8 +369,87 @@ const ProjectDetail = () => {
 
     useEffect(() => { refreshData(); }, [refreshData]);
 
+    const buildRewardSnapshot = useCallback((sourceMembers = members, sourceCosts = costs, sourceSummary = projectFinancialSummary) => {
+        if (!canViewFinance || !project) return [];
+        const fallbackFinancials = calculateProjectFinancials({
+            project,
+            members: sourceMembers,
+            subcontractors,
+            costs: sourceCosts,
+            overheadCosts,
+            paidOutAmount,
+        });
+        const rewardBaseBudget = sourceSummary
+            ? toAmount(sourceSummary.team_budget_after_paid_payouts ?? sourceSummary.remaining_after_costs ?? sourceSummary.team_budget)
+            : toAmount(fallbackFinancials.remainingAfterCosts) - toAmount(paidOutAmount);
+
+        return (sourceMembers || []).map((assignment) => {
+            const grossReward = calculateProjectMemberReward(assignment, rewardBaseBudget);
+            const assignedCosts = sumProjectCostsForMember(sourceCosts, assignment.member_id);
+            return {
+                member_id: assignment.member_id,
+                member_name: assignment.member?.name || assignment.member?.email || 'Neznámý člen',
+                reward_type: assignment.reward_type,
+                reward_percentage: toAmount(assignment.reward_percentage),
+                reward_fixed_amount: toAmount(assignment.reward_amount),
+                gross_reward: grossReward,
+                assigned_costs: assignedCosts,
+                total_reward: Math.max(0, grossReward - assignedCosts),
+            };
+        });
+    }, [canViewFinance, project, members, costs, projectFinancialSummary, subcontractors, overheadCosts, paidOutAmount]);
+
+    const fetchBackendRewardSnapshot = useCallback(async () => {
+        if (!canViewFinance) return [];
+        const { data, error } = await supabase.rpc('project_financial_summary', { p_project_id: projectId });
+        if (error) throw error;
+        const rows = Array.isArray(data?.member_rewards) ? data.member_rewards : [];
+        return rows.map((row) => ({
+                member_id: row.member_id,
+                member_name: row.member_name || row.member_id,
+                reward_type: row.reward_type,
+                reward_percentage: toAmount(row.reward_percentage),
+                reward_fixed_amount: toAmount(row.reward_amount),
+                gross_reward: toAmount(row.gross_reward),
+                assigned_costs: toAmount(row.assigned_costs),
+                total_reward: toAmount(row.total_reward),
+            }));
+    }, [canViewFinance, projectId]);
+
+    const logRewardSnapshot = useCallback(async ({ action, table, itemId, before }) => {
+        if (!canViewFinance || !project) return;
+        try {
+            let after = [];
+            try {
+                after = await fetchBackendRewardSnapshot();
+            } catch (error) {
+                console.warn('Backend reward snapshot failed, using current frontend snapshot:', error.message);
+                after = buildRewardSnapshot();
+            }
+
+            await supabase.from('audit_logs').insert({
+                user_id: user?.id || null,
+                user_email: user?.email || null,
+                action: 'project_reward_snapshot',
+                details: {
+                    project_id: projectId,
+                    project_name: project.name,
+                    source_action: action,
+                    source_table: table,
+                    source_id: itemId || null,
+                    before,
+                    after,
+                },
+            });
+        } catch (error) {
+            console.warn('Failed to write project reward history:', error.message);
+        }
+    }, [buildRewardSnapshot, canViewFinance, fetchBackendRewardSnapshot, project, projectId, user]);
+
     const handleSaveGeneric = async (table, data, id, dialogSetter, editingState) => {
         const payload = { ...data, project_id: projectId };
+        const shouldLogRewards = ['project_members', 'project_subcontractors', 'project_costs'].includes(table);
+        const rewardSnapshotBefore = shouldLogRewards ? buildRewardSnapshot() : null;
         let result;
         if (table === 'projects') {
             result = await supabase.rpc('save_project_safe', {
@@ -386,12 +475,23 @@ const ProjectDetail = () => {
         }
         const { error } = result;
         if (error) toast({ title: `Chyba při ukládání`, variant: 'destructive', description: error.message });
-        else { toast({ title: '✅ Uloženo' }); if (dialogSetter) dialogSetter(false); if (editingState) editingState(null); refreshData(); }
+        else {
+            toast({ title: '✅ Uloženo' });
+            if (shouldLogRewards) {
+                const savedId = result?.data?.id || id || data?.id || null;
+                await logRewardSnapshot({ action: id ? 'update' : 'create', table, itemId: savedId, before: rewardSnapshotBefore });
+            }
+            if (dialogSetter) dialogSetter(false);
+            if (editingState) editingState(null);
+            refreshData();
+        }
     };
 
     const handleDeleteGeneric = async () => {
         if (!itemToDelete) return;
         const { table, id } = itemToDelete;
+        const shouldLogRewards = ['project_members', 'project_subcontractors', 'project_costs'].includes(table);
+        const rewardSnapshotBefore = shouldLogRewards ? buildRewardSnapshot() : null;
         let result;
         if (table === 'project_members') {
             result = await supabase.rpc('delete_project_member_safe', {
@@ -408,7 +508,13 @@ const ProjectDetail = () => {
         }
         const { error } = result;
         if (error) toast({ title: `Chyba při mazání`, variant: 'destructive', description: error.message });
-        else { toast({ title: '🗑️ Smazáno' }); refreshData(); }
+        else {
+            toast({ title: '🗑️ Smazáno' });
+            if (shouldLogRewards) {
+                await logRewardSnapshot({ action: 'delete', table, itemId: id, before: rewardSnapshotBefore });
+            }
+            refreshData();
+        }
         setItemToDelete(null);
     };
 
@@ -417,8 +523,8 @@ const ProjectDetail = () => {
     }, []);
 
     const getMemberReward = useCallback((member, teamBudget) => {
-        return calculateProjectMemberReward(member, teamBudget);
-    }, []);
+        return calculateProjectMemberNetReward(member, teamBudget, costs);
+    }, [costs]);
 
     const myRewardDisplay = useMemo(() => {
         if (!memberId || !project) return 'N/A';
@@ -428,23 +534,30 @@ const ProjectDetail = () => {
         if (assignment.is_hourly && !hasReward) return 'Hodinove';
         let teamBudget = 0;
         if (assignment.reward_type === 'percentage') {
-            teamBudget = calculateProjectBudget(project, subcontractors).teamBudget;
+            teamBudget = projectFinancialSummary
+                ? toAmount(projectFinancialSummary.team_budget_after_paid_payouts ?? projectFinancialSummary.remaining_after_costs)
+                : calculateProjectBudget(project, subcontractors).teamBudget;
             if (teamBudget <= 0) { const pct = toAmount(assignment.reward_percentage); return pct > 0 ? `${pct.toFixed(2)} %` : 'N/A'; }
         }
         const amount = getMemberReward(assignment, teamBudget);
         if (amount <= 0) return 'N/A';
         return `${amount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kc`;
-    }, [memberId, members, project, subcontractors, getMemberReward]);
+    }, [memberId, members, project, subcontractors, projectFinancialSummary, getMemberReward]);
 
     const formatReward = (member, teamBudget) => {
         if (!canViewFinance) return 'Skryto';
         let parts = [];
         if (member.is_hourly) parts.push("Hodinová sazba");
         if (member.reward_type) {
-            const amount = getMemberReward(member, teamBudget);
+            const grossAmount = calculateProjectMemberReward(member, teamBudget);
+            const assignedCosts = sumProjectCostsForMember(costs, member.member_id);
+            const amount = Math.max(0, grossAmount - assignedCosts);
             const amountStr = amount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' Kč';
-            if (member.reward_type === 'percentage') parts.push(`${amountStr} (${(parseFloat(member.reward_percentage) || 0).toFixed(2)}%)`);
-            if (member.reward_type === 'fixed') parts.push(`${amountStr} (fixní)`);
+            const deduction = assignedCosts > 0
+                ? `, hrubá ${grossAmount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč - náklady ${assignedCosts.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč`
+                : '';
+            if (member.reward_type === 'percentage') parts.push(`${amountStr} (${(parseFloat(member.reward_percentage) || 0).toFixed(2)}%${deduction})`);
+            if (member.reward_type === 'fixed') parts.push(`${amountStr} (fixní${deduction})`);
         }
         if (parts.length === 0 && member.is_hourly) return "Hodinová sazba";
         if (parts.length === 0) return 'Není specifikováno';
@@ -468,9 +581,12 @@ const ProjectDetail = () => {
 
         const summary = projectFinancialSummary;
         const teamBudget = toAmount(summary.team_budget);
-        const teamRewards = members.reduce((sum, member) => sum + calculateProjectMemberReward(member, teamBudget), 0);
+        const rewardBaseBudget = toAmount(summary.team_budget_after_paid_payouts ?? summary.remaining_after_costs ?? summary.team_budget);
+        const teamRewards = members.reduce((sum, member) => sum + calculateProjectMemberNetReward(member, rewardBaseBudget, costs), 0);
         const totalBudget = toAmount(summary.gross_project_budget);
         const totalCosts = toAmount(summary.direct_costs);
+        const unassignedCosts = toAmount(summary.unassigned_direct_costs ?? sumUnassignedProjectCosts(costs));
+        const assignedMemberCosts = toAmount(summary.assigned_member_costs ?? (totalCosts - unassignedCosts));
         const overheadBudget = toAmount(summary.planned_overhead_amount);
         const totalAllocatedOverhead = toAmount(summary.allocated_overhead_costs);
         const paidPayoutCosts = toAmount(summary.paid_payout_costs);
@@ -492,6 +608,8 @@ const ProjectDetail = () => {
             teamRewards,
             remainingTeamBudget: teamBudget - teamRewards,
             totalCosts,
+            unassignedCosts,
+            assignedMemberCosts,
             plannedMargin: toAmount(summary.price) - totalBudget,
             projectProfit: toAmount(summary.price) - totalBudget,
             totalAllocatedOverhead,
@@ -509,6 +627,8 @@ const ProjectDetail = () => {
             availableForPayout: toAmount(summary.available_for_payout),
         };
     }, [project, members, subcontractors, costs, overheadCosts, canViewFinance, paidOutAmount, projectFinancialSummary]);
+
+    const rewardCalculationBudget = financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts ?? financials.teamBudget ?? 0;
 
     const financeDerivedRows = useMemo(() => {
         if (!canViewFinance) return [];
@@ -537,7 +657,7 @@ const ProjectDetail = () => {
     }, []);
 
     const requestDeleteMember = useCallback((assignment) => {
-        const rewardAmount = canViewFinance ? calculateProjectMemberReward(assignment, financials.teamBudget) : null;
+        const rewardAmount = canViewFinance ? calculateProjectMemberReward(assignment, rewardCalculationBudget) : null;
 
         setItemToDelete({
             table: 'project_members',
@@ -553,7 +673,7 @@ const ProjectDetail = () => {
                 'Pokud má člen navázané úkoly nebo docházku, před smazáním zkontrolujte jejich návaznosti.',
             ],
         });
-    }, [canViewFinance, financials.teamBudget]);
+    }, [canViewFinance, rewardCalculationBudget]);
 
     const requestDeleteSubcontractor = useCallback((subcontractor) => {
         setItemToDelete({
@@ -688,7 +808,7 @@ const ProjectDetail = () => {
                                         <TableRow key={m.id}>
                                             <TableCell className="font-medium">{m.member?.name}</TableCell>
                                             <TableCell>{m.member?.email}</TableCell>
-                                            {canViewFinance && <TableCell>{formatReward(m, financials.teamBudget)}</TableCell>}
+                                            {canViewFinance && <TableCell>{formatReward(m, rewardCalculationBudget)}</TableCell>}
                                             <TableCell className="text-right">
                                                 {canEdit && (
                                                     <>
@@ -753,7 +873,7 @@ const ProjectDetail = () => {
                             <FinancialCard title="Budget na subdodavatele" value={financials.totalSubcontractorPrice} icon={Briefcase} colorClass="bg-yellow-500" />
                             <FinancialCard title="Rozpočet na režie" value={financials.overheadBudget} subValue={`${project.overhead_percentage}% z budgetu`} icon={ClipboardList} colorClass="bg-purple-500" />
                             <FinancialCard title="Plánovaná marže" value={financials.plannedMargin ?? financials.projectProfit} icon={DollarSign} colorClass="bg-green-500" description="Cena projektu minus hrubý projektový budget." />
-                            <FinancialCard title="Zůstatek po nákladech" value={financials.remainingAfterCosts ?? 0} icon={Wallet} colorClass="bg-emerald-500" description="Týmový budget po přímých nákladech a alokovaných režiích." />
+                            <FinancialCard title="Zůstatek po nákladech" value={financials.remainingAfterCosts ?? 0} icon={Wallet} colorClass="bg-emerald-500" description="Týmový budget po nepřiřazených nákladech a alokovaných režiích." />
                             <FinancialCard title="Rezervované výplaty" value={financials.reservedPayouts ?? 0} icon={Clock} colorClass="bg-amber-500" description="Blokují další žádost, ale nejsou náklad." />
                             <FinancialCard title="Vyplacené výplaty" value={financials.paidPayoutCosts ?? 0} icon={DollarSign} colorClass="bg-rose-500" description="Do nákladů vstupují až ve stavu paid." />
                             <FinancialCard title="Náklady po vyplacení" value={financials.costsAfterPaidPayouts ?? 0} icon={Wallet} colorClass="bg-slate-600" description="Provozní náklady plus paid výplaty." />
@@ -761,19 +881,34 @@ const ProjectDetail = () => {
                         </div>
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 h-4 mr-2" />Přidat náklad</Button>}>
                             <Table>
-                                <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Částka</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>
+                                <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Odečíst z</TableHead><TableHead>Částka</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>
                                 <TableBody>
                                     {(costs.length === 0 && financeDerivedRows.length === 0) ? (
-                                        <TableRow><TableCell colSpan={3} className="text-center">Žádné náklady nebyly zadány.</TableCell></TableRow>
+                                        <TableRow><TableCell colSpan={4} className="text-center">Žádné náklady nebyly zadány.</TableCell></TableRow>
                                     ) : (
                                         <>
                                             {costs.map(cost => (
-                                                <TableRow key={cost.id}><TableCell>{cost.description}</TableCell><TableCell>{(cost.amount || 0).toLocaleString('cs-CZ')} Kč</TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => { setEditingCost(cost); setIsCostDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => requestDeleteCost(cost)}><Trash2 className="h-4 w-4 text-red-500" /></Button></TableCell></TableRow>
+                                                <TableRow key={cost.id}>
+                                                    <TableCell>{cost.description}</TableCell>
+                                                    <TableCell>
+                                                        {cost.member_id ? (
+                                                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                                                                {cost.member?.name || 'Člen týmu'}
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200">
+                                                                Společný budget
+                                                            </Badge>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell>{(cost.amount || 0).toLocaleString('cs-CZ')} Kč</TableCell>
+                                                    <TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => { setEditingCost(cost); setIsCostDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => requestDeleteCost(cost)}><Trash2 className="h-4 w-4 text-red-500" /></Button></TableCell>
+                                                </TableRow>
                                             ))}
                                             {financeDerivedRows.map((row) => (
                                                 <React.Fragment key={row.key}>
-                                                    <TableRow className="bg-slate-50/70"><TableCell><div className="font-semibold">{row.label}</div><p className="text-xs text-muted-foreground">{row.note}</p></TableCell><TableCell>{row.amount.toLocaleString('cs-CZ')} Kč</TableCell><TableCell className="text-right text-xs text-muted-foreground italic">automaticky</TableCell></TableRow>
-                                                    {row.details?.length ? (<TableRow><TableCell colSpan={3} className="bg-slate-50/40"><div className="space-y-3">{row.details.map((detail) => (<div key={`${row.key}-${detail.key ?? detail.label}`} className="flex flex-col gap-1 rounded-md border bg-white/80 px-3 py-2 text-sm shadow-sm"><div className="flex items-start justify-between gap-4"><div><p className="font-medium text-slate-900">{detail.label}</p>{detail.description && (<p className="text-xs text-muted-foreground">{detail.description}</p>)}</div><span className="font-semibold text-slate-900 whitespace-nowrap">{detail.amount.toLocaleString('cs-CZ')} Kč</span></div></div>))}</div></TableCell></TableRow>) : null}
+                                                    <TableRow className="bg-slate-50/70"><TableCell><div className="font-semibold">{row.label}</div><p className="text-xs text-muted-foreground">{row.note}</p></TableCell><TableCell>Společný budget</TableCell><TableCell>{row.amount.toLocaleString('cs-CZ')} Kč</TableCell><TableCell className="text-right text-xs text-muted-foreground italic">automaticky</TableCell></TableRow>
+                                                    {row.details?.length ? (<TableRow><TableCell colSpan={4} className="bg-slate-50/40"><div className="space-y-3">{row.details.map((detail) => (<div key={`${row.key}-${detail.key ?? detail.label}`} className="flex flex-col gap-1 rounded-md border bg-white/80 px-3 py-2 text-sm shadow-sm"><div className="flex items-start justify-between gap-4"><div><p className="font-medium text-slate-900">{detail.label}</p>{detail.description && (<p className="text-xs text-muted-foreground">{detail.description}</p>)}</div><span className="font-semibold text-slate-900 whitespace-nowrap">{detail.amount.toLocaleString('cs-CZ')} Kč</span></div></div>))}</div></TableCell></TableRow>) : null}
                                                 </React.Fragment>
                                             ))}
                                         </>
@@ -851,9 +986,9 @@ const ProjectDetail = () => {
                 </AlertDialogContent>
             </AlertDialog>
 
-            {isMemberDialogOpen && <AssignMemberDialog isOpen={isMemberDialogOpen} onClose={() => setIsMemberDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_members', data, editingMember?.id, () => setIsMemberDialogOpen(false), setEditingMember)} member={editingMember} team={members} project={project} projectSubcontractors={subcontractors} teamBudgetOverride={canViewFinance ? financials.teamBudget : null} />}
+            {isMemberDialogOpen && <AssignMemberDialog isOpen={isMemberDialogOpen} onClose={() => setIsMemberDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_members', data, editingMember?.id, () => setIsMemberDialogOpen(false), setEditingMember)} member={editingMember} team={members} project={project} projectSubcontractors={subcontractors} teamBudgetOverride={canViewFinance ? rewardCalculationBudget : null} />}
             {isSubcontractorDialogOpen && <AssignSubcontractorDialog isOpen={isSubcontractorDialogOpen} onClose={() => setIsSubcontractorDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_subcontractors', data, editingSubcontractor?.id, () => setIsSubcontractorDialogOpen(false), setEditingSubcontractor)} assignedSubcontractor={editingSubcontractor} projectSubcontractors={subcontractors} />}
-            {isCostDialogOpen && <ProjectCostDialog isOpen={isCostDialogOpen} onClose={() => setIsCostDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_costs', data, editingCost?.id, () => setIsCostDialogOpen(false), setEditingCost)} costData={editingCost} projectId={projectId} />}
+            {isCostDialogOpen && <ProjectCostDialog isOpen={isCostDialogOpen} onClose={() => setIsCostDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_costs', data, editingCost?.id, () => setIsCostDialogOpen(false), setEditingCost)} costData={editingCost} projectId={projectId} members={members} />}
             {isLinkDialogOpen && <ProjectLinkDialog isOpen={isLinkDialogOpen} onClose={() => setIsLinkDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_links', data, editingLink?.id, () => setIsLinkDialogOpen(false), setEditingLink)} linkData={editingLink} />}
             {isTemplateModalOpen && <SaveTemplateModal isOpen={isTemplateModalOpen} onClose={() => setIsTemplateModalOpen(false)} projectData={{ ...project, tasks }} />}
         </div>

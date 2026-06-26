@@ -34,13 +34,15 @@ const emptySubject = {
   region: '',
 };
 
+const defaultSubjectPrefill = {};
+
 const subjectKindLabels = {
   person: 'Fyzicka osoba',
   entrepreneur: 'Podnikatel / OSVC',
   company: 'Firma',
 };
 
-const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
+const SubjectDialog = ({ isOpen, onClose, onSave, subject, defaultSubject = defaultSubjectPrefill }) => {
   const { toast } = useToast();
   const [formData, setFormData] = useState(emptySubject);
   const [subjectTypes, setSubjectTypes] = useState([]);
@@ -70,9 +72,9 @@ const SubjectDialog = ({ isOpen, onClose, onSave, subject }) => {
         type_id: subject.type_id || fallbackTypeId,
       });
     } else {
-      setFormData({ ...emptySubject, type_id: fallbackTypeId });
+      setFormData({ ...emptySubject, ...defaultSubject, type_id: defaultSubject.type_id || fallbackTypeId });
     }
-  }, [subject, isOpen, subjectTypes]);
+  }, [subject, defaultSubject, isOpen, subjectTypes]);
 
   const handleFetchFromAres = async () => {
     if (!formData.ico) {
