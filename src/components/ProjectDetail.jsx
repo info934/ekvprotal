@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { format, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle, Clock } from 'lucide-react';
+import { ChevronLeft, Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle, Clock, History } from 'lucide-react';
 import AssignMemberDialog from '@/components/AssignMemberDialog';
 import AssignSubcontractorDialog from '@/components/AssignSubcontractorDialog';
 import ProjectCostDialog from '@/components/ProjectCostDialog';
@@ -239,7 +239,7 @@ const ProjectDetail = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { toast } = useToast();
-    const { hasPermission, isPrivateMode, memberId, user } = useAuth();
+    const { hasPermission, isPrivateMode, memberId, user, isAdmin } = useAuth();
 
     const [project, setProject] = useState(null);
     const [members, setMembers] = useState([]);
@@ -268,6 +268,7 @@ const ProjectDetail = () => {
     const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
 
     const canEdit = useMemo(() => hasPermission('projects', 'can_edit'), [hasPermission]);
+    const canViewHistory = isAdmin;
     const canViewFinance = useMemo(() => (
         (hasPermission('finance', 'can_read') || hasPermission('projects', 'can_edit')) && !isPrivateMode
     ), [hasPermission, isPrivateMode]);
@@ -728,6 +729,11 @@ const ProjectDetail = () => {
                         </div>
                         <div className="flex items-center gap-3">
                             {renderStatusMenu()}
+                            {canViewHistory && (
+                                <Button variant="outline" onClick={() => navigate(`/projects/${projectId}/history`)}>
+                                    <History className="h-4 w-4 mr-2" />Historie
+                                </Button>
+                            )}
                             {canEdit && (
                                 <>
                                     <Button variant="outline" onClick={() => setIsTemplateModalOpen(true)}>

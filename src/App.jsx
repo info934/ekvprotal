@@ -221,7 +221,7 @@ function AppContent() {
                   <Route path="/projects/new" element={<PrivateRoute module="projects" level="can_edit"><ProjectForm /></PrivateRoute>} />
                   <Route path="/projects/:projectId/edit" element={<PrivateRoute module="projects" level="can_edit"><ProjectForm /></PrivateRoute>} />
                   <Route path="/projects/:projectId" element={<PrivateRoute module="projects"><ProjectDetail /></PrivateRoute>} />
-                  <Route path="/projects/:projectId/history" element={<PrivateRoute module="projects"><ProjectHistory /></PrivateRoute>} />
+                  <Route path="/projects/:projectId/history" element={<PrivateRoute module="projects" level="can_admin"><ProjectHistory /></PrivateRoute>} />
                   
                   <Route path="/templates" element={<PrivateRoute module="projects"><ProjectTemplatesPage /></PrivateRoute>} />
 
