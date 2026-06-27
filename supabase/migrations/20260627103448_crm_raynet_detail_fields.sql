@@ -1,4 +1,4 @@
-﻿alter table public.crm_opportunities
+alter table public.crm_opportunities
   add column if not exists category text,
   add column if not exists business_type text,
   add column if not exists currency text not null default 'CZK',
