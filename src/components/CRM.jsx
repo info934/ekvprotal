@@ -452,7 +452,7 @@ const DealWorkspace = ({
                 {stage.value === 'won' && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuLabel>Predat do vyroby</DropdownMenuLabel>
+                    <DropdownMenuLabel>Předat do výroby</DropdownMenuLabel>
                     <DropdownMenuItem disabled={!canEdit} onSelect={() => onCreateProject?.()}>
                       Vytvořit projekt z OP
                     </DropdownMenuItem>
@@ -1176,8 +1176,11 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
     { id: 'client', label: 'Klient' },
     { id: 'type', label: 'Typ obchodu' },
     { id: 'stage', label: 'Stav' },
+    { id: 'owner', label: 'Vlastník' },
     { id: 'activity', label: 'Naplánovaná aktivita' },
     { id: 'value', label: 'Konečná cena' },
+    { id: 'margin', label: 'Marže' },
+    { id: 'closeDate', label: 'Odhad uzavření' },
     { id: 'priority', label: 'Priorita' },
     { id: 'actions', label: 'Akce', hideable: false },
   ], []);
@@ -1189,6 +1192,7 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
     resetColumns,
   } = useManagedColumns('ekv-table-crm-opportunities', columns);
   const visibleColumns = managedColumns.filter((column) => visibility[column.id] !== false);
+  const totalValue = opportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
   const tableHeadClasses = {
     select: 'w-10',
     code: 'min-w-[120px]',
@@ -1196,8 +1200,11 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
     client: 'min-w-[220px]',
     type: 'min-w-[150px]',
     stage: 'min-w-[180px]',
+    owner: 'min-w-[160px]',
     activity: 'min-w-[220px]',
     value: 'min-w-[150px] text-right',
+    margin: 'min-w-[130px] text-right',
+    closeDate: 'min-w-[140px]',
     priority: 'min-w-[130px]',
     actions: 'w-12 text-right',
   };
@@ -1206,19 +1213,23 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
     code: 'font-semibold text-slate-900',
     client: 'font-medium',
     type: 'text-muted-foreground',
+    owner: 'text-muted-foreground',
     activity: 'text-muted-foreground',
     value: 'text-right font-semibold',
+    margin: 'text-right font-semibold text-emerald-700',
+    closeDate: 'text-muted-foreground',
     actions: 'text-right',
   };
   const renderOpportunityCell = (columnId, opportunity, index) => {
     const stage = getStage(opportunity.stage, stages);
     const priority = getPriority(opportunity.priority, priorities);
+    const estimatedMargin = Number(opportunity.value || 0) * 0.28;
 
     switch (columnId) {
       case 'select':
         return <span className="block h-4 w-4 rounded border border-slate-300 bg-white" />;
       case 'code':
-        return `OP-${String(index + 1).padStart(3, '0')}`;
+        return opportunity.number || ('OP-' + String(index + 1).padStart(3, '0'));
       case 'title':
         return (
           <>
@@ -1237,10 +1248,16 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
             <Badge className={cn('border', stage.color)}>{stage.label}</Badge>
           </div>
         );
+      case 'owner':
+        return opportunity.owner?.name || '-';
       case 'activity':
         return opportunity.next_step || 'bez aktivity';
       case 'value':
         return formatCurrency(opportunity.value);
+      case 'margin':
+        return formatCurrency(estimatedMargin) + ' / 28 %';
+      case 'closeDate':
+        return formatDate(opportunity.expected_close_date);
       case 'priority':
         return <Badge variant={priority?.tone || 'secondary'}>{priority?.label || '-'}</Badge>;
       case 'actions':
@@ -1255,38 +1272,38 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
   };
 
   return (
-  <ManagedTableSection
-    title="Obchodní případy"
-    count={opportunities.length}
-    toolbar={(
-      <ManagedTableToolbar
-        className="text-slate-700"
-        columns={managedColumns}
-        visibility={visibility}
-        onMoveColumn={moveColumn}
-        onToggleColumn={toggleColumn}
-        onReset={resetColumns}
-      />
-    )}
-  >
-    <Table>
-      <TableHeader>
-        <TableRow className="bg-slate-50">
-          {visibleColumns.map((column) => (
-            <TableHead key={column.id} className={tableHeadClasses[column.id]}>
-              {column.id === 'select' ? <CheckSquare2 className="h-4 w-4 text-muted-foreground" /> : column.label}
-            </TableHead>
-          ))}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {opportunities.length === 0 ? (
-          <TableRow>
-            <TableCell colSpan={visibleColumns.length} className="h-28 text-center text-muted-foreground">
-              Žádný obchodní případ neodpovídá filtru.
-            </TableCell>
+    <ManagedTableSection
+      title="Obchodní případy"
+      count={opportunities.length}
+      toolbar={(
+        <ManagedTableToolbar
+          className="text-slate-700"
+          columns={managedColumns}
+          visibility={visibility}
+          onMoveColumn={moveColumn}
+          onToggleColumn={toggleColumn}
+          onReset={resetColumns}
+        />
+      )}
+    >
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-50">
+            {visibleColumns.map((column) => (
+              <TableHead key={column.id} className={tableHeadClasses[column.id]}>
+                {column.id === 'select' ? <CheckSquare2 className="h-4 w-4 text-muted-foreground" /> : column.label}
+              </TableHead>
+            ))}
           </TableRow>
-        ) : opportunities.map((opportunity, index) => (
+        </TableHeader>
+        <TableBody>
+          {opportunities.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={visibleColumns.length} className="h-28 text-center text-muted-foreground">
+                Žádný obchodní případ neodpovídá filtru.
+              </TableCell>
+            </TableRow>
+          ) : opportunities.map((opportunity, index) => (
             <TableRow
               key={opportunity.id}
               onClick={() => onSelectOpportunity(opportunity.id)}
@@ -1298,10 +1315,14 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
                 </TableCell>
               ))}
             </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  </ManagedTableSection>
+          ))}
+        </TableBody>
+      </Table>
+      <div className="flex min-w-[1180px] flex-col gap-2 border-t bg-slate-50 px-4 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+        <span>Zobrazeno {opportunities.length} obchodních případů</span>
+        <span className="font-semibold text-slate-950">Součet hodnot: {formatCurrency(totalValue)}</span>
+      </div>
+    </ManagedTableSection>
   );
 };
 
@@ -1644,9 +1665,10 @@ const CRM = () => {
 
   const canEditCrm = hasPermission('crm', 'can_edit');
   const canAdminCrm = hasPermission('crm', 'can_admin');
-  const isCreatingOpportunityPage = opportunityId === 'new';
+  const isCreatingOpportunityPage = opportunityId === 'new' || location.pathname === '/crm/new' || location.pathname === '/crm/opportunities/new';
   const isOpportunityListPage = location.pathname === '/crm/opportunities';
   const isCrmDashboardPage = location.pathname === '/crm';
+  const isOpportunityDetailPage = Boolean(opportunityId) && !isCreatingOpportunityPage;
   const displayedOpportunityView = isOpportunityListPage ? 'table' : 'kanban';
 
   useEffect(() => {
@@ -1897,9 +1919,9 @@ const CRM = () => {
   }, [crmStages, filteredOpportunities]);
 
   const selectedOpportunity = useMemo(() => {
-    if (!opportunities.length) return null;
+    if (isCreatingOpportunityPage || !opportunities.length) return null;
     return findCrmRecordByRef(opportunities, opportunityId || selectedOpportunityId);
-  }, [opportunities, opportunityId, selectedOpportunityId]);
+  }, [isCreatingOpportunityPage, opportunities, opportunityId, selectedOpportunityId]);
 
   const selectedOpportunityDocuments = useMemo(() => {
     if (!selectedOpportunity) return [];
@@ -1907,7 +1929,7 @@ const CRM = () => {
   }, [commercialDocuments, selectedOpportunity]);
 
   useEffect(() => {
-    if (opportunityId) {
+    if (opportunityId && !isCreatingOpportunityPage) {
       const opportunity = findCrmRecordByRef(opportunities, opportunityId);
       setSelectedOpportunityId(opportunity?.id || opportunityId);
       return;
@@ -1918,7 +1940,7 @@ const CRM = () => {
     if (selectedOpportunityId && opportunities.length > 0 && !opportunities.some((opportunity) => opportunity.id === selectedOpportunityId)) {
       setSelectedOpportunityId(opportunities[0].id);
     }
-  }, [opportunities, opportunityId, selectedOpportunityId]);
+  }, [isCreatingOpportunityPage, opportunities, opportunityId, selectedOpportunityId]);
 
   const openOpportunityDetail = useCallback((idOrOpportunity) => {
     const opportunity = typeof idOrOpportunity === 'object'
@@ -2243,7 +2265,7 @@ const CRM = () => {
     toast({ title: opportunityForm.id ? 'CRM příležitost aktualizována' : 'CRM příležitost uložena' });
     setOpportunityDialogOpen(false);
     if (isCreatingOpportunityPage && isNewOpportunity) {
-      navigate('/crm');
+      navigate('/crm/opportunities');
       return;
     }
     fetchCrmData();
@@ -2399,7 +2421,7 @@ const CRM = () => {
           actions={
             <div className="flex flex-wrap gap-2">
               {canEditCrm && !isCreatingOpportunityPage && (
-                <Button onClick={() => navigate('/crm/new')} disabled={!crmTablesReady}>
+                <Button onClick={() => navigate('/crm/opportunities/new')} disabled={!crmTablesReady}>
                   <Plus className="mr-2 h-4 w-4" />
                   Nová příležitost
                 </Button>
@@ -2504,11 +2526,11 @@ const CRM = () => {
           </>
         )}
 
-        {isCreatingOpportunityPage ? (
+        {!isCrmDashboardPage && (isCreatingOpportunityPage ? (
           <div className="space-y-5">
             <div className="crm-panel flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
-                <Button variant="ghost" className="mb-2 h-8 px-0 text-muted-foreground" onClick={() => navigate('/crm')}>
+                <Button variant="ghost" className="mb-2 h-8 px-0 text-muted-foreground" onClick={() => navigate('/crm/opportunities')}>
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Zpět na obchodní přehled
                 </Button>
@@ -2518,7 +2540,7 @@ const CRM = () => {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={() => navigate('/crm')}>
+                <Button type="button" variant="outline" onClick={() => navigate('/crm/opportunities')}>
                   Zrušit
                 </Button>
                 <Button type="submit" form="crm-opportunity-page-form" disabled={savingOpportunity || !crmTablesReady}>
@@ -2685,7 +2707,7 @@ const CRM = () => {
                     <Button type="submit" className="w-full" disabled={savingOpportunity || !crmTablesReady}>
                       {savingOpportunity ? 'Ukládám...' : 'Uložit obchodní případ'}
                     </Button>
-                    <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/crm')}>
+                    <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/crm/opportunities')}>
                       Zrušit
                     </Button>
                   </CardContent>
@@ -2693,7 +2715,7 @@ const CRM = () => {
               </div>
             </form>
           </div>
-        ) : opportunityId ? (
+        ) : isOpportunityDetailPage ? (
           <div className="space-y-4">
             <DealWorkspace
               opportunity={selectedOpportunity}
@@ -2814,7 +2836,7 @@ const CRM = () => {
                       Filtrování
                     </Button>
                     {canEditCrm && (
-                      <Button onClick={() => navigate('/crm/new')} disabled={!crmTablesReady} className="h-9 w-9 p-0">
+                      <Button onClick={() => navigate('/crm/opportunities/new')} disabled={!crmTablesReady} className="h-9 w-9 p-0">
                         <Plus className="h-5 w-5" />
                       </Button>
                     )}
@@ -3065,7 +3087,7 @@ const CRM = () => {
             </div>
           </TabsContent>
         </Tabs>
-        )}
+        ))}
 
         <Dialog open={opportunityDialogOpen} onOpenChange={setOpportunityDialogOpen}>
           <DialogContent className="max-w-2xl">

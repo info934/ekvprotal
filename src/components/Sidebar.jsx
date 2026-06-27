@@ -106,6 +106,8 @@ const NAV_GROUPS = [
         workspace: 'crm',
         exact: true,
         children: [
+          { icon: BarChart, label: 'CRM přehled', path: '/crm', module: 'crm', workspace: 'crm' },
+          { icon: BarChart, label: 'Obchodní nástěnka', path: '/crm/board', module: 'crm', workspace: 'crm' },
           { icon: Target, label: 'Obchodní případy', path: '/crm/opportunities', module: 'crm', workspace: 'crm' },
           { icon: FileText, label: 'Nabídky', path: '/crm/offers', module: 'crm', workspace: 'crm' },
           { icon: ClipboardList, label: 'Objednávky', path: '/crm/orders', module: 'crm', workspace: 'crm' },

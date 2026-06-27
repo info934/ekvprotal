@@ -234,7 +234,10 @@ function AppContent() {
                   <Route path="/realizace/:realizaceId/orders/:orderId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
                   <Route path="/documents" element={<PrivateRoute module="documents"><Documents /></PrivateRoute>} />
                   <Route path="/crm" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                  <Route path="/crm/board" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                  <Route path="/crm/new" element={<PrivateRoute module="crm" level="can_edit"><CRM /></PrivateRoute>} />
                   <Route path="/crm/opportunities" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                  <Route path="/crm/opportunities/new" element={<PrivateRoute module="crm" level="can_edit"><CRM /></PrivateRoute>} />
                   <Route path="/crm/opportunities/:opportunityId" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
                   <Route path="/crm/offers" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
                   <Route path="/crm/offers/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
