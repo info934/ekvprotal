@@ -87,7 +87,8 @@ const NAV_GROUPS = [
         path: '/crm',
         module: 'crm',
         children: [
-          { icon: BarChart, label: 'Obchodní nástěnka', path: '/crm', module: 'crm' },
+          { icon: BarChart, label: 'CRM přehled', path: '/crm', module: 'crm' },
+          { icon: BarChart, label: 'Obchodní nástěnka', path: '/crm/board', module: 'crm' },
           { icon: Target, label: 'Obchodní případy', path: '/crm/opportunities', module: 'crm' },
           { icon: FileText, label: 'Nabídky', path: '/crm/offers', module: 'crm' },
           { icon: ClipboardList, label: 'Objednávky', path: '/crm/orders', module: 'crm' },
