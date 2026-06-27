@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -41,6 +42,53 @@ const DEFAULT_PRODUCT_FIELD_DEFINITIONS = [
   { field_key: 'power_wp', label: 'Výkon', field_type: 'number', field_group: 'Technické parametry', unit: 'Wp', ai_hint: 'Jmenovitý výkon panelu nebo zařízení.', is_required: false, is_active: true, sort_order: 30, options_text: '' },
 ];
 
+const DEFAULT_CRM_CUSTOM_SECTIONS = [
+  {
+    business_type: 'fve',
+    title: 'Fakturace',
+    description: 'Fakturacni a platebni udaje obchodniho pripadu.',
+    sort_order: 10,
+    is_active: true,
+    fields: [
+      { field_key: 'invoice_mode', label: 'Rezim fakturace', field_type: 'select', template_key: 'invoice_mode', options: ['zaloha', 'po etapach', 'po predani'], is_required: false, is_active: true, sort_order: 10 },
+    ],
+  },
+  {
+    business_type: 'fve',
+    title: 'Identifikace nemovitosti',
+    description: 'Adresa, parcela a zakladni parametry instalace.',
+    sort_order: 20,
+    is_active: true,
+    fields: [
+      { field_key: 'installation_address', label: 'Adresa instalace', field_type: 'textarea', template_key: 'installation_address', options: [], is_required: false, is_active: true, sort_order: 10 },
+      { field_key: 'parcel_number', label: 'Parcelni cislo', field_type: 'text', template_key: 'parcel_number', options: [], is_required: false, is_active: true, sort_order: 20 },
+    ],
+  },
+  {
+    business_type: 'fve',
+    title: 'Konfigurace FVE',
+    description: 'Technicke parametry elektrarny.',
+    sort_order: 30,
+    is_active: true,
+    fields: [
+      { field_key: 'system_power_kwp', label: 'Vykon FVE kWp', field_type: 'number', template_key: 'system_power_kwp', options: [], is_required: false, is_active: true, sort_order: 10 },
+      { field_key: 'panel_count', label: 'Pocet panelu', field_type: 'number', template_key: 'panel_count', options: [], is_required: false, is_active: true, sort_order: 20 },
+      { field_key: 'inverter_type', label: 'Typ stridace', field_type: 'text', template_key: 'inverter_type', options: [], is_required: false, is_active: true, sort_order: 30 },
+      { field_key: 'battery_capacity_kwh', label: 'Kapacita baterie kWh', field_type: 'number', template_key: 'battery_capacity_kwh', options: [], is_required: false, is_active: true, sort_order: 40 },
+    ],
+  },
+  {
+    business_type: 'pd',
+    title: 'Projektova dokumentace',
+    description: 'Stupen projektu, urady, terminy a odpovednosti.',
+    sort_order: 10,
+    is_active: true,
+    fields: [
+      { field_key: 'project_stage', label: 'Stupen dokumentace', field_type: 'select', template_key: 'project_stage', options: ['studie', 'DSP', 'DPS', 'realizacni dokumentace'], is_required: false, is_active: true, sort_order: 10 },
+    ],
+  },
+];
+
 const normalizeStages = (stages) => (
   (stages?.length ? stages : DEFAULT_STAGE_CONFIG).map((stage, index) => ({
     ...stage,
@@ -56,6 +104,29 @@ const normalizePriorities = (priorities) => (
     ...priority,
     sort_order: Number(priority.sort_order ?? ((index + 1) * 10)),
     is_active: priority.is_active ?? true,
+  }))
+);
+
+
+const normalizeCustomSections = (sections) => (
+  (sections?.length ? sections : DEFAULT_CRM_CUSTOM_SECTIONS).map((section, index) => ({
+    id: section.id || null,
+    business_type: section.business_type || 'general',
+    title: section.title || 'Sekce',
+    description: section.description || '',
+    sort_order: Number(section.sort_order ?? ((index + 1) * 10)),
+    is_active: section.is_active ?? true,
+    fields: (section.fields?.length ? section.fields : []).map((field, fieldIndex) => ({
+      id: field.id || null,
+      field_key: normalizeFieldKey(field.field_key) || `field_${fieldIndex + 1}`,
+      label: field.label || field.field_key || 'Pole',
+      field_type: field.field_type || 'text',
+      template_key: normalizeFieldKey(field.template_key || field.field_key),
+      options_text: field.options_text ?? (Array.isArray(field.options) ? field.options.join(', ') : ''),
+      is_required: Boolean(field.is_required),
+      is_active: field.is_active ?? true,
+      sort_order: Number(field.sort_order ?? ((fieldIndex + 1) * 10)),
+    })),
   }))
 );
 
@@ -90,6 +161,8 @@ const SettingsCRM = () => {
   const [productFields, setProductFields] = useState(() => normalizeProductFields(DEFAULT_PRODUCT_FIELD_DEFINITIONS));
   const [removedProductFields, setRemovedProductFields] = useState([]);
   const [productFieldsReady, setProductFieldsReady] = useState(true);
+  const [customSections, setCustomSections] = useState(() => normalizeCustomSections(DEFAULT_CRM_CUSTOM_SECTIONS));
+  const [customSectionsReady, setCustomSectionsReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeSection, setActiveSection] = useState('documents');
@@ -120,7 +193,7 @@ const SettingsCRM = () => {
     }
 
     setLoading(true);
-    const [stagesRes, prioritiesRes, numberingRes, productFieldsRes] = await Promise.all([
+    const [stagesRes, prioritiesRes, numberingRes, productFieldsRes, customSectionsRes] = await Promise.all([
       supabase
         .from('crm_stage_definitions')
         .select('value, label, color, probability, sort_order, is_active, is_closed')
@@ -135,6 +208,11 @@ const SettingsCRM = () => {
       supabase
         .from('product_field_definitions')
         .select('id, field_key, label, field_type, field_group, unit, options, ai_hint, is_required, is_active, sort_order')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('crm_custom_field_sections')
+        .select('id, business_type, title, description, sort_order, is_active, fields:crm_custom_field_definitions(id, field_key, label, field_type, template_key, options, is_required, is_active, sort_order)')
         .eq('is_active', true)
         .order('sort_order', { ascending: true }),
     ]);
@@ -153,6 +231,8 @@ const SettingsCRM = () => {
       setProductFieldsReady(!productFieldsRes.error);
       setProductFields(normalizeProductFields(productFieldsRes.error ? DEFAULT_PRODUCT_FIELD_DEFINITIONS : productFieldsRes.data));
       setRemovedProductFields([]);
+      setCustomSectionsReady(!customSectionsRes.error);
+      setCustomSections(normalizeCustomSections(customSectionsRes.error ? DEFAULT_CRM_CUSTOM_SECTIONS : customSectionsRes.data));
     }
     setLoading(false);
   }, [canAdmin, toast]);
@@ -231,6 +311,24 @@ const SettingsCRM = () => {
       return current.filter((_, fieldIndex) => fieldIndex !== index);
     });
   };
+
+
+  const updateCustomSection = (sectionIndex, field, value) => {
+    setCustomSections((current) => current.map((section, index) => (index === sectionIndex ? { ...section, [field]: value } : section)));
+  };
+
+  const updateCustomField = (sectionIndex, fieldIndex, field, value) => {
+    setCustomSections((current) => current.map((section, index) => {
+      if (index !== sectionIndex) return section;
+      return { ...section, fields: section.fields.map((definition, definitionIndex) => (definitionIndex === fieldIndex ? { ...definition, [field]: field === 'field_key' || field === 'template_key' ? normalizeFieldKey(value) : value } : definition)) };
+    }));
+  };
+
+  const addCustomSection = () => setCustomSections((current) => ([...current, { id: null, business_type: 'general', title: 'Nova sekce', description: '', sort_order: (current.length + 1) * 10, is_active: true, fields: [] }]));
+
+  const addCustomField = (sectionIndex) => setCustomSections((current) => current.map((section, index) => (index === sectionIndex ? { ...section, fields: [...section.fields, { id: null, field_key: `field_${Date.now()}`, label: 'Nove pole', field_type: 'text', template_key: `field_${Date.now()}`, options_text: '', sort_order: (section.fields.length + 1) * 10, is_active: true }] } : section)));
+
+  const removeCustomField = (sectionIndex, fieldIndex) => setCustomSections((current) => current.map((section, index) => (index === sectionIndex ? { ...section, fields: section.fields.filter((_, currentFieldIndex) => currentFieldIndex !== fieldIndex) } : section)));
 
   const updateNumberingConfig = (type, field, value) => {
     setCrmNumbering((current) => ({
@@ -313,6 +411,26 @@ const SettingsCRM = () => {
       })),
     ].filter((field) => field.field_key);
 
+
+    let customFieldsError = null;
+    if (customSectionsReady) {
+      const sectionRows = customSections.map((section, index) => ({ id: section.id || undefined, business_type: section.business_type || 'general', title: section.title.trim() || 'Sekce', description: section.description?.trim() || null, sort_order: (index + 1) * 10, is_active: true }));
+      const { data: savedSections, error: sectionsError } = await supabase.from('crm_custom_field_sections').upsert(sectionRows, { onConflict: 'business_type,title' }).select('id, business_type, title');
+      customFieldsError = sectionsError;
+      if (!customFieldsError) {
+        const sectionIdByKey = new Map((savedSections || []).map((section) => [`${section.business_type}:${section.title}`, section.id]));
+        const fieldRows = customSections.flatMap((section) => {
+          const sectionId = section.id || sectionIdByKey.get(`${section.business_type || 'general'}:${section.title.trim() || 'Sekce'}`);
+          if (!sectionId) return [];
+          return section.fields.map((field, index) => ({ id: field.id || undefined, section_id: sectionId, field_key: normalizeFieldKey(field.field_key) || `field_${index + 1}`, label: field.label.trim() || field.field_key || 'Pole', field_type: field.field_type || 'text', template_key: normalizeFieldKey(field.template_key || field.field_key) || null, options: field.field_type === 'select' ? String(field.options_text || '').split(',').map((option) => option.trim()).filter(Boolean) : [], is_required: Boolean(field.is_required), is_active: true, sort_order: (index + 1) * 10 }));
+        });
+        if (fieldRows.length > 0) {
+          const { error: fieldsError } = await supabase.from('crm_custom_field_definitions').upsert(fieldRows, { onConflict: 'section_id,field_key' });
+          customFieldsError = fieldsError;
+        }
+      }
+    }
+
     const { error: stagesError } = await supabase
       .from('crm_stage_definitions')
       .upsert(stageRows, { onConflict: 'value' });
@@ -329,7 +447,7 @@ const SettingsCRM = () => {
 
     setSaving(false);
 
-    const error = stagesError || prioritiesError || numberingError || productFieldsError;
+    const error = customFieldsError || stagesError || prioritiesError || numberingError || productFieldsError;
     if (error) {
       toast({
         title: 'CRM nastavení se nepodařilo uložit',
@@ -370,6 +488,7 @@ const SettingsCRM = () => {
             ['documents', FileText, 'Dokumenty'],
             ['pipeline', Target, 'Pipeline'],
             ['products', SlidersHorizontal, 'Produkty'],
+            ['customFields', SlidersHorizontal, 'Volitelna pole OP'],
           ].map(([value, Icon, label]) => (
             <TabsTrigger
               key={value}
@@ -576,6 +695,89 @@ const SettingsCRM = () => {
                     <Button type="button" variant="ghost" size="icon" aria-label={`Odebrat produktové pole ${field.label || field.field_key || index + 1}`} onClick={() => removeProductField(index)} disabled={loading || saving || !canAdmin}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="customFields" className="space-y-6">
+          <Card>
+            <CardHeader className="gap-4 border-b bg-slate-50/70">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <CardTitle>Volitelna pole OP</CardTitle>
+                  <CardDescription>Sekce a pole podle typu obchodniho pripadu. Template klic lze pouzit v sablonach dokumentu.</CardDescription>
+                </div>
+                <Button type="button" variant="outline" onClick={addCustomSection} disabled={loading || saving || !canAdmin || !customSectionsReady}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Pridat sekci
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 p-4">
+              {!customSectionsReady && (
+                <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+                  <SlidersHorizontal className="h-4 w-4" />
+                  <AlertTitle>Volitelna pole zatim nejsou v databazi</AlertTitle>
+                  <AlertDescription>Aplikujte CRM Raynet migraci. Do te doby se zobrazuji vychozi sekce bez online ulozeni.</AlertDescription>
+                </Alert>
+              )}
+              {customSections.map((section, sectionIndex) => (
+                <div key={`${section.title}-${sectionIndex}`} className="rounded-lg border bg-white p-3 shadow-sm">
+                  <div className="grid gap-3 xl:grid-cols-[150px_220px_minmax(0,1fr)_auto]">
+                    <div className="space-y-2">
+                      <Label>Typ OP</Label>
+                      <Select value={section.business_type} onValueChange={(value) => updateCustomSection(sectionIndex, 'business_type', value)} disabled={loading || saving || !canAdmin || !customSectionsReady}>
+                        <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="general">Obecne</SelectItem>
+                          <SelectItem value="fve">FVE</SelectItem>
+                          <SelectItem value="pd">PD</SelectItem>
+                          <SelectItem value="hw">HW</SelectItem>
+                          <SelectItem value="service">Servis</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Nazev sekce</Label>
+                      <Input value={section.title} onChange={(event) => updateCustomSection(sectionIndex, 'title', event.target.value)} disabled={loading || saving || !canAdmin || !customSectionsReady} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Popis</Label>
+                      <Textarea value={section.description || ''} onChange={(event) => updateCustomSection(sectionIndex, 'description', event.target.value)} disabled={loading || saving || !canAdmin || !customSectionsReady} className="min-h-[42px]" />
+                    </div>
+                    <div className="flex items-end">
+                      <Button type="button" variant="outline" size="sm" onClick={() => addCustomField(sectionIndex)} disabled={loading || saving || !canAdmin || !customSectionsReady}>
+                        <Plus className="mr-2 h-4 w-4" />Pole
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {section.fields.map((field, fieldIndex) => (
+                      <div key={`${field.field_key}-${fieldIndex}`} className="grid gap-2 rounded-md border bg-slate-50 p-2 xl:grid-cols-[1fr_1fr_150px_1fr_44px]">
+                        <Input value={field.label} onChange={(event) => updateCustomField(sectionIndex, fieldIndex, 'label', event.target.value)} disabled={loading || saving || !canAdmin || !customSectionsReady} placeholder="Nazev pole" />
+                        <Input value={field.field_key} onChange={(event) => updateCustomField(sectionIndex, fieldIndex, 'field_key', event.target.value)} disabled={loading || saving || !canAdmin || !customSectionsReady} placeholder="field_key" className="font-mono" />
+                        <Select value={field.field_type} onValueChange={(value) => updateCustomField(sectionIndex, fieldIndex, 'field_type', value)} disabled={loading || saving || !canAdmin || !customSectionsReady}>
+                          <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="text">Text</SelectItem>
+                            <SelectItem value="textarea">Dlouhy text</SelectItem>
+                            <SelectItem value="number">Cislo</SelectItem>
+                            <SelectItem value="date">Datum</SelectItem>
+                            <SelectItem value="boolean">Ano / ne</SelectItem>
+                            <SelectItem value="select">Vyber</SelectItem>
+                            <SelectItem value="url">URL</SelectItem>
+                            <SelectItem value="email">Email</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input value={field.template_key || ''} onChange={(event) => updateCustomField(sectionIndex, fieldIndex, 'template_key', event.target.value)} disabled={loading || saving || !canAdmin || !customSectionsReady} placeholder="template_key" className="font-mono" />
+                        <Button type="button" variant="ghost" size="icon" onClick={() => removeCustomField(sectionIndex, fieldIndex)} disabled={loading || saving || !canAdmin || !customSectionsReady}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}

@@ -30,6 +30,8 @@ import {
   Target,
   Trash2,
   Users,
+  MessageSquare,
+  History,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import SubjectSelect from '@/components/SubjectSelect';
@@ -80,6 +82,15 @@ const subjectTypeLabels = {
 };
 
 const CRM_CONFIG_STORAGE_KEY = 'ekv-crm-config';
+
+const DEFAULT_CRM_CUSTOM_FIELD_SECTIONS = [
+  { id: 'default-fve-billing', business_type: 'fve', title: 'Fakturace', description: 'Fakturacni a platebni udaje obchodniho pripadu.', fields: [{ field_key: 'invoice_mode', label: 'Rezim fakturace', field_type: 'select', options: ['zaloha', 'po etapach', 'po predani'] }] },
+  { id: 'default-fve-site', business_type: 'fve', title: 'Identifikace nemovitosti', description: 'Adresa, parcela a zakladni parametry instalace.', fields: [{ field_key: 'installation_address', label: 'Adresa instalace', field_type: 'textarea' }, { field_key: 'parcel_number', label: 'Parcelni cislo', field_type: 'text' }] },
+  { id: 'default-fve-tech', business_type: 'fve', title: 'Konfigurace FVE', description: 'Technicke parametry elektrarny.', fields: [{ field_key: 'system_power_kwp', label: 'Vykon FVE kWp', field_type: 'number' }, { field_key: 'panel_count', label: 'Pocet panelu', field_type: 'number' }, { field_key: 'inverter_type', label: 'Typ stridace', field_type: 'text' }, { field_key: 'battery_capacity_kwh', label: 'Kapacita baterie kWh', field_type: 'number' }] },
+  { id: 'default-fve-subsidy', business_type: 'fve', title: 'Dotace a dokumentace', description: 'Stav dotace a predavaci dokumentace.', fields: [{ field_key: 'subsidy_status', label: 'Stav dotace', field_type: 'select', options: ['neresi se', 'priprava', 'podano', 'schvaleno', 'vyplaceno'] }, { field_key: 'documentation_status', label: 'Stav dokumentace', field_type: 'select', options: ['chybi', 'rozpracovano', 'kompletni'] }] },
+  { id: 'default-pd', business_type: 'pd', title: 'Projektova dokumentace', description: 'Stupen projektu, urady, terminy a odpovednosti.', fields: [{ field_key: 'project_stage', label: 'Stupen dokumentace', field_type: 'select', options: ['studie', 'DSP', 'DPS', 'realizacni dokumentace'] }] },
+  { id: 'default-hw', business_type: 'hw', title: 'Hardware', description: 'Dodavka zarizeni, serializace a servisni informace.', fields: [{ field_key: 'delivery_scope', label: 'Rozsah dodavky', field_type: 'textarea' }] },
+];
 
 const DEFAULT_STAGE_CONFIG = [
   { value: 'lead', label: 'Lead', color: 'bg-slate-100 text-slate-700 border-slate-200', probability: 10, is_closed: false },
@@ -138,6 +149,8 @@ const isMissingCrmTableError = (error) => {
     message.includes('crm_notes') ||
     message.includes('crm_stage_definitions') ||
     message.includes('crm_priority_definitions') ||
+    message.includes('crm_custom_field_sections') ||
+    message.includes('crm_custom_field_definitions') ||
     message.includes('crm_commercial_documents') ||
     message.includes('crm_commercial_document_items');
 };
@@ -250,6 +263,10 @@ const DealWorkspace = ({
   onStageChange,
   onUpdateOpportunity,
   onUpdateOpportunityItems,
+  onAddNote,
+  activities = [],
+  notes = [],
+  customFieldSections = [],
   canEdit,
   creatingDocument,
   generatingDocument,
@@ -258,6 +275,7 @@ const DealWorkspace = ({
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -356,6 +374,18 @@ const DealWorkspace = ({
   const subject = opportunity.subject;
   const subjectEmail = subject?.email || '';
   const subjectPhone = subject?.phone || '';
+  const customFields = opportunity.custom_fields || {};
+  const businessType = opportunity.business_type || opportunity.category || 'fve';
+  const activeCustomSections = (customFieldSections.length > 0 ? customFieldSections : DEFAULT_CRM_CUSTOM_FIELD_SECTIONS)
+    .filter((section) => ['general', businessType].includes(section.business_type || 'general'))
+    .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+  const opportunityActivities = activities.filter((activity) => activity.opportunity_id === opportunity.id || activity.opportunity?.id === opportunity.id);
+  const opportunityNotes = notes.filter((note) => note.opportunity_id === opportunity.id);
+  const timelineItems = [
+    ...opportunityActivities.map((activity) => ({ id: `activity-${activity.id}`, kind: 'Aktivita', title: activity.title, detail: activity.status === 'done' || activity.completed_at ? 'Dokonceno' : 'Planovano', date: activity.completed_at || activity.due_at, icon: Clock })),
+    ...documents.map((document) => ({ id: `document-${document.id}`, kind: document.type === 'offer' ? 'Nabidka' : 'Objednavka', title: document.number || document.title, detail: `${formatCurrency(document.total)} - ${document.status}`, date: document.issue_date, icon: FileText })),
+    ...opportunityNotes.map((note) => ({ id: `note-${note.id}`, kind: 'Diskuze', title: note.author?.name || 'Interni poznamka', detail: note.body, date: note.created_at, icon: MessageSquare })),
+  ].filter((item) => item.date || item.title).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
   const updateOpportunityItem = (itemId, field, nextValue) => {
     const baseItems = opportunityItems.length > 0 ? opportunityItems : [{
@@ -481,10 +511,15 @@ const DealWorkspace = ({
           <div className="space-y-5">
             <Tabs defaultValue="basic" className="space-y-4">
               <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg border bg-slate-100 p-1">
-                <TabsTrigger value="basic">Základní údaje</TabsTrigger>
-                <TabsTrigger value="commerce">Nabídky a objednávky</TabsTrigger>
+                <TabsTrigger value="basic">Zakladni udaje</TabsTrigger>
+                <TabsTrigger value="details">Dalsi udaje</TabsTrigger>
+                <TabsTrigger value="custom">Volitelna pole</TabsTrigger>
+                <TabsTrigger value="products">Produkty</TabsTrigger>
+                <TabsTrigger value="commerce">Nabidky / objednavky</TabsTrigger>
+                <TabsTrigger value="activities">Aktivity</TabsTrigger>
+                <TabsTrigger value="documents">Dokumenty</TabsTrigger>
                 <TabsTrigger value="history">Historie</TabsTrigger>
-                <TabsTrigger value="discussion">Diskuse</TabsTrigger>
+                <TabsTrigger value="discussion">Diskuze</TabsTrigger>
               </TabsList>
               <TabsContent value="basic" className="space-y-5">
                 <div className="grid gap-4 rounded-lg border bg-white p-4 shadow-sm md:grid-cols-2">
@@ -648,6 +683,35 @@ const DealWorkspace = ({
                   </p>
                 </div>
               </TabsContent>
+              <TabsContent value="details" className="space-y-4">
+                <div className="grid gap-4 rounded-lg border bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-3">
+                  <div className="space-y-1"><Label>Kod OP</Label><Input value={opportunity.number || '-'} disabled className="bg-slate-50 font-mono" /></div>
+                  <div className="space-y-1"><Label>Mena</Label><Input value={opportunity.currency || 'CZK'} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { currency: event.target.value || 'CZK' })} /></div>
+                  <div className="space-y-1"><Label>Verze</Label><Input type="number" min="1" value={opportunity.version_no || 1} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { version_no: Number(event.target.value || 1) })} /></div>
+                  <div className="space-y-1"><Label>Typ obchodu</Label><Select value={businessType} disabled={!canEdit || updatingOpportunity} onValueChange={(value) => onUpdateOpportunity?.(opportunity.id, { business_type: value })}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="fve">FVE</SelectItem><SelectItem value="pd">Projektova dokumentace</SelectItem><SelectItem value="hw">Hardware</SelectItem><SelectItem value="service">Servis</SelectItem><SelectItem value="general">Obecne</SelectItem></SelectContent></Select></div>
+                  <div className="space-y-1"><Label>Kategorie</Label><Input value={opportunity.category || ''} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { category: event.target.value || null })} placeholder="napr. FVE mikrozdroj" /></div>
+                  <div className="space-y-1"><Label>Zdroj</Label><Input value={opportunity.source || ''} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { source: event.target.value || null })} placeholder="doporuceni, web, stavajici klient" /></div>
+                  {[1, 2, 3].map((level) => (<div key={level} className="space-y-1"><Label>Klasifikace {level}</Label><Input value={opportunity[`classification_${level}`] || ''} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { [`classification_${level}`]: event.target.value || null })} /></div>))}
+                  <div className="space-y-1 md:col-span-2 xl:col-span-3"><Label>Stitky</Label><Input value={(opportunity.tags || []).join(', ')} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { tags: event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })} placeholder="VIP, dotace, urgentni" /></div>
+                </div>
+              </TabsContent>
+              <TabsContent value="custom" className="space-y-4">
+                {activeCustomSections.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Pro tento typ obchodu zatim nejsou nastavena volitelna pole.</div>) : activeCustomSections.map((section) => (
+                  <div key={section.id || section.title} className="rounded-lg border bg-white p-4 shadow-sm">
+                    <div className="mb-4"><h3 className="text-sm font-semibold text-slate-950">{section.title}</h3>{section.description && <p className="mt-1 text-xs text-muted-foreground">{section.description}</p>}</div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {(section.fields || []).filter((field) => field.is_active !== false).map((field) => {
+                        const value = customFields[field.field_key] ?? '';
+                        const updateField = (nextValue) => onUpdateOpportunity?.(opportunity.id, { custom_fields: { ...customFields, [field.field_key]: nextValue } });
+                        if (field.field_type === 'textarea') return (<div key={field.field_key} className="space-y-1 md:col-span-2"><Label>{field.label}</Label><Textarea value={value} disabled={!canEdit || updatingOpportunity} onChange={(event) => updateField(event.target.value)} className="min-h-[90px]" />{field.template_key && <p className="text-xs text-muted-foreground">Sablona: <code>{`{{${field.template_key}}}`}</code></p>}</div>);
+                        if (field.field_type === 'select') { const options = Array.isArray(field.options) ? field.options : []; return (<div key={field.field_key} className="space-y-1"><Label>{field.label}</Label><Select value={value || 'none'} disabled={!canEdit || updatingOpportunity} onValueChange={(nextValue) => updateField(nextValue === 'none' ? '' : nextValue)}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Nevyplneno</SelectItem>{options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>{field.template_key && <p className="text-xs text-muted-foreground">Sablona: <code>{`{{${field.template_key}}}`}</code></p>}</div>); }
+                        return (<div key={field.field_key} className="space-y-1"><Label>{field.label}</Label><Input type={field.field_type === 'number' ? 'number' : field.field_type === 'date' ? 'date' : 'text'} value={value} disabled={!canEdit || updatingOpportunity} onChange={(event) => updateField(event.target.value)} />{field.template_key && <p className="text-xs text-muted-foreground">Sablona: <code>{`{{${field.template_key}}}`}</code></p>}</div>);
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </TabsContent>
+              <TabsContent value="products" className="space-y-4"><div className="rounded-lg border bg-white p-4 shadow-sm"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><DataVizMetricCard title="Cena bez DPH" value={formatCurrency(total)} icon={CircleDollarSign} tone="blue" /><DataVizMetricCard title="DPH" value={formatCurrency(itemTotals.tax_total)} icon={Percent} tone="amber" /><DataVizMetricCard title="Cena s DPH" value={formatCurrency(taxValue)} icon={CheckCircle2} tone="green" /><DataVizMetricCard title="Marze" value={`${marginPercent.toFixed(1)} %`} description={formatCurrency(expectedProfit)} icon={BarChart3} tone="purple" /></div><p className="mt-4 text-sm text-muted-foreground">Polozkova tabulka je pod hlavickou detailu v plne sirce, aby zustala citelna i pri vetsim poctu sloupcu.</p></div></TabsContent>
               <TabsContent value="commerce">
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="rounded-lg border bg-white p-4 shadow-sm">
@@ -666,12 +730,12 @@ const DealWorkspace = ({
                   </div>
                 </div>
               </TabsContent>
-              <TabsContent value="history">
-                <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Historie zmen a aktivit bude navazana na CRM aktivity.</div>
-              </TabsContent>
-              <TabsContent value="discussion">
-                <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Diskuse bude sdilet logiku s internimi poznamkami a notifikacemi.</div>
-              </TabsContent>
+
+              <TabsContent value="activities"><div className="space-y-3 rounded-lg border bg-white p-4 shadow-sm"><h3 className="text-sm font-semibold text-slate-950">Aktivity obchodniho pripadu</h3>{opportunityActivities.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim neni naplanovana zadna CRM aktivita.</div>) : opportunityActivities.map((activity) => (<div key={activity.id} className="flex items-start justify-between gap-3 rounded-lg border bg-slate-50 px-3 py-2 text-sm"><div className="min-w-0"><div className="font-semibold text-slate-900">{activity.title}</div><div className="mt-1 text-xs text-muted-foreground">{activity.type} - {activity.status}</div></div><Badge variant="outline" className="shrink-0 bg-white">{formatDate(activity.due_at || activity.completed_at)}</Badge></div>))}</div></TabsContent>
+              <TabsContent value="documents"><div className="rounded-lg border bg-white p-5 text-center shadow-sm"><Paperclip className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="text-sm font-medium text-muted-foreground">Prilohy budou navazane na centralni dokumentovy modul a budou dostupne i pro generovani vystupu.</p><Button className="mt-4" variant="secondary" disabled>Nahrat soubor</Button></div></TabsContent>
+              <TabsContent value="history"><div className="rounded-lg border bg-white p-4 shadow-sm"><div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-950"><History className="h-4 w-4 text-primary" />Historie obchodniho pripadu</div>{timelineItems.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim neni evidovana zadna aktivita ani dokument.</div>) : (<div className="space-y-4">{timelineItems.map((item) => { const Icon = item.icon || Clock; return (<div key={item.id} className="relative grid gap-3 border-l border-slate-200 pl-5 text-sm"><span className="absolute -left-2 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-2 ring-primary/40"><span className="h-2 w-2 rounded-full bg-primary" /></span><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex items-center gap-2 font-semibold text-slate-950"><Icon className="h-4 w-4 text-slate-500" /><span>{item.kind}</span><span className="truncate text-slate-700">{item.title}</span></div>{item.detail && <p className="mt-1 line-clamp-2 text-muted-foreground">{item.detail}</p>}</div><span className="shrink-0 text-xs text-muted-foreground">{formatDate(item.date)}</span></div></div>); })}</div>)}</div></TabsContent>
+              <TabsContent value="discussion"><div className="space-y-4 rounded-lg border bg-white p-4 shadow-sm"><div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><MessageSquare className="h-4 w-4 text-primary" />Interni diskuze</div><div className="space-y-3">{opportunityNotes.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim zde neni zadny komentar.</div>) : opportunityNotes.map((note) => (<div key={note.id} className="rounded-lg border bg-slate-50 p-3 text-sm"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span className="font-semibold text-slate-700">{note.author?.name || 'Interni poznamka'}</span><span>{formatDate(note.created_at)}</span></div><p className="mt-2 whitespace-pre-wrap text-slate-800">{note.body}</p></div>))}</div><div className="grid gap-2"><Textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} disabled={!canEdit || updatingOpportunity} placeholder="Napsat komentar pro tym..." className="min-h-[100px]" /><div className="flex justify-end"><Button size="sm" disabled={!canEdit || updatingOpportunity || !noteDraft.trim()} onClick={() => { const body = noteDraft.trim(); if (!body) return; setNoteDraft(''); onAddNote?.(opportunity.id, body); }}><MessageSquare className="mr-2 h-4 w-4" />Pridat komentar</Button></div></div></div></TabsContent>
+
             </Tabs>
           </div>
 
@@ -1631,6 +1695,8 @@ const CRM = () => {
   const [contacts, setContacts] = useState([]);
   const [opportunities, setOpportunities] = useState([]);
   const [activities, setActivities] = useState([]);
+  const [crmNotes, setCrmNotes] = useState([]);
+  const [customFieldSections, setCustomFieldSections] = useState(DEFAULT_CRM_CUSTOM_FIELD_SECTIONS);
   const [commercialDocuments, setCommercialDocuments] = useState([]);
   const [productSummary, setProductSummary] = useState({
     available: false,
@@ -1688,7 +1754,7 @@ const CRM = () => {
   const fetchCrmData = useCallback(async () => {
     setLoading(true);
 
-    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, commercialDocumentsRes, stagesRes, prioritiesRes, templatesRes, numberingRes, productsRes, stockRes] = await Promise.all([
+    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, notesRes, commercialDocumentsRes, stagesRes, prioritiesRes, templatesRes, numberingRes, productsRes, stockRes] = await Promise.all([
       supabase
         .from('subjects')
         .select('id, name, ico, email, phone, contact_person, created_at, subject_types(name)')
@@ -1709,9 +1775,14 @@ const CRM = () => {
         .order('updated_at', { ascending: false }),
       supabase
         .from('crm_activities')
-        .select('id, title, type, status, due_at, completed_at, subject:subject_id(id, name), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
+        .select('id, opportunity_id, title, type, status, due_at, completed_at, subject:subject_id(id, name), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
         .order('due_at', { ascending: true, nullsFirst: false })
-        .limit(20),
+        .limit(60),
+      supabase
+        .from('crm_notes')
+        .select('id, opportunity_id, subject_id, body, created_at, author:author_member_id(id, name)')
+        .order('created_at', { ascending: false })
+        .limit(100),
       supabase
         .from('crm_commercial_documents')
         .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, items:crm_commercial_document_items(id, catalog_item_id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)')
@@ -1759,6 +1830,7 @@ const CRM = () => {
         setCrmTablesReady(false);
         setOpportunities([]);
         setActivities([]);
+        setCrmNotes([]);
         setCommercialDocuments([]);
       } else {
         setCrmTablesReady(true);
@@ -1778,6 +1850,30 @@ const CRM = () => {
         items: [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
       })));
       setActivities(activitiesRes.data || []);
+      setCrmNotes(notesRes.error ? [] : (notesRes.data || []));
+
+      const extendedRes = await supabase
+        .from('crm_opportunities')
+        .select('id, category, business_type, currency, version_no, classification_1, classification_2, classification_3, tags, confirmation_status, confirmed_at, confirmed_by, custom_fields');
+      if (!extendedRes.error) {
+        const extendedById = new Map((extendedRes.data || []).map((row) => [row.id, row]));
+        setOpportunities((current) => current.map((opportunity) => ({ ...opportunity, ...(extendedById.get(opportunity.id) || {}) })));
+      }
+
+      const customFieldsRes = await supabase
+        .from('crm_custom_field_sections')
+        .select('id, business_type, title, description, sort_order, is_active, fields:crm_custom_field_definitions(id, field_key, label, field_type, template_key, options, placeholder, is_required, is_active, sort_order)')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      if (!customFieldsRes.error) {
+        setCustomFieldSections((customFieldsRes.data || []).map((section) => ({
+          ...section,
+          fields: [...(section.fields || [])].filter((field) => field.is_active !== false).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
+        })));
+      } else {
+        setCustomFieldSections(DEFAULT_CRM_CUSTOM_FIELD_SECTIONS);
+      }
+
       setCommercialDocuments((commercialDocumentsRes.data || []).map((document) => ({
         ...document,
         items: [...(document.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
@@ -2107,6 +2203,32 @@ const CRM = () => {
     )));
     setUpdatingOpportunity(false);
   }, [canEditCrm, commercialDocuments, fetchCrmData, toast, updateOpportunityState]);
+
+  const handleAddOpportunityNote = useCallback(async (opportunityId, body) => {
+    if (!canEditCrm || !opportunityId || !body?.trim()) return;
+
+    const optimisticNote = {
+      id: `new-${Date.now()}`,
+      opportunity_id: opportunityId,
+      subject_id: opportunities.find((opportunity) => opportunity.id === opportunityId)?.subject_id || null,
+      body: body.trim(),
+      created_at: new Date().toISOString(),
+      author: { id: memberId, name: 'Vy' },
+    };
+    setCrmNotes((current) => [optimisticNote, ...current]);
+
+    const { error } = await supabase
+      .from('crm_notes')
+      .insert({ opportunity_id: opportunityId, subject_id: optimisticNote.subject_id, author_member_id: memberId || null, body: body.trim() });
+
+    if (error) {
+      setCrmNotes((current) => current.filter((note) => note.id !== optimisticNote.id));
+      toast({ title: 'Komentar se nepodarilo ulozit', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    fetchCrmData();
+  }, [canEditCrm, fetchCrmData, memberId, opportunities, toast]);
 
   const requestOpportunityStageChange = useCallback((opportunityId, targetStageValue) => {
     const targetStage = getStage(targetStageValue, crmStages);
@@ -2724,6 +2846,9 @@ const CRM = () => {
               selectedTemplateIds={selectedTemplateIds}
               stages={crmStages}
               priorities={crmPriorities}
+              activities={activities}
+              notes={crmNotes}
+              customFieldSections={customFieldSections}
               canEdit={canEditCrm}
               onEdit={openOpportunityDialog}
               onCreateDocument={handleCreateCommercialDocument}
@@ -2739,6 +2864,7 @@ const CRM = () => {
               onStageChange={requestOpportunityStageChange}
               onUpdateOpportunity={handleInlineOpportunityUpdate}
               onUpdateOpportunityItems={handleOpportunityItemsUpdate}
+              onAddNote={handleAddOpportunityNote}
               creatingDocument={creatingDocument}
               generatingDocument={generatingDocument}
               updatingOpportunity={updatingOpportunity}
