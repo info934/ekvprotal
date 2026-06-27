@@ -164,7 +164,7 @@ set description = excluded.description,
     is_active = true;
 
 insert into public.crm_custom_field_definitions (section_id, field_key, label, field_type, template_key, options, sort_order)
-select section.id, field_key, label, field_type, template_key, options::jsonb, sort_order
+select section.id, defaults.field_key, defaults.label, defaults.field_type, defaults.template_key, defaults.options::jsonb, defaults.sort_order
 from public.crm_custom_field_sections section
 join (
   values
