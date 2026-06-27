@@ -371,13 +371,38 @@ const DealWorkspace = ({
   const discountTotal = itemTotals.discount_total;
   const total = itemTotals.total;
   const taxValue = itemTotals.total + itemTotals.tax_total;
+  const totalCost = itemTotals.total_cost ?? expectedCosts;
+  const marginValue = itemTotals.margin_value ?? (total - totalCost);
+  const marginPercent = Number.isFinite(itemTotals.margin_percent)
+    ? itemTotals.margin_percent
+    : total > 0
+      ? (marginValue / total) * 100
+      : 0;
   const subject = opportunity.subject;
   const subjectEmail = subject?.email || '';
   const subjectPhone = subject?.phone || '';
-  const customFields = opportunity.custom_fields || {};
-  const businessType = opportunity.business_type || opportunity.category || 'fve';
+  const customFields = opportunity.custom_fields && typeof opportunity.custom_fields === 'object' && !Array.isArray(opportunity.custom_fields)
+    ? opportunity.custom_fields
+    : {};
+  const allowedBusinessTypes = new Set(['fve', 'pd', 'hw', 'service', 'general']);
+  const rawBusinessType = String(opportunity.business_type || '').toLowerCase();
+  const categoryBusinessType = String(opportunity.category || '').toLowerCase();
+  const businessType = allowedBusinessTypes.has(rawBusinessType)
+    ? rawBusinessType
+    : allowedBusinessTypes.has(categoryBusinessType)
+      ? categoryBusinessType
+      : 'general';
+  const opportunityTags = Array.isArray(opportunity.tags)
+    ? opportunity.tags
+    : typeof opportunity.tags === 'string'
+      ? opportunity.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+      : [];
   const activeCustomSections = (customFieldSections.length > 0 ? customFieldSections : DEFAULT_CRM_CUSTOM_FIELD_SECTIONS)
     .filter((section) => ['general', businessType].includes(section.business_type || 'general'))
+    .map((section) => ({
+      ...section,
+      fields: Array.isArray(section.fields) ? section.fields : [],
+    }))
     .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
   const opportunityActivities = activities.filter((activity) => activity.opportunity_id === opportunity.id || activity.opportunity?.id === opportunity.id);
   const opportunityNotes = notes.filter((note) => note.opportunity_id === opportunity.id);
@@ -692,7 +717,7 @@ const DealWorkspace = ({
                   <div className="space-y-1"><Label>Kategorie</Label><Input value={opportunity.category || ''} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { category: event.target.value || null })} placeholder="napr. FVE mikrozdroj" /></div>
                   <div className="space-y-1"><Label>Zdroj</Label><Input value={opportunity.source || ''} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { source: event.target.value || null })} placeholder="doporuceni, web, stavajici klient" /></div>
                   {[1, 2, 3].map((level) => (<div key={level} className="space-y-1"><Label>Klasifikace {level}</Label><Input value={opportunity[`classification_${level}`] || ''} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { [`classification_${level}`]: event.target.value || null })} /></div>))}
-                  <div className="space-y-1 md:col-span-2 xl:col-span-3"><Label>Stitky</Label><Input value={(opportunity.tags || []).join(', ')} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { tags: event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })} placeholder="VIP, dotace, urgentni" /></div>
+                  <div className="space-y-1 md:col-span-2 xl:col-span-3"><Label>Stitky</Label><Input value={opportunityTags.join(', ')} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { tags: event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })} placeholder="VIP, dotace, urgentni" /></div>
                 </div>
               </TabsContent>
               <TabsContent value="custom" className="space-y-4">
@@ -711,7 +736,7 @@ const DealWorkspace = ({
                   </div>
                 ))}
               </TabsContent>
-              <TabsContent value="products" className="space-y-4"><div className="rounded-lg border bg-white p-4 shadow-sm"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><DataVizMetricCard title="Cena bez DPH" value={formatCurrency(total)} icon={CircleDollarSign} tone="blue" /><DataVizMetricCard title="DPH" value={formatCurrency(itemTotals.tax_total)} icon={Percent} tone="amber" /><DataVizMetricCard title="Cena s DPH" value={formatCurrency(taxValue)} icon={CheckCircle2} tone="green" /><DataVizMetricCard title="Marze" value={`${marginPercent.toFixed(1)} %`} description={formatCurrency(expectedProfit)} icon={BarChart3} tone="purple" /></div><p className="mt-4 text-sm text-muted-foreground">Polozkova tabulka je pod hlavickou detailu v plne sirce, aby zustala citelna i pri vetsim poctu sloupcu.</p></div></TabsContent>
+              <TabsContent value="products" className="space-y-4"><div className="rounded-lg border bg-white p-4 shadow-sm"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><DataVizMetricCard title="Cena bez DPH" value={formatCurrency(total)} icon={CircleDollarSign} tone="blue" /><DataVizMetricCard title="DPH" value={formatCurrency(itemTotals.tax_total)} icon={Percent} tone="amber" /><DataVizMetricCard title="Cena s DPH" value={formatCurrency(taxValue)} icon={CheckCircle2} tone="green" /><DataVizMetricCard title="Marze" value={`${marginPercent.toFixed(1)} %`} description={formatCurrency(marginValue)} icon={BarChart3} tone="purple" /></div><p className="mt-4 text-sm text-muted-foreground">Polozkova tabulka je pod hlavickou detailu v plne sirce, aby zustala citelna i pri vetsim poctu sloupcu.</p></div></TabsContent>
               <TabsContent value="commerce">
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="rounded-lg border bg-white p-4 shadow-sm">
