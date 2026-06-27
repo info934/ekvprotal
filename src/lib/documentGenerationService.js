@@ -12,6 +12,7 @@ import {
   WidthType,
 } from 'docx';
 import { jsPDF } from 'jspdf';
+import { calculateCrmItem, calculateCrmItemTotals } from '@/lib/crmFinancials';
 
 const documentTypeLabels = {
   offer: 'Nabídka',
@@ -89,21 +90,29 @@ export const buildDocumentGenerationPayload = ({ opportunity, document }) => {
     ? document.items
     : (opportunity?.items?.length ? opportunity.items : (opportunity?.opportunity_items || []));
 
-  const items = [...sourceItems]
-    .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
-    .map((item, index) => ({
+  const sortedItems = [...sourceItems].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+  const totals = calculateCrmItemTotals(sortedItems);
+  const items = sortedItems.map((item, index) => {
+    const calculation = calculateCrmItem(item);
+    return {
       position: index + 1,
       code: item.code || '',
       name: item.name || '',
       description: item.description || '',
-      quantity: Number(item.quantity || 0),
+      quantity: calculation.quantity,
       unit: item.unit || 'ks',
-      unitPrice: Number(item.unit_price || 0),
-      discountPercent: Number(item.discount_percent || 0),
-      vatRate: Number(item.vat_rate || 0),
-      lineTotal: Number(item.line_total || 0),
+      unitPrice: calculation.unitPrice,
+      unitCost: calculation.unitCost,
+      discountPercent: calculation.discountPercent,
+      vatRate: calculation.vatRate,
+      lineTotal: calculation.total,
+      taxTotal: calculation.taxTotal,
+      totalWithTax: calculation.totalWithTax,
+      marginAmount: calculation.marginAmount,
+      marginPercent: calculation.marginPercent,
       customFields: item.custom_fields || item.product_fields || {},
-    }));
+    };
+  });
 
   return {
     document: {
@@ -115,10 +124,14 @@ export const buildDocumentGenerationPayload = ({ opportunity, document }) => {
       status: document?.status || 'draft',
       issueDate: document?.issue_date || new Date().toISOString(),
       validUntil: document?.valid_until || null,
-      subtotal: Number(document?.subtotal || 0),
-      discountTotal: Number(document?.discount_total || 0),
-      taxTotal: Number(document?.tax_total || 0),
-      total: Number(document?.total || 0),
+      subtotal: sortedItems.length ? totals.subtotal : Number(document?.subtotal || 0),
+      discountTotal: sortedItems.length ? totals.discount_total : Number(document?.discount_total || 0),
+      taxTotal: sortedItems.length ? totals.tax_total : Number(document?.tax_total || 0),
+      total: sortedItems.length ? totals.total : Number(document?.total || 0),
+      totalWithTax: sortedItems.length ? totals.total_with_tax : Number(document?.total_with_tax ?? ((document?.total || 0) + (document?.tax_total || 0))),
+      costTotal: sortedItems.length ? totals.cost_total : Number(document?.cost_total || 0),
+      marginTotal: sortedItems.length ? totals.margin_total : Number(document?.margin_total || 0),
+      marginPercent: sortedItems.length ? totals.margin_percent : Number(document?.margin_percent || 0),
       notes: document?.notes || '',
     },
     opportunity: {
@@ -213,6 +226,11 @@ const buildItemTemplatePlaceholders = (item) => ({
   item_discount_percent: item.discountPercent.toLocaleString('cs-CZ'),
   item_vat_rate: item.vatRate.toLocaleString('cs-CZ'),
   item_line_total: formatCurrency(item.lineTotal),
+  item_tax_total: formatCurrency(item.taxTotal),
+  item_total_with_tax: formatCurrency(item.totalWithTax),
+  item_unit_cost: formatCurrency(item.unitCost),
+  item_margin_amount: formatCurrency(item.marginAmount),
+  item_margin_percent: item.marginPercent.toLocaleString('cs-CZ'),
   ...Object.entries(item.customFields || {}).reduce((acc, [key, value]) => {
     acc[`item_${key}`] = value ?? '';
     return acc;
@@ -236,7 +254,7 @@ const fillItemsRepeatBlocks = (templateContent, items) => {
 
 export const buildDocumentTemplatePlaceholders = (payload) => {
   const { document, opportunity, generatedAt } = payload;
-  const totalWithTax = document.total + document.taxTotal;
+  const totalWithTax = document.totalWithTax ?? (document.total + document.taxTotal);
   const clientName = opportunity.subjectName || 'Bez subjektu';
   const projectName = opportunity.projectName || opportunity.projectCode || '';
   const values = {
@@ -256,6 +274,9 @@ export const buildDocumentTemplatePlaceholders = (payload) => {
     tax_total: formatCurrency(document.taxTotal),
     total_amount: formatCurrency(document.total),
     total_with_tax: formatCurrency(totalWithTax),
+    cost_total: formatCurrency(document.costTotal),
+    margin_total: formatCurrency(document.marginTotal),
+    margin_percent: Number(document.marginPercent || 0).toLocaleString('cs-CZ'),
     notes: document.notes || '',
     generated_at: formatDate(generatedAt),
     item_count: payload.items.length,
@@ -307,7 +328,7 @@ const ensureHtmlDocument = (content, title = 'Dokument') => {
 
 export const renderCommercialDocumentHtml = (payload, template = null) => {
   const { document, opportunity, items, generatedAt } = payload;
-  const totalWithTax = document.total + document.taxTotal;
+  const totalWithTax = document.totalWithTax ?? (document.total + document.taxTotal);
 
   if (template?.content) {
     return ensureHtmlDocument(
@@ -572,7 +593,7 @@ export const createCommercialDocumentDocxBlob = async (payload, template = null)
   }
 
   const { document, opportunity, items, generatedAt } = payload;
-  const totalWithTax = document.total + document.taxTotal;
+  const totalWithTax = document.totalWithTax ?? (document.total + document.taxTotal);
 
   const rows = [
     new TableRow({
@@ -660,7 +681,7 @@ export const downloadGeneratedDocumentDocx = async ({ opportunity, document, tem
 
 export const createCommercialDocumentPdf = (payload, template = null) => {
   const { document, opportunity, items, generatedAt } = payload;
-  const totalWithTax = document.total + document.taxTotal;
+  const totalWithTax = document.totalWithTax ?? (document.total + document.taxTotal);
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const margin = 14;

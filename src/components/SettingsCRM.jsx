@@ -93,6 +93,9 @@ const templateQuickKeys = [
   '{{tax_total}}',
   '{{total_amount}}',
   '{{total_with_tax}}',
+  '{{cost_total}}',
+  '{{margin_total}}',
+  '{{margin_percent}}',
   '{{item_count}}',
   '{{items_table}}',
   '{{items_rows}}',
@@ -107,9 +110,14 @@ const itemTemplateKeys = [
   '{{item_quantity}}',
   '{{item_unit}}',
   '{{item_unit_price}}',
+  '{{item_unit_cost}}',
   '{{item_discount_percent}}',
   '{{item_vat_rate}}',
   '{{item_line_total}}',
+  '{{item_tax_total}}',
+  '{{item_total_with_tax}}',
+  '{{item_margin_amount}}',
+  '{{item_margin_percent}}',
 ];
 
 const templateExamples = {

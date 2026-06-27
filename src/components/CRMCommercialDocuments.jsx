@@ -24,6 +24,13 @@ import {
   downloadGeneratedDocumentHtml,
   downloadGeneratedDocumentPdf,
 } from '@/lib/documentGenerationService';
+import {
+  buildCrmItemPayloadFields,
+  calculateCrmItem,
+  calculateCrmItemLineTotal,
+  calculateCrmItemTotals,
+  normalizeCrmItem,
+} from '@/lib/crmFinancials';
 import { cn } from '@/lib/utils';
 
 const documentTypeConfig = {
@@ -90,44 +97,20 @@ const emptyItem = () => ({
   quantity: 1,
   unit: 'ks',
   unit_price: 0,
+  unit_cost: 0,
+  purchase_price_snapshot: 0,
   discount_percent: 0,
   vat_rate: 21,
   line_total: 0,
+  margin_total: 0,
+  margin_percent: 0,
   sort_order: 0,
   isNew: true,
 });
 
-const calculateLineTotal = (item) => {
-  const quantity = Number(item.quantity || 0);
-  const price = Number(item.unit_price || 0);
-  const discount = Math.min(100, Math.max(0, Number(item.discount_percent || 0)));
-  return Math.round(quantity * price * (1 - (discount / 100)) * 100) / 100;
-};
-
-const calculateTotals = (items) => {
-  const subtotal = items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
-  const taxTotal = items.reduce((sum, item) => sum + (calculateLineTotal(item) * (Number(item.vat_rate || 0) / 100)), 0);
-  return {
-    subtotal,
-    discount_total: 0,
-    tax_total: Math.round(taxTotal * 100) / 100,
-    total: subtotal,
-  };
-};
-
 const buildItemPayload = (item, documentId, index) => ({
+  ...buildCrmItemPayloadFields(item, index),
   document_id: documentId,
-  catalog_item_id: item.catalog_item_id || null,
-  code: item.code || null,
-  name: item.name?.trim() || 'Položka',
-  description: item.description || null,
-  quantity: Number(item.quantity || 0),
-  unit: item.unit || 'ks',
-  unit_price: Number(item.unit_price || 0),
-  discount_percent: Number(item.discount_percent || 0),
-  vat_rate: Number(item.vat_rate || 0),
-  line_total: calculateLineTotal(item),
-  sort_order: (index + 1) * 10,
 });
 
 const buildOpportunityItemPayload = (item, opportunityId, index) => {
@@ -164,12 +147,12 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     const [documentsRes, opportunitiesRes, numberingRes, templatesRes] = await Promise.all([
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, line_total, margin_total, margin_percent, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, sort_order)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, line_total, margin_total, margin_percent, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, sort_order)')
         .eq('type', type)
         .order('created_at', { ascending: false }),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, value, subject_id, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, number, title, value, subject_id, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, line_total, margin_total, margin_percent, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, sort_order)')
         .order('created_at', { ascending: false }),
       selectCrmNumberingSettings(supabase),
       supabase
@@ -211,7 +194,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
     const { data: catalogData, error: catalogError } = await supabase
       .from('commercial_item_catalog')
-      .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active')
+      .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, is_active')
       .eq('is_active', true)
       .order('name', { ascending: true });
     setCatalogProducts(catalogError ? [] : (catalogData || []));
@@ -244,6 +227,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     { id: 'created', label: 'Vytvořeno' },
     { id: 'status', label: 'Stav' },
     { id: 'total', label: 'Konečná cena' },
+    { id: 'margin', label: 'Marže' },
+    { id: 'sync', label: 'Položky' },
     { id: 'validUntil', label: 'Konec platnosti' },
     { id: 'actions', label: 'Akce', hideable: false },
   ], []);
@@ -257,6 +242,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     created: 'min-w-[110px]',
     status: 'min-w-[110px]',
     total: 'min-w-[130px] text-right',
+    margin: 'min-w-[130px] text-right',
+    sync: 'min-w-[130px]',
     validUntil: 'min-w-[130px]',
     actions: 'w-12 text-right',
   };
@@ -265,6 +252,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     title: 'max-w-[360px] truncate',
     client: 'font-medium',
     total: 'text-right font-semibold',
+    margin: 'text-right font-semibold text-emerald-700',
     actions: 'text-right',
   };
   const renderListCell = (document, columnId) => {
@@ -292,6 +280,10 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         );
       case 'total':
         return formatCurrency(document.total);
+      case 'margin': {
+        const totals = calculateCrmItemTotals(document.items || []);
+        return `${formatCurrency(totals.margin_total)} / ${Number(totals.margin_percent || 0).toFixed(1)} %`;
+      }
       case 'validUntil':
         return formatDate(document.valid_until);
       case 'sync':
@@ -332,8 +324,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         ...current,
         items: current.items.map((item) => {
           if (item.id !== itemId) return item;
-          const next = { ...item, [field]: ['quantity', 'unit_price', 'discount_percent', 'vat_rate'].includes(field) ? Number(value || 0) : value };
-          return { ...next, line_total: calculateLineTotal(next) };
+          const next = { ...item, [field]: ['quantity', 'unit_price', 'unit_cost', 'purchase_price_snapshot', 'discount_percent', 'vat_rate'].includes(field) ? Number(value || 0) : value };
+          return normalizeCrmItem(next);
         }),
       };
     });
@@ -365,11 +357,16 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       description: product.description || '',
       unit: product.unit || 'ks',
       unit_price: Number(product.default_unit_price || 0),
+      unit_cost: Number(product.purchase_price || 0),
+      purchase_price_snapshot: Number(product.purchase_price || 0),
       vat_rate: Number(product.default_vat_rate || 21),
+      product_sku: product.sku || product.code || null,
+      product_type: product.product_type || null,
+      catalog_price_snapshot: Number(product.default_unit_price || 0),
     };
     setSelectedDocument((current) => current ? {
       ...current,
-      items: [...current.items, { ...nextItem, line_total: calculateLineTotal(nextItem) }],
+      items: [...current.items, normalizeCrmItem(nextItem, current.items.length)],
     } : current);
     setCatalogQuery('');
   };
@@ -392,7 +389,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         document_id: target.id,
         sort_order: (index + 1) * 10,
       }));
-      const totals = calculateTotals(clonedItems);
+      const totals = calculateCrmItemTotals(clonedItems);
       const { error: deleteError } = await supabase
         .from('crm_commercial_document_items')
         .delete()
@@ -421,7 +418,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     setSaving(true);
 
     const items = selectedDocument.items.map((item, index) => buildItemPayload(item, selectedDocument.id, index));
-    const totals = calculateTotals(items);
+    const totals = calculateCrmItemTotals(items);
     const { error: docError } = await supabase
       .from('crm_commercial_documents')
       .update({
@@ -490,7 +487,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     const opportunity = opportunities[0];
     const number = formatCrmNumber(numbering, type);
     const sourceItems = [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-    const totals = calculateTotals(sourceItems.length > 0 ? sourceItems : [{
+    const totals = calculateCrmItemTotals(sourceItems.length > 0 ? sourceItems : [{
       quantity: 1,
       unit_price: Number(opportunity.value || 0),
       discount_percent: 0,
@@ -768,24 +765,30 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                         <TableHead className="min-w-[260px]">Název</TableHead>
                         <TableHead className="min-w-[100px] text-right">Množství</TableHead>
                         <TableHead className="min-w-[90px]">MJ</TableHead>
-                        <TableHead className="min-w-[130px] text-right">Cena</TableHead>
+                        <TableHead className="min-w-[130px] text-right">Nákup</TableHead>
+                        <TableHead className="min-w-[130px] text-right">Prodej</TableHead>
                         <TableHead className="min-w-[100px] text-right">Sleva %</TableHead>
-                        <TableHead className="min-w-[120px] text-right">Celkem</TableHead>
+                        <TableHead className="min-w-[100px] text-right">DPH %</TableHead>
+                        <TableHead className="min-w-[130px] text-right">Marže</TableHead>
+                        <TableHead className="min-w-[130px] text-right">Celkem</TableHead>
                         <TableHead className="w-12" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {selectedDocument.items.length === 0 ? (
-                        <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">Zatím bez položek.</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={11} className="h-24 text-center text-muted-foreground">Zatím bez položek.</TableCell></TableRow>
                       ) : selectedDocument.items.map((item) => (
                         <TableRow key={item.id}>
                           <TableCell><Input value={item.code || ''} onChange={(event) => updateItem(item.id, 'code', event.target.value)} disabled={!canEdit || saving} /></TableCell>
                           <TableCell><Input value={item.name || ''} onChange={(event) => updateItem(item.id, 'name', event.target.value)} disabled={!canEdit || saving} /></TableCell>
                           <TableCell><Input className="text-right" type="number" value={item.quantity || 0} onChange={(event) => updateItem(item.id, 'quantity', event.target.value)} disabled={!canEdit || saving} /></TableCell>
                           <TableCell><Input value={item.unit || 'ks'} onChange={(event) => updateItem(item.id, 'unit', event.target.value)} disabled={!canEdit || saving} /></TableCell>
+                          <TableCell><Input className="text-right" type="number" value={item.unit_cost ?? item.purchase_price_snapshot ?? 0} onChange={(event) => updateItem(item.id, 'unit_cost', event.target.value)} disabled={!canEdit || saving} /></TableCell>
                           <TableCell><Input className="text-right" type="number" value={item.unit_price || 0} onChange={(event) => updateItem(item.id, 'unit_price', event.target.value)} disabled={!canEdit || saving} /></TableCell>
                           <TableCell><Input className="text-right" type="number" value={item.discount_percent || 0} onChange={(event) => updateItem(item.id, 'discount_percent', event.target.value)} disabled={!canEdit || saving} /></TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(calculateLineTotal(item))}</TableCell>
+                          <TableCell><Input className="text-right" type="number" value={item.vat_rate || 0} onChange={(event) => updateItem(item.id, 'vat_rate', event.target.value)} disabled={!canEdit || saving} /></TableCell>
+                          <TableCell className="text-right font-semibold text-emerald-700">{formatCurrency(calculateCrmItem(item).marginAmount)}</TableCell>
+                          <TableCell className="text-right font-semibold">{formatCurrency(calculateCrmItemLineTotal(item))}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)} disabled={!canEdit || saving}>
                               <Trash2 className="h-4 w-4" />

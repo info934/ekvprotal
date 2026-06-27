@@ -171,13 +171,13 @@ export const ManagedTableSection = ({
   children,
   className,
 }) => (
-  <div className={cn('overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.05)]', className)}>
+  <div className={cn('overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)]', className)}>
     <div className="overflow-x-auto">
       <div
-        className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950"
+        className="flex items-center gap-2 border-b border-slate-200 bg-slate-50/90 px-4 py-2.5 text-sm font-semibold text-slate-950"
         style={{ minWidth }}
       >
-        <span className="relative pl-3 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-primary">{title}</span>
+        <span className="relative pl-3 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-blue-600">{title}</span>
         {typeof count !== 'undefined' && (
           <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">{count}</span>
         )}

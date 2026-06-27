@@ -59,6 +59,13 @@ import {
 } from '@/lib/documentGenerationService';
 import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef } from '@/lib/crmRoutes';
+import {
+  buildCrmItemPayloadFields,
+  calculateCrmItem,
+  calculateCrmItemLineTotal,
+  calculateCrmItemTotals,
+  normalizeCrmItem,
+} from '@/lib/crmFinancials';
 import { cn } from '@/lib/utils';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
 
@@ -142,43 +149,19 @@ const createEmptyCrmItem = () => ({
   quantity: 1,
   unit: 'ks',
   unit_price: 0,
+  unit_cost: 0,
+  purchase_price_snapshot: 0,
   discount_percent: 0,
   vat_rate: 21,
   line_total: 0,
+  margin_total: 0,
+  margin_percent: 0,
   sort_order: 0,
 });
 
-const calculateCrmItemLineTotal = (item) => {
-  const quantity = Number(item.quantity || 0);
-  const price = Number(item.unit_price || 0);
-  const discount = Math.min(100, Math.max(0, Number(item.discount_percent || 0)));
-  return Math.round(quantity * price * (1 - (discount / 100)) * 100) / 100;
-};
-
-const calculateCrmItemTotals = (items = []) => {
-  const total = items.reduce((sum, item) => sum + calculateCrmItemLineTotal(item), 0);
-  const taxTotal = items.reduce((sum, item) => sum + (calculateCrmItemLineTotal(item) * (Number(item.vat_rate || 0) / 100)), 0);
-  return {
-    subtotal: total,
-    discount_total: 0,
-    tax_total: Math.round(taxTotal * 100) / 100,
-    total,
-  };
-};
-
 const buildCrmOpportunityItemPayload = (item, opportunityId, index) => ({
+  ...buildCrmItemPayloadFields(item, index),
   opportunity_id: opportunityId,
-  catalog_item_id: item.catalog_item_id || null,
-  code: item.code || null,
-  name: item.name?.trim() || 'Položka',
-  description: item.description || null,
-  quantity: Number(item.quantity || 0),
-  unit: item.unit || 'ks',
-  unit_price: Number(item.unit_price || 0),
-  discount_percent: Number(item.discount_percent || 0),
-  vat_rate: Number(item.vat_rate || 0),
-  line_total: calculateCrmItemLineTotal(item),
-  sort_order: (index + 1) * 10,
 });
 
 const buildCrmDocumentItemPayload = (item, documentId, index) => {
@@ -280,7 +263,7 @@ const DealWorkspace = ({
       setCatalogLoading(true);
       const { data, error } = await supabase
         .from('commercial_item_catalog')
-        .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active')
+        .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, is_active')
         .eq('is_active', true)
         .order('name', { ascending: true });
 
@@ -316,8 +299,6 @@ const DealWorkspace = ({
   const stage = getStage(opportunity.stage, stages);
   const priority = getPriority(opportunity.priority, priorities);
   const value = Number(opportunity.value || 0);
-  const expectedCosts = Math.round(value * 0.72);
-  const expectedProfit = value - expectedCosts;
   const offerDocuments = documents.filter((document) => document.type === 'offer');
   const orderDocuments = documents.filter((document) => document.type === 'order');
   const opportunityItems = [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
@@ -327,10 +308,12 @@ const DealWorkspace = ({
     name: item.name,
     unit: item.unit || 'ks',
     unitPrice: Number(item.unit_price || 0),
+    unitCost: Number(item.unit_cost ?? item.purchase_price_snapshot ?? 0),
     quantity: Number(item.quantity || 0),
     discount: Number(item.discount_percent || 0),
     vatRate: Number(item.vat_rate || 0),
     total: calculateCrmItemLineTotal(item),
+    margin: calculateCrmItem(item).marginAmount,
   })) : [
     {
       id: 'fallback',
@@ -338,22 +321,29 @@ const DealWorkspace = ({
       name: opportunity.title,
       unit: 'ks',
       unitPrice: value,
+      unitCost: 0,
       quantity: 1,
       discount: 0,
       vatRate: 21,
       total: value,
+      margin: value,
     },
   ];
   const itemTotals = calculateCrmItemTotals(opportunityItems.length > 0 ? opportunityItems : productRows.map((item) => ({
     ...item,
     unit_price: item.unitPrice,
+    unit_cost: item.unitCost,
+    purchase_price_snapshot: item.unitCost,
     discount_percent: item.discount,
     vat_rate: item.vatRate,
   })));
   const subtotal = itemTotals.subtotal;
   const discountTotal = itemTotals.discount_total;
   const total = itemTotals.total;
-  const taxValue = itemTotals.total + itemTotals.tax_total;
+  const taxValue = itemTotals.total_with_tax ?? (itemTotals.total + itemTotals.tax_total);
+  const expectedCosts = itemTotals.cost_total || 0;
+  const expectedProfit = itemTotals.margin_total ?? (total - expectedCosts);
+  const marginPercent = itemTotals.margin_percent || 0;
   const subject = opportunity.subject;
   const subjectEmail = subject?.email || '';
   const subjectPhone = subject?.phone || '';
@@ -370,11 +360,11 @@ const DealWorkspace = ({
 
     const nextItems = baseItems.map((item) => {
       if (item.id !== itemId) return item;
-      const valueToStore = ['quantity', 'unit_price', 'discount_percent', 'vat_rate'].includes(field)
+      const valueToStore = ['quantity', 'unit_price', 'unit_cost', 'purchase_price_snapshot', 'discount_percent', 'vat_rate'].includes(field)
         ? Number(nextValue || 0)
         : nextValue;
       const next = { ...item, [field]: valueToStore };
-      return { ...next, line_total: calculateCrmItemLineTotal(next) };
+      return normalizeCrmItem(next);
     });
     onUpdateOpportunityItems?.(opportunity.id, nextItems);
   };
@@ -407,9 +397,14 @@ const DealWorkspace = ({
       description: product.description || '',
       unit: product.unit || 'ks',
       unit_price: Number(product.default_unit_price || 0),
+      unit_cost: Number(product.purchase_price || 0),
+      purchase_price_snapshot: Number(product.purchase_price || 0),
       vat_rate: Number(product.default_vat_rate || 21),
+      product_sku: product.sku || product.code || null,
+      product_type: product.product_type || null,
+      catalog_price_snapshot: Number(product.default_unit_price || 0),
     };
-    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, { ...nextItem, line_total: calculateCrmItemLineTotal(nextItem) }]);
+    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, normalizeCrmItem(nextItem, opportunityItems.length)]);
     setCatalogQuery('');
   };
 
@@ -621,11 +616,11 @@ const DealWorkspace = ({
                         />
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2">
-                        <span className="text-muted-foreground">Predpokladane naklady</span>
+                        <span className="text-muted-foreground">Předpokládané náklady</span>
                         <strong>{formatCurrency(expectedCosts)}</strong>
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-md bg-emerald-50 px-3 py-2">
-                        <span className="text-muted-foreground">Predpokladany zisk</span>
+                        <span className="text-muted-foreground">Předpokládaný zisk</span>
                         <strong>{formatCurrency(expectedProfit)}</strong>
                       </div>
                     </div>
@@ -675,10 +670,10 @@ const DealWorkspace = ({
                 </div>
               </TabsContent>
               <TabsContent value="history">
-                <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Historie zmen a aktivit bude navazana na CRM aktivity.</div>
+                <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Historie změn a aktivit bude navázaná na CRM aktivity.</div>
               </TabsContent>
               <TabsContent value="discussion">
-                <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Diskuse bude sdilet logiku s internimi poznamkami a notifikacemi.</div>
+                <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Diskuse bude sdílet logiku s interními poznámkami a notifikacemi.</div>
               </TabsContent>
             </Tabs>
           </div>
@@ -848,13 +843,16 @@ const DealWorkspace = ({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Kód</TableHead>
-                  <TableHead>Název</TableHead>
-                  <TableHead className="text-right">Jedn. cena</TableHead>
-                  <TableHead className="text-right">Množství</TableHead>
-                  <TableHead>MJ</TableHead>
-                  <TableHead className="text-right">Sleva %</TableHead>
-                  <TableHead className="text-right">Cena celkem</TableHead>
+                  <TableHead className="min-w-[110px]">Kód</TableHead>
+                  <TableHead className="min-w-[300px]">Název</TableHead>
+                  <TableHead className="min-w-[120px] text-right">Množství</TableHead>
+                  <TableHead className="min-w-[80px]">MJ</TableHead>
+                  <TableHead className="min-w-[140px] text-right">Nákup</TableHead>
+                  <TableHead className="min-w-[140px] text-right">Prodej</TableHead>
+                  <TableHead className="min-w-[100px] text-right">Sleva %</TableHead>
+                  <TableHead className="min-w-[100px] text-right">DPH %</TableHead>
+                  <TableHead className="min-w-[140px] text-right">Marže</TableHead>
+                  <TableHead className="min-w-[140px] text-right">Celkem</TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
@@ -867,18 +865,25 @@ const DealWorkspace = ({
                     <TableCell className="min-w-[320px]">
                       <Input value={item.name} onChange={(event) => updateOpportunityItem(item.id, 'name', event.target.value)} disabled={!canEdit || updatingOpportunity} />
                     </TableCell>
-                    <TableCell className="min-w-[130px]">
-                      <Input className="text-right" type="number" value={item.unitPrice} onChange={(event) => updateOpportunityItem(item.id, 'unit_price', event.target.value)} disabled={!canEdit || updatingOpportunity} />
-                    </TableCell>
                     <TableCell className="min-w-[110px]">
                       <Input className="text-right" type="number" value={item.quantity} onChange={(event) => updateOpportunityItem(item.id, 'quantity', event.target.value)} disabled={!canEdit || updatingOpportunity} />
                     </TableCell>
                     <TableCell className="min-w-[90px]">
                       <Input value={item.unit} onChange={(event) => updateOpportunityItem(item.id, 'unit', event.target.value)} disabled={!canEdit || updatingOpportunity} />
                     </TableCell>
+                    <TableCell className="min-w-[130px]">
+                      <Input className="text-right" type="number" value={item.unitCost} onChange={(event) => updateOpportunityItem(item.id, 'unit_cost', event.target.value)} disabled={!canEdit || updatingOpportunity} />
+                    </TableCell>
+                    <TableCell className="min-w-[130px]">
+                      <Input className="text-right" type="number" value={item.unitPrice} onChange={(event) => updateOpportunityItem(item.id, 'unit_price', event.target.value)} disabled={!canEdit || updatingOpportunity} />
+                    </TableCell>
                     <TableCell className="min-w-[110px]">
                       <Input className="text-right" type="number" value={item.discount} onChange={(event) => updateOpportunityItem(item.id, 'discount_percent', event.target.value)} disabled={!canEdit || updatingOpportunity} />
                     </TableCell>
+                    <TableCell className="min-w-[100px]">
+                      <Input className="text-right" type="number" value={item.vatRate} onChange={(event) => updateOpportunityItem(item.id, 'vat_rate', event.target.value)} disabled={!canEdit || updatingOpportunity} />
+                    </TableCell>
+                    <TableCell className="text-right font-semibold text-emerald-700">{formatCurrency(item.margin)}</TableCell>
                     <TableCell className="text-right font-semibold">{formatCurrency(item.total)}</TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => removeOpportunityItem(item.id)} disabled={!canEdit || updatingOpportunity || item.id === 'fallback'}>
@@ -891,7 +896,7 @@ const DealWorkspace = ({
             </Table>
           </div>
           <div className="grid gap-2 border-t bg-slate-50 p-5 text-sm md:ml-auto md:w-[480px]">
-            <div className="flex justify-between"><span>Cena celkem pred slevou</span><strong>{formatCurrency(subtotal)}</strong></div>
+            <div className="flex justify-between"><span>Cena celkem před slevou</span><strong>{formatCurrency(subtotal)}</strong></div>
             <div className="flex justify-between"><span>Celkova sleva</span><strong>{formatCurrency(discountTotal)}</strong></div>
             <div className="flex justify-between text-base"><span>Konečná cena</span><strong>{formatCurrency(total)}</strong></div>
             <div className="flex justify-between text-muted-foreground"><span>Celkem s dani</span><strong>{formatCurrency(taxValue)}</strong></div>
@@ -1227,7 +1232,9 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
   const renderOpportunityCell = (columnId, opportunity, index) => {
     const stage = getStage(opportunity.stage, stages);
     const priority = getPriority(opportunity.priority, priorities);
-    const estimatedMargin = Number(opportunity.value || 0) * 0.28;
+    const itemTotals = calculateCrmItemTotals(opportunity.items || []);
+    const estimatedMargin = (opportunity.items || []).length > 0 ? itemTotals.margin_total : Number(opportunity.value || 0) * 0.28;
+    const estimatedMarginPercent = (opportunity.items || []).length > 0 ? itemTotals.margin_percent : 28;
 
     switch (columnId) {
       case 'select':
@@ -1259,7 +1266,7 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
       case 'value':
         return formatCurrency(opportunity.value);
       case 'margin':
-        return formatCurrency(estimatedMargin) + ' / 28 %';
+        return formatCurrency(estimatedMargin) + ' / ' + Number(estimatedMarginPercent || 0).toFixed(1) + ' %';
       case 'closeDate':
         return formatDate(opportunity.expected_close_date);
       case 'priority':
@@ -1661,7 +1668,7 @@ const CRM = () => {
         .limit(60),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, line_total, margin_total, margin_percent, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, sort_order)')
         .order('updated_at', { ascending: false }),
       supabase
         .from('crm_activities')
@@ -1670,7 +1677,7 @@ const CRM = () => {
         .limit(20),
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, items:crm_commercial_document_items(id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, items:crm_commercial_document_items(id, code, name, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, line_total, margin_total, margin_percent, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, sort_order)')
         .order('created_at', { ascending: false }),
       supabase
         .from('crm_stage_definitions')
@@ -1910,11 +1917,7 @@ const CRM = () => {
   const handleOpportunityItemsUpdate = useCallback(async (opportunityId, nextItems) => {
     if (!canEditCrm || !opportunityId) return;
 
-    const normalizedItems = nextItems.map((item, index) => ({
-      ...item,
-      sort_order: (index + 1) * 10,
-      line_total: calculateCrmItemLineTotal(item),
-    }));
+    const normalizedItems = nextItems.map((item, index) => normalizeCrmItem(item, index));
     const totals = calculateCrmItemTotals(normalizedItems);
 
     updateOpportunityState(opportunityId, {

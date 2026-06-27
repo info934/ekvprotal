@@ -121,15 +121,32 @@
   }
 
   .crm-panel {
-    @apply overflow-hidden rounded-lg border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)];
+    @apply overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)];
   }
 
   .crm-panel-header {
-    @apply border-b border-slate-200/80 bg-slate-50/70 px-4 py-3 sm:px-5;
+    @apply border-b border-slate-200 bg-slate-50/90 px-4 py-3 sm:px-5;
   }
 
   .crm-table-wrap {
     @apply -mx-4 overflow-x-auto sm:-mx-5;
+  }
+
+  .crm-table-wrap table {
+    @apply min-w-[1180px] text-sm;
+  }
+
+  .crm-table-wrap th {
+    @apply h-9 bg-slate-50 text-[11px] font-bold uppercase tracking-normal text-slate-500;
+  }
+
+  .crm-table-wrap td {
+    @apply py-2 align-middle;
+  }
+
+  .crm-table-wrap input,
+  .crm-table-wrap button {
+    @apply h-8;
   }
 
   .crm-table-wrap > div {
