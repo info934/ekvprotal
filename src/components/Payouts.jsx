@@ -34,6 +34,7 @@ import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import { savePayoutRequest } from '@/lib/payoutRequestService';
 import PageHeader from '@/components/ui/page-header';
 import { formatCurrency, PayoutMetricCard, PayoutPanel } from '@/components/payouts/PayoutShared';
+import ForwardInvoiceDialog from '@/components/payouts/ForwardInvoiceDialog';
 
 const Payouts = () => {
   const { toast } = useToast();
@@ -47,6 +48,7 @@ const Payouts = () => {
   const [editingPayout, setEditingPayout] = useState(null);
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [approvalPayout, setApprovalPayout] = useState(null);
+  const [invoiceForwardDialog, setInvoiceForwardDialog] = useState({ open: false, payout: null });
 
   const [view, setView] = useState('pending');
   const [searchTerm, setSearchTerm] = useState('');
@@ -211,6 +213,9 @@ const Payouts = () => {
         const paidPayout = { ...payout, status: 'paid', paid_at: new Date().toISOString() };
         toast({ title: "Výplata uzavřena", description: "Žádost byla označena jako vyplacená." });
         fetchPayouts();
+        if (payout.invoice_url) {
+          setInvoiceForwardDialog({ open: true, payout: paidPayout });
+        }
 
         const memberResult = await sendWorkflowPayoutPaidEmail(paidPayout);
         const adminResult = await sendAdminPayoutNotification({ memberName: payout.members?.name, amount: payout.amount, action: 'Vyplaceno a uzavřeno' });
@@ -529,6 +534,12 @@ const Payouts = () => {
       </div>
       <PayoutDialog isOpen={isDialogOpen} onClose={() => { setIsDialogOpen(false); setEditingPayout(null); }} onSave={handleSavePayout} onDelete={handleDelete} payout={editingPayout} />
       <AdminPayoutApprovalDialog isOpen={approvalDialogOpen} onClose={() => { setApprovalDialogOpen(false); setApprovalPayout(null); }} payout={approvalPayout} onConfirm={handleConfirmApproval} />
+      <ForwardInvoiceDialog
+        open={invoiceForwardDialog.open}
+        onOpenChange={(open) => setInvoiceForwardDialog((current) => ({ open, payout: open ? current.payout : null }))}
+        payout={invoiceForwardDialog.payout}
+        type="task"
+      />
     </div>
   );
 };

@@ -42,6 +42,7 @@ import {
   PayoutStatusBadge
 } from '@/components/payouts/PayoutShared';
 import PayoutRequestsTable from '@/components/payouts/PayoutRequestsTable';
+import ForwardInvoiceDialog from '@/components/payouts/ForwardInvoiceDialog';
 
 const InvoiceLink = ({ url, onDownload, isDownloading }) => {
   if (!url) {
@@ -77,6 +78,7 @@ const HourlyPayoutRequestsAdmin = () => {
   const [processingId, setProcessingId] = useState(null);
   const [selectedAuditRequest, setSelectedAuditRequest] = useState(null);
   const [downloadingInvoiceUrl, setDownloadingInvoiceUrl] = useState(null);
+  const [invoiceForwardDialog, setInvoiceForwardDialog] = useState({ open: false, payout: null });
 
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
@@ -331,6 +333,12 @@ const HourlyPayoutRequestsAdmin = () => {
 
       await logPayoutAction('mark_paid_success', request.id);
       toast({ title: 'Vyplaceno', description: 'Žádost byla uzavřena a zaměstnanec byl informován emailem.' });
+      if (request.invoice_url) {
+        setInvoiceForwardDialog({
+          open: true,
+          payout: { ...request, ...paidRequest, invoice_url: request.invoice_url, members: request.members },
+        });
+      }
       fetchRequests();
     } catch (err) {
       console.error('Error marking hourly payout as paid:', err);
@@ -591,6 +599,13 @@ const HourlyPayoutRequestsAdmin = () => {
         onClose={() => setIsRejectDialogOpen(false)}
         onConfirm={handleRejectConfirm}
         isSubmitting={processingId !== null}
+      />
+
+      <ForwardInvoiceDialog
+        open={invoiceForwardDialog.open}
+        onOpenChange={(open) => setInvoiceForwardDialog((current) => ({ open, payout: open ? current.payout : null }))}
+        payout={invoiceForwardDialog.payout}
+        type="hourly"
       />
     </div>
   );
