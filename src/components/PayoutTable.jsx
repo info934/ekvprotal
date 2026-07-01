@@ -55,7 +55,7 @@ const PayoutTableActions = ({
   const [isUploading, setIsUploading] = useState(false);
   const fileInputId = `payout-invoice-${item.id}`;
   const isOwner = user?.id === item.members?.auth_user_id;
-  const canUploadInvoice = item.status === 'approved' && isOwner && !item.approved_without_invoice && !item.invoice_url;
+  const canUploadInvoice = item.status === 'approved' && (isOwner || canAdmin) && !item.approved_without_invoice && !item.invoice_url;
   const canMarkPaid = canAdmin && (item.status === 'invoice_uploaded' || (item.status === 'approved' && item.approved_without_invoice));
   const canManagePending = canAdmin && item.status === 'pending';
   const canEditPending = item.status === 'pending' && (canAdmin || isOwner);

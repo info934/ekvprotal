@@ -9,6 +9,7 @@ import {
   FileWarning,
   Loader2,
   Search,
+  Upload,
   Wallet,
   XCircle
 } from 'lucide-react';
@@ -154,6 +155,84 @@ const HourlyPayoutRequestsAdmin = () => {
     }
 
     setDownloadingInvoiceUrl(null);
+  };
+
+
+  const handleAdminInvoiceUpload = async (request, file) => {
+    if (!request || !file) return;
+
+    if (request.status !== 'approved' || request.invoice_url || request.approved_without_invoice) {
+      toast({
+        title: 'Fakturu ted nelze nahrat',
+        description: 'Fakturu lze nahrat pouze ke schvalene zadosti, ktera jeste nema fakturu a neni schvalena bez faktury.',
+        variant: 'warning'
+      });
+      return;
+    }
+
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast({ title: 'Soubor je prilis velky', description: 'Maximalni velikost faktury je 10 MB.', variant: 'destructive' });
+      return;
+    }
+
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || 'pdf';
+    const allowedExt = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+    if (!allowedExt.includes(fileExt)) {
+      toast({ title: 'Nepodporovany typ souboru', description: 'Pouzijte PDF, DOC, DOCX, JPG nebo PNG.', variant: 'destructive' });
+      return;
+    }
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const bucketName = 'invoices';
+    const filePath = `${year}/${month}/hourly_${request.member_id}_${request.id}_${Date.now()}_${safeName}`;
+    const dbUrlPath = `${bucketName}/${filePath}`;
+
+    setProcessingId(request.id);
+    await logPayoutAction('hourly_admin_invoice_upload_attempt', request.id, { fileName: file.name, fileSize: file.size });
+
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const uploadedAt = new Date().toISOString();
+      const { error: dbError } = await supabase
+        .from('hourly_payout_requests')
+        .update({
+          invoice_url: dbUrlPath,
+          invoice_uploaded_at: uploadedAt,
+          status: 'invoice_uploaded',
+          updated_at: uploadedAt
+        })
+        .eq('id', request.id);
+
+      if (dbError) {
+        await supabase.storage.from(bucketName).remove([filePath]).catch(console.error);
+        throw dbError;
+      }
+
+      await logPayoutAction('hourly_admin_invoice_upload_success', request.id, { dbUrlPath });
+      await sendAdminPayoutNotification({
+        memberName: request.members?.name || 'Pracovnik',
+        amount: request.total_amount || 0,
+        action: 'Faktura nahrana administratorem k hodinove zadosti'
+      }).catch((error) => console.error('[HourlyPayoutRequestsAdmin] Admin upload notification failed:', error));
+
+      toast({ title: 'Faktura nahrana', description: 'Zadost je pripravena ke kontrole a vyplaceni.' });
+      fetchRequests();
+    } catch (error) {
+      console.error('Hourly admin invoice upload failed:', error);
+      await logPayoutAction('hourly_admin_invoice_upload_failure', request.id, { error: error.message });
+      toast({ title: 'Chyba nahravani faktury', description: error.message, variant: 'destructive' });
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   const openApprovalDialog = (request) => {
@@ -416,6 +495,23 @@ const HourlyPayoutRequestsAdmin = () => {
                 <XCircle className="h-4 w-4" />
               </Button>
             </>
+          )}
+          {request.status === 'approved' && !request.invoice_url && !request.approved_without_invoice && (
+            <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-700 shadow-sm transition hover:bg-blue-100">
+              <Upload className="h-4 w-4" />
+              Nahrat fakturu
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                className="hidden"
+                disabled={processingId === request.id}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  handleAdminInvoiceUpload(request, file);
+                }}
+              />
+            </label>
           )}
           {['approved', 'invoice_uploaded'].includes(request.status) && (
             <Button
