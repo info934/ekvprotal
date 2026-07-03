@@ -1,22 +1,25 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   Archive,
+  BarChart3,
   Boxes,
+  CalendarClock,
   Edit3,
   FileText,
   Package,
   Plus,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Warehouse,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,7 +45,7 @@ const productTypeLabels = {
 };
 
 const movementTypeLabels = {
-  receipt: 'Prijem',
+  receipt: 'Příjem',
   adjustment: 'Korekce',
 };
 
@@ -68,6 +71,20 @@ const normalizeMovementQuantity = (type, value) => {
   return quantity;
 };
 
+const marginValue = (product) => Number(product.default_unit_price || 0) - Number(product.purchase_price || 0);
+const marginPercent = (product) => {
+  const sale = Number(product.default_unit_price || 0);
+  return sale > 0 ? (marginValue(product) / sale) * 100 : 0;
+};
+
+const getProductStatus = (product) => {
+  const today = new Date().toISOString().slice(0, 10);
+  if (!product.is_active || product.archived_at) return { label: 'Archiv', className: 'border-slate-200 bg-slate-100 text-slate-600' };
+  if (product.valid_until && product.valid_until < today) return { label: 'Po platnosti', className: 'border-rose-200 bg-rose-50 text-rose-700' };
+  if (product.valid_from && product.valid_from > today) return { label: 'Čeká', className: 'border-amber-200 bg-amber-50 text-amber-800' };
+  return { label: 'Aktivní', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
+};
+
 const Products = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -80,6 +97,8 @@ const Products = () => {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [activeFilter, setActiveFilter] = useState('active');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [schemaWarning, setSchemaWarning] = useState('');
   const [productSchemaReady, setProductSchemaReady] = useState(true);
   const [movementDialogOpen, setMovementDialogOpen] = useState(false);
@@ -134,7 +153,7 @@ const Products = () => {
       .select('catalog_item_id, stock_qty, reserved_qty, available_qty');
 
     if (stockError) {
-      setSchemaWarning('Skladovy prehled zatim neni dostupny. Je potreba aplikovat produktovou migraci.');
+      setSchemaWarning('Skladový přehled zatím není dostupný. Je potřeba aplikovat produktovou migraci.');
     }
 
     setProducts(productData || []);
@@ -149,43 +168,50 @@ const Products = () => {
     fetchProducts();
   }, [fetchProducts]);
 
+  const categories = useMemo(() => Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'cs')), [products]);
+
   const stats = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
     return products.reduce((acc, product) => {
       const stock = stockByProduct[product.id];
       const available = Number(stock?.available_qty || 0);
       const minQty = Number(product.stock_min_qty || 0);
-      const isActive = product.is_active && !product.archived_at;
-      const hasCode = Boolean(product.sku || product.code);
-      const hasPrice = Number(product.default_unit_price || 0) > 0;
-      const hasDatasheet = Boolean(product.datasheet_external_web_url || product.datasheet_file_name || product.datasheet_preview_image_url || product.image_url);
-      const expired = Boolean(product.valid_until && product.valid_until < today);
+      const active = product.is_active && !product.archived_at;
+      const margin = marginValue(product);
+      const sale = Number(product.default_unit_price || 0);
       return {
         total: acc.total + 1,
-        active: acc.active + (isActive ? 1 : 0),
+        active: acc.active + (active ? 1 : 0),
         manufactured: acc.manufactured + (product.product_type === 'manufactured' ? 1 : 0),
         lowStock: acc.lowStock + (product.product_type === 'manufactured' && minQty > 0 && available <= minQty ? 1 : 0),
-        missingCode: acc.missingCode + (!hasCode ? 1 : 0),
-        missingPrice: acc.missingPrice + (isActive && !hasPrice ? 1 : 0),
-        missingDatasheet: acc.missingDatasheet + (isActive && product.product_type === 'manufactured' && !hasDatasheet ? 1 : 0),
-        expired: acc.expired + (isActive && expired ? 1 : 0),
+        saleValue: acc.saleValue + (active ? sale : 0),
+        marginValue: acc.marginValue + (active ? margin : 0),
       };
-    }, { total: 0, active: 0, manufactured: 0, lowStock: 0, missingCode: 0, missingPrice: 0, missingDatasheet: 0, expired: 0 });
+    }, { total: 0, active: 0, manufactured: 0, lowStock: 0, saleValue: 0, marginValue: 0 });
   }, [products, stockByProduct]);
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
     return products.filter((product) => {
-      const isActive = product.is_active && !product.archived_at;
-      if (activeFilter === 'active' && !isActive) return false;
-      if (activeFilter === 'archived' && isActive) return false;
+      const status = getProductStatus(product);
+      const stock = stockByProduct[product.id] || {};
+      const available = Number(stock.available_qty || 0);
+      const minQty = Number(product.stock_min_qty || 0);
+      const lowStock = product.product_type === 'manufactured' && minQty > 0 && available <= minQty;
+      const hasDatasheet = Boolean(product.datasheet_external_web_url || product.datasheet_file_name || product.datasheet_preview_image_url || product.image_url);
+
+      if (activeFilter === 'active' && status.label !== 'Aktivní') return false;
+      if (activeFilter === 'archived' && status.label !== 'Archiv') return false;
       if (typeFilter !== 'all' && product.product_type !== typeFilter) return false;
+      if (categoryFilter !== 'all' && product.category !== categoryFilter) return false;
+      if (availabilityFilter === 'low_stock' && !lowStock) return false;
+      if (availabilityFilter === 'with_datasheet' && !hasDatasheet) return false;
+      if (availabilityFilter === 'missing_datasheet' && hasDatasheet) return false;
       if (!query) return true;
-      return [product.sku, product.code, product.name, product.description, product.category]
+      return [product.sku, product.code, product.name, product.description, product.category, product.product_type]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query));
     });
-  }, [activeFilter, products, search, typeFilter]);
+  }, [activeFilter, availabilityFilter, categoryFilter, products, search, stockByProduct, typeFilter]);
 
   const openMovementDialog = (product) => {
     setMovementForm({
@@ -210,14 +236,14 @@ const Products = () => {
       toast({ title: 'Produkt se nepodařilo archivovat', description: error.message, variant: 'destructive' });
       return;
     }
-    toast({ title: 'Produkt archivovan' });
+    toast({ title: 'Produkt archivován' });
     fetchProducts();
   };
 
   const saveMovement = async () => {
     const quantity = normalizeMovementQuantity(movementForm.movement_type, movementForm.quantity);
     if (!movementForm.catalog_item_id || !quantity) {
-      toast({ title: 'Doplnte produkt a mnozstvi', variant: 'destructive' });
+      toast({ title: 'Doplňte produkt a množství', variant: 'destructive' });
       return;
     }
 
@@ -244,13 +270,21 @@ const Products = () => {
     fetchProducts();
   };
 
+  const resetFilters = () => {
+    setSearch('');
+    setTypeFilter('all');
+    setActiveFilter('active');
+    setCategoryFilter('all');
+    setAvailabilityFilter('all');
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6">
-      <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-5">
+    <div className="min-h-screen bg-slate-50/70 p-3 sm:p-4">
+      <div className="mx-auto flex w-full max-w-none flex-col gap-4">
         <PageHeader
           icon={Package}
           title="Produkty"
-          description="Centrální katalog pro CRM, nabídky, objednávky a realizace."
+          description="Centrální katalog pro CRM, nabídky, objednávky a realizace. CRM položky sklad neodečítají, skladové pohyby vznikají až v realizaci."
           actions={(
             <>
               <Button variant="outline" onClick={fetchProducts} disabled={loading}>
@@ -273,196 +307,178 @@ const Products = () => {
           </Alert>
         )}
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {[
-            { label: 'Celkem položek', value: stats.total, icon: Boxes },
-            { label: 'Aktivní', value: stats.active, icon: Package },
-            { label: 'Skladové', value: stats.manufactured, icon: Warehouse },
-            { label: 'Pod minimem', value: stats.lowStock, icon: AlertTriangle, danger: stats.lowStock > 0 },
+            { label: 'Aktivní položky', value: stats.active, description: `${stats.total} celkem`, icon: Boxes },
+            { label: 'Ceníková hodnota', value: formatCurrency(stats.saleValue), description: 'Součet aktivních prodejních cen', icon: Package },
+            { label: 'Modelová marže', value: formatCurrency(stats.marginValue), description: `${stats.saleValue > 0 ? ((stats.marginValue / stats.saleValue) * 100).toFixed(1) : '0.0'} %`, icon: BarChart3 },
+            { label: 'Skladové produkty', value: stats.manufactured, description: 'Pouze realizace odečítá sklad', icon: Warehouse },
+            { label: 'Pod minimem', value: stats.lowStock, description: 'Vyžaduje doplnění', icon: AlertTriangle, danger: stats.lowStock > 0 },
           ].map((item) => (
             <Card key={item.label} className="border-slate-200 bg-white shadow-sm">
-              <CardContent className="flex items-center justify-between gap-3 p-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">{item.label}</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-950">{item.value}</p>
+              <CardContent className="flex items-center justify-between gap-3 p-3">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</p>
+                  <p className="mt-1 truncate text-xl font-semibold text-slate-950">{item.value}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{item.description}</p>
                 </div>
                 <div className={cn(
-                  'flex h-10 w-10 items-center justify-center rounded-md ring-1',
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-md ring-1',
                   item.danger ? 'bg-rose-50 text-rose-700 ring-rose-100' : 'bg-primary/10 text-primary ring-primary/10'
                 )}>
-                  <item.icon className="h-5 w-5" />
+                  <item.icon className="h-4 w-4" />
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        <Card className="border-slate-200 bg-white shadow-sm">
-          <CardHeader className="border-b bg-slate-50/80 p-4">
-            <CardTitle className="text-base">Freeze kontrola katalogu</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
-            {[
-              { label: 'Bez kódu', value: stats.missingCode, tone: stats.missingCode > 0 ? 'rose' : 'emerald' },
-              { label: 'Aktivní bez ceny', value: stats.missingPrice, tone: stats.missingPrice > 0 ? 'amber' : 'emerald' },
-              { label: 'Skladové bez datasheetu', value: stats.missingDatasheet, tone: stats.missingDatasheet > 0 ? 'amber' : 'emerald' },
-              { label: 'Po platnosti', value: stats.expired, tone: stats.expired > 0 ? 'rose' : 'emerald' },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className={cn(
-                  'rounded-md border p-3',
-                  item.tone === 'rose' ? 'border-rose-200 bg-rose-50 text-rose-900' :
-                    item.tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-900' :
-                      'border-emerald-200 bg-emerald-50 text-emerald-900'
-                )}
-              >
-                <p className="text-xs font-semibold uppercase">{item.label}</p>
-                <p className="mt-1 text-2xl font-semibold">{item.value}</p>
+        <Card className="overflow-hidden border-slate-200 bg-white shadow-sm">
+          <CardHeader className="border-b bg-white px-3 py-3">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <CardTitle className="text-base">Produktový katalog</CardTitle>
+                <CardDescription>Raynet-like pracovní seznam s cenami, DPH, marží, platností a dostupností.</CardDescription>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200 bg-white shadow-sm">
-          <CardHeader className="border-b bg-white p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <CardTitle className="text-base">Katalog produktů</CardTitle>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="relative sm:w-[320px]">
-                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative w-full sm:w-[320px]">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="Hledat kód, název, kategorii..."
-                    className="pl-9"
+                    className="h-9 pl-9 text-sm"
                   />
                 </div>
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className="sm:w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger className="h-9 w-[170px] text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Všechny typy</SelectItem>
                     <SelectItem value="service">Služby</SelectItem>
                     <SelectItem value="manufactured">Skladové produkty</SelectItem>
                   </SelectContent>
                 </Select>
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <SelectTrigger className="h-9 w-[180px] text-sm"><SelectValue placeholder="Kategorie" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Všechny kategorie</SelectItem>
+                    {categories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={availabilityFilter} onValueChange={setAvailabilityFilter}>
+                  <SelectTrigger className="h-9 w-[180px] text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Všechny stavy</SelectItem>
+                    <SelectItem value="low_stock">Pod minimem</SelectItem>
+                    <SelectItem value="with_datasheet">S datasheetem</SelectItem>
+                    <SelectItem value="missing_datasheet">Bez datasheetu</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select value={activeFilter} onValueChange={setActiveFilter}>
-                  <SelectTrigger className="sm:w-[160px]">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger className="h-9 w-[140px] text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="active">Aktivní</SelectItem>
                     <SelectItem value="archived">Archiv</SelectItem>
                     <SelectItem value="all">Vše</SelectItem>
                   </SelectContent>
                 </Select>
+                <Button variant="outline" size="sm" className="h-9" onClick={resetFilters}>
+                  <SlidersHorizontal className="mr-2 h-4 w-4" />
+                  Vyčistit
+                </Button>
               </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50/80">
-                    <TableHead className="min-w-[120px]">SKU</TableHead>
-                    <TableHead className="min-w-[260px]">Název</TableHead>
-                    <TableHead className="min-w-[140px]">Typ</TableHead>
-                    <TableHead className="min-w-[140px]">Kategorie</TableHead>
+                <TableHeader className="sticky top-0 z-10 bg-slate-50/95">
+                  <TableRow>
+                    <TableHead className="min-w-[120px]">Kód</TableHead>
+                    <TableHead className="min-w-[320px]">Název produktu</TableHead>
+                    <TableHead className="min-w-[120px]">Stav</TableHead>
+                    <TableHead className="min-w-[145px]">Řada / typ</TableHead>
+                    <TableHead className="min-w-[150px]">Kategorie</TableHead>
                     <TableHead className="min-w-[120px] text-right">Prodej</TableHead>
+                    <TableHead className="min-w-[110px] text-right">DPH</TableHead>
                     <TableHead className="min-w-[120px] text-right">Nákup</TableHead>
-                    <TableHead className="min-w-[130px] text-right">Skladem</TableHead>
-                    <TableHead className="min-w-[130px] text-right">Rezervace</TableHead>
+                    <TableHead className="min-w-[130px] text-right">Marže</TableHead>
                     <TableHead className="min-w-[130px] text-right">Dostupné</TableHead>
                     <TableHead className="min-w-[130px]">Datasheet</TableHead>
-                    <TableHead className="min-w-[180px]">Platnost</TableHead>
-                    <TableHead className="min-w-[150px]">Lokace</TableHead>
+                    <TableHead className="min-w-[160px]">Platnost</TableHead>
+                    <TableHead className="min-w-[120px]">Lokace</TableHead>
                     <TableHead className="w-28 text-right">Akce</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={13} className="h-32 text-center text-muted-foreground">Načítám produkty...</TableCell>
-                    </TableRow>
+                    <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">Načítám produkty...</TableCell></TableRow>
                   ) : filteredProducts.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={13} className="h-32 text-center text-muted-foreground">Žádný produkt neodpovídá filtrům.</TableCell>
-                    </TableRow>
+                    <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">Žádný produkt neodpovídá filtrům.</TableCell></TableRow>
                   ) : filteredProducts.map((product) => {
                     const stock = stockByProduct[product.id] || {};
                     const available = Number(stock.available_qty || 0);
                     const minQty = Number(product.stock_min_qty || 0);
                     const lowStock = product.product_type === 'manufactured' && minQty > 0 && available <= minQty;
-                    const today = new Date().toISOString().slice(0, 10);
-                    const expired = product.valid_until && product.valid_until < today;
-                    const notYetValid = product.valid_from && product.valid_from > today;
+                    const hasDatasheet = Boolean(product.datasheet_external_web_url || product.datasheet_file_name || product.datasheet_preview_image_url || product.image_url);
+                    const status = getProductStatus(product);
                     return (
-                      <TableRow key={product.id} className={!product.is_active || product.archived_at ? 'opacity-60' : undefined}>
-                        <TableCell className="font-mono text-sm">{product.sku || product.code || '-'}</TableCell>
+                      <TableRow key={product.id} className={cn('cursor-pointer bg-white hover:bg-blue-50/40', status.label === 'Archiv' && 'opacity-60')} onClick={() => navigate(`/products/${product.id}/edit`)}>
+                        <TableCell className="font-mono text-xs font-semibold text-slate-700">{product.sku || product.code || '-'}</TableCell>
                         <TableCell>
                           <div className="font-semibold text-slate-950">{product.name}</div>
-                          {product.description && <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{product.description}</div>}
+                          {product.description && <div className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{product.description}</div>}
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={product.product_type === 'manufactured' ? 'default' : 'secondary'}>
-                            {productTypeLabels[product.product_type] || product.product_type}
-                          </Badge>
-                        </TableCell>
+                        <TableCell><Badge variant="outline" className={status.className}>{status.label}</Badge></TableCell>
+                        <TableCell><Badge variant={product.product_type === 'manufactured' ? 'default' : 'secondary'}>{productTypeLabels[product.product_type] || product.product_type || '-'}</Badge></TableCell>
                         <TableCell>{product.category || '-'}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(product.default_unit_price, product.currency)}</TableCell>
+                        <TableCell className="text-right">{Number(product.default_vat_rate ?? 21)} %</TableCell>
                         <TableCell className="text-right text-muted-foreground">{formatCurrency(product.purchase_price, product.currency)}</TableCell>
-                        <TableCell className="text-right">{product.product_type === 'manufactured' ? formatQty(stock.stock_qty, product.unit) : '-'}</TableCell>
-                        <TableCell className="text-right">{product.product_type === 'manufactured' ? formatQty(stock.reserved_qty, product.unit) : '-'}</TableCell>
+                        <TableCell className={cn('text-right font-semibold', marginValue(product) < 0 ? 'text-rose-700' : 'text-emerald-700')}>
+                          <div>{formatCurrency(marginValue(product), product.currency)}</div>
+                          <div className="text-xs font-normal text-muted-foreground">{marginPercent(product).toFixed(1)} %</div>
+                        </TableCell>
                         <TableCell className={cn('text-right font-semibold', lowStock && 'text-rose-700')}>
                           {product.product_type === 'manufactured' ? formatQty(available, product.unit) : '-'}
                         </TableCell>
                         <TableCell>
-                          {product.datasheet_external_web_url ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 px-2"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                window.open(product.datasheet_external_web_url, '_blank', 'noopener,noreferrer');
-                              }}
-                            >
-                              <FileText className="mr-1.5 h-4 w-4" />
-                              Soubor
-                            </Button>
-                          ) : product.datasheet_file_name || product.datasheet_preview_image_url || product.image_url ? (
-                            <Badge variant="outline">Připraveno</Badge>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
+                          {hasDatasheet ? (
+                            product.datasheet_external_web_url ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-2"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  window.open(product.datasheet_external_web_url, '_blank', 'noopener,noreferrer');
+                                }}
+                              >
+                                <FileText className="mr-1.5 h-4 w-4" />
+                                Otevřít
+                              </Button>
+                            ) : <Badge variant="outline">Připraveno</Badge>
+                          ) : <span className="text-muted-foreground">-</span>}
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs text-muted-foreground">
-                              {(product.valid_from || product.valid_until) ? `${product.valid_from || '-'} - ${product.valid_until || '-'}` : 'Bez omezení'}
-                            </span>
-                            {(expired || notYetValid) && (
-                              <Badge variant="outline" className={expired ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'}>
-                                {expired ? 'Po platnosti' : 'Čeká na platnost'}
-                              </Badge>
-                            )}
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <CalendarClock className="h-3.5 w-3.5" />
+                            {(product.valid_from || product.valid_until) ? `${product.valid_from || '-'} - ${product.valid_until || '-'}` : 'Bez omezení'}
                           </div>
                         </TableCell>
                         <TableCell>{product.warehouse_location || '-'}</TableCell>
-                        <TableCell>
+                        <TableCell onClick={(event) => event.stopPropagation()}>
                           <div className="flex justify-end gap-1">
                             {product.product_type === 'manufactured' && (
-                              <Button variant="ghost" size="icon" onClick={() => openMovementDialog(product)} disabled={!canEdit}>
+                              <Button variant="ghost" size="icon" onClick={() => openMovementDialog(product)} disabled={!canEdit} title="Skladový pohyb">
                                 <Warehouse className="h-4 w-4" />
                               </Button>
                             )}
-                            <Button variant="ghost" size="icon" onClick={() => navigate(`/products/${product.id}/edit`)} disabled={!canEdit}>
+                            <Button variant="ghost" size="icon" onClick={() => navigate(`/products/${product.id}/edit`)} disabled={!canEdit} title="Upravit">
                               <Edit3 className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => archiveProduct(product)} disabled={!canEdit || !product.is_active}>
+                            <Button variant="ghost" size="icon" onClick={() => archiveProduct(product)} disabled={!canEdit || !product.is_active} title="Archivovat">
                               <Archive className="h-4 w-4" />
                             </Button>
                           </div>
@@ -472,6 +488,10 @@ const Products = () => {
                   })}
                 </TableBody>
               </Table>
+            </div>
+            <div className="flex flex-col gap-2 border-t bg-slate-50 px-3 py-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+              <span>Zobrazeno {filteredProducts.length} z {products.length} produktů</span>
+              <span>Prodejní ceny jsou snapshotovány do OP/NAB/OBJ při vložení položky.</span>
             </div>
           </CardContent>
         </Card>
@@ -486,13 +506,9 @@ const Products = () => {
             <div className="space-y-2">
               <Label>Typ pohybu</Label>
               <Select value={movementForm.movement_type} onValueChange={(value) => setMovementForm({ ...movementForm, movement_type: value })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(movementTypeLabels).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                  ))}
+                  {Object.entries(movementTypeLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

@@ -1,8 +1,9 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, FileText, Image, Package, Save, UploadCloud } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarClock, Database, ExternalLink, FileText, Image, Package, Save, UploadCloud } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -61,6 +62,13 @@ const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
   currency: 'CZK',
   maximumFractionDigits: 0,
 }).format(Number(value || 0));
+
+const formatPercent = (value) => `${new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 1 }).format(Number(value || 0))} %`;
+
+const productTypeLabels = {
+  service: 'Služba',
+  manufactured: 'Výrobek / sklad',
+};
 
 const ProductForm = () => {
   const { productId } = useParams();
@@ -436,13 +444,20 @@ const ProductForm = () => {
     navigate(`/products/${data.id}/edit`);
   };
 
+  const salePrice = Number(form.default_unit_price || 0);
+  const purchasePrice = Number(form.purchase_price || 0);
+  const productMargin = salePrice - purchasePrice;
+  const productMarginPercent = salePrice > 0 ? (productMargin / salePrice) * 100 : 0;
+  const productStatusClass = form.is_active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-600';
+  const productStatusLabel = form.is_active ? 'Aktivní' : 'Archivovaný';
+  const validityText = form.valid_until ? `Platí do ${new Date(form.valid_until).toLocaleDateString('cs-CZ')}` : 'Bez konce platnosti';
   return (
     <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6">
-      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5">
+      <div className="mx-auto flex w-full max-w-none flex-col gap-5">
         <PageHeader
           icon={Package}
-          title={isEditing ? 'Upravit produkt' : 'Nový produkt'}
-          description={isEditing ? (form.sku || form.code || form.name || 'Produktový katalog') : 'Založení katalogové položky pro CRM, nabídky, objednávky a realizace.'}
+          title={isEditing ? 'Detail produktu' : 'Nový produkt'}
+          description={isEditing ? 'Pracovní karta katalogové položky pro CRM, nabídky, objednávky a realizace.' : 'Založení katalogové položky pro CRM, nabídky, objednávky a realizace.'}
           actions={(
             <>
               <Button variant="outline" onClick={() => navigate('/products')}>
@@ -463,6 +478,43 @@ const ProductForm = () => {
             <AlertDescription>{warning}</AlertDescription>
           </Alert>
         )}
+
+        <Card className="overflow-hidden border-slate-200">
+          <CardContent className="p-0">
+            <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_420px]">
+              <div className="border-b p-5 xl:border-b-0 xl:border-r">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>Produkt</span>
+                  <span className="font-mono font-semibold text-slate-700">{form.sku || form.code || 'Nový kód'}</span>
+                  <Badge variant="outline" className={productStatusClass}>{productStatusLabel}</Badge>
+                  <Badge variant="secondary">{productTypeLabels[form.product_type] || form.product_type}</Badge>
+                  {form.category && <Badge variant="outline">{form.category}</Badge>}
+                </div>
+                <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight text-slate-950">{form.name || 'Nový produkt'}</h1>
+                <p className="mt-1 line-clamp-2 max-w-5xl text-sm text-muted-foreground">
+                  {form.description || 'Katalogová položka pro obchodní kalkulace. Ceny se do dokumentů ukládají jako snapshot.'}
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-px bg-slate-200 xl:grid-cols-1">
+                <div className="bg-white p-3">
+                  <div className="flex items-center gap-2 text-[11px] uppercase text-muted-foreground"><BarChart3 className="h-3.5 w-3.5" />Prodej / marže</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-950">{formatCurrency(salePrice)}</div>
+                  <div className="text-xs text-muted-foreground">{formatPercent(productMarginPercent)} marže</div>
+                </div>
+                <div className="bg-white p-3">
+                  <div className="flex items-center gap-2 text-[11px] uppercase text-muted-foreground"><Database className="h-3.5 w-3.5" />Nákup / DPH</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-950">{formatCurrency(purchasePrice)}</div>
+                  <div className="text-xs text-muted-foreground">DPH {formatPercent(form.default_vat_rate)}</div>
+                </div>
+                <div className="bg-white p-3">
+                  <div className="flex items-center gap-2 text-[11px] uppercase text-muted-foreground"><CalendarClock className="h-3.5 w-3.5" />Platnost</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-950">{validityText}</div>
+                  <div className="text-xs text-muted-foreground">{form.valid_from ? `Od ${new Date(form.valid_from).toLocaleDateString('cs-CZ')}` : 'Bez začátku platnosti'}</div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-5">
