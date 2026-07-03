@@ -36,6 +36,8 @@ import {
 import PageHeader from '@/components/ui/page-header';
 import SubjectSelect from '@/components/SubjectSelect';
 import { CrmCatalogProductMeta, CrmItemSnapshotBadges } from '@/components/CrmItemSnapshotBadges';
+import CrmLineItemsTable from '@/components/CrmLineItemsTable';
+import CrmProductPickerDialog from '@/components/CrmProductPickerDialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -68,6 +70,7 @@ import {
   calculateCrmLineTotal,
   calculateCrmTotals,
   createCrmCatalogItem,
+  normalizeCrmItem,
   isMissingCrmRpcError,
 } from '@/lib/crmItemPayloads';
 import { cn } from '@/lib/utils';
@@ -274,6 +277,7 @@ const DealWorkspace = ({
 }) => {
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
 
@@ -412,54 +416,43 @@ const DealWorkspace = ({
     ...opportunityNotes.map((note) => ({ id: `note-${note.id}`, kind: 'Diskuze', title: note.author?.name || 'Interni poznamka', detail: note.body, date: note.created_at, icon: MessageSquare })),
   ].filter((item) => item.date || item.title).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
-  const updateOpportunityItem = (itemId, field, nextValue) => {
-    const baseItems = opportunityItems.length > 0 ? opportunityItems : [{
-      ...createEmptyCrmItem(),
-      id: 'fallback',
-      code: 'CRM-001',
-      name: opportunity.title,
-      unit_price: value,
-      line_total: value,
-    }];
+  const getEditableOpportunityItems = () => (opportunityItems.length > 0 ? opportunityItems : [{
+    ...createEmptyCrmItem(),
+    id: 'fallback',
+    code: 'CRM-001',
+    name: opportunity.title,
+    unit_price: value,
+    line_total: value,
+  }]);
 
-    const nextItems = baseItems.map((item) => {
-      if (item.id !== itemId) return item;
-      const valueToStore = ['quantity', 'unit_price', 'discount_percent', 'vat_rate'].includes(field)
-        ? Number(nextValue || 0)
-        : nextValue;
-      const next = { ...item, [field]: valueToStore };
-      return { ...next, line_total: calculateCrmLineTotal(next) };
+  const updateOpportunityItem = (itemId, field, nextValue, rowIndex = 0) => {
+    const numericFields = ['quantity', 'unit_price', 'unit_cost', 'purchase_price_snapshot', 'discount_percent', 'vat_rate'];
+    const nextItems = getEditableOpportunityItems().map((item, index) => {
+      if (item.id !== itemId && index !== rowIndex) return item;
+      const valueToStore = numericFields.includes(field) ? Number(nextValue || 0) : nextValue;
+      return normalizeCrmItem({ ...item, [field]: valueToStore }, index);
     });
     onUpdateOpportunityItems?.(opportunity.id, nextItems);
   };
 
   const addOpportunityItem = () => {
-    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, createEmptyCrmItem()]);
+    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, normalizeCrmItem(createEmptyCrmItem(), opportunityItems.length)]);
   };
 
-  const removeOpportunityItem = (itemId) => {
-    onUpdateOpportunityItems?.(opportunity.id, opportunityItems.filter((item) => item.id !== itemId));
+  const removeOpportunityItem = (itemId, rowIndex) => {
+    onUpdateOpportunityItems?.(opportunity.id, getEditableOpportunityItems().filter((item, index) => item.id !== itemId && index !== rowIndex));
   };
 
-  const filteredCatalogProducts = catalogProducts
-    .filter((product) => {
-      const query = catalogQuery.trim().toLowerCase();
-      if (!query) return true;
-      return [product.code, product.name, product.description, product.category]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query));
-    })
-    .slice(0, 12);
-
-  const addCatalogProduct = (product) => {
-    const nextItem = createCrmCatalogItem(product, {
+  const addCatalogProducts = (products = []) => {
+    if (!products.length) return;
+    const timestamp = Date.now();
+    const nextItems = products.map((product, index) => createCrmCatalogItem(product, {
       ...createEmptyCrmItem(),
-      id: `new-${Date.now()}-${product.id}`,
-    });
-    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, { ...nextItem, line_total: calculateCrmLineTotal(nextItem) }]);
+      id: `new-${timestamp}-${index}-${product.id || product.code}`,
+    }));
+    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, ...nextItems]);
     setCatalogQuery('');
   };
-
   return (
     <div className="space-y-5">
       <Card className="crm-panel">
@@ -876,113 +869,24 @@ const DealWorkspace = ({
         </CardContent>
       </Card>
 
-      <Card className="crm-panel">
-        <CardHeader className="crm-panel-header">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Package className="h-4 w-4" />
-              Produkty ({productRows.length})
-            </CardTitle>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" disabled>Hromadne akce</Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" disabled={!canEdit || updatingOpportunity}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Přidat z katalogu
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-80">
-                  <DropdownMenuLabel>Produktovy katalog</DropdownMenuLabel>
-                  <div className="px-2 py-1.5">
-                    <Input
-                      value={catalogQuery}
-                      onChange={(event) => setCatalogQuery(event.target.value)}
-                      placeholder="Hledat produkt..."
-                      className="h-8"
-                    />
-                  </div>
-                  <DropdownMenuSeparator />
-                  {catalogLoading ? (
-                    <DropdownMenuItem disabled>Načítám katalog...</DropdownMenuItem>
-                  ) : filteredCatalogProducts.length === 0 ? (
-                    <DropdownMenuItem disabled>Žádný produkt nenalezen</DropdownMenuItem>
-                  ) : filteredCatalogProducts.map((product) => (
-                    <DropdownMenuItem key={product.id} onSelect={() => addCatalogProduct(product)} className="flex flex-col items-start gap-0.5">
-                      <span className="font-medium">{product.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {product.code || '-'} - {formatCurrency(product.default_unit_price)}
-                      </span>
-                      <CrmCatalogProductMeta product={product} />
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={addOpportunityItem}>
-                    Ruční položka
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="crm-table-wrap">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Kód</TableHead>
-                  <TableHead>Název</TableHead>
-                  <TableHead className="text-right">Jedn. cena</TableHead>
-                  <TableHead className="text-right">Množství</TableHead>
-                  <TableHead>MJ</TableHead>
-                  <TableHead className="text-right">Sleva %</TableHead>
-                  <TableHead className="text-right">Cena celkem</TableHead>
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {productRows.map((item) => (
-                  <TableRow key={item.id || item.code}>
-                    <TableCell className="min-w-[120px]">
-                      <Input value={item.code === '-' ? '' : item.code} onChange={(event) => updateOpportunityItem(item.id, 'code', event.target.value)} disabled={!canEdit || updatingOpportunity} />
-                    </TableCell>
-                    <TableCell className="min-w-[320px]">
-                      <Input value={item.name} onChange={(event) => updateOpportunityItem(item.id, 'name', event.target.value)} disabled={!canEdit || updatingOpportunity} />
-                      <CrmItemSnapshotBadges item={item} />
-                    </TableCell>
-                    <TableCell className="min-w-[130px]">
-                      <Input className="text-right" type="number" value={item.unitPrice} onChange={(event) => updateOpportunityItem(item.id, 'unit_price', event.target.value)} disabled={!canEdit || updatingOpportunity} />
-                    </TableCell>
-                    <TableCell className="min-w-[110px]">
-                      <Input className="text-right" type="number" value={item.quantity} onChange={(event) => updateOpportunityItem(item.id, 'quantity', event.target.value)} disabled={!canEdit || updatingOpportunity} />
-                    </TableCell>
-                    <TableCell className="min-w-[90px]">
-                      <Input value={item.unit} onChange={(event) => updateOpportunityItem(item.id, 'unit', event.target.value)} disabled={!canEdit || updatingOpportunity} />
-                    </TableCell>
-                    <TableCell className="min-w-[110px]">
-                      <Input className="text-right" type="number" value={item.discount} onChange={(event) => updateOpportunityItem(item.id, 'discount_percent', event.target.value)} disabled={!canEdit || updatingOpportunity} />
-                    </TableCell>
-                    <TableCell className="text-right font-semibold">{formatCurrency(item.total)}</TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => removeOpportunityItem(item.id)} disabled={!canEdit || updatingOpportunity || item.id === 'fallback'}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="grid gap-2 border-t bg-slate-50 p-5 text-sm md:ml-auto md:w-[480px]">
-            <div className="flex justify-between"><span>Cena před slevou bez DPH</span><strong>{formatCurrency(subtotal)}</strong></div>
-            <div className="flex justify-between"><span>Sleva celkem bez DPH</span><strong>{formatCurrency(discountTotal)}</strong></div>
-            <div className="flex justify-between text-base"><span>Celkem bez DPH po slevě</span><strong>{formatCurrency(total)}</strong></div>
-            <div className="flex justify-between text-muted-foreground"><span>Celkem s DPH</span><strong>{formatCurrency(taxValue)}</strong></div>
-            <p className="text-xs text-muted-foreground">DPH se počítá z částek po řádkových slevách.</p>
-          </div>
-        </CardContent>
-      </Card>
-
+      <CrmProductPickerDialog
+        open={catalogPickerOpen}
+        onOpenChange={setCatalogPickerOpen}
+        products={catalogProducts}
+        loading={catalogLoading}
+        onApply={addCatalogProducts}
+      />
+      <CrmLineItemsTable
+        title={`Produkty (${productRows.length})`}
+        description="Položky OP jsou hlavní zdroj pro synchronizované nabídky a objednávky. CRM položky neodečítají sklad."
+        items={getEditableOpportunityItems()}
+        canEdit={canEdit}
+        disabled={updatingOpportunity}
+        onUpdateItem={updateOpportunityItem}
+        onRemoveItem={removeOpportunityItem}
+        onAddManual={addOpportunityItem}
+        onOpenCatalog={() => setCatalogPickerOpen(true)}
+      />
       <Card className="crm-panel">
         <CardHeader className="crm-panel-header">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

@@ -17,6 +17,8 @@ import { useToast } from '@/components/ui/use-toast';
 import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import SubjectSelect from '@/components/SubjectSelect';
 import FveOfferWizardDialog from '@/components/FveOfferWizardDialog';
+import CrmLineItemsTable from '@/components/CrmLineItemsTable';
+import CrmProductPickerDialog from '@/components/CrmProductPickerDialog';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { DEFAULT_CRM_NUMBERING, formatCrmNumber, incrementCrmNumbering, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
@@ -27,6 +29,7 @@ import {
   calculateCrmLineTotal,
   calculateCrmTotals,
   createCrmCatalogItem,
+  normalizeCrmItem,
   isMissingCrmRpcError,
 } from '@/lib/crmItemPayloads';
 import {
@@ -124,6 +127,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [query, setQuery] = useState('');
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
   const [fveWizardOpen, setFveWizardOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -321,52 +325,44 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     } : current);
   };
 
-  const updateItem = (itemId, field, value) => {
+  const updateItem = (itemId, field, value, rowIndex = 0) => {
+    const numericFields = ['quantity', 'unit_price', 'unit_cost', 'purchase_price_snapshot', 'discount_percent', 'vat_rate'];
     setSelectedDocument((current) => {
       if (!current) return current;
       return {
         ...current,
-        items: current.items.map((item) => {
-          if (item.id !== itemId) return item;
-          const next = { ...item, [field]: ['quantity', 'unit_price', 'discount_percent', 'vat_rate'].includes(field) ? Number(value || 0) : value };
-          return { ...next, line_total: calculateCrmLineTotal(next) };
+        items: current.items.map((item, index) => {
+          if (item.id !== itemId && index !== rowIndex) return item;
+          const valueToStore = numericFields.includes(field) ? Number(value || 0) : value;
+          return normalizeCrmItem({ ...item, [field]: valueToStore }, index);
         }),
       };
     });
   };
 
   const addItem = () => {
-    setSelectedDocument((current) => current ? { ...current, items: [...current.items, emptyItem()] } : current);
+    setSelectedDocument((current) => current ? { ...current, items: [...current.items, normalizeCrmItem(emptyItem(), current.items.length)] } : current);
   };
 
-  const filteredCatalogProducts = useMemo(() => {
-    const needle = catalogQuery.trim().toLowerCase();
-    return catalogProducts
-      .filter((product) => {
-        if (!needle) return true;
-        return [product.code, product.name, product.description, product.category]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(needle));
-      })
-      .slice(0, 14);
-  }, [catalogProducts, catalogQuery]);
-
-  const addCatalogItem = (product) => {
-    const nextItem = createCrmCatalogItem(product, {
-      ...emptyItem(),
-      id: `new-${Date.now()}-${product.id}`,
-    });
+  const addCatalogItems = (products = []) => {
+    if (!products.length) return;
+    const timestamp = Date.now();
     setSelectedDocument((current) => current ? {
       ...current,
-      items: [...current.items, { ...nextItem, line_total: calculateCrmLineTotal(nextItem) }],
+      items: [
+        ...current.items,
+        ...products.map((product, index) => createCrmCatalogItem(product, {
+          ...emptyItem(),
+          id: `new-${timestamp}-${index}-${product.id || product.code}`,
+        })),
+      ],
     } : current);
     setCatalogQuery('');
   };
 
-  const removeItem = (itemId) => {
-    setSelectedDocument((current) => current ? { ...current, items: current.items.filter((item) => item.id !== itemId) } : current);
-  };
-  const applyFveOfferItems = (items) => {
+  const removeItem = (itemId, rowIndex) => {
+    setSelectedDocument((current) => current ? { ...current, items: current.items.filter((item, index) => item.id !== itemId && index !== rowIndex) } : current);
+  };  const applyFveOfferItems = (items) => {
     const nextItems = items.map((item, index) => ({ ...item, id: `fve-${Date.now()}-${index}` }));
     const totals = calculateCrmTotals(nextItems);
     setSelectedDocument((current) => current ? {
@@ -742,98 +738,33 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               </Card>
             </div>
 
-            <Card className="crm-panel xl:col-span-2">
-              <CardHeader className="crm-panel-header">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle>Položkový seznam</CardTitle>
-                    <CardDescription>Položky jsou společné pro obchodní případ, pokud u dokumentu nevypnete synchronizaci.</CardDescription>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="outline" disabled={!canEdit || saving}>
-                          <Plus className="mr-2 h-4 w-4" />
-                          Přidat z katalogu
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-80">
-                        <DropdownMenuLabel>Produktový katalog</DropdownMenuLabel>
-                        <div className="px-2 py-1.5">
-                          <Input
-                            value={catalogQuery}
-                            onChange={(event) => setCatalogQuery(event.target.value)}
-                            placeholder="Hledat produkt..."
-                            className="h-8"
-                          />
-                        </div>
-                        <DropdownMenuSeparator />
-                        {filteredCatalogProducts.length === 0 ? (
-                          <DropdownMenuItem disabled>Žádný produkt nenalezen</DropdownMenuItem>
-                        ) : filteredCatalogProducts.map((product) => (
-                          <DropdownMenuItem key={product.id} onSelect={() => addCatalogItem(product)} className="flex flex-col items-start gap-0.5">
-                            <span className="font-medium">{product.name}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {product.code || '-'} - {formatCurrency(product.default_unit_price)}
-                            </span>
-                            <CrmCatalogProductMeta product={product} />
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    {type === 'offer' && (
-                      <Button type="button" variant="outline" onClick={() => setFveWizardOpen(true)} disabled={!canEdit || saving}>
-                        <Calculator className="mr-2 h-4 w-4" />Jednoduchá FVE
-                      </Button>
-                    )}
-                    <Button type="button" variant="secondary" onClick={addItem} disabled={!canEdit || saving}>
-                      Ruční položka
-                    </Button>
-                  </div>
+            <div className="xl:col-span-2 space-y-3">
+              {type === 'offer' && (
+                <div className="flex justify-end">
+                  <Button type="button" variant="outline" onClick={() => setFveWizardOpen(true)} disabled={!canEdit || saving}>
+                    <Calculator className="mr-2 h-4 w-4" />Jednoduchá FVE
+                  </Button>
                 </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="crm-table-wrap">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="min-w-[110px]">Kód</TableHead>
-                        <TableHead className="min-w-[260px]">Název</TableHead>
-                        <TableHead className="min-w-[100px] text-right">Množství</TableHead>
-                        <TableHead className="min-w-[90px]">MJ</TableHead>
-                        <TableHead className="min-w-[130px] text-right">Cena</TableHead>
-                        <TableHead className="min-w-[100px] text-right">Sleva %</TableHead>
-                        <TableHead className="min-w-[120px] text-right">Celkem</TableHead>
-                        <TableHead className="w-12" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedDocument.items.length === 0 ? (
-                        <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">Zatím bez položek.</TableCell></TableRow>
-                      ) : selectedDocument.items.map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell><Input value={item.code || ''} onChange={(event) => updateItem(item.id, 'code', event.target.value)} disabled={!canEdit || saving} /></TableCell>
-                          <TableCell>
-                            <Input value={item.name || ''} onChange={(event) => updateItem(item.id, 'name', event.target.value)} disabled={!canEdit || saving} />
-                            <CrmItemSnapshotBadges item={item} />
-                          </TableCell>
-                          <TableCell><Input className="text-right" type="number" value={item.quantity || 0} onChange={(event) => updateItem(item.id, 'quantity', event.target.value)} disabled={!canEdit || saving} /></TableCell>
-                          <TableCell><Input value={item.unit || 'ks'} onChange={(event) => updateItem(item.id, 'unit', event.target.value)} disabled={!canEdit || saving} /></TableCell>
-                          <TableCell><Input className="text-right" type="number" value={item.unit_price || 0} onChange={(event) => updateItem(item.id, 'unit_price', event.target.value)} disabled={!canEdit || saving} /></TableCell>
-                          <TableCell><Input className="text-right" type="number" value={item.discount_percent || 0} onChange={(event) => updateItem(item.id, 'discount_percent', event.target.value)} disabled={!canEdit || saving} /></TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(calculateCrmLineTotal(item))}</TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)} disabled={!canEdit || saving}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
+              )}
+              <CrmProductPickerDialog
+                open={catalogPickerOpen}
+                onOpenChange={setCatalogPickerOpen}
+                products={catalogProducts}
+                loading={loading}
+                onApply={addCatalogItems}
+              />
+              <CrmLineItemsTable
+                title="Položkový seznam"
+                description="Položky jsou společné pro obchodní případ, pokud u dokumentu nevypnete synchronizaci. Po vypnutí sync jsou vlastní pro tento záznam."
+                items={selectedDocument.items}
+                canEdit={canEdit}
+                disabled={saving}
+                onUpdateItem={updateItem}
+                onRemoveItem={removeItem}
+                onAddManual={addItem}
+                onOpenCatalog={() => setCatalogPickerOpen(true)}
+              />
+            </div>
           </div>
         )}
         <FveOfferWizardDialog
