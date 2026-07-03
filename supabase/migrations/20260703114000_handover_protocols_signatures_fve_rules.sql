@@ -29,7 +29,7 @@ create table if not exists public.handover_protocols (
   number text,
   title text not null,
   project_id uuid references public.projects(id) on delete set null,
-  realizace_id uuid references public.realizace(id) on delete set null,
+  realizace_id uuid references public.realizations(id) on delete set null,
   opportunity_id uuid references public.crm_opportunities(id) on delete set null,
   subject_id uuid references public.subjects(id) on delete set null,
   handover_scope text,
@@ -365,7 +365,7 @@ values ('FVE standard 3-12 kWp', 'Vychozi pravidlova sada pro jednoduche FVE nab
 on conflict do nothing;
 
 insert into public.fve_offer_rule_items (rule_set_id, item_role, code, name, description, unit, quantity_mode, quantity_value, unit_price_override, unit_cost_override, vat_rate, sort_order)
-select s.id, item_role, code, name, description, unit, quantity_mode, quantity_value, unit_price_override, unit_cost_override, vat_rate, sort_order
+select s.id, seed.item_role, seed.code, seed.name, seed.description, seed.unit, seed.quantity_mode, seed.quantity_value, seed.unit_price_override, seed.unit_cost_override, seed.vat_rate, seed.sort_order
 from public.fve_offer_rule_sets s
 cross join (values
   ('panel', 'FVE-PANEL', 'Fotovoltaicke panely', 'Automaticky odhad podle vykonu FVE.', 'ks', 'panel_count', 1, 2600, 2100, 21, 10),
