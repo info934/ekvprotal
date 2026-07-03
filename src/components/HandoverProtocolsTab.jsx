@@ -275,10 +275,10 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle className="truncate text-base">{draft.number || 'Bez čísla'} ? {draft.title}</CardTitle>
+                    <CardTitle className="truncate text-base">{draft.number || 'Bez čísla'} - {draft.title}</CardTitle>
                     {isLocked && <Badge variant="secondary"><Lock className="mr-1 h-3 w-3" />Uzamčeno</Badge>}
                   </div>
-                  <p className="text-xs text-slate-500">{handoverProtocolTypeLabels[draft.document_type]} ? vytvořeno {formatDateTime(draft.created_at)}</p>
+                  <p className="text-xs text-slate-500">{handoverProtocolTypeLabels[draft.document_type]} - vytvořeno {formatDateTime(draft.created_at)}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Select value={templateId} onValueChange={setTemplateId}>
@@ -353,7 +353,7 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
 
               <section className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-slate-900">Vady a nedod?lky</h3>
+                  <h3 className="text-sm font-semibold text-slate-900">Vady a nedodělky</h3>
                   {canModifyDraft && <Button variant="outline" size="sm" onClick={() => updateDraft({ defects: [...draft.defects, emptyHandoverDefect(draft.defects.length)] })}><Plus className="mr-2 h-4 w-4" />Vada</Button>}
                 </div>
                 <div className="overflow-x-auto rounded-lg border">
@@ -389,7 +389,7 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
                     {draft.signatures.length === 0 ? <p className="text-sm text-slate-500">Zatím bez podpisu.</p> : draft.signatures.map((item) => (
                       <div key={item.id} className="rounded-md border bg-white p-2 text-xs">
                         <div className="font-semibold text-slate-900">{item.signer_name}</div>
-                        <div className="text-slate-500">{item.signer_role} ? {formatDateTime(item.signed_at)}</div>
+                        <div className="text-slate-500">{item.signer_role} - {formatDateTime(item.signed_at)}</div>
                       </div>
                     ))}
                   </div>

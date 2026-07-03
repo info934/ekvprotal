@@ -9,18 +9,18 @@ import {
 } from '@/lib/crmNumbering';
 
 export const handoverProtocolTypeLabels = {
-  handover_full: 'Celkov? p?ed?vac? protokol',
-  handover_partial: '??ste?n? p?ed?vac? protokol',
-  service_protocol: 'Servisn? protokol',
+  handover_full: 'Celkový předávací protokol',
+  handover_partial: 'Částečný předávací protokol',
+  service_protocol: 'Servisní protokol',
   contract: 'Smlouva',
 };
 
 export const handoverProtocolStatusLabels = {
-  draft: 'Rozpracov?no',
+  draft: 'Rozpracováno',
   ready_for_signature: 'K podpisu',
-  signed: 'Podeps?no',
-  cancelled: 'Zru?eno',
-  archived: 'Archivov?no',
+  signed: 'Podepsáno',
+  cancelled: 'Zrušeno',
+  archived: 'Archivováno',
 };
 
 export const emptyHandoverItem = () => ({
@@ -121,8 +121,8 @@ export const createHandoverProtocol = async ({
       realizace_id: realization?.id || null,
       opportunity_id: opportunity?.id || null,
       subject_id: subjectId || null,
-      handover_scope: documentType === 'service_protocol' ? '' : 'Rozsah p?ed?n? bude dopln?n.',
-      service_description: documentType === 'service_protocol' ? 'Popis servisn?ho z?sahu bude dopln?n.' : '',
+      handover_scope: documentType === 'service_protocol' ? '' : 'Rozsah předání bude doplněn.',
+      service_description: documentType === 'service_protocol' ? 'Popis servisního zásahu bude doplněn.' : '',
       signature_provider: 'internal',
       created_by: createdBy,
     })
@@ -135,7 +135,7 @@ export const createHandoverProtocol = async ({
 export const saveHandoverProtocol = async (protocol) => {
   const protocolId = protocol.id;
   const locked = Boolean(protocol.locked_at || protocol.status === 'signed');
-  if (locked) throw new Error('Podepsan? protokol je uzam?en? a nelze ho upravit.');
+  if (locked) throw new Error('Podepsaný protokol je uzamčený a nelze ho upravit.');
 
   const { data, error } = await supabase
     .from('handover_protocols')
@@ -213,7 +213,7 @@ export const signHandoverProtocol = async (protocol, signature) => {
   const { error: signatureError } = await supabase.from('document_signatures').insert({
     protocol_id: protocol.id,
     signer_name: signature.signerName,
-    signer_role: signature.signerRole || 'Z?kazn?k',
+    signer_role: signature.signerRole || 'Zákazník',
     signer_email: signature.signerEmail || null,
     signature_type: 'internal',
     signature_data_url: signature.signatureDataUrl,

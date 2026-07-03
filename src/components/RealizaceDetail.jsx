@@ -392,7 +392,7 @@ const RealizaceDetail = () => {
             {canViewCosts && <TabsTrigger value="finance" className="flex items-center gap-2"><DollarSign className="w-4 h-4" /> Náklady & Finance</TabsTrigger>}
             <TabsTrigger value="hourly" className="flex items-center gap-2"><Clock className="w-4 h-4" /> Hodinové náklady</TabsTrigger>
             <TabsTrigger value="orders" className="flex items-center gap-2"><ShoppingCart className="w-4 h-4" /> Objednávky</TabsTrigger>
-            <TabsTrigger value="handover" className="flex items-center gap-2"><FileSignature className="w-4 h-4" /> P?ed?n?</TabsTrigger>
+            <TabsTrigger value="handover" className="flex items-center gap-2"><FileSignature className="w-4 h-4" /> Předání</TabsTrigger>
             {canViewProfit && (
               <TabsTrigger value="profit" className="flex items-center gap-2"><PieChart className="w-4 h-4" /> Zisk</TabsTrigger>
             )}

@@ -199,7 +199,7 @@ const renderItemsListHtml = (items) => (
         <li>
           <strong>${escapeHtml(item.name)}</strong>
           ${item.code ? ` (${escapeHtml(item.code)})` : ''}
-          - ${item.quantity.toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}
+    ? ${item.quantity.toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}
           ${item.description ? `<br><span class="muted">${escapeHtml(item.description)}</span>` : ''}
         </li>
       `).join('')}</ul>`
@@ -559,7 +559,7 @@ const createTemplateDocxBlob = async (payload, template) => {
         page: { margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 } },
       },
       children: lines.length > 0
-        ? lines.map((line, index) => makeParagraph(line, {
+    ? lines.map((line, index) => makeParagraph(line, {
           bold: index === 0,
           size: index === 0 ? 30 : 22,
           spacing: { after: index === 0 ? 220 : 100 },
@@ -1155,7 +1155,7 @@ const buildDefectTemplatePlaceholders = (defect) => ({
 
 const fillDefectRepeatBlocks = (templateContent, defects) => {
   const replaceBlock = (content, opening, closing) => {
-    const blockRegex = new RegExp(`${escapeRegExp(opening)}([\s\S]*?)${escapeRegExp(closing)}`, 'g');
+    const blockRegex = new RegExp(`${escapeRegExp(opening)}([\\s\\S]*?)${escapeRegExp(closing)}`, 'g');
     return content.replace(blockRegex, (_, rowTemplate) => (
       defects.map((defect) => replaceTemplatePlaceholders(rowTemplate, buildDefectTemplatePlaceholders(defect))).join('')
     ));
@@ -1262,9 +1262,106 @@ export const renderHandoverProtocolHtml = (payload, template = null) => {
       `${payload.document.label} ${payload.document.number || ''}`.trim()
     ));
   }
-  return sanitizeGeneratedDocumentHtml(`<!doctype html><html lang="cs"><head><meta charset="utf-8" /><title>${escapeHtml(payload.document.label)} ${escapeHtml(payload.document.number)}</title><style>
-    body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45}.page{width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:18mm;box-shadow:0 18px 45px rgba(15,23,42,.12)}header{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid #111827;padding-bottom:18px;margin-bottom:24px}h1{margin:0;font-size:28px;line-height:1.1}.muted{color:#6b7280}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0}.box{border:1px solid #e5e7eb;border-radius:8px;padding:14px}.box h2{margin:0 0 8px;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em}table{width:100%;border-collapse:collapse;margin-top:10px}th{background:#f9fafb;color:#6b7280;font-size:11px;text-align:left;text-transform:uppercase;border-bottom:1px solid #e5e7eb;padding:8px}td{border-bottom:1px solid #eef2f7;padding:8px;vertical-align:top}.num{text-align:right;white-space:nowrap}.empty{text-align:center;color:#6b7280;padding:20px}.section{margin-top:26px}.notes{white-space:pre-wrap}.signature-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:28px}.signature-box{min-height:74px;border:1px solid #e5e7eb;border-radius:8px;padding:12px}@media print{body{background:#fff}.page{margin:0;box-shadow:none;width:auto;min-height:auto}}
-  </style></head><body><main class="page"><header><div><p class="muted">${escapeHtml(payload.document.number || '')}</p><h1>${escapeHtml(payload.document.label)}</h1><p class="muted">${escapeHtml(payload.document.title)}</p></div><div class="num"><strong>EKV Group</strong><br/><span class="muted">${formatDate(payload.document.issueDate)}</span></div></header><section class="grid"><div class="box"><h2>Klient</h2><strong>${escapeHtml(payload.client.name || 'Bez subjektu')}</strong><p class="muted">${escapeHtml([payload.client.email, payload.client.phone].filter(Boolean).join(' | '))}</p></div><div class="box"><h2>Projekt / realizace</h2><strong>${escapeHtml(payload.project.name || payload.realization.name || '-')}</strong><p class="muted">${escapeHtml(payload.realization.name || payload.project.code || '')}</p></div></section><section class="section"><h2>Rozsah předání</h2><p class="notes">${escapeHtml(payload.document.scope || payload.document.serviceDescription || 'Bez popisu.')}</p></section><section class="section"><h2>Předané části</h2>${renderHandoverItemsTableHtml(payload.items)}</section><section class="section"><h2>Vady a nedod?lky</h2>${renderDefectsTableHtml(payload.defects)}</section><section class="section"><h2>Podpisy</h2>${renderSignaturesTableHtml(payload.signatures)}</section>${payload.document.notes ? `<section class="section"><h2>Poznámky</h2><p class="notes">${escapeHtml(payload.document.notes)}</p></section>` : ''}</main></body></html>`);
+  return sanitizeGeneratedDocumentHtml(`<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(payload.document.label)} ${escapeHtml(payload.document.number)}</title>
+  <style>
+    :root { color-scheme: light; --ink:#0f172a; --muted:#64748b; --line:#dbe3ef; --soft:#f7f9fc; --blue:#1d4ed8; --green:#047857; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:#e9edf4; color:var(--ink); font-family:"Segoe UI", Calibri, Arial, sans-serif; font-size:12.5px; line-height:1.48; }
+    .page { width:210mm; min-height:297mm; margin:18px auto; background:#fff; padding:16mm; box-shadow:0 20px 50px rgba(15,23,42,.16); }
+    .topline { height:6px; border-radius:999px; background:linear-gradient(90deg,var(--blue),#22c55e); margin-bottom:18px; }
+    header { display:grid; grid-template-columns:minmax(0,1fr) 45mm; gap:18px; align-items:start; padding-bottom:16px; border-bottom:1px solid var(--line); }
+    .eyebrow { margin:0 0 6px; color:var(--blue); font-size:10.5px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; }
+    h1 { margin:0; font-size:25px; line-height:1.12; letter-spacing:-.01em; }
+    h2 { margin:0 0 9px; font-size:13px; letter-spacing:.02em; }
+    .subtitle { margin:7px 0 0; color:var(--muted); font-size:12px; }
+    .doc-meta { border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+    .doc-meta div { display:flex; justify-content:space-between; gap:10px; padding:8px 10px; border-bottom:1px solid #eef2f7; }
+    .doc-meta div:last-child { border-bottom:0; }
+    .doc-meta span { color:var(--muted); }
+    .doc-meta strong { text-align:right; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0; }
+    .box { border:1px solid var(--line); border-radius:10px; padding:12px; background:linear-gradient(180deg,#fff,#fbfcff); }
+    .box-title { margin:0 0 8px; color:var(--muted); font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.09em; }
+    .box strong { font-size:14px; }
+    .muted { color:var(--muted); }
+    .section { margin-top:18px; break-inside:avoid; }
+    .notes { margin:0; white-space:pre-wrap; color:#334155; }
+    table { width:100%; border-collapse:separate; border-spacing:0; margin-top:8px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+    th { background:#f1f5f9; color:#475569; font-size:10.5px; text-align:left; text-transform:uppercase; letter-spacing:.06em; padding:8px 9px; border-bottom:1px solid var(--line); }
+    td { padding:8px 9px; border-bottom:1px solid #eef2f7; vertical-align:top; }
+    tr:last-child td { border-bottom:0; }
+    tbody tr:nth-child(even) td { background:#fbfdff; }
+    .num { text-align:right; white-space:nowrap; }
+    .empty { text-align:center; color:var(--muted); padding:22px; }
+    .sign-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:22px; }
+    .sign-box { min-height:72px; border:1px dashed #b6c2d2; border-radius:10px; padding:10px; color:var(--muted); }
+    footer { margin-top:26px; padding-top:10px; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:16px; color:var(--muted); font-size:10.5px; }
+    @media print { body{background:#fff}.page{margin:0;box-shadow:none;width:auto;min-height:auto}.topline{border-radius:0} }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="topline"></div>
+    <header>
+      <div>
+        <p class="eyebrow">${escapeHtml(payload.document.number || 'Bez čísla')}</p>
+        <h1>${escapeHtml(payload.document.label)}</h1>
+        <p class="subtitle">${escapeHtml(payload.document.title)}</p>
+      </div>
+      <div class="doc-meta">
+        <div><span>Vystavil</span><strong>EKV Group</strong></div>
+        <div><span>Datum</span><strong>${formatDate(payload.document.issueDate)}</strong></div>
+        <div><span>Stav</span><strong>${escapeHtml(payload.document.status || '-')}</strong></div>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="box">
+        <p class="box-title">Klient</p>
+        <strong>${escapeHtml(payload.client.name || 'Bez subjektu')}</strong>
+        <p class="muted">${escapeHtml([payload.client.email, payload.client.phone].filter(Boolean).join(' | ') || 'Kontakt není vyplněn')}</p>
+        ${payload.client.ico || payload.client.dic ? `<p class="muted">${escapeHtml([payload.client.ico ? `IČO ${payload.client.ico}` : '', payload.client.dic ? `DIČ ${payload.client.dic}` : ''].filter(Boolean).join(' | '))}</p>` : ''}
+      </div>
+      <div class="box">
+        <p class="box-title">Projekt / realizace</p>
+        <strong>${escapeHtml(payload.project.name || payload.realization.name || '-')}</strong>
+        <p class="muted">${escapeHtml([payload.project.code, payload.realization.name || payload.realization.status].filter(Boolean).join(' | ') || 'Bez vazby')}</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Rozsah předání</h2>
+      <p class="notes">${escapeHtml(payload.document.scope || payload.document.serviceDescription || 'Bez popisu.')}</p>
+    </section>
+
+    <section class="section">
+      <h2>Předané části</h2>
+      ${renderHandoverItemsTableHtml(payload.items)}
+    </section>
+
+    <section class="section">
+      <h2>Vady a nedodělky</h2>
+      ${renderDefectsTableHtml(payload.defects)}
+    </section>
+
+    <section class="section">
+      <h2>Podpisy</h2>
+      ${renderSignaturesTableHtml(payload.signatures)}
+    </section>
+
+    ${payload.document.notes ? `<section class="section"><h2>Poznámky</h2><p class="notes">${escapeHtml(payload.document.notes)}</p></section>` : ''}
+
+    <footer>
+      <span>Vygenerováno: ${formatDate(payload.generatedAt)}</span>
+      <span>EKVPortal</span>
+    </footer>
+  </main>
+</body>
+</html>`);
 };
 
 const createHandoverDocxBlob = async (payload, template = null) => {

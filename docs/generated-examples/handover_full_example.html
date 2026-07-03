@@ -1,38 +1,53 @@
 <!doctype html>
-<html lang="cs"><head><meta charset="utf-8" /><title>PP-26-001 Celkov? p?ed?vac? protokol</title><style>
-body { margin: 0; background: #f3f4f6; color: #111827; font-family: Arial, Helvetica, sans-serif; font-size: 13px; line-height: 1.45; }
-.page { width: 210mm; min-height: 297mm; margin: 16px auto; background: #fff; padding: 18mm; box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12); }
-header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #111827; padding-bottom: 18px; margin-bottom: 24px; }
-h1 { margin: 0; font-size: 28px; line-height: 1.1; }
-h2 { margin: 26px 0 10px; font-size: 15px; }
-.muted { color: #6b7280; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 20px 0; }
-.box { border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
-.box h2 { margin: 0 0 8px; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .05em; }
-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-th { background: #f9fafb; color: #6b7280; font-size: 11px; text-align: left; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding: 8px; }
-td { border-bottom: 1px solid #eef2f7; padding: 8px; vertical-align: top; }
-.num { text-align: right; white-space: nowrap; }
-.summary { width: 44%; margin-left: auto; margin-top: 18px; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
-.summary div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-bottom: 1px solid #eef2f7; }
-.summary div:last-child { border-bottom: 0; background: #111827; color: #fff; font-weight: 700; }
-.notes { white-space: pre-wrap; }
-@media print { body { background: #fff; } .page { margin: 0; box-shadow: none; width: auto; min-height: auto; } }
-</style></head>
+<html lang="cs"><head><meta charset="utf-8" /><title>PP-26-001 Celkový předávací protokol</title><style>:root { color-scheme: light; --ink:#0f172a; --muted:#64748b; --line:#dbe3ef; --soft:#f7f9fc; --blue:#1d4ed8; --green:#047857; --amber:#b45309; }
+* { box-sizing: border-box; }
+body { margin:0; background:#e9edf4; color:var(--ink); font-family:"Segoe UI", Calibri, Arial, sans-serif; font-size:12.5px; line-height:1.48; }
+.page { width:210mm; min-height:297mm; margin:18px auto; background:#fff; padding:16mm; box-shadow:0 20px 50px rgba(15,23,42,.16); }
+.topline { height:6px; border-radius:999px; background:linear-gradient(90deg,var(--blue),#22c55e); margin-bottom:18px; }
+header { display:grid; grid-template-columns:minmax(0,1fr) 48mm; gap:18px; align-items:start; padding-bottom:16px; border-bottom:1px solid var(--line); }
+.eyebrow { margin:0 0 6px; color:var(--blue); font-size:10.5px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; }
+h1 { margin:0; font-size:25px; line-height:1.12; letter-spacing:-.01em; }
+h2 { margin:0 0 9px; font-size:13px; letter-spacing:.02em; }
+.subtitle { margin:7px 0 0; color:var(--muted); font-size:12px; }
+.doc-meta { border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+.doc-meta div { display:flex; justify-content:space-between; gap:10px; padding:8px 10px; border-bottom:1px solid #eef2f7; }
+.doc-meta div:last-child { border-bottom:0; }
+.doc-meta span, .muted { color:var(--muted); }
+.doc-meta strong { text-align:right; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0; }
+.box { border:1px solid var(--line); border-radius:10px; padding:12px; background:linear-gradient(180deg,#fff,#fbfcff); }
+.box-title { margin:0 0 8px; color:var(--muted); font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.09em; }
+.box strong { font-size:14px; }
+.section { margin-top:18px; break-inside:avoid; }
+.notes { margin:0; white-space:pre-wrap; color:#334155; }
+table { width:100%; border-collapse:separate; border-spacing:0; margin-top:8px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+th { background:#f1f5f9; color:#475569; font-size:10.5px; text-align:left; text-transform:uppercase; letter-spacing:.06em; padding:8px 9px; border-bottom:1px solid var(--line); }
+td { padding:8px 9px; border-bottom:1px solid #eef2f7; vertical-align:top; }
+tr:last-child td { border-bottom:0; }
+tbody tr:nth-child(even) td { background:#fbfdff; }
+.num { text-align:right; white-space:nowrap; }
+.summary { width:48%; margin-left:auto; margin-top:14px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+.summary div { display:flex; justify-content:space-between; gap:12px; padding:8px 10px; border-bottom:1px solid #eef2f7; }
+.summary div:last-child { background:#0f172a; color:#fff; border-bottom:0; font-weight:800; }
+.badge { display:inline-flex; align-items:center; border-radius:999px; padding:3px 8px; background:#ecfdf5; color:var(--green); font-weight:700; font-size:11px; }
+footer { margin-top:26px; padding-top:10px; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:16px; color:var(--muted); font-size:10.5px; }
+@media print { body{background:#fff}.page{margin:0;box-shadow:none;width:auto;min-height:auto}.topline{border-radius:0} }</style></head>
 <body><main class="page">
-<header><div><p class="muted">PP-26-001</p><h1>Celkov? p?ed?vac? protokol</h1><p class="muted">P?ed?n? FVE Bene?ovice - RD Mat?jka</p></div><div class="num"><strong>EKV Group</strong><br><span class="muted">03. 07. 2026</span></div></header>
-<section class="grid"><div class="box"><h2>Klient</h2><strong>Jan Mat?jka</strong><p class="muted">jan.matejka@example.cz | +420 777 111 222</p></div><div class="box"><h2>Projekt / realizace</h2><strong>FVE Bene?ovice - RD Mat?jka</strong><p class="muted">Realizace dokon?ena, p?ipravena k p?ed?n?</p></div></section>
-<section><h2>Rozsah p?ed?n?</h2><p class="notes">P?ed?n? kompletn? fotovoltaick? elektr?rny v?etn? technologie, z?kladn? dokumentace, revizn? zpr?vy a za?kolen? u?ivatele.</p></section>
-<section><h2>P?edan? ??sti</h2><table><thead><tr><th>#</th><th>K?d</th><th>Polo?ka / ??st</th><th class="num">Mno?stv?</th><th>Stav</th></tr></thead><tbody>
-<tr><td>1</td><td>FVE-PANEL</td><td><strong>Fotovoltaick? panely</strong><div class="muted">Osazeno dle realiza?n? dokumentace.</div></td><td class="num">16 ks</td><td>P?ed?no bez v?hrad</td></tr>
-<tr><td>2</td><td>FVE-INV</td><td><strong>St??da? FVE</strong><div class="muted">Nastaven monitoring a z?kladn? parametry.</div></td><td class="num">1 ks</td><td>P?ed?no bez v?hrad</td></tr>
-<tr><td>3</td><td>FVE-BAT</td><td><strong>Bateriov? ?lo?i?t?</strong></td><td class="num">10 kWh</td><td>P?ed?no bez v?hrad</td></tr>
+<div class="topline"></div>
+<header><div><p class="eyebrow">PP-26-001</p><h1>Celkový předávací protokol</h1><p class="subtitle">Předání FVE Benešovice - RD Matějka</p></div><div class="doc-meta"><div><span>Vystavil</span><strong>EKV Group</strong></div><div><span>Datum</span><strong>03. 07. 2026</strong></div><div><span>Stav</span><strong><span class="badge">Podepsáno</span></strong></div></div></header>
+<section class="grid"><div class="box"><p class="box-title">Klient</p><strong>Jan Matějka</strong><p class="muted">jan.matejka@example.cz | +420 777 111 222</p></div><div class="box"><p class="box-title">Projekt / realizace</p><strong>FVE Benešovice - RD Matějka</strong><p class="muted">Realizace dokončena, připravena k předání</p></div></section>
+<section class="section"><h2>Rozsah předání</h2><p class="notes">Předání kompletní fotovoltaické elektrárny včetně technologie, základní dokumentace, revizní zprávy a zaškolení uživatele.</p></section>
+<section class="section"><h2>Předané části</h2><table><thead><tr><th>#</th><th>Kód</th><th>Položka / část</th><th class="num">Množství</th><th>Stav</th></tr></thead><tbody>
+<tr><td>1</td><td>FVE-PANEL</td><td><strong>Fotovoltaické panely</strong><div class="muted">Osazeno dle realizační dokumentace.</div></td><td class="num">16 ks</td><td>Předáno bez výhrad</td></tr>
+<tr><td>2</td><td>FVE-INV</td><td><strong>Střídač FVE</strong><div class="muted">Nastaven monitoring a základní parametry.</div></td><td class="num">1 ks</td><td>Předáno bez výhrad</td></tr>
+<tr><td>3</td><td>FVE-BAT</td><td><strong>Bateriové úložiště</strong></td><td class="num">10 kWh</td><td>Předáno bez výhrad</td></tr>
 </tbody></table></section>
-<section><h2>Vady a nedod?lky</h2><table><thead><tr><th>#</th><th>Vada / nedod?lek</th><th>Z?va?nost</th><th>Stav</th><th>Odpov?dn?</th><th>Term?n</th></tr></thead><tbody>
-<tr><td>1</td><td><strong>Doplnit fin?ln? ?t?tek rozvad??e</strong></td><td>n?zk?</td><td>otev?eno</td><td>EKV mont??</td><td>10. 07. 2026</td></tr>
+<section class="section"><h2>Vady a nedodělky</h2><table><thead><tr><th>#</th><th>Vada / nedodělek</th><th>Závažnost</th><th>Stav</th><th>Odpovědný</th><th>Termín</th></tr></thead><tbody>
+<tr><td>1</td><td><strong>Doplnit finální štítek rozvaděče</strong></td><td>nízká</td><td>otevřeno</td><td>EKV montáž</td><td>10. 07. 2026</td></tr>
 </tbody></table></section>
-<section><h2>Podpisy</h2><table><thead><tr><th>#</th><th>Jm?no</th><th>Role</th><th>Email</th><th>?as podpisu</th></tr></thead><tbody>
-<tr><td>1</td><td>Jan Mat?jka</td><td>Klient</td><td>jan.matejka@example.cz</td><td>03. 07. 2026 14:35</td></tr>
-<tr><td>2</td><td>Ing. Jan Kopa?ka</td><td>EKV Project</td><td>jan.kopacka@ekvproject.cz</td><td>03. 07. 2026 14:38</td></tr>
+<section class="section"><h2>Podpisy</h2><table><thead><tr><th>#</th><th>Jméno</th><th>Role</th><th>Email</th><th>Čas podpisu</th></tr></thead><tbody>
+<tr><td>1</td><td>Jan Matějka</td><td>Klient</td><td>jan.matejka@example.cz</td><td>03. 07. 2026 14:35</td></tr>
+<tr><td>2</td><td>Ing. Jan Kopačka</td><td>EKV Project</td><td>jan.kopacka@ekvproject.cz</td><td>03. 07. 2026 14:38</td></tr>
 </tbody></table></section>
+<footer><span>Vygenerováno v EKVPortal</span><span>Ukázkový dokument</span></footer>
 </main></body></html>
