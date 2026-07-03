@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="cs"><head><meta charset="utf-8" /><title>NAB-26-001 Jednoduch? FVE nab?dka</title><style>
+body { margin: 0; background: #f3f4f6; color: #111827; font-family: Arial, Helvetica, sans-serif; font-size: 13px; line-height: 1.45; }
+.page { width: 210mm; min-height: 297mm; margin: 16px auto; background: #fff; padding: 18mm; box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12); }
+header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #111827; padding-bottom: 18px; margin-bottom: 24px; }
+h1 { margin: 0; font-size: 28px; line-height: 1.1; }
+h2 { margin: 26px 0 10px; font-size: 15px; }
+.muted { color: #6b7280; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 20px 0; }
+.box { border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
+.box h2 { margin: 0 0 8px; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .05em; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th { background: #f9fafb; color: #6b7280; font-size: 11px; text-align: left; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding: 8px; }
+td { border-bottom: 1px solid #eef2f7; padding: 8px; vertical-align: top; }
+.num { text-align: right; white-space: nowrap; }
+.summary { width: 44%; margin-left: auto; margin-top: 18px; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+.summary div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-bottom: 1px solid #eef2f7; }
+.summary div:last-child { border-bottom: 0; background: #111827; color: #fff; font-weight: 700; }
+.notes { white-space: pre-wrap; }
+@media print { body { background: #fff; } .page { margin: 0; box-shadow: none; width: auto; min-height: auto; } }
+</style></head>
+<body><main class="page">
+<header><div><p class="muted">NAB-26-001</p><h1>Nab?dka FVE</h1><p class="muted">Automaticky navr?en? sestava z parametr? 6 kWp / 10 kWh</p></div><div class="num"><strong>EKV Group</strong><br><span class="muted">03. 07. 2026</span></div></header>
+<section class="grid"><div class="box"><h2>Klient</h2><strong>Pal?s s.r.o.</strong><p class="muted">I?O 12345678 | palis@example.cz</p></div><div class="box"><h2>Parametry n?vrhu</h2><p>V?kon FVE: <strong>6,0 kWp</strong></p><p>Baterie: <strong>10,0 kWh</strong></p><p>DPH: <strong>21 %</strong></p></div></section>
+<section><h2>Polo?ky</h2><table><thead><tr><th>#</th><th>K?d</th><th>N?zev</th><th class="num">Mno?stv?</th><th class="num">Jedn. cena</th><th class="num">Celkem</th></tr></thead><tbody>
+<tr><td>1</td><td>FVE-PANEL</td><td><strong>Fotovoltaick? panely</strong></td><td class="num">14 ks</td><td class="num">2 600 K?</td><td class="num">36 400 K?</td></tr>
+<tr><td>2</td><td>FVE-INV</td><td><strong>St??da? FVE</strong></td><td class="num">1 ks</td><td class="num">39 000 K?</td><td class="num">39 000 K?</td></tr>
+<tr><td>3</td><td>FVE-BAT</td><td><strong>Bateriov? ?lo?i?t?</strong></td><td class="num">10 kWh</td><td class="num">8 500 K?</td><td class="num">85 000 K?</td></tr>
+<tr><td>4</td><td>FVE-MNT</td><td><strong>Mont??n? konstrukce a kabel??</strong></td><td class="num">6 kWp</td><td class="num">4 200 K?</td><td class="num">25 200 K?</td></tr>
+<tr><td>5</td><td>FVE-INST</td><td><strong>Instalace a uveden? do provozu</strong></td><td class="num">6 kWp</td><td class="num">6 900 K?</td><td class="num">41 400 K?</td></tr>
+<tr><td>6</td><td>FVE-DOC</td><td><strong>Projektov? dokumentace a administrativa</strong></td><td class="num">1 ks</td><td class="num">12 500 K?</td><td class="num">12 500 K?</td></tr>
+</tbody></table><div class="summary"><div><span>Bez DPH</span><strong>239 500 K?</strong></div><div><span>DPH</span><strong>50 295 K?</strong></div><div><span>Celkem s DPH</span><strong>289 795 K?</strong></div></div></section>
+<section><h2>Pozn?mka</h2><p class="notes">Polo?ky jsou pouze uk?zka v?stupu z pravidlov? sady. V aplikaci je lze p?ed ulo?en?m ru?n? upravit a d?le synchronizovat s OP/NAB/OBJ.</p></section>
+</main></body></html>

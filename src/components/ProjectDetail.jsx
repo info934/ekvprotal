@@ -16,6 +16,7 @@ import ProjectTasks from '@/components/ProjectTasks';
 import ProjectLinkDialog from '@/components/ProjectLinkDialog';
 import ProjectContacts from '@/components/ProjectContacts';
 import SaveTemplateModal from '@/components/SaveTemplateModal';
+import HandoverProtocolsTab from '@/components/HandoverProtocolsTab';
 import { Textarea } from '@/components/ui/textarea';
 import { cn, projectStatusConfig } from '@/lib/utils';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
@@ -869,7 +870,14 @@ const ProjectDetail = () => {
 
                     <TabsContent value="tasks"><ProjectTasks projectId={projectId} project={project} tasks={tasks} members={members} canEdit={canEdit} onTaskUpdate={refreshData} /></TabsContent>
                     <TabsContent value="engineering"><ProjectEngineering projectId={projectId} project={project} canEdit={canEdit} /></TabsContent>
-                    <TabsContent value="documents"><p>Tato sekce bude implementována.</p></TabsContent>
+                    <TabsContent value="documents">
+                        <HandoverProtocolsTab
+                            projectId={projectId}
+                            project={project}
+                            subjectId={project?.client?.id || project?.investor?.id || null}
+                            canEdit={canEdit}
+                        />
+                    </TabsContent>
                     <TabsContent value="contacts"><ProjectContacts projectId={projectId} /></TabsContent>
 
                     {canViewFinance && <TabsContent value="finance" className="space-y-6">

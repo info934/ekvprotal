@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, FileText, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calculator, FileText, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import SubjectSelect from '@/components/SubjectSelect';
+import FveOfferWizardDialog from '@/components/FveOfferWizardDialog';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { DEFAULT_CRM_NUMBERING, formatCrmNumber, incrementCrmNumbering, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
@@ -123,6 +124,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [query, setQuery] = useState('');
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
+  const [fveWizardOpen, setFveWizardOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -364,6 +366,19 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const removeItem = (itemId) => {
     setSelectedDocument((current) => current ? { ...current, items: current.items.filter((item) => item.id !== itemId) } : current);
   };
+  const applyFveOfferItems = (items) => {
+    const nextItems = items.map((item, index) => ({ ...item, id: `fve-${Date.now()}-${index}` }));
+    const totals = calculateCrmTotals(nextItems);
+    setSelectedDocument((current) => current ? {
+      ...current,
+      ...totals,
+      items: nextItems,
+    } : current);
+    setFveWizardOpen(false);
+    toast({ title: 'FVE polo?ky vlo?eny', description: 'P?ed ulo?en?m je m??ete ru?n? upravit.' });
+  };
+
+
 
   const syncItemsToOpportunityDocuments = async (sourceDocument, itemPayloads) => {
     if (!sourceDocument.sync_items) return null;
@@ -766,6 +781,11 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    {type === 'offer' && (
+                      <Button type="button" variant="outline" onClick={() => setFveWizardOpen(true)} disabled={!canEdit || saving}>
+                        <Calculator className="mr-2 h-4 w-4" />Jednoduchá FVE
+                      </Button>
+                    )}
                     <Button type="button" variant="secondary" onClick={addItem} disabled={!canEdit || saving}>
                       Ruční položka
                     </Button>
@@ -816,6 +836,11 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
             </Card>
           </div>
         )}
+        <FveOfferWizardDialog
+          open={fveWizardOpen}
+          onOpenChange={setFveWizardOpen}
+          onApply={applyFveOfferItems}
+        />
       </div>
     );
   }

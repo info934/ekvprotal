@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2 } from 'lucide-react';
+import { ChevronLeft, Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -18,6 +18,7 @@ import RealizaceOrdersTab from './RealizaceOrdersTab';
 import RealizaceHourlyCosts from './RealizaceHourlyCosts';
 import RealizaceProfitSharing from './RealizaceProfitSharing';
 import RealizaceExtraCosts from './RealizaceExtraCosts';
+import HandoverProtocolsTab from './HandoverProtocolsTab';
 import { RealizaceCostDialog } from './RealizaceFinancials';
 import { calculateFinancials } from './RealizaceFinancialCalculations';
 import RealizaceTeam from './RealizaceTeam';
@@ -386,11 +387,12 @@ const RealizaceDetail = () => {
 
       <div className="app-page-wide">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-5 mb-4">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-6 mb-4">
             <TabsTrigger value="overview" className="flex items-center gap-2"><LayoutDashboard className="w-4 h-4" /> Přehled</TabsTrigger>
             {canViewCosts && <TabsTrigger value="finance" className="flex items-center gap-2"><DollarSign className="w-4 h-4" /> Náklady & Finance</TabsTrigger>}
             <TabsTrigger value="hourly" className="flex items-center gap-2"><Clock className="w-4 h-4" /> Hodinové náklady</TabsTrigger>
             <TabsTrigger value="orders" className="flex items-center gap-2"><ShoppingCart className="w-4 h-4" /> Objednávky</TabsTrigger>
+            <TabsTrigger value="handover" className="flex items-center gap-2"><FileSignature className="w-4 h-4" /> P?ed?n?</TabsTrigger>
             {canViewProfit && (
               <TabsTrigger value="profit" className="flex items-center gap-2"><PieChart className="w-4 h-4" /> Zisk</TabsTrigger>
             )}
@@ -570,6 +572,15 @@ const RealizaceDetail = () => {
               realizaceId={realizaceId}
               realization={realization}
               distributionAmount={calculatedFinancials.teamBudget}
+            />
+          </TabsContent>
+
+          <TabsContent value="handover">
+            <HandoverProtocolsTab
+              realizaceId={realizaceId}
+              realization={realization}
+              projectId={linkedProjectId}
+              canEdit={canEdit}
             />
           </TabsContent>
 

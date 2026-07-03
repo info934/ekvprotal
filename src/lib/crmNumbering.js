@@ -2,6 +2,10 @@ export const DEFAULT_CRM_NUMBERING = {
   opportunity: { document_type: 'opportunity', label: 'Obchodní případ', prefix: 'OP', next_number: 1, padding: 3, year_format: 'YY' },
   offer: { document_type: 'offer', label: 'Nabídka', prefix: 'NAB', next_number: 1, padding: 3, year_format: 'YY' },
   order: { document_type: 'order', label: 'Objednávka', prefix: 'OBJ', next_number: 1, padding: 3, year_format: 'YY' },
+  contract: { document_type: 'contract', label: 'Smlouva', prefix: 'SML', next_number: 1, padding: 3, year_format: 'YY' },
+  handover_full: { document_type: 'handover_full', label: 'Celkový předávací protokol', prefix: 'PP', next_number: 1, padding: 3, year_format: 'YY' },
+  handover_partial: { document_type: 'handover_partial', label: 'Částečný předávací protokol', prefix: 'CPP', next_number: 1, padding: 3, year_format: 'YY' },
+  service_protocol: { document_type: 'service_protocol', label: 'Servisní protokol', prefix: 'SP', next_number: 1, padding: 3, year_format: 'YY' },
 };
 
 const isMissingYearFormatColumn = (error) => {

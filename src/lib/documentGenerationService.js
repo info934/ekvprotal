@@ -18,6 +18,9 @@ const documentTypeLabels = {
   offer: 'Nabídka',
   order: 'Objednávka',
   contract: 'Smlouva',
+  handover_full: 'Celkový předávací protokol',
+  handover_partial: 'Částečný předávací protokol',
+  service_protocol: 'Servisní protokol',
 };
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
@@ -1075,8 +1078,255 @@ export const downloadOpportunityOverviewPdf = ({ opportunity, documents = [] }) 
   return payload;
 };
 
+const normalizeHandoverItems = (items = []) => [...items]
+  .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+  .map((item, index) => ({
+    position: index + 1,
+    code: item.code || '',
+    name: item.name || item.title || '',
+    description: item.description || item.condition_note || '',
+    quantity: Number(item.quantity || 0),
+    unit: item.unit || 'ks',
+    condition: item.condition || '',
+    note: item.condition_note || item.description || '',
+  }));
+
+const normalizeHandoverDefects = (defects = []) => [...defects]
+  .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+  .map((defect, index) => ({
+    position: index + 1,
+    title: defect.title || '',
+    description: defect.description || '',
+    severity: defect.severity || 'normal',
+    status: defect.status || 'open',
+    responsible: defect.responsible || '',
+    dueDate: defect.due_date || null,
+  }));
+
+const renderHandoverItemsTableHtml = (items) => {
+  const rows = items.length ? items.map((item) => `
+    <tr>
+      <td>${item.position}</td>
+      <td>${escapeHtml(item.code || '-')}</td>
+      <td><strong>${escapeHtml(item.name || '-')}</strong>${item.description ? `<div class="muted">${escapeHtml(item.description)}</div>` : ''}</td>
+      <td class="num">${item.quantity.toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}</td>
+      <td>${escapeHtml(item.condition || '-')}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="5" class="empty">Zatím nejsou zadány předávané části.</td></tr>';
+  return `<table><thead><tr><th>#</th><th>Kód</th><th>Položka / část</th><th class="num">Množství</th><th>Stav</th></tr></thead><tbody>${rows}</tbody></table>`;
+};
+
+const renderDefectsTableHtml = (defects) => {
+  const rows = defects.length ? defects.map((defect) => `
+    <tr>
+      <td>${defect.position}</td>
+      <td><strong>${escapeHtml(defect.title || '-')}</strong>${defect.description ? `<div class="muted">${escapeHtml(defect.description)}</div>` : ''}</td>
+      <td>${escapeHtml(defect.severity)}</td>
+      <td>${escapeHtml(defect.status)}</td>
+      <td>${escapeHtml(defect.responsible || '-')}</td>
+      <td>${formatDate(defect.dueDate)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="6" class="empty">Bez vad a nedodělků.</td></tr>';
+  return `<table><thead><tr><th>#</th><th>Vada / nedodělek</th><th>Závažnost</th><th>Stav</th><th>Odpovědný</th><th>Termín</th></tr></thead><tbody>${rows}</tbody></table>`;
+};
+
+const renderSignaturesTableHtml = (signatures = []) => {
+  const rows = signatures.length ? signatures.map((signature, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${escapeHtml(signature.signer_name || '-')}</td>
+      <td>${escapeHtml(signature.signer_role || '-')}</td>
+      <td>${escapeHtml(signature.signer_email || '-')}</td>
+      <td>${formatDate(signature.signed_at)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="5" class="empty">Dokument zatím není podepsaný.</td></tr>';
+  return `<table><thead><tr><th>#</th><th>Jméno</th><th>Role</th><th>Email</th><th>Čas podpisu</th></tr></thead><tbody>${rows}</tbody></table>`;
+};
+
+const buildDefectTemplatePlaceholders = (defect) => ({
+  defect_position: defect.position,
+  defect_title: defect.title || '',
+  defect_description: defect.description || '',
+  defect_severity: defect.severity || '',
+  defect_status: defect.status || '',
+  defect_responsible: defect.responsible || '',
+  defect_due_date: formatDate(defect.dueDate),
+});
+
+const fillDefectRepeatBlocks = (templateContent, defects) => {
+  const replaceBlock = (content, opening, closing) => {
+    const blockRegex = new RegExp(`${escapeRegExp(opening)}([\s\S]*?)${escapeRegExp(closing)}`, 'g');
+    return content.replace(blockRegex, (_, rowTemplate) => (
+      defects.map((defect) => replaceTemplatePlaceholders(rowTemplate, buildDefectTemplatePlaceholders(defect))).join('')
+    ));
+  };
+  return replaceBlock(replaceBlock(String(templateContent || ''), '{{#defects}}', '{{/defects}}'), '{#defects}', '{/defects}');
+};
+
+export const buildHandoverProtocolPayload = ({ protocol }) => {
+  const items = normalizeHandoverItems(protocol?.items || []);
+  const defects = normalizeHandoverDefects(protocol?.defects || []);
+  const project = protocol?.project || {};
+  const realization = protocol?.realization || {};
+  const opportunity = protocol?.opportunity || {};
+  const subject = protocol?.subject || {};
+  return {
+    document: {
+      id: protocol?.id,
+      type: protocol?.document_type || 'handover_full',
+      label: documentTypeLabels[protocol?.document_type] || 'Dokument',
+      number: protocol?.number || '',
+      title: protocol?.title || 'Předávací dokument',
+      status: protocol?.status || 'draft',
+      issueDate: protocol?.document_date || protocol?.created_at || new Date().toISOString(),
+      notes: protocol?.notes || '',
+      scope: protocol?.handover_scope || '',
+      serviceDescription: protocol?.service_description || '',
+      version: protocol?.version || 1,
+      lockedAt: protocol?.locked_at || null,
+    },
+    project: {
+      id: project?.id || protocol?.project_id,
+      name: project?.name || '',
+      code: project?.code || '',
+    },
+    realization: {
+      id: realization?.id || protocol?.realizace_id,
+      name: realization?.name || '',
+      status: realization?.status || '',
+    },
+    opportunity: {
+      id: opportunity?.id || protocol?.opportunity_id,
+      number: opportunity?.number || '',
+      title: opportunity?.title || '',
+    },
+    client: {
+      id: subject?.id || protocol?.subject_id,
+      name: subject?.name || protocol?.client_name || '',
+      email: subject?.email || '',
+      phone: subject?.phone || '',
+      ico: subject?.ico || '',
+      dic: subject?.dic || '',
+    },
+    items,
+    defects,
+    signatures: protocol?.signatures || [],
+    generatedAt: new Date().toISOString(),
+  };
+};
+
+const buildHandoverPlaceholders = (payload) => ({
+  document_number: payload.document.number || '',
+  document_title: payload.document.title || '',
+  document_type: payload.document.label || '',
+  document_date: formatDate(payload.document.issueDate),
+  document_status: payload.document.status || '',
+  client_name: payload.client.name || 'Bez subjektu',
+  client_email: payload.client.email || '',
+  client_phone: payload.client.phone || '',
+  client_ico: payload.client.ico || '',
+  client_dic: payload.client.dic || '',
+  project_name: payload.project.name || '',
+  project_code: payload.project.code || '',
+  realization_name: payload.realization.name || '',
+  realization_status: payload.realization.status || '',
+  opportunity_number: payload.opportunity.number || '',
+  opportunity_title: payload.opportunity.title || '',
+  handover_scope: payload.document.scope || '',
+  service_description: payload.document.serviceDescription || '',
+  notes: payload.document.notes || '',
+  items_table: renderHandoverItemsTableHtml(payload.items),
+  defects_table: renderDefectsTableHtml(payload.defects),
+  signatures_table: renderSignaturesTableHtml(payload.signatures),
+  generated_at: formatDate(payload.generatedAt),
+});
+
+export const fillHandoverTemplate = (templateContent, payload) => {
+  const cleanTemplate = sanitizeDocumentTemplateHtml(templateContent);
+  const withItems = fillItemsRepeatBlocks(cleanTemplate, payload.items.map((item) => ({
+    ...item,
+    unitPrice: 0,
+    discountPercent: 0,
+    vatRate: 0,
+    lineTotal: 0,
+    customFields: {},
+  })));
+  const withDefects = fillDefectRepeatBlocks(withItems, payload.defects);
+  return sanitizeGeneratedDocumentHtml(replaceTemplatePlaceholders(withDefects, buildHandoverPlaceholders(payload)));
+};
+
+export const renderHandoverProtocolHtml = (payload, template = null) => {
+  if (template?.content) {
+    return sanitizeGeneratedDocumentHtml(ensureHtmlDocument(
+      fillHandoverTemplate(template.content, payload),
+      `${payload.document.label} ${payload.document.number || ''}`.trim()
+    ));
+  }
+  return sanitizeGeneratedDocumentHtml(`<!doctype html><html lang="cs"><head><meta charset="utf-8" /><title>${escapeHtml(payload.document.label)} ${escapeHtml(payload.document.number)}</title><style>
+    body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45}.page{width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:18mm;box-shadow:0 18px 45px rgba(15,23,42,.12)}header{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid #111827;padding-bottom:18px;margin-bottom:24px}h1{margin:0;font-size:28px;line-height:1.1}.muted{color:#6b7280}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0}.box{border:1px solid #e5e7eb;border-radius:8px;padding:14px}.box h2{margin:0 0 8px;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em}table{width:100%;border-collapse:collapse;margin-top:10px}th{background:#f9fafb;color:#6b7280;font-size:11px;text-align:left;text-transform:uppercase;border-bottom:1px solid #e5e7eb;padding:8px}td{border-bottom:1px solid #eef2f7;padding:8px;vertical-align:top}.num{text-align:right;white-space:nowrap}.empty{text-align:center;color:#6b7280;padding:20px}.section{margin-top:26px}.notes{white-space:pre-wrap}.signature-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:28px}.signature-box{min-height:74px;border:1px solid #e5e7eb;border-radius:8px;padding:12px}@media print{body{background:#fff}.page{margin:0;box-shadow:none;width:auto;min-height:auto}}
+  </style></head><body><main class="page"><header><div><p class="muted">${escapeHtml(payload.document.number || '')}</p><h1>${escapeHtml(payload.document.label)}</h1><p class="muted">${escapeHtml(payload.document.title)}</p></div><div class="num"><strong>EKV Group</strong><br/><span class="muted">${formatDate(payload.document.issueDate)}</span></div></header><section class="grid"><div class="box"><h2>Klient</h2><strong>${escapeHtml(payload.client.name || 'Bez subjektu')}</strong><p class="muted">${escapeHtml([payload.client.email, payload.client.phone].filter(Boolean).join(' | '))}</p></div><div class="box"><h2>Projekt / realizace</h2><strong>${escapeHtml(payload.project.name || payload.realization.name || '-')}</strong><p class="muted">${escapeHtml(payload.realization.name || payload.project.code || '')}</p></div></section><section class="section"><h2>Rozsah předání</h2><p class="notes">${escapeHtml(payload.document.scope || payload.document.serviceDescription || 'Bez popisu.')}</p></section><section class="section"><h2>Předané části</h2>${renderHandoverItemsTableHtml(payload.items)}</section><section class="section"><h2>Vady a nedod?lky</h2>${renderDefectsTableHtml(payload.defects)}</section><section class="section"><h2>Podpisy</h2>${renderSignaturesTableHtml(payload.signatures)}</section>${payload.document.notes ? `<section class="section"><h2>Poznámky</h2><p class="notes">${escapeHtml(payload.document.notes)}</p></section>` : ''}</main></body></html>`);
+};
+
+const createHandoverDocxBlob = async (payload, template = null) => {
+  const html = template?.content ? fillHandoverTemplate(template.content, payload) : renderHandoverProtocolHtml(payload, null);
+  const lines = stripHtml(html).split('\n').map((line) => line.trim()).filter(Boolean);
+  const doc = new Document({
+    sections: [{
+      properties: { page: { margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 } } },
+      children: lines.map((line, index) => makeParagraph(line, { bold: index === 0, size: index === 0 ? 30 : 21, spacing: { after: index === 0 ? 200 : 90 } })),
+    }],
+  });
+  return Packer.toBlob(doc);
+};
+
+const createHandoverPdf = (payload, template = null) => {
+  const html = template?.content ? fillHandoverTemplate(template.content, payload) : renderHandoverProtocolHtml(payload, null);
+  const text = stripHtml(html);
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const margin = 14;
+  let y = 16;
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(16);
+  pdf.text(`${payload.document.label} ${payload.document.number || ''}`.trim(), margin, y);
+  y += 10;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(10);
+  text.split('\n').flatMap((line) => pdf.splitTextToSize(line, 182)).forEach((line) => {
+    if (y > 282) { pdf.addPage(); y = 16; }
+    pdf.text(line, margin, y);
+    y += 5;
+  });
+  return pdf;
+};
+
+const generateHandoverFileName = (payload, extension = 'html') => `${sanitizeFileName([payload.document.label, payload.document.number, payload.client.name].filter(Boolean).join(' '))}.${extension}`;
+
+export const downloadHandoverProtocolHtml = ({ protocol, template }) => {
+  const payload = buildHandoverProtocolPayload({ protocol });
+  const blob = new Blob([renderHandoverProtocolHtml(payload, template)], { type: 'text/html;charset=utf-8' });
+  downloadBlob(blob, generateHandoverFileName(payload, 'html'));
+  return payload;
+};
+
+export const downloadHandoverProtocolDocx = async ({ protocol, template }) => {
+  const payload = buildHandoverProtocolPayload({ protocol });
+  const blob = await createHandoverDocxBlob(payload, template);
+  downloadBlob(blob, generateHandoverFileName(payload, 'docx'));
+  return payload;
+};
+
+export const downloadHandoverProtocolPdf = ({ protocol, template }) => {
+  const payload = buildHandoverProtocolPayload({ protocol });
+  const pdf = createHandoverPdf(payload, template);
+  pdf.save(generateHandoverFileName(payload, 'pdf'));
+  return payload;
+};
+
 export const documentGenerationTargets = [
   { type: 'offer', label: 'Nabídky', output: ['html', 'docx', 'pdf'] },
   { type: 'order', label: 'Objednávky', output: ['html', 'docx', 'pdf'] },
   { type: 'contract', label: 'Smlouvy', output: ['html', 'pdf', 'docx'] },
+  { type: 'handover_full', label: 'Celkový předávací protokoly', output: ['html', 'pdf', 'docx'] },
+  { type: 'handover_partial', label: 'Částečný předávací protokoly', output: ['html', 'pdf', 'docx'] },
+  { type: 'service_protocol', label: 'Servisní protokoly', output: ['html', 'pdf', 'docx'] },
 ];
