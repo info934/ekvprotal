@@ -4,12 +4,23 @@ import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader }
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { Clipboard, FileUp } from 'lucide-react';
 import { Badge } from './ui/badge';
 import JSZip from 'jszip';
 import { sanitizeDocumentTemplateHtml } from '@/lib/htmlSanitizer';
+
+const templateCategoryOptions = [
+  { value: 'generic', label: 'Obecná šablona' },
+  { value: 'offer', label: 'Nabídka' },
+  { value: 'order', label: 'Objednávka' },
+  { value: 'contract', label: 'Smlouva' },
+  { value: 'handover_full', label: 'Celkový předávací protokol' },
+  { value: 'handover_partial', label: 'Částečný předávací protokol' },
+  { value: 'service_protocol', label: 'Servisní protokol' },
+];
 
 const placeholders = [
   '{document_number}',
@@ -36,6 +47,12 @@ const placeholders = [
   '{delivery_date}',
   '{realization_name}',
   '{admin_name}',
+  '{handover_scope}',
+  '{service_description}',
+  '{defects_table}',
+  '{signatures_table}',
+  '{protocol_status}',
+  '{original_id}',
 ];
 
 const escapeHtml = (value) => String(value ?? '')
@@ -74,6 +91,8 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
+  const [documentCategory, setDocumentCategory] = useState('generic');
+  const [isActive, setIsActive] = useState(true);
   const [importingFile, setImportingFile] = useState(false);
 
   useEffect(() => {
@@ -81,10 +100,14 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
       setName(template.name || '');
       setDescription(template.description || '');
       setContent(template.content || '');
+      setDocumentCategory(template.document_category || 'generic');
+      setIsActive(template.is_active !== false);
     } else {
       setName('');
       setDescription('');
       setContent('');
+      setDocumentCategory('generic');
+      setIsActive(true);
     }
   }, [template, isOpen]);
 
@@ -102,6 +125,8 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
       name: name.trim(),
       description: description.trim(),
       content: sanitizeDocumentTemplateHtml(content),
+      document_category: documentCategory,
+      is_active: isActive,
     });
   };
 
@@ -165,6 +190,31 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
               <Label htmlFor="template-description">Popis</Label>
               <Input id="template-description" value={description} onChange={(event) => setDescription(event.target.value)} />
             </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Typ dokumentu</Label>
+                <Select value={documentCategory} onValueChange={setDocumentCategory}>
+                  <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {templateCategoryOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-muted-foreground">Podle typu se šablona nabídne v nabídce, objednávce nebo konkrétním protokolu.</p>
+              </div>
+              <div>
+                <Label>Stav šablony</Label>
+                <Select value={isActive ? 'active' : 'inactive'} onValueChange={(value) => setIsActive(value === 'active')}>
+                  <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Aktivní</SelectItem>
+                    <SelectItem value="inactive">Neaktivní</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-muted-foreground">Neaktivní šablony zůstanou uložené, ale nenabízí se při generování.</p>
+              </div>
+            </div>
             <div className="rounded-lg border border-dashed bg-slate-50 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -202,7 +252,7 @@ const OrderTemplateDialog = ({ isOpen, onClose, onSave, template }) => {
           <div className="space-y-4 rounded-lg border bg-slate-50 p-4">
             <div>
               <h4 className="font-semibold">Dostupné zástupné symboly</h4>
-              <p className="mt-1 text-xs text-muted-foreground">Kliknutím zkopírujete placeholder do schránky.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Kliknutím zkopírujete placeholder do schránky. Protokoly navíc používají vady a podpisy.</p>
             </div>
             <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
               {placeholders.map((placeholder) => (

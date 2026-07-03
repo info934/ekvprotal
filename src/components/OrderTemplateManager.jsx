@@ -19,9 +19,23 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import PageHeader from '@/components/ui/page-header';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
+const templateCategoryOptions = [
+  { value: 'all', label: 'Všechny typy' },
+  { value: 'generic', label: 'Obecné' },
+  { value: 'offer', label: 'Nabídky' },
+  { value: 'order', label: 'Objednávky' },
+  { value: 'contract', label: 'Smlouvy' },
+  { value: 'handover_full', label: 'Celkové protokoly' },
+  { value: 'handover_partial', label: 'Částečné protokoly' },
+  { value: 'service_protocol', label: 'Servisní protokoly' },
+];
+
+const templateCategoryLabel = (value) => templateCategoryOptions.find((option) => option.value === value)?.label || value || 'Obecné';
 
 const previewValues = {
   document_number: 'NAB-26-001',
@@ -47,6 +61,10 @@ const previewValues = {
   delivery_date: '25.05.2026',
   realization_name: 'Realizace FVE Demo',
   admin_name: 'Jan Kopáčka',
+  handover_scope: 'Předání projektové dokumentace, revizních podkladů a provozních informací.',
+  service_description: 'Kontrola dokončené instalace a předání dokumentů zákazníkovi.',
+  protocol_status: 'Rozpracováno',
+  original_id: 'EKV-ORIG-2026-0001',
 };
 
 const sampleItemsTable = `
@@ -76,6 +94,20 @@ const sampleItemsTable = `
   </table>
 `;
 
+const sampleDefectsTable = `
+  <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">
+    <thead><tr style="background:#fff7ed"><th style="padding:8px;border:1px solid #fed7aa;text-align:left">Vada</th><th style="padding:8px;border:1px solid #fed7aa;text-align:left">Stav</th><th style="padding:8px;border:1px solid #fed7aa;text-align:left">Termín</th></tr></thead>
+    <tbody><tr><td style="padding:8px;border:1px solid #fed7aa">Doplnit finální revizní zprávu</td><td style="padding:8px;border:1px solid #fed7aa">Otevřeno</td><td style="padding:8px;border:1px solid #fed7aa">do 7 dnů</td></tr></tbody>
+  </table>
+`;
+
+const sampleSignaturesTable = `
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:28px">
+    <div style="border-top:1px solid #0f172a;padding-top:8px">Za EKV Project</div>
+    <div style="border-top:1px solid #0f172a;padding-top:8px">Za klienta</div>
+  </div>
+`;
+
 const templateQuickKeys = [
   '{{document_number}}',
   '{{document_title}}',
@@ -93,6 +125,12 @@ const templateQuickKeys = [
   '{{items_table}}',
   '{{items_rows}}',
   '{{items_list}}',
+  '{{handover_scope}}',
+  '{{service_description}}',
+  '{{defects_table}}',
+  '{{signatures_table}}',
+  '{{protocol_status}}',
+  '{{original_id}}',
 ];
 
 const itemTemplateKeys = [
@@ -140,13 +178,42 @@ const templateExamples = {
     {{/items}}
   </tbody>
 </table>`,
+  handoverFull: `<h1>Předávací protokol {{document_number}}</h1>
+<p><strong>Klient:</strong> {{client_name}}</p>
+<p><strong>Projekt:</strong> {{project_name}}</p>
+<p><strong>Realizace:</strong> {{realization_name}}</p>
+
+<h2>Rozsah předání</h2>
+<p>{{handover_scope}}</p>
+
+<h2>Předané položky</h2>
+{{items_table}}
+
+<h2>Vady a nedodělky</h2>
+{{defects_table}}
+
+<h2>Podpisy</h2>
+{{signatures_table}}`,
+  serviceProtocol: `<h1>Servisní protokol {{document_number}}</h1>
+<p>Klient: {{client_name}}</p>
+<p>Projekt: {{project_name}}</p>
+<h2>Popis zásahu</h2>
+<p>{{service_description}}</p>
+{{items_table}}
+{{signatures_table}}`,
 };
 
 const buildTemplatePreviewHtml = (template) => {
   const rawContent = String(template?.content || '<p>Šablona zatím nemá obsah.</p>');
-  const filledContent = rawContent.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => (
-    key === 'items_table' ? sampleItemsTable : previewValues[key] || match
-  ));
+  const replaceKey = (match, key) => {
+    if (key === 'items_table') return sampleItemsTable;
+    if (key === 'defects_table') return sampleDefectsTable;
+    if (key === 'signatures_table') return sampleSignaturesTable;
+    return previewValues[key] || match;
+  };
+  const filledContent = rawContent
+    .replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, replaceKey)
+    .replace(/\{([a-zA-Z0-9_]+)\}/g, replaceKey);
 
   return sanitizeGeneratedDocumentHtml(`<!doctype html>
     <html lang="cs">
@@ -170,6 +237,7 @@ const OrderTemplateManager = ({ embedded = false }) => {
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [previewTemplate, setPreviewTemplate] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
@@ -217,9 +285,12 @@ const OrderTemplateManager = ({ embedded = false }) => {
 
   const filteredTemplates = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return templates;
-    return templates.filter((template) => `${template.name || ''} ${template.description || ''}`.toLowerCase().includes(query));
-  }, [searchTerm, templates]);
+    return templates.filter((template) => {
+      const matchesCategory = categoryFilter === 'all' || (template.document_category || 'generic') === categoryFilter;
+      const matchesQuery = !query || `${template.name || ''} ${template.description || ''} ${template.document_category || ''}`.toLowerCase().includes(query);
+      return matchesCategory && matchesQuery;
+    });
+  }, [categoryFilter, searchTerm, templates]);
 
   const openNewTemplate = () => {
     setEditingTemplate(null);
@@ -263,6 +334,14 @@ const OrderTemplateManager = ({ embedded = false }) => {
                   className="pl-8"
                 />
               </div>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-full bg-white sm:w-56"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {templateCategoryOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button onClick={openNewTemplate} className="w-full sm:w-auto">
                 <Plus className="mr-2 h-4 w-4" /> Nová šablona
               </Button>
@@ -287,6 +366,8 @@ const OrderTemplateManager = ({ embedded = false }) => {
                   <TableRow>
                     <TableHead className="min-w-[220px]">Název</TableHead>
                     <TableHead className="min-w-[260px]">Popis</TableHead>
+                    <TableHead className="min-w-[170px]">Typ</TableHead>
+                    <TableHead className="w-[110px]">Stav</TableHead>
                     <TableHead className="w-[120px] text-right">Akce</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -297,6 +378,8 @@ const OrderTemplateManager = ({ embedded = false }) => {
                       <TableCell className="text-muted-foreground">
                         {template.description || <span className="italic text-slate-400">Bez popisu</span>}
                       </TableCell>
+                      <TableCell><Badge variant="outline">{templateCategoryLabel(template.document_category || 'generic')}</Badge></TableCell>
+                      <TableCell><Badge variant={template.is_active === false ? 'secondary' : 'default'}>{template.is_active === false ? 'Neaktivní' : 'Aktivní'}</Badge></TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => setPreviewTemplate(template)} title="Náhled">
                           <Eye className="h-4 w-4" />
@@ -400,6 +483,14 @@ const OrderTemplateManager = ({ embedded = false }) => {
                 <div className="rounded-xl border bg-slate-950 p-4 text-slate-100 shadow-sm">
                   <div className="mb-3 text-sm font-semibold">Vlastní produktové řádky</div>
                   <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-200"><code>{templateExamples.customRows}</code></pre>
+                </div>
+                <div className="rounded-xl border bg-slate-950 p-4 text-slate-100 shadow-sm">
+                  <div className="mb-3 text-sm font-semibold">Celkový předávací protokol</div>
+                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-200"><code>{templateExamples.handoverFull}</code></pre>
+                </div>
+                <div className="rounded-xl border bg-slate-950 p-4 text-slate-100 shadow-sm">
+                  <div className="mb-3 text-sm font-semibold">Servisní protokol</div>
+                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-200"><code>{templateExamples.serviceProtocol}</code></pre>
                 </div>
               </div>
             </div>

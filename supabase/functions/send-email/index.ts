@@ -8,7 +8,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { to, subject, htmlContent } = await req.json();
+    const { to, subject, htmlContent, attachments } = await req.json();
 
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 
@@ -31,6 +31,7 @@ Deno.serve(async (req: Request) => {
         to: to,
         subject: subject,
         html: htmlContent,
+        ...(Array.isArray(attachments) && attachments.length ? { attachments } : {}),
       }),
     });
 

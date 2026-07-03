@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Download, FileSignature, Lock, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { Check, Download, FileSignature, Lock, Mail, Plus, RefreshCw, Save, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,10 @@ import {
   downloadHandoverProtocolHtml,
   downloadHandoverProtocolPdf,
 } from '@/lib/documentGenerationService';
+import {
+  buildHandoverProtocolEmailDefaults,
+  sendHandoverProtocolEmail,
+} from '@/lib/handoverProtocolEmailService';
 
 const protocolTypes = ['handover_full', 'handover_partial', 'service_protocol', 'contract'];
 const editableStatuses = ['draft', 'ready_for_signature'];
@@ -116,6 +120,9 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
   const [templateId, setTemplateId] = useState('default');
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [signature, setSignature] = useState({ signer_name: '', signer_email: '', signer_role: 'Klient', signature_data_url: '' });
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailDraft, setEmailDraft] = useState({ recipients: '', subject: '', message: '' });
 
   const selectedTemplate = useMemo(() => templates.find((template) => template.id === templateId) || null, [templates, templateId]);
   const isLocked = Boolean(draft?.locked_at || draft?.status === 'signed' || draft?.status === 'archived');
@@ -201,6 +208,32 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
       if (format === 'pdf') downloadHandoverProtocolPdf({ protocol: draft, template: selectedTemplate });
     } catch (error) {
       toast({ title: 'Generování selhalo', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const openEmailDialog = () => {
+    const defaults = buildHandoverProtocolEmailDefaults(draft);
+    setEmailDraft(defaults);
+    setEmailOpen(true);
+  };
+
+  const sendProtocolEmail = async () => {
+    setSendingEmail(true);
+    try {
+      const result = await sendHandoverProtocolEmail({
+        protocol: draft,
+        template: selectedTemplate,
+        recipients: emailDraft.recipients,
+        subject: emailDraft.subject,
+        message: emailDraft.message,
+        salutation: 'S pozdravem,<br>' + (user?.user_metadata?.full_name || user?.email || 'EKV Project'),
+      });
+      setEmailOpen(false);
+      toast({ title: 'Protokol odeslán', description: 'Odesláno na ' + result.recipients.join(', ') + '.' });
+    } catch (error) {
+      toast({ title: 'Odeslání selhalo', description: error.message, variant: 'destructive' });
+    } finally {
+      setSendingEmail(false);
     }
   };
 
@@ -291,6 +324,7 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
                   <Button variant="outline" size="sm" onClick={() => exportDocument('html')}><Download className="mr-2 h-4 w-4" />HTML</Button>
                   <Button variant="outline" size="sm" onClick={() => exportDocument('pdf')}>PDF</Button>
                   <Button variant="outline" size="sm" onClick={() => exportDocument('docx')}>DOCX</Button>
+                  {canEdit && <Button variant="outline" size="sm" onClick={openEmailDialog}><Mail className="mr-2 h-4 w-4" />Odeslat</Button>}
                   {canModifyDraft && <Button size="sm" onClick={() => save()}><Save className="mr-2 h-4 w-4" />Uložit</Button>}
                 </div>
               </div>
@@ -400,6 +434,42 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
           </Card>
         )}
       </div>
+
+      <Dialog open={emailOpen} onOpenChange={setEmailOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Odeslat protokol e-mailem</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-600">
+              Dokument se odešle jako HTML příloha v aktuálně vybrané šabloně. Příjemce je předvyplněný z e-mailu subjektu/investora, další adresy oddělte čárkou nebo středníkem.
+            </div>
+            <div className="space-y-1.5">
+              <Label>Příjemci</Label>
+              <Input
+                type="text"
+                value={emailDraft.recipients}
+                onChange={(event) => setEmailDraft((prev) => ({ ...prev, recipients: event.target.value }))}
+                placeholder="investor@example.cz, dalsi@example.cz"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Předmět</Label>
+              <Input value={emailDraft.subject} onChange={(event) => setEmailDraft((prev) => ({ ...prev, subject: event.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Zpráva</Label>
+              <Textarea className="min-h-32" value={emailDraft.message} onChange={(event) => setEmailDraft((prev) => ({ ...prev, message: event.target.value }))} />
+              <p className="text-xs text-slate-500">Můžete použít jednoduché HTML, například &lt;br&gt; pro nový řádek.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailOpen(false)} disabled={sendingEmail}>Zrušit</Button>
+            <Button onClick={sendProtocolEmail} disabled={sendingEmail || !emailDraft.recipients.trim()}>
+              {sendingEmail ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              {sendingEmail ? 'Odesílám...' : 'Odeslat protokol'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={signatureOpen} onOpenChange={setSignatureOpen}>
         <DialogContent className="max-w-2xl">

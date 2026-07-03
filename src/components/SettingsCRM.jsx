@@ -184,6 +184,11 @@ const SettingsCRM = () => {
       saveLabel: 'Uložit produktová pole',
       description: 'Uloží definice produktových polí pro katalog, AI extrakci a dokumenty.',
     },
+    customFields: {
+      title: 'Volitelná pole OP',
+      saveLabel: 'Uložit volitelná pole',
+      description: 'Uloží sekce a pole pro detail obchodního případu a dokumentové šablony.',
+    },
   }[activeSection];
 
   const fetchCrmConfig = useCallback(async () => {

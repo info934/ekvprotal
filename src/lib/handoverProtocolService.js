@@ -137,7 +137,7 @@ export const saveHandoverProtocol = async (protocol) => {
   const locked = Boolean(protocol.locked_at || protocol.status === 'signed');
   if (locked) throw new Error('Podepsaný protokol je uzamčený a nelze ho upravit.');
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('handover_protocols')
     .update({
       title: protocol.title?.trim() || handoverProtocolTypeLabels[protocol.document_type] || 'Protokol',
@@ -150,7 +150,7 @@ export const saveHandoverProtocol = async (protocol) => {
       updated_at: new Date().toISOString(),
     })
     .eq('id', protocolId)
-    .select(protocolSelect)
+    .select('id')
     .single();
   if (error) throw error;
 
@@ -191,7 +191,14 @@ export const saveHandoverProtocol = async (protocol) => {
     if (defectError) throw defectError;
   }
 
-  return data;
+
+  const { data: refreshed, error: refreshError } = await supabase
+    .from('handover_protocols')
+    .select(protocolSelect)
+    .eq('id', protocolId)
+    .single();
+  if (refreshError) throw refreshError;
+  return sortProtocolChildren(refreshed);
 };
 
 const hashProtocol = async (protocol, signatureDataUrl) => {
@@ -209,16 +216,20 @@ const hashProtocol = async (protocol, signatureDataUrl) => {
 };
 
 export const signHandoverProtocol = async (protocol, signature) => {
-  const signedHash = await hashProtocol(protocol, signature.signatureDataUrl);
+  const signatureDataUrl = signature.signatureDataUrl || signature.signature_data_url || '';
+  const signerName = signature.signerName || signature.signer_name || '';
+  const signerRole = signature.signerRole || signature.signer_role || 'Zákazník';
+  const signerEmail = signature.signerEmail || signature.signer_email || null;
+  const signedHash = await hashProtocol(protocol, signatureDataUrl);
   const { error: signatureError } = await supabase.from('document_signatures').insert({
     protocol_id: protocol.id,
-    signer_name: signature.signerName,
-    signer_role: signature.signerRole || 'Zákazník',
-    signer_email: signature.signerEmail || null,
+    signer_name: signerName,
+    signer_role: signerRole,
+    signer_email: signerEmail,
     signature_type: 'internal',
-    signature_data_url: signature.signatureDataUrl,
+    signature_data_url: signatureDataUrl,
     signed_document_hash: signedHash,
-    user_agent: window.navigator?.userAgent || null,
+    user_agent: signature.user_agent || window.navigator?.userAgent || null,
   });
   if (signatureError) throw signatureError;
 

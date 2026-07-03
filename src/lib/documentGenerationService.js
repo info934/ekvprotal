@@ -49,8 +49,8 @@ const replaceTemplatePlaceholders = (templateContent, placeholders) => (
   Object.entries(placeholders).reduce((content, [key, value]) => {
     const replacement = String(value ?? '');
     return content
-      .replace(new RegExp(escapeRegExp(`{${key}}`), 'g'), replacement)
-      .replace(new RegExp(escapeRegExp(`{{${key}}}`), 'g'), replacement);
+      .replace(new RegExp(escapeRegExp(`{{${key}}}`), 'g'), replacement)
+      .replace(new RegExp(escapeRegExp(`{${key}}`), 'g'), replacement);
   }, String(templateContent || ''))
 );
 
@@ -245,6 +245,41 @@ const renderItemsListHtml = (items) => (
       `).join('')}</ul>`
     : '<p class="empty">Dokument zatím nemá položky.</p>'
 );
+
+const createCommercialItemsDocxTable = (items) => new Table({
+  width: { size: 100, type: WidthType.PERCENTAGE },
+  borders: {
+    top: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+    bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+    left: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+    right: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+    insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+    insideVertical: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+  },
+  rows: [
+    new TableRow({
+      tableHeader: true,
+      children: [
+        makeCell('#', { bold: true, shading: 'F3F4F6', width: 6 }),
+        makeCell('Kód', { bold: true, shading: 'F3F4F6', width: 14 }),
+        makeCell('Název', { bold: true, shading: 'F3F4F6', width: 36 }),
+        makeCell('Množství', { bold: true, shading: 'F3F4F6', width: 16, align: AlignmentType.RIGHT }),
+        makeCell('Jedn. cena', { bold: true, shading: 'F3F4F6', width: 14, align: AlignmentType.RIGHT }),
+        makeCell('Celkem', { bold: true, shading: 'F3F4F6', width: 14, align: AlignmentType.RIGHT }),
+      ],
+    }),
+    ...(items.length ? items.map((item, index) => new TableRow({
+      children: [
+        makeCell(String(index + 1), { width: 6 }),
+        makeCell(item.code || '-', { width: 14 }),
+        makeCell(item.name || '-', { width: 36 }),
+        makeCell(`${item.quantity.toLocaleString('cs-CZ')} ${item.unit}`, { width: 16, align: AlignmentType.RIGHT }),
+        makeCell(formatCurrency(item.unitPrice), { width: 14, align: AlignmentType.RIGHT }),
+        makeCell(formatCurrency(item.lineTotal), { width: 14, align: AlignmentType.RIGHT }),
+      ],
+    })) : [new TableRow({ children: [makeCell('Dokument zatím nemá položky.', { width: 100 })] })]),
+  ],
+});
 
 const buildItemTemplatePlaceholders = (item) => ({
   item_position: item.position,
@@ -617,20 +652,44 @@ const makeCell = (text, options = {}) => new TableCell({
 });
 
 const createTemplateDocxBlob = async (payload, template) => {
-  const filledContent = stripHtml(fillDocumentTemplate(template.content, payload));
-  const lines = filledContent.split('\n').map((line) => line.trim()).filter(Boolean);
+  const itemsTableMarker = '[[EKV_ITEMS_TABLE]]';
+  const templateContent = String(template.content || '')
+    .replace(/\{\{items_table\}\}/g, itemsTableMarker)
+    .replace(/\{items_table\}/g, itemsTableMarker);
+  const filledContent = stripHtml(fillDocumentTemplate(templateContent, payload));
+  const blocks = filledContent.split('\\n').map((line) => line.trim()).filter(Boolean);
+  const children = blocks.length > 0
+    ? blocks.flatMap((block, index) => {
+      if (!block.includes(itemsTableMarker)) {
+        return [makeParagraph(block, {
+          bold: index === 0,
+          size: index === 0 ? 30 : 22,
+          spacing: { after: index === 0 ? 220 : 100 },
+        })];
+      }
+      return block.split(itemsTableMarker).flatMap((part, partIndex, parts) => {
+        const section = [];
+        const cleanPart = part.trim();
+        if (cleanPart) {
+          section.push(makeParagraph(cleanPart, {
+            bold: index === 0 && partIndex === 0,
+            size: index === 0 && partIndex === 0 ? 30 : 22,
+            spacing: { after: 100 },
+          }));
+        }
+        if (partIndex < parts.length - 1) {
+          section.push(createCommercialItemsDocxTable(payload.items || []));
+        }
+        return section;
+      });
+    })
+    : [makeParagraph(`${payload.document.label} ${payload.document.number}`.trim(), { bold: true, size: 30 })];
   const doc = new Document({
     sections: [{
       properties: {
         page: { margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 } },
       },
-      children: lines.length > 0
-    ? lines.map((line, index) => makeParagraph(line, {
-          bold: index === 0,
-          size: index === 0 ? 30 : 22,
-          spacing: { after: index === 0 ? 220 : 100 },
-        }))
-        : [makeParagraph(`${payload.document.label} ${payload.document.number}`.trim(), { bold: true, size: 30 })],
+      children,
     }],
   });
 
@@ -695,19 +754,8 @@ export const createCommercialDocumentDocxBlob = async (payload, template = null)
         makeParagraph(`Projekt: ${opportunity.projectName || opportunity.projectCode || '-'}`),
         makeParagraph(`Datum: ${formatDate(document.issueDate)}    Platnost: ${formatDate(document.validUntil)}`),
         makeParagraph('Položky', { heading: HeadingLevel.HEADING_2, bold: true, size: 26, spacing: { before: 240, after: 120 } }),
-        new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          borders: {
-            top: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
-            left: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
-            right: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
-            insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
-            insideVertical: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
-          },
-          rows,
-        }),
-        makeParagraph(`Mezisoučet: ${formatCurrency(document.subtotal)}`, { alignment: AlignmentType.RIGHT, spacing: { before: 240, after: 60 } }),
+        itemsTable,
+        makeParagraph(`Mezisou?et: ${formatCurrency(document.subtotal)}`, { alignment: AlignmentType.RIGHT, spacing: { before: 240, after: 60 } }),
         makeParagraph(`Sleva: ${formatCurrency(document.discountTotal)}`, { alignment: AlignmentType.RIGHT, spacing: { after: 60 } }),
         makeParagraph(`DPH: ${formatCurrency(document.taxTotal)}`, { alignment: AlignmentType.RIGHT, spacing: { after: 60 } }),
         makeParagraph(`Celkem s DPH: ${formatCurrency(totalWithTax)}`, { alignment: AlignmentType.RIGHT, bold: true, size: 26 }),
