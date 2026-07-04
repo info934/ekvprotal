@@ -170,119 +170,139 @@ const Products = () => {
     setLoading(true);
     setSchemaWarning('');
 
-    let { data: productData, error: productError } = await supabase
-      .from('commercial_item_catalog')
-      .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, currency, stock_min_qty, warehouse_location, allow_backorder, valid_from, valid_until, datasheet_external_web_url, datasheet_file_name, datasheet_preview_image_url, image_url, preferred_supplier_offer_id, is_active, archived_at, metadata, created_at, updated_at')
-      .order('name', { ascending: true });
-
-    if (productError) {
-      const fallback = await supabase
+    try {
+      let { data: productData, error: productError } = await supabase
         .from('commercial_item_catalog')
-        .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active, metadata, created_at, updated_at')
+        .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, currency, stock_min_qty, warehouse_location, allow_backorder, valid_from, valid_until, datasheet_external_web_url, datasheet_file_name, datasheet_preview_image_url, image_url, preferred_supplier_offer_id, is_active, archived_at, metadata, created_at, updated_at')
         .order('name', { ascending: true });
 
-      if (fallback.error) {
-        setLoading(false);
-        setSchemaWarning(fallback.error.message || 'Katalog produktů se nepodařilo načíst.');
-        return;
+      if (productError) {
+        const fallback = await supabase
+          .from('commercial_item_catalog')
+          .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active, metadata, created_at, updated_at')
+          .order('name', { ascending: true });
+
+        if (fallback.error) {
+          setProducts([]);
+          setStockByProduct({});
+          setSuppliers([]);
+          setSupplierPricesByProduct({});
+          setSupplierSlugsByProduct({});
+          setSupplierSearchByProduct({});
+          setProductSchemaReady(false);
+          setSchemaWarning(fallback.error.message || 'Katalog produktu se nepodarilo nacist.');
+          return;
+        }
+
+        productData = (fallback.data || []).map((product) => ({
+          ...product,
+          sku: product.code || '',
+          product_type: 'service',
+          purchase_price: 0,
+          currency: 'CZK',
+          stock_min_qty: null,
+          warehouse_location: null,
+          allow_backorder: false,
+          valid_from: null,
+          valid_until: null,
+          datasheet_external_web_url: null,
+          datasheet_file_name: null,
+          datasheet_preview_image_url: null,
+          image_url: null,
+          preferred_supplier_offer_id: null,
+          archived_at: null,
+        }));
+        setProductSchemaReady(false);
+        setSchemaWarning('Online databaze jeste nema produktovou migraci. Zobrazuji puvodni katalog bez skladu a rozsirene editace.');
+      } else {
+        setProductSchemaReady(true);
       }
 
-      productData = (fallback.data || []).map((product) => ({
-        ...product,
-        sku: product.code || '',
-        product_type: 'service',
-        purchase_price: 0,
-        currency: 'CZK',
-        stock_min_qty: null,
-        warehouse_location: null,
-        allow_backorder: false,
-        valid_from: null,
-        valid_until: null,
-        datasheet_external_web_url: null,
-        datasheet_file_name: null,
-        datasheet_preview_image_url: null,
-        image_url: null,
-        archived_at: null,
+      const [stockRes, supplierPriceRes, supplierRes, usageRes] = await Promise.all([
+        supabase
+          .from('product_stock_status')
+          .select('catalog_item_id, stock_qty, reserved_qty, available_qty'),
+        supabase
+          .from('product_supplier_current_prices')
+          .select('catalog_item_id, supplier_offer_id, supplier_name, supplier_slug, supplier_sku, supplier_product_url, price_without_vat, currency, availability_note, scraped_at, price_change_amount, price_change_percent, supplier_offer_count, price_rank')
+          .order('price_rank', { ascending: true }),
+        supabase
+          .from('product_suppliers')
+          .select('slug, name, is_active')
+          .eq('is_active', true)
+          .order('name', { ascending: true }),
+        supabase
+          .from('product_usage_stats')
+          .select('catalog_item_id, total_usage_count, last_used_at'),
+      ]);
+
+      const warnings = [];
+      if (stockRes.error) warnings.push('Skladovy prehled zatim neni dostupny.');
+      if (supplierPriceRes.error) warnings.push('Dodavatelske ceny zatim nejsou dostupne.');
+      if (supplierRes.error) warnings.push('Dodavatele zatim nejsou dostupni.');
+      if (usageRes.error) warnings.push('Statistika pouziti produktu zatim neni dostupna.');
+      if (warnings.length) setSchemaWarning(warnings.join(' '));
+
+      setSuppliers(supplierRes.error ? [] : (supplierRes.data || []));
+
+      if (supplierPriceRes.error) {
+        setSupplierPricesByProduct({});
+        setSupplierSlugsByProduct({});
+        setSupplierSearchByProduct({});
+      } else {
+        const supplierPriceData = supplierPriceRes.data || [];
+        setSupplierPricesByProduct(supplierPriceData.reduce((acc, row) => {
+          if (!acc[row.catalog_item_id] || Number(row.price_rank) === 1) {
+            acc[row.catalog_item_id] = row;
+          }
+          return acc;
+        }, {}));
+        setSupplierSlugsByProduct(supplierPriceData.reduce((acc, row) => {
+          if (!row.catalog_item_id || !row.supplier_slug) return acc;
+          acc[row.catalog_item_id] = acc[row.catalog_item_id] || [];
+          if (!acc[row.catalog_item_id].includes(row.supplier_slug)) acc[row.catalog_item_id].push(row.supplier_slug);
+          return acc;
+        }, {}));
+        setSupplierSearchByProduct(supplierPriceData.reduce((acc, row) => {
+          if (!row.catalog_item_id) return acc;
+          acc[row.catalog_item_id] = acc[row.catalog_item_id] || [];
+          acc[row.catalog_item_id].push(
+            row.supplier_name,
+            row.supplier_slug,
+            row.supplier_sku,
+            row.supplier_product_url,
+            row.availability_note
+          );
+          return acc;
+        }, {}));
+      }
+
+      const usageByProductId = new Map((usageRes.data || []).map((row) => [row.catalog_item_id, row]));
+      setProducts((productData || []).map((product) => {
+        const usage = usageByProductId.get(product.id) || {};
+        return {
+          ...product,
+          usage_count: usage.total_usage_count || 0,
+          last_used_at: usage.last_used_at || null,
+        };
       }));
-      setProductSchemaReady(false);
-      setSchemaWarning('Online databáze ještě nemá produktovou migraci. Zobrazuji původní katalog bez skladu a rozšířené editace.');
-    } else {
-      setProductSchemaReady(true);
-    }
-
-    const { data: stockData, error: stockError } = await supabase
-      .from('product_stock_status')
-      .select('catalog_item_id, stock_qty, reserved_qty, available_qty');
-
-    if (stockError) {
-      setSchemaWarning('Skladový přehled zatím není dostupný. Je potřeba aplikovat produktovou migraci.');
-    }
-
-    const { data: supplierPriceData, error: supplierPriceError } = await supabase
-      .from('product_supplier_current_prices')
-      .select('catalog_item_id, supplier_offer_id, supplier_name, supplier_slug, supplier_sku, supplier_product_url, price_without_vat, currency, availability_note, scraped_at, price_change_amount, price_change_percent, supplier_offer_count, price_rank')
-      .order('price_rank', { ascending: true });
-
-    const { data: supplierData } = await supabase
-      .from('product_suppliers')
-      .select('slug, name, is_active')
-      .eq('is_active', true)
-      .order('name', { ascending: true });
-
-    const { data: usageData, error: usageError } = await supabase
-      .from('product_usage_stats')
-      .select('catalog_item_id, total_usage_count, last_used_at');
-
-    if (usageError) {
-      console.warn('Product usage stats are not available:', usageError.message);
-    }
-
-    setSuppliers(supplierData || []);
-
-    if (supplierPriceError) {
+      setStockByProduct(stockRes.error ? {} : (stockRes.data || []).reduce((acc, row) => ({
+        ...acc,
+        [row.catalog_item_id]: row,
+      }), {}));
+    } catch (error) {
+      console.error('Product catalog failed to load:', error);
+      setProducts([]);
+      setStockByProduct({});
+      setSuppliers([]);
       setSupplierPricesByProduct({});
       setSupplierSlugsByProduct({});
       setSupplierSearchByProduct({});
-    } else {
-      setSupplierPricesByProduct((supplierPriceData || []).reduce((acc, row) => {
-        if (!acc[row.catalog_item_id] || Number(row.price_rank) === 1) {
-          acc[row.catalog_item_id] = row;
-        }
-        return acc;
-      }, {}));
-      setSupplierSlugsByProduct((supplierPriceData || []).reduce((acc, row) => {
-        if (!row.catalog_item_id || !row.supplier_slug) return acc;
-        acc[row.catalog_item_id] = acc[row.catalog_item_id] || [];
-        if (!acc[row.catalog_item_id].includes(row.supplier_slug)) acc[row.catalog_item_id].push(row.supplier_slug);
-        return acc;
-      }, {}));
-      setSupplierSearchByProduct((supplierPriceData || []).reduce((acc, row) => {
-        if (!row.catalog_item_id) return acc;
-        acc[row.catalog_item_id] = acc[row.catalog_item_id] || [];
-        acc[row.catalog_item_id].push(
-          row.supplier_name,
-          row.supplier_slug,
-          row.supplier_sku,
-          row.supplier_product_url,
-          row.availability_note
-        );
-        return acc;
-      }, {}));
+      setProductSchemaReady(false);
+      setSchemaWarning(error?.message || 'Katalog produktu se nepodarilo nacist.');
+    } finally {
+      setLoading(false);
     }
-    const usageByProductId = new Map((usageData || []).map((row) => [row.catalog_item_id, row]));
-    setProducts((productData || []).map((product) => {
-      const usage = usageByProductId.get(product.id) || {};
-      return {
-        ...product,
-        usage_count: usage.total_usage_count || 0,
-        last_used_at: usage.last_used_at || null,
-      };
-    }));
-    setStockByProduct((stockData || []).reduce((acc, row) => ({
-      ...acc,
-      [row.catalog_item_id]: row,
-    }), {}));
-    setLoading(false);
   }, []);
 
   const fetchMatchSuggestions = useCallback(async () => {
