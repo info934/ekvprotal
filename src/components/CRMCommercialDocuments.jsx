@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Ban, Calculator, FileText, MoreHorizontal, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, Calculator, Copy, FileText, Link2, MoreHorizontal, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -141,6 +141,10 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [createOpportunityValue, setCreateOpportunityValue] = useState('0');
   const [lifecycleAction, setLifecycleAction] = useState(null);
   const [lifecycleReason, setLifecycleReason] = useState('');
+  const [relationDialogOpen, setRelationDialogOpen] = useState(false);
+  const [relationTargetOpportunityId, setRelationTargetOpportunityId] = useState('');
+  const [relationAction, setRelationAction] = useState('move');
+  const [relationItemMode, setRelationItemMode] = useState('target-sync');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -683,6 +687,147 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     navigate(config.detailPath(data || { number, type }));
   };
 
+
+  const getSortedOpportunityItems = (opportunity) => (
+    [...(opportunity?.items || opportunity?.opportunity_items || [])]
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+  );
+
+  const openRelationDialog = (action = 'move') => {
+    if (!selectedDocument) return;
+    setRelationAction(action);
+    setRelationTargetOpportunityId(selectedDocument.opportunity_id || '');
+    setRelationItemMode(action === 'copy' ? 'current-copy' : 'target-sync');
+    setRelationDialogOpen(true);
+  };
+
+  const buildRelationItems = (targetOpportunity) => {
+    if (relationItemMode === 'current-copy') {
+      return [...(selectedDocument?.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+    }
+    return getSortedOpportunityItems(targetOpportunity);
+  };
+
+  const replaceDocumentOwnItems = async (documentId, sourceItems) => {
+    const rows = sourceItems.map((item, index) => buildCrmDocumentItemPayload(item, documentId, index));
+    const rpcPayload = rows.map(({ document_id, ...item }) => item);
+    const { error: rpcError } = await supabase.rpc('replace_crm_document_items', {
+      p_document_id: documentId,
+      p_items: rpcPayload,
+    });
+    if (!rpcError) return null;
+    if (!isMissingCrmRpcError(rpcError)) return rpcError;
+
+    const { error: deleteError } = await supabase
+      .from('crm_commercial_document_items')
+      .delete()
+      .eq('document_id', documentId);
+    if (deleteError) return deleteError;
+
+    if (rows.length === 0) return null;
+    const { error: insertError } = await supabase
+      .from('crm_commercial_document_items')
+      .insert(rows);
+    return insertError || null;
+  };
+
+  const clearDocumentOwnItems = async (documentId) => {
+    const { error } = await supabase
+      .from('crm_commercial_document_items')
+      .delete()
+      .eq('document_id', documentId);
+    return error || null;
+  };
+
+  const handleApplyDocumentRelation = async () => {
+    if (!selectedDocument || !canEdit) return;
+    const targetOpportunity = opportunities.find((opportunity) => opportunity.id === relationTargetOpportunityId);
+    if (!targetOpportunity) {
+      toast({ title: 'Vyberte cilovy obchodni pripad', variant: 'destructive' });
+      return;
+    }
+
+    const copyCurrentItems = relationItemMode === 'current-copy';
+    const sourceItems = buildRelationItems(targetOpportunity);
+    const totals = calculateCrmTotals(sourceItems);
+    setSaving(true);
+
+    if (relationAction === 'copy') {
+      const number = formatCrmNumber(numbering, type);
+      const { data, error } = await supabase
+        .from('crm_commercial_documents')
+        .insert({
+          opportunity_id: targetOpportunity.id,
+          subject_id: targetOpportunity.subject_id || selectedDocument.subject_id || null,
+          type,
+          status: 'draft',
+          number,
+          title: formatCommercialDocumentTitle(selectedDocument.title || config.singular),
+          issue_date: new Date().toISOString().slice(0, 10),
+          valid_until: selectedDocument.valid_until || null,
+          notes: selectedDocument.notes || null,
+          sync_items: !copyCurrentItems,
+          ...totals,
+        })
+        .select('id, number, type')
+        .single();
+
+      if (error) {
+        setSaving(false);
+        toast({ title: 'Kopii se nepodarilo vytvorit', description: error.message, variant: 'destructive' });
+        return;
+      }
+
+      if (copyCurrentItems) {
+        const itemError = await replaceDocumentOwnItems(data.id, sourceItems);
+        if (itemError) {
+          setSaving(false);
+          toast({ title: 'Kopie vznikla, ale polozky se nepodarilo zkopirovat', description: itemError.message, variant: 'destructive' });
+          return;
+        }
+      }
+
+      await incrementCrmNumbering(supabase, type, Number(numbering[type]?.next_number || 1) + 1);
+      setSaving(false);
+      setRelationDialogOpen(false);
+      toast({ title: 'Dokument zkopirovan', description: 'Kopie je napojena na OP ' + (targetOpportunity.number || targetOpportunity.title) + '.' });
+      navigate(config.detailPath(data || { number, type }));
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from('crm_commercial_documents')
+      .update({
+        opportunity_id: targetOpportunity.id,
+        subject_id: targetOpportunity.subject_id || selectedDocument.subject_id || null,
+        sync_items: !copyCurrentItems,
+        ...totals,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', selectedDocument.id);
+
+    if (updateError) {
+      setSaving(false);
+      toast({ title: 'Napojeni OP se nepodarilo zmenit', description: updateError.message, variant: 'destructive' });
+      return;
+    }
+
+    const itemError = copyCurrentItems
+      ? await replaceDocumentOwnItems(selectedDocument.id, sourceItems)
+      : await clearDocumentOwnItems(selectedDocument.id);
+
+    if (itemError) {
+      setSaving(false);
+      toast({ title: 'OP zmeneno, ale polozky se nepodarilo upravit', description: itemError.message, variant: 'destructive' });
+      return;
+    }
+
+    setSaving(false);
+    setRelationDialogOpen(false);
+    toast({ title: 'Obchodni pripad dokumentu zmenen', description: 'Dokument je napojen na OP ' + (targetOpportunity.number || targetOpportunity.title) + '.' });
+    fetchData();
+  };
+
   const handleGenerateSelectedDocument = async (format = 'docx') => {
     if (!selectedDocument) return;
     setSaving(true);
@@ -759,6 +904,88 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     setLifecycleReason('');
     await fetchData();
     if (isDelete && documentId) navigate(config.listPath);
+  };
+
+
+  const renderRelationDialog = () => {
+    const targetOpportunity = opportunities.find((opportunity) => opportunity.id === relationTargetOpportunityId);
+    const sourceItems = buildRelationItems(targetOpportunity);
+    const totals = calculateCrmTotals(sourceItems);
+    const sameOpportunity = relationAction === 'move' && relationTargetOpportunityId === selectedDocument?.opportunity_id;
+    const copyCurrentItems = relationItemMode === 'current-copy';
+
+    return (
+      <Dialog open={relationDialogOpen} onOpenChange={(open) => !saving && setRelationDialogOpen(open)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Zmenit OP / kopirovat dokument</DialogTitle>
+            <DialogDescription>
+              Nabidku nebo objednavku muzete prepnout na jiny obchodni pripad, nebo vytvorit kopii pro dalsi OP.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setRelationAction('move')}
+                className={cn('rounded-lg border p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50', relationAction === 'move' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white')}
+              >
+                <div className="flex items-center gap-2 font-semibold text-slate-950"><Link2 className="h-4 w-4" />Prepnout tento dokument</div>
+                <div className="mt-1 text-sm text-slate-500">Zmeni vazbu existujiciho dokumentu na vybrany OP.</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRelationAction('copy')}
+                className={cn('rounded-lg border p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50', relationAction === 'copy' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white')}
+              >
+                <div className="flex items-center gap-2 font-semibold text-slate-950"><Copy className="h-4 w-4" />Vytvorit kopii</div>
+                <div className="mt-1 text-sm text-slate-500">Puvodni dokument zustane beze zmeny a vznikne novy zaznam.</div>
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Cilovy obchodni pripad</Label>
+              <Select value={relationTargetOpportunityId} onValueChange={setRelationTargetOpportunityId} disabled={saving}>
+                <SelectTrigger className="bg-white"><SelectValue placeholder="Vyberte OP" /></SelectTrigger>
+                <SelectContent>
+                  {opportunities.map((opportunity) => (
+                    <SelectItem key={opportunity.id} value={opportunity.id}>{(opportunity.number || 'OP') + ' - ' + opportunity.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Polozky dokumentu</Label>
+              <Select value={relationItemMode} onValueChange={setRelationItemMode} disabled={saving}>
+                <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="target-sync">Napojit na polozky ciloveho OP</SelectItem>
+                  <SelectItem value="current-copy">Zkopirovat aktualni polozky jako vlastni</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {copyCurrentItems ? 'Dokument bude mit vlastni snapshot polozek a nebude se dal automaticky menit podle OP.' : 'Dokument zustane synchronizovany s cilovym OP. Upravy polozek se budou ridit polozkami OP.'}
+              </p>
+            </div>
+
+            <div className="grid gap-3 rounded-lg border bg-slate-50 p-3 text-sm sm:grid-cols-3">
+              <div><div className="text-xs uppercase text-muted-foreground">Polozky</div><div className="font-semibold text-slate-950">{sourceItems.length}</div></div>
+              <div><div className="text-xs uppercase text-muted-foreground">Bez DPH</div><div className="font-semibold text-slate-950">{formatCurrency(totals.total)}</div></div>
+              <div><div className="text-xs uppercase text-muted-foreground">S DPH</div><div className="font-semibold text-slate-950">{formatCurrency(Number(totals.total || 0) + Number(totals.tax_total || 0))}</div></div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRelationDialogOpen(false)} disabled={saving}>Zrusit</Button>
+            <Button type="button" onClick={handleApplyDocumentRelation} disabled={saving || !relationTargetOpportunityId || sameOpportunity}>
+              {saving ? 'Ukladam...' : (relationAction === 'copy' ? 'Vytvorit kopii' : 'Prepnout OP')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
   };
 
   const renderLifecycleActionDialog = () => {
@@ -846,6 +1073,16 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuLabel>Dokument</DropdownMenuLabel>
+                  <DropdownMenuItem onSelect={() => openRelationDialog('move')}>
+                    <Link2 className="mr-2 h-4 w-4" />
+                    Zmenit OP / polozky
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => openRelationDialog('copy')}>
+                    <Copy className="mr-2 h-4 w-4" />
+                    Kopirovat k jinemu OP
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuLabel>Lifecycle dokumentu</DropdownMenuLabel>
                   <DropdownMenuItem disabled={selectedDocument?.status === 'cancelled'} onSelect={() => openDocumentLifecycleAction('cancel')}>
                     <Ban className="mr-2 h-4 w-4" />
@@ -864,6 +1101,9 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
             </div>
           )}
         />
+
+        {renderLifecycleActionDialog()}
+        {renderRelationDialog()}
 
         {loading || !selectedDocument ? (
           <Card><CardContent className="p-8 text-sm text-muted-foreground">Načítám dokument...</CardContent></Card>
