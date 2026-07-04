@@ -71,6 +71,47 @@ const formatPercent = (value) => `${new Intl.NumberFormat('cs-CZ', {
   maximumFractionDigits: 1,
 }).format(Number(value || 0))} %`;
 
+const compactSearchValue = (value) => String(value || '').toLowerCase();
+
+const metadataSearchValues = (metadata) => {
+  if (!metadata || typeof metadata !== 'object') return [];
+  return Object.values(metadata)
+    .flatMap((value) => {
+      if (Array.isArray(value)) return value;
+      if (value && typeof value === 'object') return Object.values(value);
+      return value;
+    })
+    .filter(Boolean);
+};
+
+const inferBrandFromText = (text) => {
+  const value = compactSearchValue(text);
+  const brands = [
+    ['SolaX', ['solax', 'x1-', 'x3-', 't-bat', 'aelio', 'trene']],
+    ['Huawei', ['huawei', 'sun2000', 'luna2000']],
+    ['GoodWe', ['goodwe']],
+    ['SolarEdge', ['solaredge']],
+    ['Fronius', ['fronius']],
+    ['Growatt', ['growatt']],
+    ['SMA', ['sma sunny', 'sunny boy', 'sunny tripower']],
+    ['Trina', ['trina']],
+    ['AIKO', ['aiko']],
+    ['JA Solar', ['ja solar', 'jasolar']],
+    ['Tigo', ['tigo']],
+  ];
+  return brands.find(([, needles]) => needles.some((needle) => value.includes(needle)))?.[0] || '';
+};
+
+const getProductBrand = (product) => {
+  const metadata = product?.metadata || {};
+  return (
+    metadata.brand ||
+    metadata.manufacturer ||
+    metadata.vendor ||
+    inferBrandFromText([product?.name, product?.description, product?.sku, product?.code, metadata.supplier_category].filter(Boolean).join(' '))
+  );
+};
+
 const normalizeNumber = (value) => {
   if (value === '' || value === null || value === undefined) return null;
   return Number(String(value).replace(',', '.')) || 0;
@@ -106,6 +147,7 @@ const Products = () => {
   const [stockByProduct, setStockByProduct] = useState({});
   const [supplierPricesByProduct, setSupplierPricesByProduct] = useState({});
   const [supplierSlugsByProduct, setSupplierSlugsByProduct] = useState({});
+  const [supplierSearchByProduct, setSupplierSearchByProduct] = useState({});
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -113,6 +155,7 @@ const Products = () => {
   const [typeFilter, setTypeFilter] = useState('all');
   const [activeFilter, setActiveFilter] = useState('active');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [brandFilter, setBrandFilter] = useState('all');
   const [supplierFilter, setSupplierFilter] = useState('all');
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [matchSuggestions, setMatchSuggestions] = useState([]);
@@ -190,6 +233,7 @@ const Products = () => {
     if (supplierPriceError) {
       setSupplierPricesByProduct({});
       setSupplierSlugsByProduct({});
+      setSupplierSearchByProduct({});
     } else {
       setSupplierPricesByProduct((supplierPriceData || []).reduce((acc, row) => {
         if (!acc[row.catalog_item_id] || Number(row.price_rank) === 1) {
@@ -201,6 +245,18 @@ const Products = () => {
         if (!row.catalog_item_id || !row.supplier_slug) return acc;
         acc[row.catalog_item_id] = acc[row.catalog_item_id] || [];
         if (!acc[row.catalog_item_id].includes(row.supplier_slug)) acc[row.catalog_item_id].push(row.supplier_slug);
+        return acc;
+      }, {}));
+      setSupplierSearchByProduct((supplierPriceData || []).reduce((acc, row) => {
+        if (!row.catalog_item_id) return acc;
+        acc[row.catalog_item_id] = acc[row.catalog_item_id] || [];
+        acc[row.catalog_item_id].push(
+          row.supplier_name,
+          row.supplier_slug,
+          row.supplier_sku,
+          row.supplier_product_url,
+          row.availability_note
+        );
         return acc;
       }, {}));
     }
@@ -287,6 +343,10 @@ const Products = () => {
   };
 
   const categories = useMemo(() => Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'cs')), [products]);
+  const brands = useMemo(() => (
+    Array.from(new Set(products.map(getProductBrand).filter(Boolean)))
+      .sort((a, b) => String(a).localeCompare(String(b), 'cs'))
+  ), [products]);
 
   const stats = useMemo(() => {
     return products.reduce((acc, product) => {
@@ -322,16 +382,28 @@ const Products = () => {
       if (activeFilter === 'archived' && status.label !== 'Archiv') return false;
       if (typeFilter !== 'all' && product.product_type !== typeFilter) return false;
       if (categoryFilter !== 'all' && product.category !== categoryFilter) return false;
+      const brand = getProductBrand(product);
+      if (brandFilter !== 'all' && brand !== brandFilter) return false;
       if (supplierFilter !== 'all' && !supplierSlugsByProduct[product.id]?.includes(supplierFilter)) return false;
       if (availabilityFilter === 'low_stock' && !lowStock) return false;
       if (availabilityFilter === 'with_datasheet' && !hasDatasheet) return false;
       if (availabilityFilter === 'missing_datasheet' && hasDatasheet) return false;
       if (!query) return true;
-      return [product.sku, product.code, product.name, product.description, product.category, product.product_type]
+      return [
+        product.sku,
+        product.code,
+        product.name,
+        product.description,
+        product.category,
+        product.product_type,
+        brand,
+        ...(supplierSearchByProduct[product.id] || []),
+        ...metadataSearchValues(product.metadata),
+      ]
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query));
+        .some((value) => compactSearchValue(value).includes(query));
     });
-  }, [activeFilter, availabilityFilter, categoryFilter, products, search, stockByProduct, supplierFilter, supplierSlugsByProduct, typeFilter]);
+  }, [activeFilter, availabilityFilter, brandFilter, categoryFilter, products, search, stockByProduct, supplierFilter, supplierSearchByProduct, supplierSlugsByProduct, typeFilter]);
 
   const openMovementDialog = (product) => {
     setMovementForm({
@@ -395,6 +467,7 @@ const Products = () => {
     setTypeFilter('all');
     setActiveFilter('active');
     setCategoryFilter('all');
+    setBrandFilter('all');
     setSupplierFilter('all');
     setAvailabilityFilter('all');
   };
@@ -577,7 +650,7 @@ const Products = () => {
                   <Input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Hledat kód, název, kategorii..."
+                    placeholder="Hledat kod, nazev, znacku, SKU dodavatele..."
                     className="h-9 pl-9 text-sm"
                   />
                 </div>
@@ -594,6 +667,13 @@ const Products = () => {
                   <SelectContent>
                     <SelectItem value="all">Všechny kategorie</SelectItem>
                     {categories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={brandFilter} onValueChange={setBrandFilter}>
+                  <SelectTrigger className="h-9 w-[160px] text-sm"><SelectValue placeholder="Znacka" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Vsechny znacky</SelectItem>
+                    {brands.map((brand) => <SelectItem key={brand} value={brand}>{brand}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={supplierFilter} onValueChange={setSupplierFilter}>
@@ -663,6 +743,7 @@ const Products = () => {
                     const hasDatasheet = Boolean(product.datasheet_external_web_url || product.datasheet_file_name || product.datasheet_preview_image_url || product.image_url);
                     const status = getProductStatus(product);
                     const supplierPrice = supplierPricesByProduct[product.id];
+                    const brand = getProductBrand(product);
                     const bestPurchasePrice = Number(supplierPrice?.price_without_vat ?? product.purchase_price ?? 0);
                     const trendAmount = Number(supplierPrice?.price_change_amount || 0);
                     const TrendIcon = trendAmount < 0 ? TrendingDown : trendAmount > 0 ? TrendingUp : Minus;
@@ -670,7 +751,10 @@ const Products = () => {
                       <TableRow key={product.id} className={cn('cursor-pointer bg-white hover:bg-blue-50/40', status.label === 'Archiv' && 'opacity-60')} onClick={() => navigate(`/products/${product.id}/edit`)}>
                         <TableCell className="font-mono text-xs font-semibold text-slate-700">{product.sku || product.code || '-'}</TableCell>
                         <TableCell>
-                          <div className="font-semibold text-slate-950">{product.name}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-slate-950">{product.name}</span>
+                            {brand && <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">{brand}</Badge>}
+                          </div>
                           {product.description && <div className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{product.description}</div>}
                         </TableCell>
                         <TableCell><Badge variant="outline" className={status.className}>{status.label}</Badge></TableCell>

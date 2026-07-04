@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Calculator, FileText, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CrmCatalogProductMeta, CrmItemSnapshotBadges } from '@/components/CrmItemSnapshotBadges';
@@ -131,6 +132,13 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [fveWizardOpen, setFveWizardOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createMode, setCreateMode] = useState('existing');
+  const [createOpportunityId, setCreateOpportunityId] = useState('');
+  const [createOpportunityTitle, setCreateOpportunityTitle] = useState('');
+  const [createSubjectId, setCreateSubjectId] = useState(null);
+  const [createSubject, setCreateSubject] = useState(null);
+  const [createOpportunityValue, setCreateOpportunityValue] = useState('0');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -508,18 +516,85 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     fetchData();
   };
 
+  const openCreateDocumentDialog = () => {
+    const defaultOpportunity = opportunities[0];
+    setCreateMode(defaultOpportunity ? 'existing' : 'new');
+    setCreateOpportunityId(defaultOpportunity?.id || '');
+    setCreateOpportunityTitle('');
+    setCreateSubjectId(null);
+    setCreateSubject(null);
+    setCreateOpportunityValue('0');
+    setCreateDialogOpen(true);
+  };
+
+  const createOpportunityForDocument = async () => {
+    const title = createOpportunityTitle.trim();
+    if (!title || !createSubjectId) {
+      return { error: new Error('Pro novy obchodni pripad doplnte nazev a subjekt.') };
+    }
+
+    const opportunityNumber = formatCrmNumber(numbering, 'opportunity');
+    const { data, error } = await supabase
+      .from('crm_opportunities')
+      .insert({
+        number: opportunityNumber,
+        title,
+        subject_id: createSubjectId,
+        owner_member_id: null,
+        stage: 'lead',
+        status: 'open',
+        priority: 'medium',
+        value: Number(createOpportunityValue || 0),
+        probability: 25,
+        description: 'Vytvoreno automaticky pri zalozeni dokumentu ' + config.singular.toLowerCase() + '.',
+      })
+      .select('id, number, title, value, subject_id, subject:subject_id(id, name)')
+      .single();
+
+    if (!error) {
+      await incrementCrmNumbering(supabase, 'opportunity', Number(numbering.opportunity?.next_number || 1) + 1);
+    }
+
+    return { data: data ? { ...data, items: [] } : null, error };
+  };
+
   const handleCreateDocument = async () => {
-    if (!canEdit || opportunities.length === 0) return;
-    const opportunity = opportunities[0];
+    if (!canEdit) return;
+
+    setSaving(true);
+    let opportunity = null;
+
+    if (createMode === 'existing') {
+      opportunity = opportunities.find((item) => item.id === createOpportunityId);
+      if (!opportunity) {
+        setSaving(false);
+        toast({ title: 'Vyberte obchodni pripad', description: 'Dokument musi byt napojeny na existujici nebo novy OP.', variant: 'destructive' });
+        return;
+      }
+    } else {
+      const created = await createOpportunityForDocument();
+      if (created.error) {
+        setSaving(false);
+        toast({ title: 'Obchodni pripad se nepodarilo vytvorit', description: created.error.message, variant: 'destructive' });
+        return;
+      }
+      opportunity = created.data;
+    }
+
     const number = formatCrmNumber(numbering, type);
     const sourceItems = [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-    const totals = calculateCrmTotals(sourceItems.length > 0 ? sourceItems : [{
+    const fallbackItem = {
+      code: 'CRM-001',
+      name: opportunity.title,
       quantity: 1,
-      unit_price: Number(opportunity.value || 0),
+      unit: 'ks',
+      unit_price: Number(opportunity.value || createOpportunityValue || 0),
       discount_percent: 0,
       vat_rate: 21,
-    }]);
-    setSaving(true);
+    };
+    const itemsForTotals = sourceItems.length > 0 ? sourceItems : [fallbackItem];
+    const totals = calculateCrmTotals(itemsForTotals);
+
     const { data, error } = await supabase
       .from('crm_commercial_documents')
       .insert({
@@ -528,7 +603,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         type,
         status: 'draft',
         number,
-        title: `${config.singular} - ${opportunity.title}`,
+        title: config.singular + ' - ' + opportunity.title,
         issue_date: new Date().toISOString().slice(0, 10),
         valid_until: null,
         sync_items: true,
@@ -537,30 +612,42 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       .select('id, number, type')
       .single();
 
-    if (!error) {
-      const documentRows = (sourceItems.length > 0 ? sourceItems : [{
-        code: 'CRM-001',
-        name: opportunity.title,
-        quantity: 1,
-        unit: 'ks',
-        unit_price: Number(opportunity.value || 0),
-        discount_percent: 0,
-        vat_rate: 21,
-      }]).map((item, index) => buildCrmDocumentItemPayload(item, data.id, index));
-      if (documentRows.length > 0) {
-        await supabase.from('crm_commercial_document_items').insert(documentRows);
-      }
-      const nextNumber = Number(numbering[type]?.next_number || 1) + 1;
-      await incrementCrmNumbering(supabase, type, nextNumber);
-    }
-
-    setSaving(false);
     if (error) {
-      toast({ title: `${config.singular} se nepodařilo vytvořit`, description: error.message, variant: 'destructive' });
+      setSaving(false);
+      toast({ title: config.singular + ' se nepodarilo vytvorit', description: error.message, variant: 'destructive' });
       return;
     }
 
-    toast({ title: `${config.singular} vytvořena` });
+    let shouldInsertDocumentRows = sourceItems.length > 0;
+    if (sourceItems.length === 0) {
+      const opportunityRows = [fallbackItem].map((item, index) => buildCrmOpportunityItemPayload(item, opportunity.id, index));
+      const rpcPayload = opportunityRows.map(({ opportunity_id, ...item }) => item);
+      const { error: replaceError } = await supabase.rpc('replace_crm_opportunity_items', {
+        p_opportunity_id: opportunity.id,
+        p_items: rpcPayload,
+        p_sync_documents: true,
+      });
+      if (replaceError && isMissingCrmRpcError(replaceError)) {
+        await supabase.from('crm_opportunity_items').delete().eq('opportunity_id', opportunity.id);
+        await supabase.from('crm_opportunity_items').insert(opportunityRows);
+        shouldInsertDocumentRows = true;
+      } else if (replaceError) {
+        setSaving(false);
+        toast({ title: 'Polozky se nepodarilo synchronizovat', description: replaceError.message, variant: 'destructive' });
+        return;
+      }
+    }
+
+    const documentRows = itemsForTotals.map((item, index) => buildCrmDocumentItemPayload(item, data.id, index));
+    if (shouldInsertDocumentRows && documentRows.length > 0) {
+      await supabase.from('crm_commercial_document_items').insert(documentRows);
+    }
+
+    await incrementCrmNumbering(supabase, type, Number(numbering[type]?.next_number || 1) + 1);
+
+    setSaving(false);
+    setCreateDialogOpen(false);
+    toast({ title: config.singular + ' vytvorena', description: 'Napojeno na OP ' + (opportunity.number || opportunity.title) + '.' });
     navigate(config.detailPath(data || { number, type }));
   };
 
@@ -656,7 +743,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           <Card><CardContent className="p-8 text-sm text-muted-foreground">Načítám dokument...</CardContent></Card>
         ) : (
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.55fr)]">
-            <Card className="crm-panel">
+      
+      <Card className="crm-panel">
               <CardHeader className="crm-panel-header">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
@@ -788,13 +876,106 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
               Obnovit
             </Button>
-            <Button onClick={handleCreateDocument} disabled={!canEdit || saving || opportunities.length === 0}>
+            <Button onClick={openCreateDocumentDialog} disabled={!canEdit || saving}>
               <Plus className="mr-2 h-4 w-4" />
               {config.createLabel}
             </Button>
           </div>
         )}
       />
+
+      <Dialog open={createDialogOpen} onOpenChange={(open) => !saving && setCreateDialogOpen(open)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{config.createLabel}</DialogTitle>
+            <DialogDescription>
+              Vyberte, jestli se dokument napoji na existujici obchodni pripad, nebo jestli se ma rovnou zalozit novy OP.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setCreateMode('existing')}
+                className={cn(
+                  'rounded-lg border p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50',
+                  createMode === 'existing' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white'
+                )}
+              >
+                <div className="font-semibold text-slate-950">Priradit k existujicimu OP</div>
+                <div className="mt-1 text-sm text-slate-500">Dokument prevezme subjekt, polozky a hodnotu z vybraneho obchodniho pripadu.</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateMode('new')}
+                className={cn(
+                  'rounded-lg border p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50',
+                  createMode === 'new' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white'
+                )}
+              >
+                <div className="font-semibold text-slate-950">Vytvorit novy OP</div>
+                <div className="mt-1 text-sm text-slate-500">Nejdriv se zalozi novy obchodni pripad a dokument se na nej automaticky napoji.</div>
+              </button>
+            </div>
+
+            {createMode === 'existing' ? (
+              <div className="space-y-2">
+                <Label>Obchodni pripad</Label>
+                <Select value={createOpportunityId} onValueChange={setCreateOpportunityId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Vyberte obchodni pripad" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {opportunities.map((opportunity) => (
+                      <SelectItem key={opportunity.id} value={opportunity.id}>
+                        {(opportunity.number || 'OP') + ' - ' + opportunity.title + (opportunity.subject?.name ? ' (' + opportunity.subject.name + ')' : '')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {opportunities.length === 0 && (
+                  <p className="text-sm text-amber-700">Zatim neni dostupny zadny obchodni pripad. Prepnete na zalozeni noveho OP.</p>
+                )}
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Nazev obchodniho pripadu</Label>
+                  <Input value={createOpportunityTitle} onChange={(event) => setCreateOpportunityTitle(event.target.value)} placeholder="Napr. FVE - Rodinny dum" />
+                </div>
+                <div className="sm:col-span-2">
+                  <SubjectSelect
+                    value={createSubjectId}
+                    onChange={(subjectId, subject) => {
+                      setCreateSubjectId(subjectId);
+                      setCreateSubject(subject);
+                    }}
+                    label="Subjekt"
+                    placeholder="Vybrat nebo zalozit subjekt..."
+                    disabled={saving}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Odhad hodnoty bez DPH</Label>
+                  <Input type="number" min="0" value={createOpportunityValue} onChange={(event) => setCreateOpportunityValue(event.target.value)} />
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                  Novy OP dostane cislo {formatCrmNumber(numbering, 'opportunity')} a dokument cislo {formatCrmNumber(numbering, type)}.
+                  {createSubject?.name ? <div className="mt-1 font-medium text-slate-800">Klient: {createSubject.name}</div> : null}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={saving}>Zrusit</Button>
+            <Button type="button" onClick={handleCreateDocument} disabled={saving || (createMode === 'existing' ? !createOpportunityId : (!createOpportunityTitle.trim() || !createSubjectId))}>
+              {saving ? 'Vytvarim...' : config.createLabel}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card className="crm-panel">
         <CardHeader className="crm-panel-header">
