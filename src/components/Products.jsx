@@ -218,10 +218,6 @@ const Products = () => {
       setSchemaWarning('Skladový přehled zatím není dostupný. Je potřeba aplikovat produktovou migraci.');
     }
 
-    const { data: usageData } = await supabase
-      .from('product_usage_stats')
-      .select('catalog_item_id, total_usage_count, last_used_at');
-
     const { data: supplierPriceData, error: supplierPriceError } = await supabase
       .from('product_supplier_current_prices')
       .select('catalog_item_id, supplier_offer_id, supplier_name, supplier_slug, supplier_sku, supplier_product_url, price_without_vat, currency, availability_note, scraped_at, price_change_amount, price_change_percent, supplier_offer_count, price_rank')
