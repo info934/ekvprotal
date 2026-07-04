@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "web-app",
   "type": "module",
   "version": "0.0.0",
@@ -16,7 +16,8 @@
     "supabase:dump:schema": "supabase db dump --schema public --file supabase/migrations/00000000000000_baseline.sql",
     "supabase:dump:seed": "supabase db dump --data-only --schema public --file supabase/seed.sql",
     "supabase:anonymize-seed": "node tools/anonymize-seed.mjs",
-    "backend:check": "node tools/check-backend-env.mjs"
+    "backend:check": "node tools/check-backend-env.mjs",
+    "vendor:import-sql": "node tools/import-supplier-price-export.mjs"
   },
   "dependencies": {
     "@babel/generator": "^7.26.3",
@@ -105,3 +106,4 @@
     "vite": "^4.4.5"
   }
 }
+
