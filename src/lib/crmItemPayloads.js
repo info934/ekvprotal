@@ -1,4 +1,5 @@
 export const CRM_DEFAULT_VAT_RATE = 21;
+export const CRM_DEFAULT_MARGIN_PERCENT = 20;
 
 const toNumber = (value, fallback = 0) => {
   const number = Number(value);
