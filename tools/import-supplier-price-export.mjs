@@ -307,9 +307,9 @@ function splitCsvLine(line, delimiter) {
 }
 
 function normalizeRow(row) {
-  const metadata = parseJson(row.metadata || row.properties) || {};
+  const metadata = parseJson(row.metadata || row.metadata_json || row.properties) || {};
   const supplierSku = pick(row, ['supplier_sku', 'sku', 'code', 'article_number', 'item_number', 'product_code', 'objednaci_cislo', 'objednací_číslo']);
-  const price = parseNumber(pick(row, ['price_czk_without_vat', 'price_without_vat', 'purchase_price', 'net_price', 'netto', 'cena_bez_dph', 'cena']));
+  const price = parseNumber(pick(row, ['price_czk_without_vat', 'price_without_vat', 'purchase_price_without_vat', 'purchase_price', 'net_price', 'netto', 'cena_bez_dph', 'cena']));
   const scrapedAt = pick(row, ['scraped_at', 'imported_at', 'date']) || new Date().toISOString();
   return {
     supplier_sku: clean(supplierSku),
@@ -322,12 +322,12 @@ function normalizeRow(row) {
     brand: clean(pick(row, ['brand', 'manufacturer', 'vyrobce', 'výrobce'])) || clean(metadata.brand),
     unit: clean(pick(row, ['unit', 'mj', 'jednotka'])) || 'ks',
     price_without_vat: Number.isFinite(price) ? price : null,
-    price_raw: clean(pick(row, ['price_raw', 'raw_price', 'cena_raw'])) || null,
+    price_raw: clean(pick(row, ['price_raw', 'raw_price', 'cena_raw'])) || clean(metadata.price_raw) || null,
     currency: clean(pick(row, ['currency', 'mena', 'měna'])) || 'CZK',
     vat_rate: parseNumber(pick(row, ['vat_rate', 'dph'])) ?? 21,
-    availability_note: clean(pick(row, ['availability', 'availability_note', 'stock', 'dostupnost'])) || null,
-    supplier_product_url: clean(pick(row, ['detail_url', 'source_url', 'url', 'product_url'])) || null,
-    image_url: clean(pick(row, ['image_url', 'image', 'img'])) || null,
+    availability_note: clean(pick(row, ['availability', 'availability_note', 'stock', 'dostupnost'])) || clean(metadata.availability_note) || null,
+    supplier_product_url: clean(pick(row, ['detail_url', 'source_url', 'url', 'product_url'])) || clean(metadata.source_url) || null,
+    image_url: clean(pick(row, ['image_url', 'image', 'img'])) || clean(metadata.image_url) || null,
     scraped_at: scrapedAt,
     metadata: {
       ...metadata,
