@@ -6,8 +6,10 @@ import {
   BarChart3,
   Boxes,
   CalendarClock,
+  CheckCircle2,
   Edit3,
   FileText,
+  Link2,
   Package,
   Plus,
   RefreshCw,
@@ -18,6 +20,8 @@ import {
   TrendingUp,
   Minus,
   Warehouse,
+  Sparkles,
+  XCircle,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -63,6 +67,10 @@ const formatQty = (value, unit = 'ks') => `${new Intl.NumberFormat('cs-CZ', {
   maximumFractionDigits: 3,
 }).format(Number(value || 0))} ${unit || 'ks'}`;
 
+const formatPercent = (value) => `${new Intl.NumberFormat('cs-CZ', {
+  maximumFractionDigits: 1,
+}).format(Number(value || 0))} %`;
+
 const normalizeNumber = (value) => {
   if (value === '' || value === null || value === undefined) return null;
   return Number(String(value).replace(',', '.')) || 0;
@@ -97,13 +105,18 @@ const Products = () => {
   const [products, setProducts] = useState([]);
   const [stockByProduct, setStockByProduct] = useState({});
   const [supplierPricesByProduct, setSupplierPricesByProduct] = useState({});
+  const [supplierSlugsByProduct, setSupplierSlugsByProduct] = useState({});
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [activeFilter, setActiveFilter] = useState('active');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [supplierFilter, setSupplierFilter] = useState('all');
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
+  const [matchSuggestions, setMatchSuggestions] = useState([]);
+  const [matchLoading, setMatchLoading] = useState(false);
   const [schemaWarning, setSchemaWarning] = useState('');
   const [productSchemaReady, setProductSchemaReady] = useState(true);
   const [movementDialogOpen, setMovementDialogOpen] = useState(false);
@@ -166,13 +179,28 @@ const Products = () => {
       .select('catalog_item_id, supplier_offer_id, supplier_name, supplier_slug, supplier_sku, supplier_product_url, price_without_vat, currency, availability_note, scraped_at, price_change_amount, price_change_percent, supplier_offer_count, price_rank')
       .order('price_rank', { ascending: true });
 
+    const { data: supplierData } = await supabase
+      .from('product_suppliers')
+      .select('slug, name, is_active')
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+
+    setSuppliers(supplierData || []);
+
     if (supplierPriceError) {
       setSupplierPricesByProduct({});
+      setSupplierSlugsByProduct({});
     } else {
       setSupplierPricesByProduct((supplierPriceData || []).reduce((acc, row) => {
         if (!acc[row.catalog_item_id] || Number(row.price_rank) === 1) {
           acc[row.catalog_item_id] = row;
         }
+        return acc;
+      }, {}));
+      setSupplierSlugsByProduct((supplierPriceData || []).reduce((acc, row) => {
+        if (!row.catalog_item_id || !row.supplier_slug) return acc;
+        acc[row.catalog_item_id] = acc[row.catalog_item_id] || [];
+        if (!acc[row.catalog_item_id].includes(row.supplier_slug)) acc[row.catalog_item_id].push(row.supplier_slug);
         return acc;
       }, {}));
     }
@@ -184,9 +212,79 @@ const Products = () => {
     setLoading(false);
   }, []);
 
+  const fetchMatchSuggestions = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('product_supplier_match_suggestion_details')
+      .select('*')
+      .eq('status', 'pending')
+      .order('confidence', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      setMatchSuggestions([]);
+      return;
+    }
+
+    setMatchSuggestions(data || []);
+  }, []);
+
   useEffect(() => {
     fetchProducts();
-  }, [fetchProducts]);
+    fetchMatchSuggestions();
+  }, [fetchMatchSuggestions, fetchProducts]);
+
+  const generateMatchSuggestions = async () => {
+    if (!canEdit) return;
+    setMatchLoading(true);
+    const { data, error } = await supabase.rpc('generate_product_supplier_match_suggestions', {
+      p_min_confidence: 0.72,
+      p_limit: 250,
+    });
+    setMatchLoading(false);
+
+    if (error) {
+      toast({
+        title: 'Párování se nepodařilo spustit',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const result = Array.isArray(data) ? data[0] : data;
+    toast({
+      title: 'Návrhy párování připraveny',
+      description: `Kandidáti: ${result?.candidate_count || 0}, uložené/aktualizované návrhy: ${result?.inserted_count || 0}.`,
+    });
+    await fetchMatchSuggestions();
+  };
+
+  const reviewMatchSuggestion = async (suggestion, status) => {
+    if (!canEdit) return;
+    setMatchLoading(true);
+    const { error } = await supabase.rpc('review_product_supplier_match', {
+      p_suggestion_id: suggestion.id,
+      p_status: status,
+    });
+    setMatchLoading(false);
+
+    if (error) {
+      toast({
+        title: 'Návrh se nepodařilo uložit',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({
+      title: status === 'approved' ? 'Produkty spárovány' : 'Návrh odmítnut',
+      description: status === 'approved'
+        ? 'Dodavatelská nabídka je nově napojená na kanonický produkt a přepočítala se nejlepší nákupní cena.'
+        : 'Návrh zůstane mimo aktivní kandidáty.',
+    });
+    await Promise.all([fetchProducts(), fetchMatchSuggestions()]);
+  };
 
   const categories = useMemo(() => Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'cs')), [products]);
 
@@ -224,6 +322,7 @@ const Products = () => {
       if (activeFilter === 'archived' && status.label !== 'Archiv') return false;
       if (typeFilter !== 'all' && product.product_type !== typeFilter) return false;
       if (categoryFilter !== 'all' && product.category !== categoryFilter) return false;
+      if (supplierFilter !== 'all' && !supplierSlugsByProduct[product.id]?.includes(supplierFilter)) return false;
       if (availabilityFilter === 'low_stock' && !lowStock) return false;
       if (availabilityFilter === 'with_datasheet' && !hasDatasheet) return false;
       if (availabilityFilter === 'missing_datasheet' && hasDatasheet) return false;
@@ -232,7 +331,7 @@ const Products = () => {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query));
     });
-  }, [activeFilter, availabilityFilter, categoryFilter, products, search, stockByProduct, typeFilter]);
+  }, [activeFilter, availabilityFilter, categoryFilter, products, search, stockByProduct, supplierFilter, supplierSlugsByProduct, typeFilter]);
 
   const openMovementDialog = (product) => {
     setMovementForm({
@@ -296,6 +395,7 @@ const Products = () => {
     setTypeFilter('all');
     setActiveFilter('active');
     setCategoryFilter('all');
+    setSupplierFilter('all');
     setAvailabilityFilter('all');
   };
 
@@ -356,6 +456,116 @@ const Products = () => {
 
         <Card className="overflow-hidden border-slate-200 bg-white shadow-sm">
           <CardHeader className="border-b bg-white px-3 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  AI párování dodavatelských produktů
+                </CardTitle>
+                <CardDescription>
+                  Návrhy shod mezi e-shopy podle názvu, modelových tokenů, kategorie a ceny. Potvrzení pouze přepojí dodavatelskou nabídku na stejný katalogový produkt.
+                </CardDescription>
+              </div>
+              <Button variant="outline" onClick={generateMatchSuggestions} disabled={!canEdit || matchLoading}>
+                <RefreshCw className={cn('mr-2 h-4 w-4', matchLoading && 'animate-spin')} />
+                Vygenerovat návrhy
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {matchSuggestions.length === 0 ? (
+              <div className="flex flex-col gap-1 px-3 py-4 text-sm text-muted-foreground">
+                <span>Žádné čekající návrhy. Spusťte generování po importu nových ceníků.</span>
+                <span className="text-xs">Bezpečné shody se potvrzují ručně, aby se nesloučily odlišné produkty jen podle podobného názvu.</span>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-slate-50/95">
+                    <TableRow>
+                      <TableHead className="min-w-[105px]">Shoda</TableHead>
+                      <TableHead className="min-w-[280px]">Zdroj</TableHead>
+                      <TableHead className="min-w-[280px]">Cílový produkt</TableHead>
+                      <TableHead className="min-w-[150px] text-right">Cena zdroje</TableHead>
+                      <TableHead className="min-w-[150px] text-right">Cena cíle</TableHead>
+                      <TableHead className="min-w-[240px]">Důvody</TableHead>
+                      <TableHead className="w-36 text-right">Akce</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {matchSuggestions.map((suggestion) => {
+                      const reasons = suggestion.reasons || {};
+                      return (
+                        <TableRow key={suggestion.id}>
+                          <TableCell>
+                            <Badge className="border-blue-200 bg-blue-50 text-blue-700" variant="outline">
+                              {formatPercent(Number(suggestion.confidence || 0) * 100)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-semibold text-slate-950">{suggestion.source_product_name || suggestion.source_catalog_name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {suggestion.source_supplier_name} · {suggestion.source_supplier_sku || suggestion.source_catalog_code || '-'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-start gap-2">
+                              <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                              <div>
+                                <div className="font-semibold text-slate-950">{suggestion.target_product_name || suggestion.target_catalog_name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {suggestion.target_supplier_name} · {suggestion.target_supplier_sku || suggestion.target_catalog_code || '-'}
+                                </div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {suggestion.source_price_without_vat == null ? '-' : formatCurrency(suggestion.source_price_without_vat, suggestion.source_currency)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {suggestion.target_price_without_vat == null ? '-' : formatCurrency(suggestion.target_price_without_vat, suggestion.target_currency)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1 text-xs">
+                              <Badge variant="secondary">název {formatPercent(Number(reasons.name_similarity || 0) * 100)}</Badge>
+                              <Badge variant="secondary">model {formatPercent(Number(reasons.token_overlap || 0) * 100)}</Badge>
+                              <Badge variant="secondary">cena {formatPercent(Number(reasons.price_similarity || 0) * 100)}</Badge>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Potvrdit shodu"
+                                disabled={!canEdit || matchLoading}
+                                onClick={() => reviewMatchSuggestion(suggestion, 'approved')}
+                              >
+                                <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Odmítnout návrh"
+                                disabled={!canEdit || matchLoading}
+                                onClick={() => reviewMatchSuggestion(suggestion, 'rejected')}
+                              >
+                                <XCircle className="h-4 w-4 text-rose-700" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="overflow-hidden border-slate-200 bg-white shadow-sm">
+          <CardHeader className="border-b bg-white px-3 py-3">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <CardTitle className="text-base">Produktový katalog</CardTitle>
@@ -384,6 +594,13 @@ const Products = () => {
                   <SelectContent>
                     <SelectItem value="all">Všechny kategorie</SelectItem>
                     {categories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={supplierFilter} onValueChange={setSupplierFilter}>
+                  <SelectTrigger className="h-9 w-[190px] text-sm"><SelectValue placeholder="Dodavatel" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Vsechny dodavatele</SelectItem>
+                    {suppliers.map((supplier) => <SelectItem key={supplier.slug} value={supplier.slug}>{supplier.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={availabilityFilter} onValueChange={setAvailabilityFilter}>
@@ -423,6 +640,8 @@ const Products = () => {
                     <TableHead className="min-w-[120px] text-right">Prodej</TableHead>
                     <TableHead className="min-w-[110px] text-right">DPH</TableHead>
                     <TableHead className="min-w-[120px] text-right">Nákup</TableHead>
+                    <TableHead className="min-w-[170px]">Dodavatel</TableHead>
+                    <TableHead className="min-w-[120px] text-right">Trend ceny</TableHead>
                     <TableHead className="min-w-[130px] text-right">Marže</TableHead>
                     <TableHead className="min-w-[130px] text-right">Dostupné</TableHead>
                     <TableHead className="min-w-[130px]">Datasheet</TableHead>

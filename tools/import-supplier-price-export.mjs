@@ -127,7 +127,7 @@ new_catalog as (
          coalesce(currency, 'CZK'),
          image_url,
          true,
-         'supplier_import',
+         'import',
          coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
            'supplier', '${escapeSql(supplierName)}',
            'supplier_sku', supplier_sku,
@@ -203,10 +203,9 @@ snapshot_insert as (
          resolved_rows.availability_note,
          resolved_rows.price_raw,
          coalesce(resolved_rows.metadata, '{}'::jsonb) || jsonb_build_object('source', '${escapeSql(supplierSlug)}_price_import')
-  from resolved_rows
-  join public.product_supplier_offers offer
-    on offer.supplier_id = (select id from supplier_row limit 1)
-   and lower(offer.supplier_sku) = lower(resolved_rows.supplier_sku)
+  from upserted_offers offer
+  join resolved_rows
+    on lower(offer.supplier_sku) = lower(resolved_rows.supplier_sku)
   where resolved_rows.catalog_item_id is not null
   on conflict do nothing
   returning supplier_offer_id
