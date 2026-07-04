@@ -172,7 +172,7 @@ const CrmProductPickerDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] w-[96vw] max-w-[1500px] overflow-hidden p-0">
+      <DialogContent className="max-h-[94vh] w-[98vw] max-w-[1700px] overflow-hidden p-0">
         <DialogHeader className="border-b px-4 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
             <PackagePlus className="h-4 w-4 text-primary" />
@@ -180,8 +180,8 @@ const CrmProductPickerDialog = ({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-2 p-3">
-          <div className="grid gap-2 md:grid-cols-[minmax(240px,1fr)_150px_150px_170px_120px]">
+        <div className="space-y-2 p-3 text-[90%]">
+          <div className="grid gap-2 md:grid-cols-[minmax(240px,1fr)_145px_145px_160px_115px]">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -237,19 +237,19 @@ const CrmProductPickerDialog = ({
           </div>
 
           <div className="overflow-hidden rounded-md border bg-white">
-            <div className="max-h-[62vh] overflow-auto">
-              <Table className="text-xs">
+            <div className="max-h-[64vh] overflow-auto">
+              <Table className="min-w-[1180px] table-fixed text-[11px]">
                 <TableHeader className="sticky top-0 z-10 bg-slate-50">
                   <TableRow>
-                    <TableHead className="w-10" />
-                    <TableHead className="min-w-[105px]">Kod</TableHead>
-                    <TableHead className="min-w-[300px]">Nazev produktu</TableHead>
-                    <TableHead className="min-w-[90px] text-right">Pouziti</TableHead>
-                    <TableHead className="min-w-[105px] text-right">Prodej</TableHead>
-                    <TableHead className="min-w-[105px] text-right">Nakup</TableHead>
-                    <TableHead className="min-w-[70px] text-right">DPH</TableHead>
-                    <TableHead className="min-w-[155px]">Kategorie / rada</TableHead>
-                    <TableHead className="min-w-[220px]">Popis</TableHead>
+                    <TableHead className="w-9" />
+                    <TableHead className="w-[96px]">Kod</TableHead>
+                    <TableHead className="w-[250px]">Nazev produktu</TableHead>
+                    <TableHead className="w-[64px] text-right">Pouziti</TableHead>
+                    <TableHead className="w-[92px] text-right">Prodej</TableHead>
+                    <TableHead className="w-[92px] text-right">Nakup</TableHead>
+                    <TableHead className="w-[54px] text-right">DPH</TableHead>
+                    <TableHead className="w-[180px]">Kategorie / rada</TableHead>
+                    <TableHead>Popis</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -266,12 +266,12 @@ const CrmProductPickerDialog = ({
                     const checked = Boolean(selectedKeys[key]);
                     const productBrand = getProductBrand(product);
                     return (
-                      <TableRow key={key} className="cursor-pointer hover:bg-blue-50/40 [&>td]:py-1.5" onClick={() => toggleProduct(product, !checked)}>
+                      <TableRow key={key} className="cursor-pointer hover:bg-blue-50/40 [&>td]:py-1 [&>td]:align-middle" onClick={() => toggleProduct(product, !checked)}>
                         <TableCell onClick={(event) => event.stopPropagation()}>
                           <Checkbox checked={checked} onCheckedChange={(value) => toggleProduct(product, Boolean(value))} />
                         </TableCell>
-                        <TableCell className="font-mono text-[11px] font-semibold text-slate-700">{product.code || product.sku || '-'}</TableCell>
-                        <TableCell>
+                        <TableCell className="truncate font-mono text-[10px] font-semibold text-slate-700" title={product.code || product.sku || '-'}>{product.code || product.sku || '-'}</TableCell>
+                        <TableCell className="min-w-0">
                           <div className="flex min-w-0 items-center gap-1.5 font-medium text-slate-950">
                             <span className="truncate">{product.name || 'Produkt bez nazvu'}</span>
                             {productBrand && <Badge variant="outline" className="shrink-0 border-blue-200 bg-blue-50 px-1.5 py-0 text-[10px] text-blue-700">{productBrand}</Badge>}
@@ -286,13 +286,13 @@ const CrmProductPickerDialog = ({
                         <TableCell className="text-right font-semibold">{formatCurrency(product.default_unit_price)}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(product.purchase_price)}</TableCell>
                         <TableCell className="text-right">{Number(product.default_vat_rate ?? 21)} %</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {product.category && <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{product.category}</Badge>}
-                            {product.product_type && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{product.product_type}</Badge>}
+                        <TableCell className="min-w-0">
+                          <div className="flex min-w-0 flex-col gap-1">
+                            {product.category && <Badge variant="secondary" className="block max-w-full truncate px-1.5 py-0 text-[10px]" title={product.category}>{product.category}</Badge>}
+                            {product.product_type && <Badge variant="outline" className="block max-w-full truncate px-1.5 py-0 text-[10px]" title={product.product_type}>{product.product_type}</Badge>}
                           </div>
                         </TableCell>
-                        <TableCell className="max-w-[240px] truncate text-[11px] text-muted-foreground">{product.description || '-'}</TableCell>
+                        <TableCell className="truncate text-[10px] text-muted-foreground" title={product.description || ''}>{product.description || '-'}</TableCell>
                       </TableRow>
                     );
                   })}
