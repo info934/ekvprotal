@@ -268,6 +268,8 @@ const DealWorkspace = ({
   onUpdateOpportunity,
   onUpdateOpportunityItems,
   onAddNote,
+  onCancelOpportunity,
+  onDeleteOpportunity,
   activities = [],
   notes = [],
   customFieldSections = [],

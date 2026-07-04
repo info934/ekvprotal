@@ -799,6 +799,18 @@ export const createCommercialDocumentDocxBlob = async (payload, template = null)
       }),
     ]),
   ];
+  const itemsTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+      bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+      left: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+      right: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+      insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+      insideVertical: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+    },
+    rows,
+  });
 
   const doc = new Document({
     sections: [{
