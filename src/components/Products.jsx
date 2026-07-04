@@ -229,6 +229,14 @@ const Products = () => {
       .eq('is_active', true)
       .order('name', { ascending: true });
 
+    const { data: usageData, error: usageError } = await supabase
+      .from('product_usage_stats')
+      .select('catalog_item_id, total_usage_count, last_used_at');
+
+    if (usageError) {
+      console.warn('Product usage stats are not available:', usageError.message);
+    }
+
     setSuppliers(supplierData || []);
 
     if (supplierPriceError) {
