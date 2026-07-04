@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, CalendarClock, Database, ExternalLink, FileText, Image, Minus, Package, Save, Store, TrendingDown, TrendingUp, UploadCloud } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarClock, Database, ExternalLink, FileText, Image, Minus, Package, Save, Store, TrendingDown, TrendingUp, UploadCloud, History } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -70,6 +70,55 @@ const productTypeLabels = {
   manufactured: 'Výrobek / sklad',
 };
 
+
+const productAuditActionLabels = {
+  product_created: 'Produkt vytvoren',
+  product_updated: 'Produkt upraven',
+  product_deleted: 'Produkt odstranen',
+  product_set_created: 'Set produktu vytvoren',
+  product_set_updated: 'Set produktu upraven',
+  product_set_deleted: 'Set produktu odstranen',
+  product_set_item_added: 'Polozka pridana do setu',
+  product_set_item_updated: 'Polozka v setu upravena',
+  product_set_item_removed: 'Polozka odebrana ze setu',
+};
+
+const productAuditFieldLabels = {
+  sku: 'SKU',
+  code: 'Kod',
+  name: 'Nazev',
+  description: 'Popis',
+  category: 'Kategorie',
+  unit: 'MJ',
+  product_type: 'Typ produktu',
+  default_unit_price: 'Prodejni cena',
+  default_vat_rate: 'DPH',
+  purchase_price: 'Nakupni cena',
+  currency: 'Mena',
+  stock_min_qty: 'Minimalni sklad',
+  warehouse_location: 'Skladova pozice',
+  allow_backorder: 'Povolit minusovy stav',
+  valid_from: 'Platnost od',
+  valid_until: 'Platnost do',
+  datasheet_external_web_url: 'Datasheet URL',
+  datasheet_file_name: 'Datasheet',
+  datasheet_preview_image_url: 'Nahled datasheetu',
+  image_url: 'Obrazek',
+  preferred_supplier_offer_id: 'Preferovany dodavatel',
+  is_active: 'Aktivni',
+  archived_at: 'Archivace',
+  metadata: 'Parametry',
+  quantity: 'Mnozstvi',
+  sort_order: 'Poradi',
+  note: 'Poznamka',
+  catalog_item_id: 'Produkt',
+};
+
+const formatChangedFields = (fields = []) => {
+  if (!Array.isArray(fields) || fields.length === 0) return '';
+  return fields.map((field) => productAuditFieldLabels[field] || field).join(', ');
+};
+
 const ProductForm = () => {
   const { productId } = useParams();
   const navigate = useNavigate();
@@ -81,10 +130,12 @@ const ProductForm = () => {
   const [form, setForm] = useState(emptyProduct);
   const [productFields, setProductFields] = useState([]);
   const [usageHistory, setUsageHistory] = useState([]);
+  const [auditHistory, setAuditHistory] = useState([]);
   const [supplierPrices, setSupplierPrices] = useState([]);
   const [priceHistory, setPriceHistory] = useState([]);
   const [storageConnections, setStorageConnections] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [auditHistoryLoading, setAuditHistoryLoading] = useState(false);
   const [datasheetFile, setDatasheetFile] = useState(null);
   const [productSchemaReady, setProductSchemaReady] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -168,6 +219,44 @@ const ProductForm = () => {
     setHistoryLoading(false);
   }, [productId]);
 
+
+  const fetchAuditHistory = useCallback(async () => {
+    if (!productId) {
+      setAuditHistory([]);
+      return;
+    }
+
+    setAuditHistoryLoading(true);
+    const [productLogsRes, setItemLogsRes] = await Promise.all([
+      supabase
+        .from('audit_logs')
+        .select('id, created_at, user_email, action, details')
+        .in('action', ['product_created', 'product_updated', 'product_deleted'])
+        .filter('details->>catalog_item_id', 'eq', productId)
+        .order('created_at', { ascending: false })
+        .limit(60),
+      supabase
+        .from('audit_logs')
+        .select('id, created_at, user_email, action, details')
+        .in('action', ['product_set_item_added', 'product_set_item_updated', 'product_set_item_removed'])
+        .filter('details->>product_id', 'eq', productId)
+        .order('created_at', { ascending: false })
+        .limit(60),
+    ]);
+
+    if (productLogsRes.error && setItemLogsRes.error) {
+      setAuditHistory([]);
+      setAuditHistoryLoading(false);
+      return;
+    }
+
+    const merged = [...(productLogsRes.data || []), ...(setItemLogsRes.data || [])]
+      .filter((log, index, all) => all.findIndex((candidate) => candidate.id === log.id) === index)
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    setAuditHistory(merged);
+    setAuditHistoryLoading(false);
+  }, [productId]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     setWarning('');
@@ -186,6 +275,7 @@ const ProductForm = () => {
       .order('is_default', { ascending: false });
     setStorageConnections(storageData || []);
     fetchUsageHistory();
+    fetchAuditHistory();
 
     if (productId) {
       const [currentPriceRes, priceHistoryRes] = await Promise.all([
@@ -281,7 +371,7 @@ const ProductForm = () => {
       warehouse_location: data.warehouse_location || '',
     });
     setLoading(false);
-  }, [fetchUsageHistory, isEditing, productId, toast]);
+  }, [fetchAuditHistory, fetchUsageHistory, isEditing, productId, toast]);
 
   useEffect(() => {
     fetchData();
@@ -718,6 +808,52 @@ const ProductForm = () => {
                     </>
                   ) : (
                     <div className="rounded-lg border border-dashed bg-slate-50 p-4 text-sm text-muted-foreground">Produkt zatím nemá aktuální cenu z e-shopu.</div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+
+            {isEditing && (
+              <Card>
+                <CardHeader className="border-b bg-white">
+                  <CardTitle className="flex items-center gap-2">
+                    <History className="h-4 w-4" />
+                    Historie zmen
+                  </CardTitle>
+                  <CardDescription>Kdo a kdy produkt nebo jeho zarazeni v produktovych setech zmenil.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {auditHistoryLoading ? (
+                    <div className="p-5 text-sm text-muted-foreground">Nacitam historii zmen...</div>
+                  ) : auditHistory.length === 0 ? (
+                    <div className="p-5 text-sm text-muted-foreground">Zatim nejsou evidovane zadne zmeny produktu.</div>
+                  ) : (
+                    <div className="divide-y">
+                      {auditHistory.map((log) => {
+                        const details = log.details || {};
+                        const changedFields = details.changed_fields || [];
+                        const changedLabel = formatChangedFields(changedFields);
+                        const quantityInfo = details.quantity_before || details.quantity_after
+                          ? 'Mnozstvi: ' + (details.quantity_before || '-') + ' -> ' + (details.quantity_after || '-')
+                          : '';
+                        const contextLabel = details.set_name
+                          ? ['Set: ' + details.set_name, quantityInfo].filter(Boolean).join(' / ')
+                          : changedLabel;
+
+                        return (
+                          <div key={log.id} className="grid gap-1 px-5 py-3 text-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="font-semibold text-slate-950">{productAuditActionLabels[log.action] || log.action}</div>
+                              <div className="text-xs text-muted-foreground">{new Date(log.created_at).toLocaleString('cs-CZ')}</div>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {log.user_email || 'Neznamy uzivatel'}{contextLabel ? ' - ' + contextLabel : ''}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </CardContent>
               </Card>

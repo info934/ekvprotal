@@ -19,6 +19,15 @@ const actionLabels = {
   'create_payout_request': 'Vytvořil žádost o výplatu',
   'update_payout_status': 'Změnil stav výplaty',
   'create_user': 'Vytvořil uživatele',
+  'product_created': 'Produkt vytvoren',
+  'product_updated': 'Produkt upraven',
+  'product_deleted': 'Produkt odstranen',
+  'product_set_created': 'Produktovy set vytvoren',
+  'product_set_updated': 'Produktovy set upraven',
+  'product_set_deleted': 'Produktovy set odstranen',
+  'product_set_item_added': 'Polozka pridana do setu',
+  'product_set_item_updated': 'Polozka v setu upravena',
+  'product_set_item_removed': 'Polozka odebrana ze setu',
 };
 
 const AuditLog = () => {

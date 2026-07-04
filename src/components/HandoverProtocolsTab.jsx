@@ -205,7 +205,7 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
     try {
       if (format === 'html') downloadHandoverProtocolHtml({ protocol: draft, template: selectedTemplate });
       if (format === 'docx') await downloadHandoverProtocolDocx({ protocol: draft, template: selectedTemplate });
-      if (format === 'pdf') downloadHandoverProtocolPdf({ protocol: draft, template: selectedTemplate });
+      if (format === 'pdf') await downloadHandoverProtocolPdf({ protocol: draft, template: selectedTemplate });
     } catch (error) {
       toast({ title: 'Generování selhalo', description: error.message, variant: 'destructive' });
     }

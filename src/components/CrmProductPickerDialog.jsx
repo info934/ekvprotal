@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { PackagePlus, Search } from 'lucide-react';
+import { PackagePlus, Search, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -35,6 +35,14 @@ const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
 }).format(Number(value || 0));
 
 const productKey = (product) => product.id || product.code || product.sku || product.name;
+
+const productUsageCount = (product) => Number(
+  product?.usage_count ??
+  product?.total_usage_count ??
+  product?.crm_usage_count ??
+  product?.metadata?.usage_count ??
+  0
+);
 
 const compactSearchValue = (value) => String(value || '').toLowerCase();
 
@@ -133,6 +141,12 @@ const CrmProductPickerDialog = ({
       ]
         .filter(Boolean)
         .some((value) => compactSearchValue(value).includes(needle));
+    }).sort((a, b) => {
+      const usageDiff = productUsageCount(b) - productUsageCount(a);
+      if (usageDiff !== 0) return usageDiff;
+      const categoryDiff = String(a.category || '').localeCompare(String(b.category || ''), 'cs');
+      if (categoryDiff !== 0) return categoryDiff;
+      return String(a.name || a.code || '').localeCompare(String(b.name || b.code || ''), 'cs');
     });
   }, [brand, category, productType, products, query, status]);
 
@@ -158,27 +172,27 @@ const CrmProductPickerDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88vh] max-w-6xl overflow-hidden p-0">
-        <DialogHeader className="border-b px-5 py-4">
+      <DialogContent className="max-h-[92vh] w-[96vw] max-w-[1500px] overflow-hidden p-0">
+        <DialogHeader className="border-b px-4 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
             <PackagePlus className="h-4 w-4 text-primary" />
             Produktovy katalog
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3 p-4">
-          <div className="grid gap-2 md:grid-cols-[minmax(220px,1fr)_160px_160px_180px_140px]">
+        <div className="space-y-2 p-3">
+          <div className="grid gap-2 md:grid-cols-[minmax(240px,1fr)_150px_150px_170px_120px]">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Hledat kod, nazev, znacku, SKU dodavatele..."
-                className="h-9 pl-9 text-sm"
+                className="h-8 pl-9 text-xs"
               />
             </div>
             <Select value={brand} onValueChange={setBrand}>
-              <SelectTrigger className="h-9 text-sm">
+              <SelectTrigger className="h-8 text-xs">
                 <SelectValue placeholder="Znacka" />
               </SelectTrigger>
               <SelectContent>
@@ -189,7 +203,7 @@ const CrmProductPickerDialog = ({
               </SelectContent>
             </Select>
             <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger className="h-9 text-sm">
+              <SelectTrigger className="h-8 text-xs">
                 <SelectValue placeholder="Kategorie" />
               </SelectTrigger>
               <SelectContent>
@@ -200,7 +214,7 @@ const CrmProductPickerDialog = ({
               </SelectContent>
             </Select>
             <Select value={productType} onValueChange={setProductType}>
-              <SelectTrigger className="h-9 text-sm">
+              <SelectTrigger className="h-8 text-xs">
                 <SelectValue placeholder="Produktova rada" />
               </SelectTrigger>
               <SelectContent>
@@ -211,7 +225,7 @@ const CrmProductPickerDialog = ({
               </SelectContent>
             </Select>
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="h-9 text-sm">
+              <SelectTrigger className="h-8 text-xs">
                 <SelectValue placeholder="Stav" />
               </SelectTrigger>
               <SelectContent>
@@ -223,56 +237,62 @@ const CrmProductPickerDialog = ({
           </div>
 
           <div className="overflow-hidden rounded-md border bg-white">
-            <div className="max-h-[48vh] overflow-auto">
-              <Table>
+            <div className="max-h-[62vh] overflow-auto">
+              <Table className="text-xs">
                 <TableHeader className="sticky top-0 z-10 bg-slate-50">
                   <TableRow>
                     <TableHead className="w-10" />
-                    <TableHead className="min-w-[120px]">Kod</TableHead>
-                    <TableHead className="min-w-[280px]">Nazev produktu</TableHead>
-                    <TableHead className="min-w-[130px] text-right">Prodej</TableHead>
-                    <TableHead className="min-w-[120px] text-right">Nakup</TableHead>
-                    <TableHead className="min-w-[90px] text-right">DPH</TableHead>
-                    <TableHead className="min-w-[170px]">Kategorie / rada</TableHead>
-                    <TableHead className="min-w-[260px]">Popis</TableHead>
+                    <TableHead className="min-w-[105px]">Kod</TableHead>
+                    <TableHead className="min-w-[300px]">Nazev produktu</TableHead>
+                    <TableHead className="min-w-[90px] text-right">Pouziti</TableHead>
+                    <TableHead className="min-w-[105px] text-right">Prodej</TableHead>
+                    <TableHead className="min-w-[105px] text-right">Nakup</TableHead>
+                    <TableHead className="min-w-[70px] text-right">DPH</TableHead>
+                    <TableHead className="min-w-[155px]">Kategorie / rada</TableHead>
+                    <TableHead className="min-w-[220px]">Popis</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">Nacitam katalog...</TableCell>
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">Nacitam katalog...</TableCell>
                     </TableRow>
                   ) : filteredProducts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">Zadny produkt neodpovida filtru.</TableCell>
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">Zadny produkt neodpovida filtru.</TableCell>
                     </TableRow>
                   ) : filteredProducts.map((product) => {
                     const key = productKey(product);
                     const checked = Boolean(selectedKeys[key]);
                     const productBrand = getProductBrand(product);
                     return (
-                      <TableRow key={key} className="cursor-pointer hover:bg-blue-50/40" onClick={() => toggleProduct(product, !checked)}>
+                      <TableRow key={key} className="cursor-pointer hover:bg-blue-50/40 [&>td]:py-1.5" onClick={() => toggleProduct(product, !checked)}>
                         <TableCell onClick={(event) => event.stopPropagation()}>
                           <Checkbox checked={checked} onCheckedChange={(value) => toggleProduct(product, Boolean(value))} />
                         </TableCell>
-                        <TableCell className="font-medium text-slate-800">{product.code || product.sku || '-'}</TableCell>
+                        <TableCell className="font-mono text-[11px] font-semibold text-slate-700">{product.code || product.sku || '-'}</TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap items-center gap-2 font-medium text-slate-950">
-                            <span>{product.name || 'Produkt bez nazvu'}</span>
-                            {productBrand && <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">{productBrand}</Badge>}
+                          <div className="flex min-w-0 items-center gap-1.5 font-medium text-slate-950">
+                            <span className="truncate">{product.name || 'Produkt bez nazvu'}</span>
+                            {productBrand && <Badge variant="outline" className="shrink-0 border-blue-200 bg-blue-50 px-1.5 py-0 text-[10px] text-blue-700">{productBrand}</Badge>}
                           </div>
-                          {product.sku && <div className="text-xs text-muted-foreground">{product.sku}</div>}
+                          {product.sku && <div className="truncate text-[11px] text-muted-foreground">{product.sku}</div>}
+                        </TableCell>
+                        <TableCell className="text-right text-slate-600">
+                          {productUsageCount(product) > 0 ? (
+                            <span className="inline-flex items-center justify-end gap-1 font-semibold text-emerald-700"><TrendingUp className="h-3 w-3" />{productUsageCount(product)}</span>
+                          ) : <span className="text-muted-foreground">-</span>}
                         </TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(product.default_unit_price)}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(product.purchase_price)}</TableCell>
                         <TableCell className="text-right">{Number(product.default_vat_rate ?? 21)} %</TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {product.category && <Badge variant="secondary">{product.category}</Badge>}
-                            {product.product_type && <Badge variant="outline">{product.product_type}</Badge>}
+                            {product.category && <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{product.category}</Badge>}
+                            {product.product_type && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{product.product_type}</Badge>}
                           </div>
                         </TableCell>
-                        <TableCell className="max-w-[320px] truncate text-muted-foreground">{product.description || '-'}</TableCell>
+                        <TableCell className="max-w-[240px] truncate text-[11px] text-muted-foreground">{product.description || '-'}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -281,14 +301,14 @@ const CrmProductPickerDialog = ({
             </div>
           </div>
 
-          <div className="rounded-md border bg-slate-50 p-3">
+          <div className="rounded-md border bg-slate-50 px-3 py-2">
             <Label className="text-xs uppercase tracking-wide text-slate-500">Vybrane produkty</Label>
             {selectedProducts.length === 0 ? (
-              <p className="mt-2 text-sm text-muted-foreground">Zatim neni vybran zadny produkt.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Zatim neni vybran zadny produkt.</p>
             ) : (
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-1 flex max-h-16 flex-wrap gap-1 overflow-auto">
                 {selectedProducts.map((product) => (
-                  <Badge key={productKey(product)} variant="secondary" className="gap-1">
+                  <Badge key={productKey(product)} variant="secondary" className="max-w-[320px] gap-1 truncate text-[11px]">
                     {product.code || product.sku || '-'} - {product.name}
                   </Badge>
                 ))}
@@ -297,7 +317,7 @@ const CrmProductPickerDialog = ({
           </div>
         </div>
 
-        <DialogFooter className="border-t bg-slate-50 px-5 py-3">
+        <DialogFooter className="border-t bg-slate-50 px-4 py-2">
           <Button type="button" variant="outline" onClick={() => onOpenChange?.(false)}>Zrusit</Button>
           <Button type="button" onClick={handleApply} disabled={selectedProducts.length === 0}>
             Vlozit vybrane ({selectedProducts.length})

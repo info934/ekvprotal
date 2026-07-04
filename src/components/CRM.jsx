@@ -287,7 +287,7 @@ const DealWorkspace = ({
 
     const fetchCatalogProducts = async () => {
       setCatalogLoading(true);
-      const [catalogRes, stockRes] = await Promise.all([
+      const [catalogRes, stockRes, usageRes] = await Promise.all([
         supabase
           .from('commercial_item_catalog')
           .select('id, code, sku, name, description, category, unit, default_unit_price, default_vat_rate, purchase_price, preferred_supplier_offer_id, product_type, is_active, metadata')
@@ -296,14 +296,23 @@ const DealWorkspace = ({
         supabase
           .from('product_stock_status')
           .select('catalog_item_id, available_qty'),
+        supabase
+          .from('product_usage_stats')
+          .select('catalog_item_id, total_usage_count, last_used_at'),
       ]);
 
       if (active && !catalogRes.error) {
         const stockByProductId = new Map((stockRes.data || []).map((row) => [row.catalog_item_id, row]));
-        setCatalogProducts((catalogRes.data || []).map((product) => ({
-          ...product,
-          available_qty: stockByProductId.get(product.id)?.available_qty ?? null,
-        })));
+        const usageByProductId = new Map((usageRes.data || []).map((row) => [row.catalog_item_id, row]));
+        setCatalogProducts((catalogRes.data || []).map((product) => {
+          const usage = usageByProductId.get(product.id) || {};
+          return {
+            ...product,
+            available_qty: stockByProductId.get(product.id)?.available_qty ?? null,
+            usage_count: usage.total_usage_count || 0,
+            last_used_at: usage.last_used_at || null,
+          };
+        }));
       }
       if (active) {
         setCatalogLoading(false);
@@ -2466,7 +2475,7 @@ const CRM = () => {
     try {
       const generationInput = { opportunity: selectedOpportunity, document, template };
       if (format === 'pdf') {
-        downloadGeneratedDocumentPdf(generationInput);
+        await downloadGeneratedDocumentPdf(generationInput);
       } else if (format === 'html') {
         downloadGeneratedDocumentHtml(generationInput);
       } else {

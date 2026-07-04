@@ -11,6 +11,7 @@ import {
   TextRun,
   WidthType,
 } from 'docx';
+import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { sanitizeDocumentTemplateHtml, sanitizeGeneratedDocumentHtml } from '@/lib/htmlSanitizer';
 
@@ -188,9 +189,9 @@ const renderItemsTableHtml = (items) => {
         <strong>${escapeHtml(item.name)}</strong>
         ${item.description ? `<div class="muted">${escapeHtml(item.description)}</div>` : ''}
       </td>
-      <td class="num">${item.quantity.toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}</td>
+      <td class="num">${Number(item.quantity || 0).toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}</td>
       <td class="num">${formatCurrency(item.unitPrice)}</td>
-      <td class="num">${item.discountPercent.toLocaleString('cs-CZ')} %</td>
+      <td class="num">${Number(item.discountPercent || 0).toLocaleString('cs-CZ')} %</td>
       <td class="num">${formatCurrency(item.lineTotal)}</td>
     </tr>
   `).join('') : `
@@ -226,7 +227,7 @@ const renderItemsRowsHtml = (items) => (
         <strong>${escapeHtml(item.name)}</strong>
         ${item.description ? `<div class="muted">${escapeHtml(item.description)}</div>` : ''}
       </td>
-      <td class="num">${item.quantity.toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}</td>
+      <td class="num">${Number(item.quantity || 0).toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}</td>
       <td class="num">${formatCurrency(item.unitPrice)}</td>
       <td class="num">${formatCurrency(item.lineTotal)}</td>
     </tr>
@@ -239,7 +240,7 @@ const renderItemsListHtml = (items) => (
         <li>
           <strong>${escapeHtml(item.name)}</strong>
           ${item.code ? ` (${escapeHtml(item.code)})` : ''}
-    ? ${item.quantity.toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}
+    ? ${Number(item.quantity || 0).toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}
           ${item.description ? `<br><span class="muted">${escapeHtml(item.description)}</span>` : ''}
         </li>
       `).join('')}</ul>`
@@ -273,7 +274,7 @@ const createCommercialItemsDocxTable = (items) => new Table({
         makeCell(String(index + 1), { width: 6 }),
         makeCell(item.code || '-', { width: 14 }),
         makeCell(item.name || '-', { width: 36 }),
-        makeCell(`${item.quantity.toLocaleString('cs-CZ')} ${item.unit}`, { width: 16, align: AlignmentType.RIGHT }),
+        makeCell(`${Number(item.quantity || 0).toLocaleString('cs-CZ')} ${item.unit}`, { width: 16, align: AlignmentType.RIGHT }),
         makeCell(formatCurrency(item.unitPrice), { width: 14, align: AlignmentType.RIGHT }),
         makeCell(formatCurrency(item.lineTotal), { width: 14, align: AlignmentType.RIGHT }),
       ],
@@ -286,10 +287,10 @@ const buildItemTemplatePlaceholders = (item) => ({
   item_code: item.code || '',
   item_name: item.name || '',
   item_description: item.description || '',
-  item_quantity: item.quantity.toLocaleString('cs-CZ'),
+  item_quantity: Number(item.quantity || 0).toLocaleString('cs-CZ'),
   item_unit: item.unit || '',
   item_unit_price: formatCurrency(item.unitPrice),
-  item_discount_percent: item.discountPercent.toLocaleString('cs-CZ'),
+  item_discount_percent: Number(item.discountPercent || 0).toLocaleString('cs-CZ'),
   item_vat_rate: item.vatRate.toLocaleString('cs-CZ'),
   item_line_total: formatCurrency(item.lineTotal),
   ...Object.entries(item.customFields || {}).reduce((acc, [key, value]) => {
@@ -620,6 +621,73 @@ export const downloadGeneratedDocumentHtml = ({ opportunity, document, template 
   return payload;
 };
 
+
+const waitForDocumentAssets = async (root) => {
+  const images = Array.from(root.querySelectorAll('img'));
+  await Promise.all(images.map((image) => {
+    if (image.complete) return Promise.resolve();
+    return new Promise((resolve) => {
+      image.onload = resolve;
+      image.onerror = resolve;
+    });
+  }));
+};
+
+const createStyledPdfFromHtml = async (html) => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    throw new Error('PDF export is available only in the browser.');
+  }
+
+  const host = document.createElement('div');
+  host.style.position = 'fixed';
+  host.style.left = '-10000px';
+  host.style.top = '0';
+  host.style.width = '210mm';
+  host.style.background = '#ffffff';
+  host.style.zIndex = '-1';
+  host.innerHTML = html;
+  document.body.appendChild(host);
+
+  try {
+    await waitForDocumentAssets(host);
+
+    const page = host.querySelector('.page') || host.querySelector('main') || host;
+    page.style.boxShadow = 'none';
+    page.style.margin = '0';
+
+    const canvas = await html2canvas(page, {
+      backgroundColor: '#ffffff',
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
+      useCORS: true,
+      logging: false,
+      windowWidth: page.scrollWidth,
+      windowHeight: page.scrollHeight,
+    });
+
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imageHeight = (canvas.height * pageWidth) / canvas.width;
+    const imageData = canvas.toDataURL('image/png');
+
+    let remainingHeight = imageHeight;
+    let y = 0;
+    pdf.addImage(imageData, 'PNG', 0, y, pageWidth, imageHeight, undefined, 'FAST');
+    remainingHeight -= pageHeight;
+
+    while (remainingHeight > 0) {
+      y -= pageHeight;
+      pdf.addPage();
+      pdf.addImage(imageData, 'PNG', 0, y, pageWidth, imageHeight, undefined, 'FAST');
+      remainingHeight -= pageHeight;
+    }
+
+    return pdf;
+  } finally {
+    host.remove();
+  }
+};
+
 const makeText = (text, options = {}) => new TextRun({
   text: String(text ?? ''),
   font: 'Arial',
@@ -721,7 +789,7 @@ export const createCommercialDocumentDocxBlob = async (payload, template = null)
         makeCell(item.position, { width: 6 }),
         makeCell(item.code || '-', { width: 12 }),
         makeCell(item.name, { width: 34 }),
-        makeCell(`${item.quantity.toLocaleString('cs-CZ')} ${item.unit}`, { width: 12, align: AlignmentType.RIGHT }),
+        makeCell(`${Number(item.quantity || 0).toLocaleString('cs-CZ')} ${item.unit}`, { width: 12, align: AlignmentType.RIGHT }),
         makeCell(formatCurrency(item.unitPrice), { width: 16, align: AlignmentType.RIGHT }),
         makeCell(formatCurrency(item.lineTotal), { width: 20, align: AlignmentType.RIGHT }),
       ],
@@ -778,123 +846,13 @@ export const downloadGeneratedDocumentDocx = async ({ opportunity, document, tem
   return payload;
 };
 
-export const createCommercialDocumentPdf = (payload, template = null) => {
-  const { document, opportunity, items, generatedAt } = payload;
-  const totalWithTax = document.total + document.taxTotal;
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const margin = 14;
-  let y = 16;
-
-  const addText = (text, x, lineY, options = {}) => {
-    pdf.setFont('helvetica', options.bold ? 'bold' : 'normal');
-    pdf.setFontSize(options.size || 10);
-    pdf.setTextColor(options.color || 17, options.color || 17, options.color || 17);
-    pdf.text(String(text ?? ''), x, lineY, options);
-  };
-
-  if (template?.content) {
-    const lines = stripHtml(fillDocumentTemplate(template.content, payload))
-      .split('\n')
-      .flatMap((line) => pdf.splitTextToSize(line.trim(), pageWidth - (margin * 2)))
-      .filter(Boolean);
-
-    addText(`${document.label} ${document.number || ''}`.trim(), margin, y, { bold: true, size: 16 });
-    y += 10;
-    lines.forEach((line) => {
-      if (y > 280) {
-        pdf.addPage();
-        y = 16;
-      }
-      addText(line, margin, y, { size: 10 });
-      y += 6;
-    });
-    return pdf;
-  }
-
-  addText('EKV Group', margin, y, { bold: true, size: 18 });
-  addText(document.label, pageWidth - margin, y, { bold: true, size: 18, align: 'right' });
-  y += 7;
-  addText(document.number || 'Bez čísla', pageWidth - margin, y, { size: 10, align: 'right' });
-  y += 5;
-  addText(`ID originálu: ${document.originalId}`, pageWidth - margin, y, { size: 7, bold: true, align: 'right' });
-  y += 10;
-  pdf.setDrawColor(17, 24, 39);
-  pdf.line(margin, y, pageWidth - margin, y);
-  y += 12;
-
-  addText(document.title, margin, y, { bold: true, size: 15 });
-  y += 9;
-  addText(`Klient: ${opportunity.subjectName || 'Bez subjektu'}`, margin, y);
-  addText(`Datum: ${formatDate(document.issueDate)}`, pageWidth - margin, y, { align: 'right' });
-  y += 6;
-  addText(`Projekt: ${opportunity.projectName || opportunity.projectCode || '-'}`, margin, y);
-  addText(`Platnost: ${formatDate(document.validUntil)}`, pageWidth - margin, y, { align: 'right' });
-  y += 12;
-
-  addText('Položky', margin, y, { bold: true, size: 13 });
-  y += 7;
-
-  const columns = [
-    { label: '#', x: margin, width: 8 },
-    { label: 'Kód', x: margin + 10, width: 22 },
-    { label: 'Název', x: margin + 34, width: 70 },
-    { label: 'Množství', x: margin + 106, width: 22 },
-    { label: 'Jedn. cena', x: margin + 130, width: 25 },
-    { label: 'Celkem', x: margin + 158, width: 24 },
-  ];
-
-  pdf.setFillColor(249, 250, 251);
-  pdf.rect(margin, y - 5, pageWidth - (margin * 2), 8, 'F');
-  columns.forEach((column) => addText(column.label, column.x, y, { bold: true, size: 8 }));
-  y += 7;
-
-  if (items.length === 0) {
-    addText('Dokument zatím nemá položky.', margin, y);
-    y += 8;
-  } else {
-    items.forEach((item) => {
-      if (y > 270) {
-        pdf.addPage();
-        y = 18;
-      }
-      addText(item.position, columns[0].x, y, { size: 8 });
-      addText(item.code || '-', columns[1].x, y, { size: 8 });
-      const nameLines = pdf.splitTextToSize(item.name, 68);
-      addText(nameLines, columns[2].x, y, { size: 8 });
-      addText(`${item.quantity.toLocaleString('cs-CZ')} ${item.unit}`, columns[3].x + columns[3].width, y, { size: 8, align: 'right' });
-      addText(formatCurrency(item.unitPrice), columns[4].x + columns[4].width, y, { size: 8, align: 'right' });
-      addText(formatCurrency(item.lineTotal), pageWidth - margin, y, { size: 8, align: 'right' });
-      y += Math.max(7, nameLines.length * 4.5);
-      pdf.setDrawColor(229, 231, 235);
-      pdf.line(margin, y - 4, pageWidth - margin, y - 4);
-    });
-  }
-
-  y += 8;
-  addText(`Mezisoučet: ${formatCurrency(document.subtotal)}`, pageWidth - margin, y, { align: 'right' });
-  y += 6;
-  addText(`Sleva: ${formatCurrency(document.discountTotal)}`, pageWidth - margin, y, { align: 'right' });
-  y += 6;
-  addText(`DPH: ${formatCurrency(document.taxTotal)}`, pageWidth - margin, y, { align: 'right' });
-  y += 8;
-  addText(`Celkem s DPH: ${formatCurrency(totalWithTax)}`, pageWidth - margin, y, { align: 'right', bold: true, size: 13 });
-
-  if (document.notes) {
-    y += 14;
-    addText('Poznámka', margin, y, { bold: true, size: 12 });
-    y += 6;
-    addText(pdf.splitTextToSize(document.notes, pageWidth - (margin * 2)), margin, y);
-  }
-
-  addText(`ID originálu: ${document.originalId}`, margin, 282, { size: 8, bold: true });
-  addText(`Vygenerováno: ${formatDate(generatedAt)}`, margin, 287, { size: 8 });
-  return pdf;
+export const createCommercialDocumentPdf = async (payload, template = null) => {
+  const html = renderCommercialDocumentHtml(payload, template);
+  return createStyledPdfFromHtml(html);
 };
-
-export const downloadGeneratedDocumentPdf = ({ opportunity, document, template }) => {
+export const downloadGeneratedDocumentPdf = async ({ opportunity, document, template }) => {
   const payload = buildDocumentGenerationPayload({ opportunity, document });
-  const pdf = createCommercialDocumentPdf(payload, template);
+  const pdf = await createCommercialDocumentPdf(payload, template);
   pdf.save(generateDocumentFileName(payload, 'pdf'));
   return payload;
 };
@@ -1094,7 +1052,7 @@ export const downloadOpportunityOverviewDocx = async ({ opportunity, documents =
                 makeCell(item.position, { width: 6 }),
                 makeCell(item.code || '-', { width: 14 }),
                 makeCell(item.name, { width: 42 }),
-                makeCell(`${item.quantity.toLocaleString('cs-CZ')} ${item.unit}`, { width: 16, align: AlignmentType.RIGHT }),
+                makeCell(`${Number(item.quantity || 0).toLocaleString('cs-CZ')} ${item.unit}`, { width: 16, align: AlignmentType.RIGHT }),
                 makeCell(formatCurrency(item.lineTotal), { width: 22, align: AlignmentType.RIGHT }),
               ],
             })) : [new TableRow({ children: [makeCell('Obchodní případ zatím nemá položky.', { width: 100 })] })]),
@@ -1238,7 +1196,7 @@ const renderHandoverItemsTableHtml = (items) => {
       <td>${item.position}</td>
       <td>${escapeHtml(item.code || '-')}</td>
       <td><strong>${escapeHtml(item.name || '-')}</strong>${item.description ? `<div class="muted">${escapeHtml(item.description)}</div>` : ''}</td>
-      <td class="num">${item.quantity.toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}</td>
+      <td class="num">${Number(item.quantity || 0).toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}</td>
       <td>${escapeHtml(item.condition || '-')}</td>
     </tr>
   `).join('') : '<tr><td colspan="5" class="empty">Zatím nejsou zadány předávané části.</td></tr>';
@@ -1544,24 +1502,9 @@ const createHandoverDocxBlob = async (payload, template = null) => {
   return Packer.toBlob(doc);
 };
 
-const createHandoverPdf = (payload, template = null) => {
-  const html = template?.content ? fillHandoverTemplate(template.content, payload) : renderHandoverProtocolHtml(payload, null);
-  const text = stripHtml(html);
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const margin = 14;
-  let y = 16;
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(16);
-  pdf.text(`${payload.document.label} ${payload.document.number || ''}`.trim(), margin, y);
-  y += 10;
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(10);
-  text.split('\n').flatMap((line) => pdf.splitTextToSize(line, 182)).forEach((line) => {
-    if (y > 282) { pdf.addPage(); y = 16; }
-    pdf.text(line, margin, y);
-    y += 5;
-  });
-  return pdf;
+const createHandoverPdf = async (payload, template = null) => {
+  const html = renderHandoverProtocolHtml(payload, template);
+  return createStyledPdfFromHtml(html);
 };
 
 const generateHandoverFileName = (payload, extension = 'html') => `${sanitizeFileName([payload.document.label, payload.document.number, payload.client.name].filter(Boolean).join(' '))}.${extension}`;
@@ -1580,9 +1523,9 @@ export const downloadHandoverProtocolDocx = async ({ protocol, template }) => {
   return payload;
 };
 
-export const downloadHandoverProtocolPdf = ({ protocol, template }) => {
+export const downloadHandoverProtocolPdf = async ({ protocol, template }) => {
   const payload = buildHandoverProtocolPayload({ protocol });
-  const pdf = createHandoverPdf(payload, template);
+  const pdf = await createHandoverPdf(payload, template);
   pdf.save(generateHandoverFileName(payload, 'pdf'));
   return payload;
 };

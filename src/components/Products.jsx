@@ -24,6 +24,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
+import ProductSetManager from '@/components/ProductSetManager';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -260,7 +261,15 @@ const Products = () => {
         return acc;
       }, {}));
     }
-    setProducts(productData || []);
+    const usageByProductId = new Map((usageData || []).map((row) => [row.catalog_item_id, row]));
+    setProducts((productData || []).map((product) => {
+      const usage = usageByProductId.get(product.id) || {};
+      return {
+        ...product,
+        usage_count: usage.total_usage_count || 0,
+        last_used_at: usage.last_used_at || null,
+      };
+    }));
     setStockByProduct((stockData || []).reduce((acc, row) => ({
       ...acc,
       [row.catalog_item_id]: row,
@@ -636,6 +645,8 @@ const Products = () => {
             )}
           </CardContent>
         </Card>
+
+        <ProductSetManager products={products} canEdit={canEdit} userId={user?.id || null} />
 
         <Card className="overflow-hidden border-slate-200 bg-white shadow-sm">
           <CardHeader className="border-b bg-white px-3 py-3">

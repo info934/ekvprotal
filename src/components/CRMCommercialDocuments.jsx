@@ -194,7 +194,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     setNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
     setSelectedDocument(documentId ? findCrmRecordByRef(normalizedDocuments, documentId) : null);
 
-    const [catalogRes, stockRes] = await Promise.all([
+    const [catalogRes, stockRes, usageRes] = await Promise.all([
       supabase
         .from('commercial_item_catalog')
         .select('id, code, sku, name, description, category, unit, default_unit_price, default_vat_rate, purchase_price, preferred_supplier_offer_id, product_type, is_active, metadata')
@@ -203,12 +203,21 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       supabase
         .from('product_stock_status')
         .select('catalog_item_id, available_qty'),
+      supabase
+        .from('product_usage_stats')
+        .select('catalog_item_id, total_usage_count, last_used_at'),
     ]);
     const stockByProductId = new Map((stockRes.data || []).map((row) => [row.catalog_item_id, row]));
-    setCatalogProducts(catalogRes.error ? [] : (catalogRes.data || []).map((product) => ({
-      ...product,
-      available_qty: stockByProductId.get(product.id)?.available_qty ?? null,
-    })));
+    const usageByProductId = new Map((usageRes.data || []).map((row) => [row.catalog_item_id, row]));
+    setCatalogProducts(catalogRes.error ? [] : (catalogRes.data || []).map((product) => {
+      const usage = usageByProductId.get(product.id) || {};
+      return {
+        ...product,
+        available_qty: stockByProductId.get(product.id)?.available_qty ?? null,
+        usage_count: usage.total_usage_count || 0,
+        last_used_at: usage.last_used_at || null,
+      };
+    }));
 
     setLoading(false);
   }, [config.title, documentId, toast, type]);
@@ -689,7 +698,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       };
 
       if (format === 'pdf') {
-        downloadGeneratedDocumentPdf(generationInput);
+        await downloadGeneratedDocumentPdf(generationInput);
       } else if (format === 'html') {
         downloadGeneratedDocumentHtml(generationInput);
       } else {
