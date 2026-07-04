@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   BarChart3,
+  Ban,
   Building2,
   CalendarClock,
   CheckCircle2,
@@ -520,6 +521,16 @@ const DealWorkspace = ({
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={generatingDocument} onSelect={() => onGenerateOverview?.('html')}>
                   HTML
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Lifecycle OP</DropdownMenuLabel>
+                <DropdownMenuItem disabled={!canEdit || opportunity.status === 'cancelled'} onSelect={() => onCancelOpportunity?.(opportunity)}>
+                  <Ban className="mr-2 h-4 w-4" />
+                  Stornovat OP
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={!canEdit} className="text-rose-700 focus:text-rose-700" onSelect={() => onDeleteOpportunity?.(opportunity)}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Odstranit OP
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1657,6 +1668,8 @@ const CRM = () => {
   const [lossDialogOpen, setLossDialogOpen] = useState(false);
   const [pendingLostOpportunity, setPendingLostOpportunity] = useState(null);
   const [lossReason, setLossReason] = useState('');
+  const [opportunityLifecycleAction, setOpportunityLifecycleAction] = useState(null);
+  const [opportunityLifecycleReason, setOpportunityLifecycleReason] = useState('');
 
   const canEditCrm = hasPermission('crm', 'can_edit');
   const canAdminCrm = hasPermission('crm', 'can_admin');
@@ -1700,7 +1713,8 @@ const CRM = () => {
         .limit(60),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .is('deleted_at', null)
         .order('updated_at', { ascending: false }),
       supabase
         .from('crm_activities')
@@ -1714,7 +1728,8 @@ const CRM = () => {
         .limit(100),
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, items:crm_commercial_document_items(id, catalog_item_id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, cancelled_at, cancelled_reason, deleted_at, deleted_reason, items:crm_commercial_document_items(id, catalog_item_id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false }),
       supabase
         .from('crm_stage_definitions')
@@ -2203,6 +2218,47 @@ const CRM = () => {
     setPendingLostOpportunity(null);
     setLossReason('');
   }, [crmStages, handleInlineOpportunityUpdate, lossReason, pendingLostOpportunity, toast]);
+
+
+  const openOpportunityLifecycleAction = useCallback((kind, opportunity = selectedOpportunity) => {
+    if (!opportunity) return;
+    setOpportunityLifecycleAction({ kind, opportunity });
+    setOpportunityLifecycleReason(kind === 'cancel' ? (opportunity.cancelled_reason || opportunity.lost_reason || '') : (opportunity.deleted_reason || ''));
+  }, [selectedOpportunity]);
+
+  const closeOpportunityLifecycleAction = useCallback(() => {
+    if (savingOpportunity) return;
+    setOpportunityLifecycleAction(null);
+    setOpportunityLifecycleReason('');
+  }, [savingOpportunity]);
+
+  const handleConfirmOpportunityLifecycleAction = useCallback(async () => {
+    if (!opportunityLifecycleAction?.opportunity || !canEditCrm) return;
+    const reason = opportunityLifecycleReason.trim();
+    if (!reason) {
+      toast({ title: 'Doplnte duvod', description: 'Duvod zustane ulozeny v audit historii pro admina.', variant: 'destructive' });
+      return;
+    }
+
+    const isDelete = opportunityLifecycleAction.kind === 'delete';
+    setSavingOpportunity(true);
+    const { error } = await supabase.rpc(isDelete ? 'crm_soft_delete_opportunity' : 'crm_cancel_opportunity', {
+      p_opportunity_id: opportunityLifecycleAction.opportunity.id,
+      p_reason: reason,
+    });
+    setSavingOpportunity(false);
+
+    if (error) {
+      toast({ title: isDelete ? 'OP se nepodarilo odstranit' : 'OP se nepodarilo stornovat', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: isDelete ? 'OP odstranen' : 'OP stornovan', description: 'Zaznam zustava ulozeny v audit historii pro admina.' });
+    setOpportunityLifecycleAction(null);
+    setOpportunityLifecycleReason('');
+    await fetchCrmData();
+    if (isDelete) navigate('/crm/opportunities');
+  }, [canEditCrm, fetchCrmData, navigate, opportunityLifecycleAction, opportunityLifecycleReason, toast]);
 
   const upcomingActivities = useMemo(() => (
     activities.filter((activity) => activity.status !== 'done' && activity.status !== 'completed').slice(0, 8)
@@ -3334,6 +3390,41 @@ const CRM = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        <Dialog
+          open={Boolean(opportunityLifecycleAction)}
+          onOpenChange={(open) => !open && closeOpportunityLifecycleAction()}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>{opportunityLifecycleAction?.kind === 'delete' ? 'Odstranit obchodni pripad' : 'Stornovat obchodni pripad'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                {opportunityLifecycleAction?.opportunity?.number ? opportunityLifecycleAction.opportunity.number + ' - ' : ''}{opportunityLifecycleAction?.opportunity?.title || ''}. Zaznam se nebude zobrazovat v beznych seznamech, ale zustane ulozeny v admin audit historii vcetne duvodu a snapshotu.
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="opportunity-lifecycle-reason">Duvod *</Label>
+                <Textarea
+                  id="opportunity-lifecycle-reason"
+                  value={opportunityLifecycleReason}
+                  onChange={(event) => setOpportunityLifecycleReason(event.target.value)}
+                  rows={5}
+                  placeholder={opportunityLifecycleAction?.kind === 'delete' ? 'Proc se OP odstranuje ze seznamu?' : 'Proc se OP stornuje?'}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeOpportunityLifecycleAction} disabled={savingOpportunity}>
+                Zrusit
+              </Button>
+              <Button type="button" variant={opportunityLifecycleAction?.kind === 'delete' ? 'destructive' : 'default'} onClick={handleConfirmOpportunityLifecycleAction} disabled={savingOpportunity || !opportunityLifecycleReason.trim()}>
+                {savingOpportunity ? 'Ukladam...' : (opportunityLifecycleAction?.kind === 'delete' ? 'Odstranit OP' : 'Stornovat OP')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calculator, FileText, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, Calculator, FileText, MoreHorizontal, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -139,18 +139,22 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [createSubjectId, setCreateSubjectId] = useState(null);
   const [createSubject, setCreateSubject] = useState(null);
   const [createOpportunityValue, setCreateOpportunityValue] = useState('0');
+  const [lifecycleAction, setLifecycleAction] = useState(null);
+  const [lifecycleReason, setLifecycleReason] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     const [documentsRes, opportunitiesRes, numberingRes, templatesRes] = await Promise.all([
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
         .eq('type', type)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false }),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, value, subject_id, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .select('id, number, title, value, subject_id, deleted_at, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false }),
       selectCrmNumberingSettings(supabase),
       supabase
@@ -231,7 +235,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     return documents.reduce((acc, document) => {
       const isDraft = document.status === 'draft';
       const isSent = document.status === 'sent';
-      const isExpired = Boolean(document.valid_until && document.valid_until < today && !['accepted', 'closed', 'rejected'].includes(document.status));
+      const isExpired = Boolean(document.valid_until && document.valid_until < today && !['accepted', 'closed', 'rejected', 'cancelled', 'deleted'].includes(document.status));
       const hasItems = (document.items || []).length > 0;
       return {
         total: acc.total + 1,
@@ -310,11 +314,30 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         );
       case 'actions':
         return (
-          <Button asChild variant="ghost" size="icon" onClick={(event) => event.stopPropagation()}>
-            <Link to={config.detailPath(document)}>
-              <FileText className="h-4 w-4" />
-            </Link>
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+              <Button variant="ghost" size="icon" aria-label="Akce dokumentu">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+              <DropdownMenuItem asChild>
+                <Link to={config.detailPath(document)}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Otevrit detail
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={!canEdit || document.status === 'cancelled'} onSelect={() => openDocumentLifecycleAction('cancel', document)}>
+                <Ban className="mr-2 h-4 w-4" />
+                Stornovat
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!canEdit} className="text-rose-700 focus:text-rose-700" onSelect={() => openDocumentLifecycleAction('delete', document)}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Odstranit
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         );
       default:
         return null;
@@ -688,6 +711,81 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     }
   };
 
+  const openDocumentLifecycleAction = (kind, document = selectedDocument) => {
+    if (!document) return;
+    setLifecycleAction({ kind, document });
+    setLifecycleReason(kind === 'cancel' ? (document.cancelled_reason || '') : (document.deleted_reason || ''));
+  };
+
+  const closeLifecycleAction = () => {
+    if (saving) return;
+    setLifecycleAction(null);
+    setLifecycleReason('');
+  };
+
+  const handleConfirmDocumentLifecycleAction = async () => {
+    if (!lifecycleAction?.document || !canEdit) return;
+    const isDelete = lifecycleAction.kind === 'delete';
+    const reason = lifecycleReason.trim();
+    if (!reason) {
+      toast({ title: 'Doplnte duvod', description: 'Duvod zustane ulozeny v audit historii pro admina.', variant: 'destructive' });
+      return;
+    }
+
+    setSaving(true);
+    const rpcName = isDelete ? 'crm_soft_delete_commercial_document' : 'crm_cancel_commercial_document';
+    const { error } = await supabase.rpc(rpcName, {
+      p_document_id: lifecycleAction.document.id,
+      p_reason: reason,
+    });
+    setSaving(false);
+
+    if (error) {
+      toast({ title: isDelete ? 'Dokument se nepodarilo odstranit' : 'Dokument se nepodarilo stornovat', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: isDelete ? 'Dokument odstranen' : 'Dokument stornovan', description: 'Zaznam zustava ulozeny v audit historii pro admina.' });
+    setLifecycleAction(null);
+    setLifecycleReason('');
+    await fetchData();
+    if (isDelete && documentId) navigate(config.listPath);
+  };
+
+  const renderLifecycleActionDialog = () => {
+    const isDelete = lifecycleAction?.kind === 'delete';
+    const document = lifecycleAction?.document;
+    return (
+      <Dialog open={Boolean(lifecycleAction)} onOpenChange={(open) => !open && closeLifecycleAction()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{isDelete ? 'Odstranit dokument' : 'Stornovat dokument'}</DialogTitle>
+            <DialogDescription>
+              {document?.number ? document.number + ' - ' : ''}{formatCommercialDocumentTitle(document?.title)}.
+              Zaznam se nebude zobrazovat v beznych seznamech, ale zustane dohledatelny v admin audit historii.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Duvod *</Label>
+            <Textarea
+              value={lifecycleReason}
+              onChange={(event) => setLifecycleReason(event.target.value)}
+              rows={4}
+              placeholder={isDelete ? 'Proc se dokument odstranuje?' : 'Proc se dokument stornuje?'}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeLifecycleAction} disabled={saving}>Zrusit</Button>
+            <Button type="button" variant={isDelete ? 'destructive' : 'default'} onClick={handleConfirmDocumentLifecycleAction} disabled={saving || !lifecycleReason.trim()}>
+              {saving ? 'Ukladam...' : (isDelete ? 'Odstranit' : 'Stornovat')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  };
+
   if (documentId) {
     const totalWithTax = Number(selectedDocument?.total || 0) + Number(selectedDocument?.tax_total || 0);
     return (
@@ -731,6 +829,25 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={!canEdit || saving || !selectedDocument}>
+                    <MoreHorizontal className="mr-2 h-4 w-4" />
+                    Akce
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuLabel>Lifecycle dokumentu</DropdownMenuLabel>
+                  <DropdownMenuItem disabled={selectedDocument?.status === 'cancelled'} onSelect={() => openDocumentLifecycleAction('cancel')}>
+                    <Ban className="mr-2 h-4 w-4" />
+                    Stornovat
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="text-rose-700 focus:text-rose-700" onSelect={() => openDocumentLifecycleAction('delete')}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Odstranit
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button onClick={handleSaveDocument} disabled={!canEdit || saving || !selectedDocument}>
                 <Save className="mr-2 h-4 w-4" />
                 {saving ? 'Ukládám...' : 'Uložit'}
@@ -883,6 +1000,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           </div>
         )}
       />
+
+      {renderLifecycleActionDialog()}
 
       <Dialog open={createDialogOpen} onOpenChange={(open) => !saving && setCreateDialogOpen(open)}>
         <DialogContent className="max-w-2xl">
