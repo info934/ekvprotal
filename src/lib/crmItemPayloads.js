@@ -101,6 +101,15 @@ export const calculateCrmTotals = (items = []) => {
   };
 };
 
+const getCrmCatalogDefaultSalePrice = (product = {}) => {
+  const explicitSalePrice = toNumber(product?.default_unit_price ?? product?.unit_price ?? 0);
+  if (explicitSalePrice > 0) return explicitSalePrice;
+
+  const purchasePrice = toNumber(product?.purchase_price ?? product?.unit_cost ?? product?.purchase_price_snapshot ?? 0);
+  const marginFactor = 1 - (CRM_DEFAULT_MARGIN_PERCENT / 100);
+  return purchasePrice > 0 && marginFactor > 0 ? roundMoney(purchasePrice / marginFactor) : 0;
+};
+
 const getAvailableQty = (product) => {
   const stock = Array.isArray(product?.stock) ? product.stock[0] : product?.stock;
   return product?.available_qty ?? product?.stock_available_qty ?? stock?.available_qty ?? null;
@@ -114,7 +123,7 @@ export const createCrmCatalogItem = (product, fallback = {}) => normalizeCrmItem
   description: product?.description || '',
   quantity: fallback.quantity ?? 1,
   unit: product?.unit || fallback.unit || 'ks',
-  unit_price: Number(product?.default_unit_price ?? product?.unit_price ?? 0),
+  unit_price: getCrmCatalogDefaultSalePrice(product),
   unit_cost: Number(product?.purchase_price ?? product?.unit_cost ?? product?.purchase_price_snapshot ?? 0),
   purchase_price_snapshot: Number(product?.purchase_price ?? product?.unit_cost ?? product?.purchase_price_snapshot ?? 0),
   discount_percent: Number(fallback.discount_percent ?? 0),
@@ -122,7 +131,7 @@ export const createCrmCatalogItem = (product, fallback = {}) => normalizeCrmItem
   product_sku: product?.sku || product?.code || null,
   product_type: product?.product_type || null,
   stock_available_snapshot: getAvailableQty(product),
-  catalog_price_snapshot: Number(product?.default_unit_price ?? product?.unit_price ?? 0),
+  catalog_price_snapshot: getCrmCatalogDefaultSalePrice(product),
   supplier_offer_id: product?.preferred_supplier_offer_id || product?.supplier_offer_id || null,
   supplier_name: product?.supplier_name || product?.metadata?.preferred_supplier || null,
   supplier_sku_snapshot: product?.supplier_sku || product?.metadata?.preferred_supplier_sku || null,
