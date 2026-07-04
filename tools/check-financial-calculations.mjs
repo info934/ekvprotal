@@ -83,6 +83,32 @@ const reservedPayouts = 2000;
 const teamBudgetAfterPaidPayouts = adjusted.costAdjustedTeamBudget - paidPayoutCosts;
 assertMoney(teamBudgetAfterPaidPayouts, 17000, 'team budget after paid payouts');
 assertMoney(Math.max(0, teamBudgetAfterPaidPayouts - reservedPayouts), 15000, 'available pool after paid payouts and reservations');
+assertMoney(calculateProjectMemberReward({ reward_type: 'percentage', reward_percentage: 50 }, teamBudgetAfterPaidPayouts), 8500, 'percentage reward uses team budget after paid payouts');
+assertMoney(calculateProjectMemberReward({ reward_type: 'fixed', reward_amount: 30000 }, teamBudgetAfterPaidPayouts), 17000, 'fixed reward is capped by team budget after paid payouts');
+
+const pendingPayoutCosts = 5000;
+assertMoney(adjusted.costAdjustedTeamBudget - pendingPayoutCosts, 19000, 'reserved payouts reduce availability checks');
+assertMoney(adjusted.costAdjustedTeamBudget, 24000, 'reserved payouts do not reduce cost adjusted budget');
+
+const hourlyExposure = 6400;
+assertMoney(adjusted.costAdjustedTeamBudget, 24000, 'unpaid hourly exposure does not reduce project budget');
+assertMoney(adjusted.costAdjustedTeamBudget - hourlyExposure, 17600, 'legacy hourly-as-cost value documented for regression comparison');
+
+const paidHourlyPayouts = 6400;
+const teamBudgetAfterPaidHourly = adjusted.costAdjustedTeamBudget - paidHourlyPayouts;
+assertMoney(teamBudgetAfterPaidHourly, 17600, 'paid hourly payouts reduce project budget');
+
+const realizationRevenue = 230000;
+const realizationProfit = realizationRevenue * 0.15;
+const realizationOverhead = realizationRevenue * 0.05;
+const realizationOperationalCosts = 30000;
+const realizationHourlyExposure = 11200;
+const realizationTeamBudget = realizationRevenue - realizationProfit - realizationOverhead - realizationOperationalCosts;
+assertMoney(realizationTeamBudget, 154000, 'realization team budget excludes unpaid hourly exposure');
+assertMoney(realizationTeamBudget - realizationHourlyExposure, 142800, 'legacy realization hourly-as-cost value documented for regression comparison');
+assertMoney(realizationTeamBudget - realizationHourlyExposure, 142800, 'paid hourly realization payout would reduce available team budget');
+assertMoney(calculateRealizationMemberShare({ share_type: 'percent', share_value: 25 }, realizationTeamBudget), 38500, 'realization percent share uses paid-only team budget');
+assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 200000 }, realizationTeamBudget), 154000, 'fixed realization share is capped by paid-only team budget');
 
 assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 50000 }, 12000), 12000, 'fixed realization share is capped by team budget');
 assertMoney(calculateRealizationMemberShare({ share_type: 'percent', share_value: 25 }, 12000), 3000, 'percentage realization share uses non-negative team budget');

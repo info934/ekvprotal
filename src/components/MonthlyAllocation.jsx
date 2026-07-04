@@ -205,8 +205,11 @@ const MonthlyAllocation = () => {
         .from('overhead_monthly_allocations').select('*').eq('month', selectedMonth).maybeSingle();
       if (allocError) throw allocError;
       if (!allocData) {
-        const { data: newAlloc, error: newAllocError } = await supabase
-          .from('overhead_monthly_allocations').insert({ month: selectedMonth, status: 'DRAFT' }).select().single();
+        const { data: newAlloc, error: newAllocError } = await supabase.rpc('save_overhead_allocation_draft', {
+          p_month: selectedMonth,
+          p_items: [],
+          p_notes: null,
+        });
         if (newAllocError) throw newAllocError;
         allocData = newAlloc;
       }
@@ -268,12 +271,17 @@ const MonthlyAllocation = () => {
       overhead_monthly_allocation_id: allocation.id, overhead_cost_id: item.overhead_cost_id, project_id: item.project_id, amount_allocated: parseFloat(item.amount_allocated) || 0,
     })).filter(item => item.amount_allocated > 0);
 
-    const { error } = await supabase.from('overhead_allocation_items').upsert(itemsToUpsert, { onConflict: 'overhead_monthly_allocation_id,overhead_cost_id,project_id' });
+    const { data, error } = await supabase.rpc('save_overhead_allocation_draft', {
+      p_month: currentMonth,
+      p_items: itemsToUpsert.map(({ overhead_monthly_allocation_id, ...item }) => item),
+      p_notes: allocation.notes || null,
+    });
     
     if (error) {
       toast({ title: 'Chyba při ukládání', description: error.message, variant: 'destructive' });
       throw error;
     }
+    if (data) setAllocation(data);
     toast({ title: '✅ Koncept uložen' });
     await fetchMonthData(currentMonth);
   };
