@@ -123,6 +123,9 @@ export const createCrmCatalogItem = (product, fallback = {}) => normalizeCrmItem
   product_type: product?.product_type || null,
   stock_available_snapshot: getAvailableQty(product),
   catalog_price_snapshot: Number(product?.default_unit_price ?? product?.unit_price ?? 0),
+  supplier_offer_id: product?.preferred_supplier_offer_id || product?.supplier_offer_id || null,
+  supplier_name: product?.supplier_name || product?.metadata?.preferred_supplier || null,
+  supplier_sku_snapshot: product?.supplier_sku || product?.metadata?.preferred_supplier_sku || null,
 });
 
 export const buildCrmItemPayloadFields = (item = {}, index = 0) => {
@@ -147,6 +150,9 @@ export const buildCrmItemPayloadFields = (item = {}, index = 0) => {
     product_type: normalized.product_type || null,
     stock_available_snapshot: normalized.stock_available_snapshot ?? null,
     catalog_price_snapshot: normalized.catalog_price_snapshot ?? normalized.default_unit_price ?? normalized.unit_price ?? null,
+    supplier_offer_id: normalized.supplier_offer_id || null,
+    supplier_name: normalized.supplier_name || null,
+    supplier_sku_snapshot: normalized.supplier_sku_snapshot || null,
   };
 };
 

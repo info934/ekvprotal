@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, CalendarClock, Database, ExternalLink, FileText, Image, Package, Save, UploadCloud } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarClock, Database, ExternalLink, FileText, Image, Minus, Package, Save, Store, TrendingDown, TrendingUp, UploadCloud } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -81,6 +81,8 @@ const ProductForm = () => {
   const [form, setForm] = useState(emptyProduct);
   const [productFields, setProductFields] = useState([]);
   const [usageHistory, setUsageHistory] = useState([]);
+  const [supplierPrices, setSupplierPrices] = useState([]);
+  const [priceHistory, setPriceHistory] = useState([]);
   const [storageConnections, setStorageConnections] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [datasheetFile, setDatasheetFile] = useState(null);
@@ -184,6 +186,26 @@ const ProductForm = () => {
       .order('is_default', { ascending: false });
     setStorageConnections(storageData || []);
     fetchUsageHistory();
+
+    if (productId) {
+      const [currentPriceRes, priceHistoryRes] = await Promise.all([
+        supabase
+          .from('product_supplier_current_prices')
+          .select('catalog_item_id, supplier_offer_id, supplier_name, supplier_slug, supplier_sku, supplier_product_url, price_without_vat, currency, availability_note, scraped_at, price_change_amount, price_change_percent, supplier_offer_count, price_rank')
+          .eq('catalog_item_id', productId)
+          .order('price_rank', { ascending: true }),
+        supabase
+          .from('product_supplier_price_history')
+          .select('supplier_offer_id, supplier_name, supplier_sku, scraped_at, price_without_vat, currency, availability_note, price_raw')
+          .eq('catalog_item_id', productId)
+          .order('scraped_at', { ascending: true }),
+      ]);
+      setSupplierPrices(currentPriceRes.error ? [] : (currentPriceRes.data || []));
+      setPriceHistory(priceHistoryRes.error ? [] : (priceHistoryRes.data || []));
+    } else {
+      setSupplierPrices([]);
+      setPriceHistory([]);
+    }
 
     if (!isEditing) {
       const { error: schemaCheckError } = await supabase
@@ -451,6 +473,15 @@ const ProductForm = () => {
   const productStatusClass = form.is_active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-600';
   const productStatusLabel = form.is_active ? 'Aktivní' : 'Archivovaný';
   const validityText = form.valid_until ? `Platí do ${new Date(form.valid_until).toLocaleDateString('cs-CZ')}` : 'Bez konce platnosti';
+  const bestSupplierPrice = supplierPrices.find((item) => Number(item.price_rank) === 1) || supplierPrices[0] || null;
+  const bestSupplierHistory = bestSupplierPrice ? priceHistory.filter((item) => item.supplier_offer_id === bestSupplierPrice.supplier_offer_id && item.price_without_vat != null) : [];
+  const historyValues = bestSupplierHistory.map((item) => Number(item.price_without_vat || 0));
+  const minHistoryPrice = historyValues.length ? Math.min(...historyValues) : 0;
+  const maxHistoryPrice = historyValues.length ? Math.max(...historyValues) : 0;
+  const historyRange = Math.max(1, maxHistoryPrice - minHistoryPrice);
+  const trendAmount = Number(bestSupplierPrice?.price_change_amount || 0);
+  const SupplierTrendIcon = trendAmount < 0 ? TrendingDown : trendAmount > 0 ? TrendingUp : Minus;
+
   return (
     <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6">
       <div className="mx-auto flex w-full max-w-none flex-col gap-5">
@@ -616,6 +647,82 @@ const ProductForm = () => {
           </div>
 
           <div className="space-y-5">
+            {isEditing && (
+              <Card>
+                <CardHeader className="border-b bg-white">
+                  <CardTitle className="flex items-center gap-2">
+                    <Store className="h-4 w-4" />
+                    Dodavatelé a ceny
+                  </CardTitle>
+                  <CardDescription>Aktuální nejnižší nákupní cena a historie podle scrapingů.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 p-5">
+                  {bestSupplierPrice ? (
+                    <>
+                      <div className="rounded-lg border bg-slate-50 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">Nejlepší nákup</div>
+                            <div className="mt-1 text-xl font-semibold text-slate-950">{formatCurrency(bestSupplierPrice.price_without_vat)}</div>
+                            <div className="text-xs text-muted-foreground">{bestSupplierPrice.supplier_name} · {bestSupplierPrice.supplier_sku || '-'}</div>
+                          </div>
+                          <div className={`flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ${trendAmount < 0 ? 'bg-emerald-50 text-emerald-700' : trendAmount > 0 ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
+                            <SupplierTrendIcon className="h-3.5 w-3.5" />
+                            {bestSupplierPrice.price_change_percent == null ? 'beze změny' : `${Number(bestSupplierPrice.price_change_percent).toFixed(1)} %`}
+                          </div>
+                        </div>
+                        {bestSupplierHistory.length > 1 && (
+                          <svg viewBox="0 0 240 70" className="mt-3 h-20 w-full overflow-visible">
+                            <polyline
+                              fill="none"
+                              stroke="#2563eb"
+                              strokeWidth="3"
+                              points={bestSupplierHistory.map((point, index) => {
+                                const x = bestSupplierHistory.length === 1 ? 0 : (index / (bestSupplierHistory.length - 1)) * 240;
+                                const y = 62 - ((Number(point.price_without_vat || 0) - minHistoryPrice) / historyRange) * 54;
+                                return `${x},${y}`;
+                              }).join(' ')}
+                            />
+                          </svg>
+                        )}
+                      </div>
+                      <div className="overflow-hidden rounded-lg border">
+                        <div className="max-h-72 overflow-auto">
+                          <table className="w-full text-sm">
+                            <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-muted-foreground">
+                              <tr>
+                                <th className="px-3 py-2 text-left">E-shop</th>
+                                <th className="px-3 py-2 text-left">SKU</th>
+                                <th className="px-3 py-2 text-right">Cena</th>
+                                <th className="px-3 py-2 text-left">Stav</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                              {supplierPrices.map((price) => (
+                                <tr key={price.supplier_offer_id} className={Number(price.price_rank) === 1 ? 'bg-emerald-50/50' : 'bg-white'}>
+                                  <td className="px-3 py-2">
+                                    <div className="font-medium text-slate-900">{price.supplier_name}</div>
+                                    {price.supplier_product_url && (
+                                      <button type="button" className="text-xs text-primary hover:underline" onClick={() => window.open(price.supplier_product_url, '_blank', 'noopener,noreferrer')}>Otevřít e-shop</button>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 font-mono text-xs">{price.supplier_sku || '-'}</td>
+                                  <td className="px-3 py-2 text-right font-semibold">{price.price_without_vat ? formatCurrency(price.price_without_vat) : '-'}</td>
+                                  <td className="max-w-[180px] truncate px-3 py-2 text-xs text-muted-foreground">{price.availability_note || 'Bez dostupnosti'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-lg border border-dashed bg-slate-50 p-4 text-sm text-muted-foreground">Produkt zatím nemá aktuální cenu z e-shopu.</div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {isEditing && (
               <Card>
                 <CardHeader className="border-b bg-white">

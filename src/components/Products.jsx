@@ -13,6 +13,10 @@ import {
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Store,
+  TrendingDown,
+  TrendingUp,
+  Minus,
   Warehouse,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
@@ -92,6 +96,7 @@ const Products = () => {
   const canEdit = hasPermission('crm', 'can_edit') || hasPermission('realizace', 'can_edit') || hasPermission('settings', 'can_admin');
   const [products, setProducts] = useState([]);
   const [stockByProduct, setStockByProduct] = useState({});
+  const [supplierPricesByProduct, setSupplierPricesByProduct] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
@@ -110,7 +115,7 @@ const Products = () => {
 
     let { data: productData, error: productError } = await supabase
       .from('commercial_item_catalog')
-      .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, currency, stock_min_qty, warehouse_location, allow_backorder, valid_from, valid_until, datasheet_external_web_url, datasheet_file_name, datasheet_preview_image_url, image_url, is_active, archived_at, metadata, created_at, updated_at')
+      .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, currency, stock_min_qty, warehouse_location, allow_backorder, valid_from, valid_until, datasheet_external_web_url, datasheet_file_name, datasheet_preview_image_url, image_url, preferred_supplier_offer_id, is_active, archived_at, metadata, created_at, updated_at')
       .order('name', { ascending: true });
 
     if (productError) {
@@ -156,6 +161,21 @@ const Products = () => {
       setSchemaWarning('Skladový přehled zatím není dostupný. Je potřeba aplikovat produktovou migraci.');
     }
 
+    const { data: supplierPriceData, error: supplierPriceError } = await supabase
+      .from('product_supplier_current_prices')
+      .select('catalog_item_id, supplier_offer_id, supplier_name, supplier_slug, supplier_sku, supplier_product_url, price_without_vat, currency, availability_note, scraped_at, price_change_amount, price_change_percent, supplier_offer_count, price_rank')
+      .order('price_rank', { ascending: true });
+
+    if (supplierPriceError) {
+      setSupplierPricesByProduct({});
+    } else {
+      setSupplierPricesByProduct((supplierPriceData || []).reduce((acc, row) => {
+        if (!acc[row.catalog_item_id] || Number(row.price_rank) === 1) {
+          acc[row.catalog_item_id] = row;
+        }
+        return acc;
+      }, {}));
+    }
     setProducts(productData || []);
     setStockByProduct((stockData || []).reduce((acc, row) => ({
       ...acc,
@@ -185,9 +205,10 @@ const Products = () => {
         lowStock: acc.lowStock + (product.product_type === 'manufactured' && minQty > 0 && available <= minQty ? 1 : 0),
         saleValue: acc.saleValue + (active ? sale : 0),
         marginValue: acc.marginValue + (active ? margin : 0),
+        trackedPrices: acc.trackedPrices + (supplierPricesByProduct[product.id]?.price_without_vat ? 1 : 0),
       };
-    }, { total: 0, active: 0, manufactured: 0, lowStock: 0, saleValue: 0, marginValue: 0 });
-  }, [products, stockByProduct]);
+    }, { total: 0, active: 0, manufactured: 0, lowStock: 0, saleValue: 0, marginValue: 0, trackedPrices: 0 });
+  }, [products, stockByProduct, supplierPricesByProduct]);
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -412,9 +433,9 @@ const Products = () => {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">Načítám produkty...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={16} className="h-32 text-center text-muted-foreground">Načítám produkty...</TableCell></TableRow>
                   ) : filteredProducts.length === 0 ? (
-                    <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">Žádný produkt neodpovídá filtrům.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={16} className="h-32 text-center text-muted-foreground">Žádný produkt neodpovídá filtrům.</TableCell></TableRow>
                   ) : filteredProducts.map((product) => {
                     const stock = stockByProduct[product.id] || {};
                     const available = Number(stock.available_qty || 0);
@@ -422,6 +443,10 @@ const Products = () => {
                     const lowStock = product.product_type === 'manufactured' && minQty > 0 && available <= minQty;
                     const hasDatasheet = Boolean(product.datasheet_external_web_url || product.datasheet_file_name || product.datasheet_preview_image_url || product.image_url);
                     const status = getProductStatus(product);
+                    const supplierPrice = supplierPricesByProduct[product.id];
+                    const bestPurchasePrice = Number(supplierPrice?.price_without_vat ?? product.purchase_price ?? 0);
+                    const trendAmount = Number(supplierPrice?.price_change_amount || 0);
+                    const TrendIcon = trendAmount < 0 ? TrendingDown : trendAmount > 0 ? TrendingUp : Minus;
                     return (
                       <TableRow key={product.id} className={cn('cursor-pointer bg-white hover:bg-blue-50/40', status.label === 'Archiv' && 'opacity-60')} onClick={() => navigate(`/products/${product.id}/edit`)}>
                         <TableCell className="font-mono text-xs font-semibold text-slate-700">{product.sku || product.code || '-'}</TableCell>
@@ -434,10 +459,27 @@ const Products = () => {
                         <TableCell>{product.category || '-'}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(product.default_unit_price, product.currency)}</TableCell>
                         <TableCell className="text-right">{Number(product.default_vat_rate ?? 21)} %</TableCell>
-                        <TableCell className="text-right text-muted-foreground">{formatCurrency(product.purchase_price, product.currency)}</TableCell>
-                        <TableCell className={cn('text-right font-semibold', marginValue(product) < 0 ? 'text-rose-700' : 'text-emerald-700')}>
-                          <div>{formatCurrency(marginValue(product), product.currency)}</div>
-                          <div className="text-xs font-normal text-muted-foreground">{marginPercent(product).toFixed(1)} %</div>
+                        <TableCell className="text-right font-semibold text-slate-900">
+                          {supplierPrice?.price_without_vat ? formatCurrency(bestPurchasePrice, supplierPrice.currency || product.currency) : <span className="text-muted-foreground">Bez ceny</span>}
+                        </TableCell>
+                        <TableCell>
+                          {supplierPrice ? (
+                            <div className="min-w-0">
+                              <div className="truncate font-medium text-slate-800">{supplierPrice.supplier_name}</div>
+                              <div className="truncate text-xs text-muted-foreground">{supplierPrice.supplier_sku || '-'} · {supplierPrice.supplier_offer_count || 1} e-shop</div>
+                            </div>
+                          ) : <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">Bez aktuální ceny</Badge>}
+                        </TableCell>
+                        <TableCell className={cn('text-right font-semibold', trendAmount < 0 ? 'text-emerald-700' : trendAmount > 0 ? 'text-rose-700' : 'text-slate-500')}>
+                          <div className="flex items-center justify-end gap-1">
+                            <TrendIcon className="h-3.5 w-3.5" />
+                            {supplierPrice?.price_change_percent == null ? '-' : `${Number(supplierPrice.price_change_percent).toFixed(1)} %`}
+                          </div>
+                          {supplierPrice?.scraped_at && <div className="text-xs font-normal text-muted-foreground">{new Date(supplierPrice.scraped_at).toLocaleDateString('cs-CZ')}</div>}
+                        </TableCell>
+                        <TableCell className={cn('text-right font-semibold', marginValue({ ...product, purchase_price: bestPurchasePrice }) < 0 ? 'text-rose-700' : 'text-emerald-700')}>
+                          <div>{formatCurrency(Number(product.default_unit_price || 0) - bestPurchasePrice, product.currency)}</div>
+                          <div className="text-xs font-normal text-muted-foreground">{Number(product.default_unit_price || 0) > 0 ? (((Number(product.default_unit_price || 0) - bestPurchasePrice) / Number(product.default_unit_price || 0)) * 100).toFixed(1) : '0.0'} %</div>
                         </TableCell>
                         <TableCell className={cn('text-right font-semibold', lowStock && 'text-rose-700')}>
                           {product.product_type === 'manufactured' ? formatQty(available, product.unit) : '-'}

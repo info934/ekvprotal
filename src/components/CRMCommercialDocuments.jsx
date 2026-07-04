@@ -137,12 +137,12 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     const [documentsRes, opportunitiesRes, numberingRes, templatesRes] = await Promise.all([
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
         .eq('type', type)
         .order('created_at', { ascending: false }),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, value, subject_id, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)')
+        .select('id, number, title, value, subject_id, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
         .order('created_at', { ascending: false }),
       selectCrmNumberingSettings(supabase),
       supabase
@@ -185,7 +185,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     const [catalogRes, stockRes] = await Promise.all([
       supabase
         .from('commercial_item_catalog')
-        .select('id, code, sku, name, description, category, unit, default_unit_price, default_vat_rate, product_type, is_active')
+        .select('id, code, sku, name, description, category, unit, default_unit_price, default_vat_rate, purchase_price, preferred_supplier_offer_id, product_type, is_active, metadata')
         .eq('is_active', true)
         .order('name', { ascending: true }),
       supabase

@@ -289,7 +289,7 @@ const DealWorkspace = ({
       const [catalogRes, stockRes] = await Promise.all([
         supabase
           .from('commercial_item_catalog')
-          .select('id, code, sku, name, description, category, unit, default_unit_price, default_vat_rate, product_type, is_active')
+          .select('id, code, sku, name, description, category, unit, default_unit_price, default_vat_rate, purchase_price, preferred_supplier_offer_id, product_type, is_active, metadata')
           .eq('is_active', true)
           .order('name', { ascending: true }),
         supabase
@@ -1700,7 +1700,7 @@ const CRM = () => {
         .limit(60),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)')
+        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
         .order('updated_at', { ascending: false }),
       supabase
         .from('crm_activities')
@@ -1714,7 +1714,7 @@ const CRM = () => {
         .limit(100),
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, items:crm_commercial_document_items(id, catalog_item_id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, items:crm_commercial_document_items(id, catalog_item_id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
         .order('created_at', { ascending: false }),
       supabase
         .from('crm_stage_definitions')
