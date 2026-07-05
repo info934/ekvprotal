@@ -3,6 +3,7 @@ import {
   BorderStyle,
   Document,
   HeadingLevel,
+  ImageRun,
   Packer,
   Paragraph,
   Table,
@@ -46,6 +47,16 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#039;');
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const dataUriToUint8Array = (dataUri) => {
+  const base64 = String(dataUri || '').split(',')[1] || '';
+  if (!base64) return new Uint8Array();
+  if (typeof atob === 'function') {
+    const binary = atob(base64);
+    return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  }
+  return Uint8Array.from(Buffer.from(base64, 'base64'));
+};
 
 const replaceTemplatePlaceholders = (templateContent, placeholders) => (
   Object.entries(placeholders).reduce((content, [key, value]) => {
@@ -214,7 +225,6 @@ const renderItemsTableHtml = (items) => {
       <td class="num">${formatCurrency(item.unitPrice)}</td>
       <td class="num">${Number(item.vatRate || 0).toLocaleString('cs-CZ')} %</td>
       <td class="num">${Number(item.discountPercent || 0).toLocaleString('cs-CZ')} %</td>
-      <td class="num">${formatCurrency(item.marginTotal)}</td>
       <td class="num">${formatCurrency(item.lineTotal)}</td>
       <td class="num">${formatCurrency(item.totalWithTax)}</td>
     </tr>
@@ -235,7 +245,6 @@ const renderItemsTableHtml = (items) => {
           <th class="num">Jedn. cena</th>
           <th class="num">DPH</th>
           <th class="num">Sleva</th>
-          <th class="num">Marže</th>
           <th class="num">Celkem bez DPH</th>
           <th class="num">Celkem s DPH</th>
         </tr>
@@ -309,6 +318,95 @@ const createCommercialItemsDocxTable = (items) => new Table({
   ],
 });
 
+
+const isPremiumOfferTemplate = (template) => /ekv\s+premium|premium.*nab/i.test(`${template?.name || ''} ${template?.description || ''}`);
+
+const createPremiumOfferDocxBlob = async (payload) => {
+  const { document, opportunity, items, totals, generatedAt } = payload;
+  const safeTitle = document.title || opportunity.title || 'Nab\u00eddka';
+  const doc = new Document({
+    sections: [{
+      properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } },
+      children: [
+        new Paragraph({
+          spacing: { after: 100 },
+          children: [new ImageRun({ data: dataUriToUint8Array(ekvProjectLogoDataUri), transformation: { width: 185, height: 33 } })],
+        }),
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          borders: {
+            top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+            bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+            left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+            right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+            insideHorizontal: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+            insideVertical: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+          },
+          rows: [new TableRow({
+            children: [
+              makeCell('EKV Project | make it simple', { width: 58, bold: true, size: 26, color: '2459C7' }),
+              makeCell(`${documentTypeLabels[document.type] || 'Nab\u00eddka'}\n${document.number || '-'}`, { width: 42, align: AlignmentType.RIGHT, bold: true, size: 22, color: '111827' }),
+            ],
+          })],
+        }),
+        makeParagraph(safeTitle, { heading: HeadingLevel.HEADING_1, bold: true, size: 34, spacing: { before: 260, after: 120 } }),
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          borders: {
+            top: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            left: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            right: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            insideVertical: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+          },
+          rows: [
+            new TableRow({ children: [makeCell('Klient', { bold: true, shading: 'F3F6FB', width: 22 }), makeCell(document.subjectName || opportunity.subjectName || 'Bez subjektu', { width: 28 }), makeCell('Projekt', { bold: true, shading: 'F3F6FB', width: 22 }), makeCell(opportunity.title || '-', { width: 28 })] }),
+            new TableRow({ children: [makeCell('Vystaveno', { bold: true, shading: 'F3F6FB', width: 22 }), makeCell(formatDate(document.issueDate), { width: 28 }), makeCell('Platnost', { bold: true, shading: 'F3F6FB', width: 22 }), makeCell(formatDate(document.validUntil), { width: 28 })] }),
+          ],
+        }),
+        makeParagraph('Rozsah nab\u00eddky', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 260, after: 80 } }),
+        makeParagraph(opportunity.description || 'N\u00e1vrh dod\u00e1vky dle polo\u017ekov\u00e9ho rozpo\u010dtu.'),
+        makeParagraph('Polo\u017ekov\u00fd rozpo\u010det', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 260, after: 80 } }),
+        createCommercialItemsDocxTable(items),
+        makeParagraph('Finan\u010dn\u00ed souhrn', { heading: HeadingLevel.HEADING_2, bold: true, size: 24, spacing: { before: 260, after: 80 } }),
+        new Table({
+          width: { size: 56, type: WidthType.PERCENTAGE },
+          alignment: AlignmentType.RIGHT,
+          borders: {
+            top: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            left: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            right: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            insideVertical: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+          },
+          rows: [
+            new TableRow({ children: [makeCell('Cena bez DPH', { width: 55 }), makeCell(formatCurrency(totals.subtotal), { width: 45, align: AlignmentType.RIGHT })] }),
+            new TableRow({ children: [makeCell('Sleva', { width: 55 }), makeCell(formatCurrency(totals.discountTotal), { width: 45, align: AlignmentType.RIGHT })] }),
+            new TableRow({ children: [makeCell('DPH', { width: 55 }), makeCell(formatCurrency(totals.taxTotal), { width: 45, align: AlignmentType.RIGHT })] }),
+            new TableRow({ children: [makeCell('Celkem s DPH', { width: 55, bold: true, shading: 'ECFDF3' }), makeCell(formatCurrency(totals.totalWithTax), { width: 45, align: AlignmentType.RIGHT, bold: true, shading: 'ECFDF3' })] }),
+          ],
+        }),
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          borders: {
+            top: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            left: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            right: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+            insideVertical: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+          },
+          rows: [new TableRow({ children: [makeCell('Za EKV Project\n\n____________________________', { width: 50 }), makeCell('Za klienta\n\n____________________________', { width: 50 })] })],
+        }),
+        makeParagraph(`Vygenerov\u00e1no: ${formatDate(generatedAt)} | ID origin\u00e1lu: ${document.originalId}`, { color: '667085', size: 16, spacing: { before: 220 } }),
+      ],
+    }],
+  });
+
+  return Packer.toBlob(doc);
+};
+
 const buildItemTemplatePlaceholders = (item) => ({
   item_position: item.position,
   item_code: item.code || '',
@@ -380,6 +478,7 @@ export const buildDocumentTemplatePlaceholders = (payload) => {
     profit_after_commission: formatCurrency(document.profitAfterCommission),
     profit_after_commission_percent: Number(document.profitAfterCommissionPercent || 0).toLocaleString('cs-CZ'),
     notes: document.notes || '',
+    company_logo: ekvProjectLogoDataUri,
     generated_at: formatDate(generatedAt),
     item_count: payload.items.length,
     items_table: renderItemsTableHtml(payload.items),
@@ -496,20 +595,6 @@ export const renderCommercialDocumentHtml = (payload, template = null) => {
       font-size: 28px;
       line-height: 1.1;
     }
-    .original-id {
-      display: inline-block;
-      margin-top: 8px;
-      border: 1px solid #dbe3ef;
-      border-radius: 999px;
-      padding: 4px 9px;
-      color: #1f2937;
-      background: #f8fafc;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
     .doc-title p, .muted {
       margin: 4px 0 0;
       color: #6b7280;
@@ -607,7 +692,6 @@ export const renderCommercialDocumentHtml = (payload, template = null) => {
       <div class="doc-title">
         <h1>${escapeHtml(document.label)}</h1>
         <p>${escapeHtml(document.number || 'Bez čísla')}</p>
-        <span class="original-id">ID originálu: ${escapeHtml(document.originalId)}</span>
       </div>
     </header>
 
@@ -807,6 +891,9 @@ const createTemplateDocxBlob = async (payload, template) => {
 };
 
 export const createCommercialDocumentDocxBlob = async (payload, template = null) => {
+  if (template?.content && isPremiumOfferTemplate(template)) {
+    return createPremiumOfferDocxBlob(payload);
+  }
   if (template?.content) {
     return createTemplateDocxBlob(payload, template);
   }
@@ -870,7 +957,6 @@ export const createCommercialDocumentDocxBlob = async (payload, template = null)
           ],
         }),
         makeParagraph(document.number || 'Bez čísla', { color: '6B7280' }),
-        makeParagraph(`ID originálu: ${document.originalId}`, { color: '374151', bold: true, size: 18 }),
         makeParagraph(document.title, { heading: HeadingLevel.HEADING_1, size: 30, bold: true }),
         makeParagraph(`Klient: ${opportunity.subjectName || 'Bez subjektu'}`),
         makeParagraph(`Projekt: ${opportunity.projectName || opportunity.projectCode || '-'}`),
@@ -1437,7 +1523,6 @@ export const renderHandoverProtocolHtml = (payload, template = null) => {
     h2 { margin:0 0 9px; font-size:13px; letter-spacing:.02em; }
     .subtitle { margin:7px 0 0; color:var(--muted); font-size:12px; }
     .doc-meta { border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-    .original-id { margin-top:8px; border:1px solid var(--line); border-radius:999px; padding:4px 8px; background:#f8fafc; color:#334155; font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; display:inline-block; }
     .doc-meta div { display:grid; grid-template-columns:22mm minmax(0,1fr); gap:10px; padding:8px 10px; border-bottom:1px solid #eef2f7; align-items:start; }
     .doc-meta div:last-child { border-bottom:0; }
     .doc-meta span { color:var(--muted); }
@@ -1475,7 +1560,6 @@ export const renderHandoverProtocolHtml = (payload, template = null) => {
         <p class="eyebrow">${escapeHtml(payload.document.number || 'Bez čísla')}</p>
         <h1>${escapeHtml(payload.document.label)}</h1>
         <p class="subtitle">${escapeHtml(payload.document.title)}</p>
-        <span class="original-id">ID originálu: ${escapeHtml(payload.document.originalId)}</span>
       </div>
       <div class="doc-meta">
         <div><span>Vystavil</span><strong>EKV Group</strong></div>
