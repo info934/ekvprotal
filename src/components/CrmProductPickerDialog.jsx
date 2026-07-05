@@ -176,7 +176,7 @@ const CrmProductPickerDialog = ({
         <DialogHeader className="border-b px-4 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
             <PackagePlus className="h-4 w-4 text-primary" />
-            Produktovy katalog
+            Produktový katalog
           </DialogTitle>
         </DialogHeader>
 
@@ -187,16 +187,16 @@ const CrmProductPickerDialog = ({
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Hledat kod, nazev, znacku, SKU dodavatele..."
+                placeholder="Hledat kód, název, značku, SKU dodavatele..."
                 className="h-8 pl-9 text-xs"
               />
             </div>
             <Select value={brand} onValueChange={setBrand}>
               <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Znacka" />
+                <SelectValue placeholder="Značka" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Vsechny znacky</SelectItem>
+                <SelectItem value="all">Všechny značky</SelectItem>
                 {brands.map((item) => (
                   <SelectItem key={item} value={item}>{item}</SelectItem>
                 ))}
@@ -207,7 +207,7 @@ const CrmProductPickerDialog = ({
                 <SelectValue placeholder="Kategorie" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Vsechny kategorie</SelectItem>
+                <SelectItem value="all">Všechny kategorie</SelectItem>
                 {categories.map((item) => (
                   <SelectItem key={item} value={item}>{item}</SelectItem>
                 ))}
@@ -215,10 +215,10 @@ const CrmProductPickerDialog = ({
             </Select>
             <Select value={productType} onValueChange={setProductType}>
               <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Produktova rada" />
+                <SelectValue placeholder="Produktová řada" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Vsechny rady</SelectItem>
+                <SelectItem value="all">Všechny řady</SelectItem>
                 {productTypes.map((item) => (
                   <SelectItem key={item} value={item}>{item}</SelectItem>
                 ))}
@@ -229,9 +229,9 @@ const CrmProductPickerDialog = ({
                 <SelectValue placeholder="Stav" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="active">Aktivni</SelectItem>
-                <SelectItem value="archived">Archivovane</SelectItem>
-                <SelectItem value="all">Vse</SelectItem>
+                <SelectItem value="active">Aktivní</SelectItem>
+                <SelectItem value="archived">Archivované</SelectItem>
+                <SelectItem value="all">Vše</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -242,24 +242,24 @@ const CrmProductPickerDialog = ({
                 <TableHeader className="sticky top-0 z-10 bg-slate-50">
                   <TableRow>
                     <TableHead className="w-9" />
-                    <TableHead className="w-[96px]">Kod</TableHead>
-                    <TableHead className="w-[250px]">Nazev produktu</TableHead>
-                    <TableHead className="w-[64px] text-right">Pouziti</TableHead>
+                    <TableHead className="w-[96px]">Kód</TableHead>
+                    <TableHead className="w-[250px]">Název produktu</TableHead>
+                    <TableHead className="w-[64px] text-right">Použití</TableHead>
                     <TableHead className="w-[92px] text-right">Prodej</TableHead>
-                    <TableHead className="w-[92px] text-right">Nakup</TableHead>
+                    <TableHead className="w-[92px] text-right">Nákup</TableHead>
                     <TableHead className="w-[54px] text-right">DPH</TableHead>
-                    <TableHead className="w-[180px]">Kategorie / rada</TableHead>
+                    <TableHead className="w-[180px]">Kategorie / řada</TableHead>
                     <TableHead>Popis</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">Nacitam katalog...</TableCell>
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">Načítám katalog...</TableCell>
                     </TableRow>
                   ) : filteredProducts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">Zadny produkt neodpovida filtru.</TableCell>
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">Žádný produkt neodpovídá filtru.</TableCell>
                     </TableRow>
                   ) : filteredProducts.map((product) => {
                     const key = productKey(product);
@@ -273,7 +273,7 @@ const CrmProductPickerDialog = ({
                         <TableCell className="truncate font-mono text-[10px] font-semibold text-slate-700" title={product.code || product.sku || '-'}>{product.code || product.sku || '-'}</TableCell>
                         <TableCell className="min-w-0">
                           <div className="flex min-w-0 items-center gap-1.5 font-medium text-slate-950">
-                            <span className="truncate">{product.name || 'Produkt bez nazvu'}</span>
+                            <span className="truncate">{product.name || 'Produkt bez názvu'}</span>
                             {productBrand && <Badge variant="outline" className="shrink-0 border-blue-200 bg-blue-50 px-1.5 py-0 text-[10px] text-blue-700">{productBrand}</Badge>}
                           </div>
                           {product.sku && <div className="truncate text-[11px] text-muted-foreground">{product.sku}</div>}
@@ -302,9 +302,9 @@ const CrmProductPickerDialog = ({
           </div>
 
           <div className="rounded-md border bg-slate-50 px-3 py-2">
-            <Label className="text-xs uppercase tracking-wide text-slate-500">Vybrane produkty</Label>
+            <Label className="text-xs uppercase tracking-wide text-slate-500">Vybrané produkty</Label>
             {selectedProducts.length === 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">Zatim neni vybran zadny produkt.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Zatím není vybrán žádný produkt.</p>
             ) : (
               <div className="mt-1 flex max-h-16 flex-wrap gap-1 overflow-auto">
                 {selectedProducts.map((product) => (
@@ -318,9 +318,9 @@ const CrmProductPickerDialog = ({
         </div>
 
         <DialogFooter className="border-t bg-slate-50 px-4 py-2">
-          <Button type="button" variant="outline" onClick={() => onOpenChange?.(false)}>Zrusit</Button>
+          <Button type="button" variant="outline" onClick={() => onOpenChange?.(false)}>Zrušit</Button>
           <Button type="button" onClick={handleApply} disabled={selectedProducts.length === 0}>
-            Vlozit vybrane ({selectedProducts.length})
+            Vložit vybrané ({selectedProducts.length})
           </Button>
         </DialogFooter>
       </DialogContent>

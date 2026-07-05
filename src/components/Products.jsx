@@ -190,7 +190,7 @@ const Products = () => {
           setSupplierSlugsByProduct({});
           setSupplierSearchByProduct({});
           setProductSchemaReady(false);
-          setSchemaWarning(fallback.error.message || 'Katalog produktu se nepodarilo nacist.');
+          setSchemaWarning(fallback.error.message || 'Katalog produktů se nepodařilo načíst.');
           return;
         }
 
@@ -213,7 +213,7 @@ const Products = () => {
           archived_at: null,
         }));
         setProductSchemaReady(false);
-        setSchemaWarning('Online databaze jeste nema produktovou migraci. Zobrazuji puvodni katalog bez skladu a rozsirene editace.');
+        setSchemaWarning('Online databáze ještě nemá produktovou migraci. Zobrazuji původní katalog bez skladu a rozšířené editace.');
       } else {
         setProductSchemaReady(true);
       }
@@ -299,7 +299,7 @@ const Products = () => {
       setSupplierSlugsByProduct({});
       setSupplierSearchByProduct({});
       setProductSchemaReady(false);
-      setSchemaWarning(error?.message || 'Katalog produktu se nepodarilo nacist.');
+      setSchemaWarning(error?.message || 'Katalog produktů se nepodařilo načíst.');
     } finally {
       setLoading(false);
     }
@@ -540,11 +540,11 @@ const Products = () => {
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {[
-            { label: 'Aktivní položky', value: stats.active, description: `${stats.total} celkem`, icon: Boxes },
-            { label: 'Ceníková hodnota', value: formatCurrency(stats.saleValue), description: 'Součet aktivních prodejních cen', icon: Package },
-            { label: 'Modelová marže', value: formatCurrency(stats.marginValue), description: `${stats.saleValue > 0 ? ((stats.marginValue / stats.saleValue) * 100).toFixed(1) : '0.0'} %`, icon: BarChart3 },
-            { label: 'Skladové produkty', value: stats.manufactured, description: 'Pouze realizace odečítá sklad', icon: Warehouse },
-            { label: 'Pod minimem', value: stats.lowStock, description: 'Vyžaduje doplnění', icon: AlertTriangle, danger: stats.lowStock > 0 },
+            { label: 'Aktivní položky', value: loading ? '...' : stats.active, description: loading ? 'Načítám katalog' : `${stats.total} celkem`, icon: Boxes },
+            { label: 'Ceníková hodnota', value: loading ? '...' : formatCurrency(stats.saleValue), description: 'Součet aktivních prodejních cen', icon: Package },
+            { label: 'Modelová marže', value: loading ? '...' : formatCurrency(stats.marginValue), description: loading ? 'Počítám marži' : `${stats.saleValue > 0 ? ((stats.marginValue / stats.saleValue) * 100).toFixed(1) : '0.0'} %`, icon: BarChart3 },
+            { label: 'Skladové produkty', value: loading ? '...' : stats.manufactured, description: 'Pouze realizace odečítá sklad', icon: Warehouse },
+            { label: 'Pod minimem', value: loading ? '...' : stats.lowStock, description: 'Vyžaduje doplnění', icon: AlertTriangle, danger: !loading && stats.lowStock > 0 },
           ].map((item) => (
             <Card key={item.label} className="border-slate-200 bg-white shadow-sm">
               <CardContent className="flex items-center justify-between gap-3 p-3">
@@ -689,7 +689,7 @@ const Products = () => {
                   <Input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Hledat kod, nazev, znacku, SKU dodavatele..."
+                    placeholder="Hledat kód, název, značku, SKU dodavatele..."
                     className="h-9 pl-9 text-sm"
                   />
                 </div>
@@ -709,16 +709,16 @@ const Products = () => {
                   </SelectContent>
                 </Select>
                 <Select value={brandFilter} onValueChange={setBrandFilter}>
-                  <SelectTrigger className="h-9 w-[160px] text-sm"><SelectValue placeholder="Znacka" /></SelectTrigger>
+                  <SelectTrigger className="h-9 w-[160px] text-sm"><SelectValue placeholder="Značka" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Vsechny znacky</SelectItem>
+                    <SelectItem value="all">Všechny značky</SelectItem>
                     {brands.map((brand) => <SelectItem key={brand} value={brand}>{brand}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={supplierFilter} onValueChange={setSupplierFilter}>
                   <SelectTrigger className="h-9 w-[190px] text-sm"><SelectValue placeholder="Dodavatel" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Vsechny dodavatele</SelectItem>
+                    <SelectItem value="all">Všichni dodavatelé</SelectItem>
                     {suppliers.map((supplier) => <SelectItem key={supplier.slug} value={supplier.slug}>{supplier.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -771,7 +771,15 @@ const Products = () => {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={16} className="h-32 text-center text-muted-foreground">Načítám produkty...</TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={16} className="h-32 text-center">
+                        <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                          <RefreshCw className="h-5 w-5 animate-spin text-primary" />
+                          <div className="font-medium text-slate-700">Načítám produktový katalog...</div>
+                          <div className="text-xs">Počítám ceny, dodavatele a skladovou dostupnost.</div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
                   ) : filteredProducts.length === 0 ? (
                     <TableRow><TableCell colSpan={16} className="h-32 text-center text-muted-foreground">Žádný produkt neodpovídá filtrům.</TableCell></TableRow>
                   ) : filteredProducts.map((product) => {
@@ -790,11 +798,28 @@ const Products = () => {
                       <TableRow key={product.id} className={cn('cursor-pointer bg-white hover:bg-blue-50/40', status.label === 'Archiv' && 'opacity-60')} onClick={() => navigate(`/products/${product.id}/edit`)}>
                         <TableCell className="font-mono text-xs font-semibold text-slate-700">{product.sku || product.code || '-'}</TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold text-slate-950">{product.name}</span>
-                            {brand && <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">{brand}</Badge>}
+                          <div className="flex min-w-0 items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-semibold text-slate-950">{product.name}</span>
+                                {brand && <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">{brand}</Badge>}
+                              </div>
+                              {product.description && <div className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{product.description}</div>}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 shrink-0 px-2 text-xs text-primary"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                navigate(`/products/${product.id}/edit`);
+                              }}
+                            >
+                              <Edit3 className="mr-1 h-3.5 w-3.5" />
+                              Detail
+                            </Button>
                           </div>
-                          {product.description && <div className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{product.description}</div>}
                         </TableCell>
                         <TableCell><Badge variant="outline" className={status.className}>{status.label}</Badge></TableCell>
                         <TableCell><Badge variant={product.product_type === 'manufactured' ? 'default' : 'secondary'}>{productTypeLabels[product.product_type] || product.product_type || '-'}</Badge></TableCell>

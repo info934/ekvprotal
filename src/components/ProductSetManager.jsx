@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Boxes, Edit3, Plus, Search, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -63,7 +63,7 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
 
     if (error) {
       setSets([]);
-      setSchemaWarning('Produktove sety budou dostupne po aplikaci posledni databazove migrace.');
+      setSchemaWarning('Produktové sety budou dostupné po aplikaci poslední databázové migrace.');
     } else {
       setSets((data || []).map((set) => ({
         ...set,
@@ -205,11 +205,11 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
 
     setSaving(false);
     if (error) {
-      toast({ title: 'Set se nepodarilo ulozit', description: error.message, variant: 'destructive' });
+      toast({ title: 'Set se nepodařilo uložit', description: error.message, variant: 'destructive' });
       return;
     }
 
-    toast({ title: 'Produktovy set ulozen' });
+    toast({ title: 'Produktový set uložen' });
     setDialogOpen(false);
     fetchSets();
   };
@@ -222,13 +222,13 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Boxes className="h-4 w-4 text-primary" />
-                Produktove sety
+                Produktové sety
               </CardTitle>
-              <CardDescription>Skupiny katalogovych polozek pro rychle vlozeni typickych FVE sestav a balicku.</CardDescription>
+              <CardDescription>Skupiny katalogových položek pro rychlé vložení typických FVE sestav a balíčků.</CardDescription>
             </div>
             <Button size="sm" onClick={openNewSet} disabled={!canEdit || Boolean(schemaWarning)}>
               <Plus className="mr-2 h-4 w-4" />
-              Novy set
+              Nový set
             </Button>
           </div>
         </CardHeader>
@@ -236,19 +236,19 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
           {schemaWarning ? (
             <div className="px-3 py-4 text-sm text-muted-foreground">{schemaWarning}</div>
           ) : loading ? (
-            <div className="px-3 py-4 text-sm text-muted-foreground">Nacitam produktove sety...</div>
+            <div className="px-3 py-4 text-sm text-muted-foreground">Načítám produktové sety...</div>
           ) : sets.length === 0 ? (
-            <div className="px-3 py-4 text-sm text-muted-foreground">Zatim neni vytvoren zadny set. Vytvorte napr. zakladni FVE sestavu z panelu, stridace, baterie a montaze.</div>
+            <div className="px-3 py-4 text-sm text-muted-foreground">Zatím není vytvořen žádný set. Vytvořte např. základní FVE sestavu z panelů, střídače, baterie a montáže.</div>
           ) : (
             <div className="overflow-x-auto">
               <Table className="text-xs">
                 <TableHeader className="bg-slate-50/95">
                   <TableRow>
-                    <TableHead className="min-w-[110px]">Kod</TableHead>
-                    <TableHead className="min-w-[260px]">Nazev setu</TableHead>
+                    <TableHead className="min-w-[110px]">Kód</TableHead>
+                    <TableHead className="min-w-[260px]">Název setu</TableHead>
                     <TableHead className="min-w-[130px]">Kategorie</TableHead>
-                    <TableHead className="min-w-[90px] text-right">Polozky</TableHead>
-                    <TableHead className="min-w-[120px] text-right">Nakup</TableHead>
+                    <TableHead className="min-w-[90px] text-right">Položky</TableHead>
+                    <TableHead className="min-w-[120px] text-right">Nákup</TableHead>
                     <TableHead className="min-w-[120px] text-right">Prodej</TableHead>
                     <TableHead className="min-w-[100px]">Stav</TableHead>
                     <TableHead className="w-24 text-right">Akce</TableHead>
@@ -270,7 +270,7 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
                         <TableCell className="text-right font-semibold">{formatCurrency(totals.sale)}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={cn(set.is_active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-600')}>
-                            {set.is_active ? 'Aktivni' : 'Archiv'}
+                            {set.is_active ? 'Aktivní' : 'Archiv'}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
@@ -293,19 +293,19 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
           <DialogHeader className="border-b px-4 py-3">
             <DialogTitle className="flex items-center gap-2 text-base">
               <Boxes className="h-4 w-4 text-primary" />
-              Produktovy set
+              Produktový set
             </DialogTitle>
           </DialogHeader>
           <div className="grid max-h-[76vh] gap-3 overflow-auto p-4 xl:grid-cols-[360px_minmax(0,1fr)]">
             <div className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                 <div className="space-y-1.5">
-                  <Label>Kod setu</Label>
-                  <Input className="h-8 text-sm" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder="napr. SET-FVE-10" />
+                  <Label>Kód setu</Label>
+                  <Input className="h-8 text-sm" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder="např. SET-FVE-10" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Nazev</Label>
-                  <Input className="h-8 text-sm" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Zakladni FVE set" />
+                  <Label>Název</Label>
+                  <Input className="h-8 text-sm" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Základní FVE set" />
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -317,9 +317,9 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
                 <Textarea className="min-h-[84px] text-sm" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
               </div>
               <div className="rounded-md border bg-slate-50 p-3 text-sm">
-                <div className="flex items-center justify-between"><span>Nakup</span><strong>{formatCurrency(draftTotals.purchase)}</strong></div>
+                <div className="flex items-center justify-between"><span>Nákup</span><strong>{formatCurrency(draftTotals.purchase)}</strong></div>
                 <div className="mt-1 flex items-center justify-between"><span>Prodej</span><strong>{formatCurrency(draftTotals.sale)}</strong></div>
-                <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground"><span>Polozek</span><span>{items.length}</span></div>
+                <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground"><span>Položek</span><span>{items.length}</span></div>
               </div>
             </div>
 
@@ -335,9 +335,9 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
                   <Table className="text-xs">
                     <TableHeader className="sticky top-0 bg-slate-50">
                       <TableRow>
-                        <TableHead>Kod</TableHead>
+                        <TableHead>Kód</TableHead>
                         <TableHead>Produkt</TableHead>
-                        <TableHead className="text-right">Nakup</TableHead>
+                        <TableHead className="text-right">Nákup</TableHead>
                         <TableHead className="w-14" />
                       </TableRow>
                     </TableHeader>
@@ -347,7 +347,7 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
                           <TableCell className="font-mono text-[11px]">{product.code || product.sku || '-'}</TableCell>
                           <TableCell>
                             <div className="font-medium text-slate-950">{product.name}</div>
-                            <div className="text-[11px] text-muted-foreground">Pouziti: {productUsageCount(product) || 0}</div>
+                            <div className="text-[11px] text-muted-foreground">Použití: {productUsageCount(product) || 0}</div>
                           </TableCell>
                           <TableCell className="text-right font-semibold">{formatCurrency(product.purchase_price)}</TableCell>
                           <TableCell className="text-right">
@@ -361,13 +361,13 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
               </div>
 
               <div className="rounded-md border bg-white">
-                <div className="border-b px-3 py-2 text-sm font-semibold">Polozky setu</div>
+                <div className="border-b px-3 py-2 text-sm font-semibold">Položky setu</div>
                 <div className="max-h-[420px] overflow-auto">
                   <Table className="text-xs">
                     <TableHeader className="sticky top-0 bg-slate-50">
                       <TableRow>
                         <TableHead>Produkt</TableHead>
-                        <TableHead className="w-24 text-right">Mnozstvi</TableHead>
+                        <TableHead className="w-24 text-right">Množství</TableHead>
                         <TableHead className="w-12" />
                       </TableRow>
                     </TableHeader>
@@ -400,8 +400,8 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
             </div>
           </div>
           <DialogFooter className="border-t bg-slate-50 px-4 py-3">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Zavrit</Button>
-            <Button onClick={saveSet} disabled={!canEdit || saving}>{saving ? 'Ukladam...' : 'Ulozit set'}</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Zavřít</Button>
+            <Button onClick={saveSet} disabled={!canEdit || saving}>{saving ? 'Ukládám...' : 'Uložit set'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
