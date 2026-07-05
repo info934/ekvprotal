@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -12,17 +13,26 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { calculateCrmItem, calculateCrmItemTotals, roundMoney } from '@/lib/crmItemPayloads';
+import {
+  CRM_VAT_RATE_OPTIONS,
+  calculateCrmItem,
+  calculateCrmItemTotals,
+  calculateUnitPriceForMargin,
+} from '@/lib/crmItemPayloads';
 
 const text = {
   defaultTitle: 'Položkový seznam',
-  defaultDescription: 'Položky používají jednotný výpočet ceny, DPH, slevy a marže.',
+  defaultDescription: 'Položky používají jednotný výpočet ceny, DPH, slevy, marže a provize.',
   addFromCatalog: 'Přidat z katalogu',
   manualItem: 'Ruční položka',
   globalMargin: 'Globální marže',
+  globalCommission: 'Globální provize',
   targetMargin: 'Cílová marže %',
+  targetCommission: 'Provize %',
   applyMargin: 'Nastavit marži',
+  applyCommission: 'Nastavit provizi',
   code: 'Kód',
+  codeLocked: 'Kód se mění jen v detailu produktu',
   nameDescription: 'Název a popis',
   quantity: 'Množství',
   unit: 'MJ',
@@ -30,10 +40,12 @@ const text = {
   sale: 'Prodej',
   itemMargin: 'Marže %',
   discount: 'Sleva %',
-  vat: 'DPH %',
-  subtotal: 'Mezisoučet',
+  vat: 'DPH',
+  subtotal: 'Bez DPH',
   margin: 'Marže',
-  totalWithTax: 'Cena s DPH',
+  commission: 'Provize',
+  profitAfterCommission: 'Zisk po provizi',
+  totalWithTax: 'S DPH',
   empty: 'Zatím bez položek.',
   itemDescription: 'Popis položky',
   beforeDiscount: 'Cena před slevou',
@@ -49,22 +61,20 @@ const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
   maximumFractionDigits: 0,
 }).format(Number(value || 0));
 
-const numericFields = new Set(['quantity', 'unit_price', 'unit_cost', 'purchase_price_snapshot', 'discount_percent', 'vat_rate']);
+const numericFields = new Set([
+  'quantity',
+  'unit_price',
+  'unit_cost',
+  'purchase_price_snapshot',
+  'discount_percent',
+  'vat_rate',
+  'commission_percent',
+]);
 
 const getRowKey = (item, index) => item.id || item.catalog_item_id || `${item.code || 'item'}-${index}`;
 
 const normalizePercent = (value) => Math.min(95, Math.max(-100, Number(value || 0)));
-
-const calculateUnitPriceForMargin = (item, marginPercent) => {
-  const calculation = calculateCrmItem(item);
-  const quantity = Number(calculation.quantity || 0);
-  const unitCost = Number(calculation.unitCost || 0);
-  const discountFactor = 1 - (Number(calculation.discountPercent || 0) / 100);
-  const marginFactor = 1 - (normalizePercent(marginPercent) / 100);
-
-  if (quantity <= 0 || discountFactor <= 0 || marginFactor <= 0) return Number(item.unit_price || 0);
-  return roundMoney(unitCost / marginFactor / discountFactor);
-};
+const normalizeCommissionPercent = (value) => Math.min(100, Math.max(0, Number(value || 0)));
 
 const CrmLineItemsTable = ({
   title = text.defaultTitle,
@@ -80,6 +90,7 @@ const CrmLineItemsTable = ({
   const totals = calculateCrmItemTotals(items);
   const isDisabled = disabled || !canEdit;
   const [globalMargin, setGlobalMargin] = useState(() => Number(totals.margin_percent || 0).toFixed(1));
+  const [globalCommission, setGlobalCommission] = useState(() => Number(0).toFixed(1));
 
   const marginSummary = useMemo(() => ({
     current: Number(totals.margin_percent || 0),
@@ -104,6 +115,13 @@ const CrmLineItemsTable = ({
     });
   };
 
+  const handleApplyGlobalCommission = () => {
+    const targetCommission = normalizeCommissionPercent(globalCommission);
+    items.forEach((item, index) => {
+      onUpdateItem?.(item.id, 'commission_percent', targetCommission, index);
+    });
+  };
+
   return (
     <Card className="crm-panel">
       <CardHeader className="crm-panel-header">
@@ -125,7 +143,7 @@ const CrmLineItemsTable = ({
                 {text.manualItem}
               </Button>
             </div>
-            <div className="flex flex-wrap items-end gap-2 rounded-md border bg-white p-2 shadow-sm">
+            <div className="grid gap-2 rounded-md border bg-white p-2 shadow-sm md:grid-cols-2">
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold uppercase text-slate-500">{text.globalMargin}</Label>
                 <div className="flex items-center gap-2">
@@ -144,9 +162,29 @@ const CrmLineItemsTable = ({
                   </Button>
                 </div>
               </div>
-              <div className="text-right text-xs text-muted-foreground">
-                <div>{text.margin}: <strong className="text-slate-900">{marginSummary.current.toFixed(1)} %</strong></div>
-                <div>{formatCurrency(marginSummary.value)}</div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold uppercase text-slate-500">{text.globalCommission}</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    className="h-8 w-24 text-right text-sm"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={globalCommission}
+                    onChange={(event) => setGlobalCommission(event.target.value)}
+                    disabled={isDisabled || items.length === 0}
+                    aria-label={text.targetCommission}
+                  />
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyGlobalCommission} disabled={isDisabled || items.length === 0}>
+                    {text.applyCommission}
+                  </Button>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground md:col-span-2 md:text-right">
+                <span>{text.margin}: <strong className="text-slate-900">{marginSummary.current.toFixed(1)} %</strong></span>
+                <span className="mx-2 text-slate-300">/</span>
+                <span>{formatCurrency(marginSummary.value)}</span>
               </div>
             </div>
           </div>
@@ -157,25 +195,27 @@ const CrmLineItemsTable = ({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[110px]">{text.code}</TableHead>
-                <TableHead className="min-w-[320px]">{text.nameDescription}</TableHead>
-                <TableHead className="min-w-[105px] text-right">{text.quantity}</TableHead>
-                <TableHead className="min-w-[80px]">{text.unit}</TableHead>
-                <TableHead className="min-w-[120px] text-right">{text.purchase}</TableHead>
-                <TableHead className="min-w-[120px] text-right">{text.sale}</TableHead>
-                <TableHead className="min-w-[105px] text-right">{text.itemMargin}</TableHead>
-                <TableHead className="min-w-[95px] text-right">{text.discount}</TableHead>
-                <TableHead className="min-w-[90px] text-right">{text.vat}</TableHead>
-                <TableHead className="min-w-[130px] text-right">{text.subtotal}</TableHead>
-                <TableHead className="min-w-[135px] text-right">{text.margin}</TableHead>
-                <TableHead className="min-w-[135px] text-right">{text.totalWithTax}</TableHead>
+                <TableHead className="min-w-[105px]">{text.code}</TableHead>
+                <TableHead className="min-w-[260px] max-w-[340px]">{text.nameDescription}</TableHead>
+                <TableHead className="min-w-[90px] text-right">{text.quantity}</TableHead>
+                <TableHead className="min-w-[70px]">{text.unit}</TableHead>
+                <TableHead className="min-w-[105px] text-right">{text.purchase}</TableHead>
+                <TableHead className="min-w-[105px] text-right">{text.sale}</TableHead>
+                <TableHead className="min-w-[90px] text-right">{text.itemMargin}</TableHead>
+                <TableHead className="min-w-[85px] text-right">{text.discount}</TableHead>
+                <TableHead className="min-w-[95px] text-right">{text.vat}</TableHead>
+                <TableHead className="min-w-[110px] text-right">{text.subtotal}</TableHead>
+                <TableHead className="min-w-[120px] text-right">{text.margin}</TableHead>
+                <TableHead className="min-w-[95px] text-right">{text.commission}</TableHead>
+                <TableHead className="min-w-[130px] text-right">{text.profitAfterCommission}</TableHead>
+                <TableHead className="min-w-[115px] text-right">{text.totalWithTax}</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="h-24 text-center text-muted-foreground">{text.empty}</TableCell>
+                  <TableCell colSpan={15} className="h-24 text-center text-muted-foreground">{text.empty}</TableCell>
                 </TableRow>
               ) : items.map((item, index) => {
                 const calculation = calculateCrmItem(item);
@@ -183,7 +223,9 @@ const CrmLineItemsTable = ({
                 return (
                   <TableRow key={rowKey}>
                     <TableCell>
-                      <Input value={item.code || ''} onChange={(event) => handleChange(item, index, 'code', event.target.value)} disabled={isDisabled} />
+                      <div className="rounded-md border bg-slate-50 px-2 py-1.5 font-mono text-xs font-semibold text-slate-700" title={text.codeLocked}>
+                        {item.code || 'bez kódu'}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="space-y-1">
@@ -210,12 +252,30 @@ const CrmLineItemsTable = ({
                       <Input className="text-right" type="number" value={item.discount_percent ?? 0} onChange={(event) => handleChange(item, index, 'discount_percent', event.target.value)} disabled={isDisabled} />
                     </TableCell>
                     <TableCell>
-                      <Input className="text-right" type="number" value={item.vat_rate ?? 21} onChange={(event) => handleChange(item, index, 'vat_rate', event.target.value)} disabled={isDisabled} />
+                      <Select value={String(item.vat_rate ?? 21)} onValueChange={(value) => handleChange(item, index, 'vat_rate', value)} disabled={isDisabled}>
+                        <SelectTrigger className="h-9 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CRM_VAT_RATE_OPTIONS.map((rate) => (
+                            <SelectItem key={rate.value} value={String(rate.value)}>{rate.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     <TableCell className="text-right font-semibold">{formatCurrency(calculation.subtotal)}</TableCell>
                     <TableCell className="text-right">
                       <div className="font-semibold text-emerald-700">{formatCurrency(calculation.marginAmount)}</div>
                       <div className="text-xs text-muted-foreground">{calculation.marginPercent.toFixed(1)} %</div>
+                    </TableCell>
+                    <TableCell>
+                      <Input className="text-right" type="number" min="0" max="100" step="0.1" value={item.commission_percent ?? 0} onChange={(event) => handleChange(item, index, 'commission_percent', event.target.value)} disabled={isDisabled} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className={calculation.profitAfterCommission >= 0 ? 'font-semibold text-emerald-700' : 'font-semibold text-rose-700'}>
+                        {formatCurrency(calculation.profitAfterCommission)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">{calculation.profitAfterCommissionPercent.toFixed(1)} %</div>
                     </TableCell>
                     <TableCell className="text-right font-semibold">{formatCurrency(calculation.totalWithTax)}</TableCell>
                     <TableCell>
@@ -229,14 +289,16 @@ const CrmLineItemsTable = ({
             </TableBody>
           </Table>
         </div>
-        <div className="grid gap-2 border-t bg-slate-50 p-4 text-sm md:ml-auto md:w-[520px]">
+        <div className="grid gap-2 border-t bg-slate-50 p-4 text-sm md:ml-auto md:w-[560px]">
           <div className="flex justify-between gap-4"><span>{text.beforeDiscount}</span><strong>{formatCurrency(totals.gross_subtotal)}</strong></div>
           <div className="flex justify-between gap-4"><span>{text.totalDiscount}</span><strong>{formatCurrency(totals.discount_total)}</strong></div>
           <div className="flex justify-between gap-4"><span>{text.withoutVat}</span><strong>{formatCurrency(totals.total)}</strong></div>
           <div className="flex justify-between gap-4 text-muted-foreground"><span>{text.vatSummary}</span><strong>{formatCurrency(totals.tax_total)}</strong></div>
           <div className="flex justify-between gap-4 rounded-md bg-white px-3 py-2 text-base shadow-sm"><span>{text.totalWithTax}</span><strong>{formatCurrency(totals.total_with_tax)}</strong></div>
           <div className="flex justify-between gap-4 text-muted-foreground"><span>{text.costs}</span><strong>{formatCurrency(totals.cost_total)}</strong></div>
-          <div className="flex justify-between gap-4 text-emerald-700"><span>{text.margin}</span><strong>{formatCurrency(totals.margin_total)} ? {totals.margin_percent.toFixed(1)} %</strong></div>
+          <div className="flex justify-between gap-4 text-emerald-700"><span>{text.margin}</span><strong>{formatCurrency(totals.margin_total)} / {totals.margin_percent.toFixed(1)} %</strong></div>
+          <div className="flex justify-between gap-4 text-amber-700"><span>{text.commission}</span><strong>{formatCurrency(totals.commission_total)}</strong></div>
+          <div className="flex justify-between gap-4 text-slate-950"><span>{text.profitAfterCommission}</span><strong>{formatCurrency(totals.profit_after_commission)} / {totals.profit_after_commission_percent.toFixed(1)} %</strong></div>
         </div>
       </CardContent>
     </Card>

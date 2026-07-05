@@ -14,6 +14,7 @@ import {
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { sanitizeDocumentTemplateHtml, sanitizeGeneratedDocumentHtml } from '@/lib/htmlSanitizer';
+import { calculateCrmItem, calculateCrmTotals } from '@/lib/crmItemPayloads';
 
 const documentTypeLabels = {
   offer: 'Nabídka',
@@ -115,24 +116,37 @@ export const buildDocumentGenerationPayload = ({ opportunity, document }) => {
     ? document.items
     : (opportunity?.items?.length ? opportunity.items : (opportunity?.opportunity_items || []));
   const generatedAt = new Date().toISOString();
+  const totals = calculateCrmTotals(sourceItems);
   const documentType = document?.type || 'offer';
   const documentNumber = document?.number || '';
 
   const items = [...sourceItems]
     .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
-    .map((item, index) => ({
-      position: index + 1,
-      code: item.code || '',
-      name: item.name || '',
-      description: item.description || '',
-      quantity: Number(item.quantity || 0),
-      unit: item.unit || 'ks',
-      unitPrice: Number(item.unit_price || 0),
-      discountPercent: Number(item.discount_percent || 0),
-      vatRate: Number(item.vat_rate || 0),
-      lineTotal: Number(item.line_total || 0),
-      customFields: item.custom_fields || item.product_fields || {},
-    }));
+    .map((item, index) => {
+      const calculation = calculateCrmItem(item);
+      return {
+        position: index + 1,
+        code: item.code || '',
+        name: item.name || '',
+        description: item.description || '',
+        quantity: calculation.quantity,
+        unit: item.unit || 'ks',
+        unitPrice: calculation.unitPrice,
+        unitCost: calculation.unitCost,
+        discountPercent: calculation.discountPercent,
+        vatRate: calculation.vatRate,
+        commissionPercent: calculation.commissionPercent,
+        lineTotal: calculation.total,
+        taxTotal: calculation.taxTotal,
+        totalWithTax: calculation.totalWithTax,
+        marginTotal: calculation.marginAmount,
+        marginPercent: calculation.marginPercent,
+        commissionTotal: calculation.commissionAmount,
+        profitAfterCommission: calculation.profitAfterCommission,
+        profitAfterCommissionPercent: calculation.profitAfterCommissionPercent,
+        customFields: item.custom_fields || item.product_fields || {},
+      };
+    });
 
   return {
     document: {
@@ -152,10 +166,17 @@ export const buildDocumentGenerationPayload = ({ opportunity, document }) => {
       status: document?.status || 'draft',
       issueDate: document?.issue_date || new Date().toISOString(),
       validUntil: document?.valid_until || null,
-      subtotal: Number(document?.subtotal || 0),
-      discountTotal: Number(document?.discount_total || 0),
-      taxTotal: Number(document?.tax_total || 0),
-      total: Number(document?.total || 0),
+      subtotal: totals.subtotal,
+      discountTotal: totals.discount_total,
+      taxTotal: totals.tax_total,
+      total: totals.total,
+      totalWithTax: totals.total_with_tax,
+      costTotal: totals.cost_total,
+      marginTotal: totals.margin_total,
+      marginPercent: totals.margin_percent,
+      commissionTotal: totals.commission_total,
+      profitAfterCommission: totals.profit_after_commission,
+      profitAfterCommissionPercent: totals.profit_after_commission_percent,
       notes: document?.notes || '',
     },
     opportunity: {
@@ -191,12 +212,15 @@ const renderItemsTableHtml = (items) => {
       </td>
       <td class="num">${Number(item.quantity || 0).toLocaleString('cs-CZ')} ${escapeHtml(item.unit)}</td>
       <td class="num">${formatCurrency(item.unitPrice)}</td>
+      <td class="num">${Number(item.vatRate || 0).toLocaleString('cs-CZ')} %</td>
       <td class="num">${Number(item.discountPercent || 0).toLocaleString('cs-CZ')} %</td>
+      <td class="num">${formatCurrency(item.marginTotal)}</td>
       <td class="num">${formatCurrency(item.lineTotal)}</td>
+      <td class="num">${formatCurrency(item.totalWithTax)}</td>
     </tr>
   `).join('') : `
     <tr>
-      <td colspan="7" class="empty">Dokument zatím nemá položky.</td>
+      <td colspan="10" class="empty">Dokument zatím nemá položky.</td>
     </tr>
   `;
 
@@ -209,8 +233,11 @@ const renderItemsTableHtml = (items) => {
           <th>Název</th>
           <th class="num">Množství</th>
           <th class="num">Jedn. cena</th>
+          <th class="num">DPH</th>
           <th class="num">Sleva</th>
-          <th class="num">Celkem</th>
+          <th class="num">Marže</th>
+          <th class="num">Celkem bez DPH</th>
+          <th class="num">Celkem s DPH</th>
         </tr>
       </thead>
       <tbody>${itemRows}</tbody>
@@ -292,7 +319,16 @@ const buildItemTemplatePlaceholders = (item) => ({
   item_unit_price: formatCurrency(item.unitPrice),
   item_discount_percent: Number(item.discountPercent || 0).toLocaleString('cs-CZ'),
   item_vat_rate: item.vatRate.toLocaleString('cs-CZ'),
+  item_tax_total: formatCurrency(item.taxTotal),
+  item_total_with_tax: formatCurrency(item.totalWithTax),
+  item_unit_cost: formatCurrency(item.unitCost),
   item_line_total: formatCurrency(item.lineTotal),
+  item_margin_total: formatCurrency(item.marginTotal),
+  item_margin_percent: Number(item.marginPercent || 0).toLocaleString('cs-CZ'),
+  item_commission_percent: Number(item.commissionPercent || 0).toLocaleString('cs-CZ'),
+  item_commission_total: formatCurrency(item.commissionTotal),
+  item_profit_after_commission: formatCurrency(item.profitAfterCommission),
+  item_profit_after_commission_percent: Number(item.profitAfterCommissionPercent || 0).toLocaleString('cs-CZ'),
   ...Object.entries(item.customFields || {}).reduce((acc, [key, value]) => {
     acc[`item_${key}`] = value ?? '';
     return acc;
@@ -316,7 +352,7 @@ const fillItemsRepeatBlocks = (templateContent, items) => {
 
 export const buildDocumentTemplatePlaceholders = (payload) => {
   const { document, opportunity, generatedAt } = payload;
-  const totalWithTax = document.total + document.taxTotal;
+  const totalWithTax = document.totalWithTax ?? (document.total + document.taxTotal);
   const clientName = opportunity.subjectName || 'Bez subjektu';
   const projectName = opportunity.projectName || opportunity.projectCode || '';
   const values = {
@@ -337,6 +373,12 @@ export const buildDocumentTemplatePlaceholders = (payload) => {
     tax_total: formatCurrency(document.taxTotal),
     total_amount: formatCurrency(document.total),
     total_with_tax: formatCurrency(totalWithTax),
+    cost_total: formatCurrency(document.costTotal),
+    margin_total: formatCurrency(document.marginTotal),
+    margin_percent: Number(document.marginPercent || 0).toLocaleString('cs-CZ'),
+    commission_total: formatCurrency(document.commissionTotal),
+    profit_after_commission: formatCurrency(document.profitAfterCommission),
+    profit_after_commission_percent: Number(document.profitAfterCommissionPercent || 0).toLocaleString('cs-CZ'),
     notes: document.notes || '',
     generated_at: formatDate(generatedAt),
     item_count: payload.items.length,
@@ -389,7 +431,7 @@ const ensureHtmlDocument = (content, title = 'Dokument') => {
 
 export const renderCommercialDocumentHtml = (payload, template = null) => {
   const { document, opportunity, items, generatedAt } = payload;
-  const totalWithTax = document.total + document.taxTotal;
+  const totalWithTax = document.totalWithTax ?? (document.total + document.taxTotal);
 
   if (template?.content) {
     return sanitizeGeneratedDocumentHtml(ensureHtmlDocument(
@@ -770,7 +812,7 @@ export const createCommercialDocumentDocxBlob = async (payload, template = null)
   }
 
   const { document, opportunity, items, generatedAt } = payload;
-  const totalWithTax = document.total + document.taxTotal;
+  const totalWithTax = document.totalWithTax ?? (document.total + document.taxTotal);
 
   const rows = [
     new TableRow({

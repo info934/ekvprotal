@@ -1,5 +1,12 @@
 export const CRM_DEFAULT_VAT_RATE = 21;
 export const CRM_DEFAULT_MARGIN_PERCENT = 20;
+export const CRM_DEFAULT_COMMISSION_PERCENT = 0;
+
+export const CRM_VAT_RATE_OPTIONS = [
+  { value: 21, label: '21 %', description: 'Základní sazba DPH' },
+  { value: 12, label: '12 %', description: 'Snížená sazba DPH' },
+  { value: 0, label: '0 %', description: 'Bez DPH / přenesená povinnost' },
+];
 
 const toNumber = (value, fallback = 0) => {
   const number = Number(value);
@@ -7,6 +14,13 @@ const toNumber = (value, fallback = 0) => {
 };
 
 const clampPercent = (value) => Math.min(100, Math.max(0, toNumber(value)));
+const clampMarginPercent = (value) => Math.min(95, Math.max(-100, toNumber(value)));
+
+export const normalizeCrmVatRate = (value, fallback = CRM_DEFAULT_VAT_RATE) => {
+  const numeric = toNumber(value, fallback);
+  const option = CRM_VAT_RATE_OPTIONS.find((rate) => Number(rate.value) === numeric);
+  return option ? Number(option.value) : Number(fallback);
+};
 
 export const roundMoney = (value) => Math.round(toNumber(value) * 100) / 100;
 
@@ -26,7 +40,8 @@ export const calculateCrmItem = (item = {}) => {
   const unitPrice = toNumber(item.unit_price ?? item.default_unit_price);
   const unitCost = getCrmItemUnitCost(item);
   const discountPercent = clampPercent(item.discount_percent);
-  const vatRate = toNumber(item.vat_rate ?? item.default_vat_rate, CRM_DEFAULT_VAT_RATE);
+  const vatRate = normalizeCrmVatRate(item.vat_rate ?? item.default_vat_rate, CRM_DEFAULT_VAT_RATE);
+  const commissionPercent = clampPercent(item.commission_percent ?? item.commission_rate ?? CRM_DEFAULT_COMMISSION_PERCENT);
   const grossSubtotal = roundMoney(quantity * unitPrice);
   const discountAmount = roundMoney(grossSubtotal * (discountPercent / 100));
   const subtotal = roundMoney(grossSubtotal - discountAmount);
@@ -35,6 +50,9 @@ export const calculateCrmItem = (item = {}) => {
   const costTotal = roundMoney(quantity * unitCost);
   const marginAmount = roundMoney(subtotal - costTotal);
   const marginPercent = subtotal > 0 ? roundMoney((marginAmount / subtotal) * 100) : 0;
+  const commissionAmount = roundMoney(subtotal * (commissionPercent / 100));
+  const profitAfterCommission = roundMoney(marginAmount - commissionAmount);
+  const profitAfterCommissionPercent = subtotal > 0 ? roundMoney((profitAfterCommission / subtotal) * 100) : 0;
 
   return {
     quantity,
@@ -42,6 +60,7 @@ export const calculateCrmItem = (item = {}) => {
     unitCost,
     discountPercent,
     vatRate,
+    commissionPercent,
     grossSubtotal,
     discountAmount,
     subtotal,
@@ -51,6 +70,9 @@ export const calculateCrmItem = (item = {}) => {
     costTotal,
     marginAmount,
     marginPercent,
+    commissionAmount,
+    profitAfterCommission,
+    profitAfterCommissionPercent,
   };
 };
 
@@ -69,9 +91,13 @@ export const normalizeCrmItem = (item = {}, index = 0) => {
     purchase_price_snapshot: calculation.unitCost,
     discount_percent: calculation.discountPercent,
     vat_rate: calculation.vatRate,
+    commission_percent: calculation.commissionPercent,
     line_total: calculation.total,
     margin_total: calculation.marginAmount,
     margin_percent: calculation.marginPercent,
+    commission_total: calculation.commissionAmount,
+    profit_after_commission: calculation.profitAfterCommission,
+    profit_after_commission_percent: calculation.profitAfterCommissionPercent,
     sort_order: item.sort_order ?? ((index + 1) * 10),
   };
 };
@@ -86,6 +112,9 @@ export const calculateCrmTotals = (items = []) => {
   const costTotal = roundMoney(rows.reduce((sum, row) => sum + row.costTotal, 0));
   const marginAmount = roundMoney(subtotal - costTotal);
   const marginPercent = subtotal > 0 ? roundMoney((marginAmount / subtotal) * 100) : 0;
+  const commissionTotal = roundMoney(rows.reduce((sum, row) => sum + row.commissionAmount, 0));
+  const profitAfterCommission = roundMoney(marginAmount - commissionTotal);
+  const profitAfterCommissionPercent = subtotal > 0 ? roundMoney((profitAfterCommission / subtotal) * 100) : 0;
 
   return {
     gross_subtotal: grossSubtotal,
@@ -99,7 +128,21 @@ export const calculateCrmTotals = (items = []) => {
     margin_total: marginAmount,
     margin_value: marginAmount,
     margin_percent: marginPercent,
+    commission_total: commissionTotal,
+    profit_after_commission: profitAfterCommission,
+    profit_after_commission_percent: profitAfterCommissionPercent,
   };
+};
+
+export const calculateUnitPriceForMargin = (item = {}, marginPercent = CRM_DEFAULT_MARGIN_PERCENT) => {
+  const calculation = calculateCrmItem(item);
+  const quantity = Number(calculation.quantity || 0);
+  const unitCost = Number(calculation.unitCost || 0);
+  const discountFactor = 1 - (Number(calculation.discountPercent || 0) / 100);
+  const marginFactor = 1 - (clampMarginPercent(marginPercent) / 100);
+
+  if (quantity <= 0 || discountFactor <= 0 || marginFactor <= 0) return Number(item.unit_price || 0);
+  return roundMoney(unitCost / marginFactor / discountFactor);
 };
 
 const getCrmCatalogDefaultSalePrice = (product = {}) => {
@@ -107,8 +150,7 @@ const getCrmCatalogDefaultSalePrice = (product = {}) => {
   if (explicitSalePrice > 0) return explicitSalePrice;
 
   const purchasePrice = toNumber(product?.purchase_price ?? product?.unit_cost ?? product?.purchase_price_snapshot ?? 0);
-  const marginFactor = 1 - (CRM_DEFAULT_MARGIN_PERCENT / 100);
-  return purchasePrice > 0 && marginFactor > 0 ? roundMoney(purchasePrice / marginFactor) : 0;
+  return purchasePrice > 0 ? calculateUnitPriceForMargin({ quantity: 1, unit_cost: purchasePrice, discount_percent: 0 }, CRM_DEFAULT_MARGIN_PERCENT) : 0;
 };
 
 const getAvailableQty = (product) => {
@@ -128,7 +170,8 @@ export const createCrmCatalogItem = (product, fallback = {}) => normalizeCrmItem
   unit_cost: Number(product?.purchase_price ?? product?.unit_cost ?? product?.purchase_price_snapshot ?? 0),
   purchase_price_snapshot: Number(product?.purchase_price ?? product?.unit_cost ?? product?.purchase_price_snapshot ?? 0),
   discount_percent: Number(fallback.discount_percent ?? 0),
-  vat_rate: Number(product?.default_vat_rate ?? product?.vat_rate ?? CRM_DEFAULT_VAT_RATE),
+  vat_rate: normalizeCrmVatRate(product?.default_vat_rate ?? product?.vat_rate ?? CRM_DEFAULT_VAT_RATE),
+  commission_percent: Number(fallback.commission_percent ?? CRM_DEFAULT_COMMISSION_PERCENT),
   product_sku: product?.sku || product?.code || null,
   product_type: product?.product_type || null,
   stock_available_snapshot: getAvailableQty(product),
@@ -152,9 +195,13 @@ export const buildCrmItemPayloadFields = (item = {}, index = 0) => {
     purchase_price_snapshot: normalized.purchase_price_snapshot,
     discount_percent: normalized.discount_percent,
     vat_rate: normalized.vat_rate,
+    commission_percent: normalized.commission_percent,
     line_total: normalized.line_total,
     margin_total: normalized.margin_total,
     margin_percent: normalized.margin_percent,
+    commission_total: normalized.commission_total,
+    profit_after_commission: normalized.profit_after_commission,
+    profit_after_commission_percent: normalized.profit_after_commission_percent,
     sort_order: (index + 1) * 10,
     product_sku: normalized.product_sku || normalized.sku || null,
     product_type: normalized.product_type || null,
@@ -184,7 +231,7 @@ export const calculateCrmItemTotals = calculateCrmTotals;
 
 export const createCrmItemFromCatalogProduct = (product = {}, fallback = {}) => createCrmCatalogItem(product, {
   ...fallback,
-  id: fallback.id || `new-${Date.now()}-${product.id || product.code || Math.random().toString(36).slice(2)}`,
+  id: fallback.id || 'new-' + Date.now() + '-' + (product.id || product.code || Math.random().toString(36).slice(2)),
 });
 
 export const isMissingCrmRpcError = (error) => {

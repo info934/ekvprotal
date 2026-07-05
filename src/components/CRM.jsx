@@ -438,7 +438,7 @@ const DealWorkspace = ({
   }]);
 
   const updateOpportunityItem = (itemId, field, nextValue, rowIndex = 0) => {
-    const numericFields = ['quantity', 'unit_price', 'unit_cost', 'purchase_price_snapshot', 'discount_percent', 'vat_rate'];
+    const numericFields = ['quantity', 'unit_price', 'unit_cost', 'purchase_price_snapshot', 'discount_percent', 'vat_rate', 'commission_percent'];
     const nextItems = getEditableOpportunityItems().map((item, index) => {
       if (item.id !== itemId && index !== rowIndex) return item;
       const valueToStore = numericFields.includes(field) ? Number(nextValue || 0) : nextValue;
@@ -1724,7 +1724,7 @@ const CRM = () => {
         .limit(60),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
         .is('deleted_at', null)
         .order('updated_at', { ascending: false }),
       supabase
@@ -1739,7 +1739,7 @@ const CRM = () => {
         .limit(100),
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, cancelled_at, cancelled_reason, deleted_at, deleted_reason, items:crm_commercial_document_items(id, catalog_item_id, code, name, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, cancelled_at, cancelled_reason, deleted_at, deleted_reason, items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
         .is('deleted_at', null)
         .order('created_at', { ascending: false }),
       supabase

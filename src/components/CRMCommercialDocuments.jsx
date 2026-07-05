@@ -80,6 +80,8 @@ const formatDate = (value) => {
   return new Intl.DateTimeFormat('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
 };
 
+const formatPercent = (value) => `${Number(value || 0).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`;
+
 const formatCommercialDocumentTitle = (title) => (
   title
     ?.replace(/^Nabidka\b/, 'Nabídka')
@@ -151,13 +153,13 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     const [documentsRes, opportunitiesRes, numberingRes, templatesRes] = await Promise.all([
       supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, gross_subtotal, subtotal, discount_total, tax_total, total, total_with_tax, cost_total, total_cost, margin_total, margin_value, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, notes, sync_items, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
         .eq('type', type)
         .is('deleted_at', null)
         .order('created_at', { ascending: false }),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, value, subject_id, deleted_at, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, discount_percent, vat_rate, line_total, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .select('id, number, title, value, subject_id, deleted_at, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
         .is('deleted_at', null)
         .order('created_at', { ascending: false }),
       selectCrmNumberingSettings(supabase),
@@ -250,25 +252,32 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       const isSent = document.status === 'sent';
       const isExpired = Boolean(document.valid_until && document.valid_until < today && !['accepted', 'closed', 'rejected', 'cancelled', 'deleted'].includes(document.status));
       const hasItems = (document.items || []).length > 0;
+      const totals = calculateCrmTotals(document.items || []);
       return {
         total: acc.total + 1,
         draft: acc.draft + (isDraft ? 1 : 0),
         sent: acc.sent + (isSent ? 1 : 0),
         expired: acc.expired + (isExpired ? 1 : 0),
         withoutItems: acc.withoutItems + (!hasItems ? 1 : 0),
-        value: acc.value + Number(document.total || 0),
+        value: acc.value + totals.total,
+        cost: acc.cost + totals.cost_total,
+        margin: acc.margin + totals.margin_total,
+        commission: acc.commission + totals.commission_total,
+        profitAfterCommission: acc.profitAfterCommission + totals.profit_after_commission,
       };
-    }, { total: 0, draft: 0, sent: 0, expired: 0, withoutItems: 0, value: 0 });
+    }, { total: 0, draft: 0, sent: 0, expired: 0, withoutItems: 0, value: 0, cost: 0, margin: 0, commission: 0, profitAfterCommission: 0 });
   }, [documents]);
 
   const listColumns = useMemo(() => [
-    { id: 'number', label: 'Kód', hideable: false },
-    { id: 'title', label: 'Předmět' },
+    { id: 'number', label: 'K\u00f3d', hideable: false },
+    { id: 'title', label: 'P\u0159edm\u011bt' },
     { id: 'client', label: 'Klient' },
-    { id: 'opportunity', label: 'Obchodní případ' },
-    { id: 'created', label: 'Vytvořeno' },
+    { id: 'opportunity', label: 'Obchodn\u00ed p\u0159\u00edpad' },
+    { id: 'created', label: 'Vytvo\u0159eno' },
     { id: 'status', label: 'Stav' },
-    { id: 'total', label: 'Konečná cena' },
+    { id: 'total', label: 'Cena bez DPH' },
+    { id: 'margin', label: 'Mar\u017ee' },
+    { id: 'profitAfterCommission', label: 'Zisk po provizi' },
     { id: 'validUntil', label: 'Konec platnosti' },
     { id: 'actions', label: 'Akce', hideable: false },
   ], []);
@@ -282,6 +291,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     created: 'min-w-[110px]',
     status: 'min-w-[110px]',
     total: 'min-w-[130px] text-right',
+    margin: 'min-w-[120px] text-right',
+    profitAfterCommission: 'min-w-[150px] text-right',
     validUntil: 'min-w-[130px]',
     actions: 'w-12 text-right',
   };
@@ -290,9 +301,12 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     title: 'max-w-[360px] truncate',
     client: 'font-medium',
     total: 'text-right font-semibold',
+    margin: 'text-right font-semibold text-emerald-700',
+    profitAfterCommission: 'text-right font-semibold text-slate-950',
     actions: 'text-right',
   };
   const renderListCell = (document, columnId) => {
+    const totals = calculateCrmTotals(document.items || []);
     switch (columnId) {
       case 'number':
         return document.number || '-';
@@ -316,13 +330,27 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           </Badge>
         );
       case 'total':
-        return formatCurrency(document.total);
+        return formatCurrency(totals.total);
+      case 'margin':
+        return (
+          <div>
+            <div>{formatCurrency(totals.margin_total)}</div>
+            <div className="text-xs font-normal text-muted-foreground">{formatPercent(totals.margin_percent)}</div>
+          </div>
+        );
+      case 'profitAfterCommission':
+        return (
+          <div>
+            <div>{formatCurrency(totals.profit_after_commission)}</div>
+            <div className="text-xs font-normal text-muted-foreground">Provize {formatCurrency(totals.commission_total)}</div>
+          </div>
+        );
       case 'validUntil':
         return formatDate(document.valid_until);
       case 'sync':
         return (
           <Badge variant="outline" className={document.sync_items === false ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}>
-            {document.sync_items === false ? 'Vlastní položky' : 'Sync s OP'}
+            {document.sync_items === false ? 'Vlastn\u00ed polo\u017eky' : 'Sync s OP'}
           </Badge>
         );
       case 'actions':
@@ -337,7 +365,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               <DropdownMenuItem asChild>
                 <Link to={config.detailPath(document)}>
                   <FileText className="mr-2 h-4 w-4" />
-                  Otevrit detail
+                  Otev\u0159\u00edt detail
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -370,7 +398,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   };
 
   const updateItem = (itemId, field, value, rowIndex = 0) => {
-    const numericFields = ['quantity', 'unit_price', 'unit_cost', 'purchase_price_snapshot', 'discount_percent', 'vat_rate'];
+    const numericFields = ['quantity', 'unit_price', 'unit_cost', 'purchase_price_snapshot', 'discount_percent', 'vat_rate', 'commission_percent'];
     setSelectedDocument((current) => {
       if (!current) return current;
       return {
@@ -1023,7 +1051,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   };
 
   if (documentId) {
-    const totalWithTax = Number(selectedDocument?.total || 0) + Number(selectedDocument?.tax_total || 0);
+    const detailTotals = calculateCrmTotals(selectedDocument?.items || []);
     return (
       <div className="app-page-wide space-y-6">
         <PageHeader
@@ -1172,12 +1200,18 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   <CardTitle className="text-base">Souhrn</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 p-4 text-sm">
-                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">Před slevou bez DPH</span><strong>{formatCurrency(selectedDocument.subtotal)}</strong></div>
-                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">Sleva bez DPH</span><strong>{formatCurrency(selectedDocument.discount_total)}</strong></div>
-                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">Bez DPH</span><strong>{formatCurrency(selectedDocument.total)}</strong></div>
-                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">DPH</span><strong>{formatCurrency(selectedDocument.tax_total)}</strong></div>
-                  <div className="flex justify-between gap-3 rounded-md bg-primary px-3 py-2 text-primary-foreground"><span>Celkem s DPH</span><strong>{formatCurrency(totalWithTax)}</strong></div>
-                  <p className="text-xs text-muted-foreground">Souhrn rozlišuje základ bez DPH před slevou, slevu a výsledný základ pro DPH.</p>
+                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">{'P\u0159ed slevou bez DPH'}</span><strong>{formatCurrency(detailTotals.subtotal)}</strong></div>
+                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">Sleva bez DPH</span><strong>{formatCurrency(detailTotals.discount_total)}</strong></div>
+                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">Bez DPH</span><strong>{formatCurrency(detailTotals.total)}</strong></div>
+                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">DPH</span><strong>{formatCurrency(detailTotals.tax_total)}</strong></div>
+                  <div className="flex justify-between gap-3 rounded-md bg-primary px-3 py-2 text-primary-foreground"><span>Celkem s DPH</span><strong>{formatCurrency(detailTotals.total_with_tax)}</strong></div>
+                  <div className="space-y-2 border-t pt-3">
+                    <div className="flex justify-between gap-3"><span className="text-muted-foreground">{'N\u00e1klady'}</span><strong>{formatCurrency(detailTotals.cost_total)}</strong></div>
+                    <div className="flex justify-between gap-3"><span className="text-muted-foreground">{'Hrub\u00e1 mar\u017ee'}</span><strong>{formatCurrency(detailTotals.margin_total)} {'\u00b7'} {formatPercent(detailTotals.margin_percent)}</strong></div>
+                    <div className="flex justify-between gap-3"><span className="text-muted-foreground">Provize</span><strong>{formatCurrency(detailTotals.commission_total)}</strong></div>
+                    <div className="flex justify-between gap-3 rounded-md bg-emerald-50 px-3 py-2 text-emerald-900"><span>Zisk po provizi</span><strong>{formatCurrency(detailTotals.profit_after_commission)} {'\u00b7'} {formatPercent(detailTotals.profit_after_commission_percent)}</strong></div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{'Souhrn se po\u010d\u00edt\u00e1 p\u0159\u00edmo z polo\u017eek: n\u00e1kupn\u00ed cena, sleva, DPH, mar\u017ee a provize.'}</p>
                 </CardContent>
               </Card>
               <Card className="crm-panel">
@@ -1350,13 +1384,15 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           <CardTitle className="text-base">Freeze kontrola dokladů</CardTitle>
           <CardDescription>Rychlý stav rozpracovaných nabídek/objednávek před uzavřením baseline.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
+        <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-7">
           {[
             { label: 'Návrhy', value: documentSummary.draft, tone: 'amber' },
             { label: 'Odesláno', value: documentSummary.sent, tone: 'blue' },
             { label: 'Po platnosti', value: documentSummary.expired, tone: documentSummary.expired > 0 ? 'rose' : 'emerald' },
             { label: 'Bez položek', value: documentSummary.withoutItems, tone: documentSummary.withoutItems > 0 ? 'rose' : 'emerald' },
             { label: 'Hodnota celkem', value: formatCurrency(documentSummary.value), tone: 'slate' },
+            { label: 'Mar\u017ee celkem', value: formatCurrency(documentSummary.margin), tone: 'emerald' },
+            { label: 'Zisk po provizi', value: formatCurrency(documentSummary.profitAfterCommission), tone: 'blue' },
           ].map((item) => (
             <div
               key={item.label}
