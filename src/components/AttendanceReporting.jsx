@@ -162,7 +162,7 @@ const AttendanceReporting = () => {
           .order('date', { ascending: true }),
         supabase
           .from('attendance_submissions')
-          .select('id, member_id, status, total_hours, month_date, submitted_at, approved_at, rejected_at')
+          .select('id, member_id, status, total_hours, month_date, submitted_at, approved_at')
           .eq('month_date', startDate)
       ]);
 
