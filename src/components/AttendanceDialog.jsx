@@ -270,7 +270,7 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <FormDialogContent size="md">
+      <FormDialogContent size="xl">
         <div className="hidden">
           <div className="flex items-center gap-2">
             {isEditMode ? <Clock className="w-5 h-5 text-blue-600" /> : <Clock className="w-5 h-5 text-green-600" />}
@@ -288,13 +288,18 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <FormDialogBody className="flex flex-col gap-4">
+          <FormDialogBody className="space-y-5">
             
             {error && (
               <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md font-medium flex items-center gap-2">
                  <AlertCircle className="w-4 h-4"/> {error}
               </div>
             )}
+
+            <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-4 text-sm text-blue-900">
+              <div className="font-semibold">Kontrola zadání</div>
+              <p className="mt-1 leading-5">Denní limit je 24 hodin. Při hromadném zadání můžete vybrat více projektů nebo realizací a každé položce nastavit vlastní počet hodin.</p>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                <div className="space-y-1.5">
