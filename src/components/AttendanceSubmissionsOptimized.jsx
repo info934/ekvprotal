@@ -28,7 +28,7 @@ import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 // --- Memoized Components ---
 const escapeHtml = (value) => String(value ?? '')
-  .replaceAll('&', '&amp;')
+  .replaceAll('&', '&')
   .replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;')
   .replaceAll('"', '&quot;')
@@ -416,24 +416,32 @@ const AttendanceSubmissionsOptimized = () => {
 
       {/* Detail Dialog */}
       <Dialog open={!!detailSubmission} onOpenChange={(open) => !open && setDetailSubmission(null)}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[88vh] w-[calc(100vw-2rem)] max-w-5xl flex-col overflow-hidden p-0">
+          <DialogHeader className="border-b bg-slate-50/80 px-6 py-5 text-left">
             <DialogTitle>Detail docházky</DialogTitle>
             <DialogDescription>
-              {detailSubmission?.member?.name} - {detailSubmission && format(parseISO(detailSubmission.month_date), 'LLLL yyyy', { locale: cs })}
+              Kontrola měsíčního výkazu před schválením, zamítnutím nebo vrácením do schvalování.
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex-1 overflow-y-auto pr-2 mt-4 space-y-4">
-            <div className="grid gap-3 text-sm sm:grid-cols-2">
-               <div className="rounded border border-slate-100 bg-slate-50 p-3">
-                 <span className="text-muted-foreground">Celkem hodin</span>
-                 <p className="font-bold text-lg">{detailSubmission ?Number(detailSubmission.total_hours).toFixed(1) : 0}</p>
-               </div>
-               <div className="rounded border border-slate-100 bg-slate-50 p-3">
-                 <span className="text-muted-foreground">Stav</span>
-                 <div className="mt-1"><StatusBadge status={detailSubmission?.status} /></div>
-               </div>
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+            <div className="grid gap-3 text-sm md:grid-cols-5">
+              <div className="rounded-lg border border-slate-200 bg-white p-3 md:col-span-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pracovník</span>
+                <p className="mt-1 truncate text-base font-bold text-slate-950">{detailSubmission?.member?.name || '-'}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Měsíc</span>
+                <p className="mt-1 font-semibold capitalize text-slate-900">{detailSubmission && format(parseISO(detailSubmission.month_date), 'LLLL yyyy', { locale: cs })}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Celkem hodin</span>
+                <p className="mt-1 text-lg font-bold text-slate-950">{detailSubmission ? Number(detailSubmission.total_hours).toFixed(1) : 0} h</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Stav</span>
+                <div className="mt-1"><StatusBadge status={detailSubmission?.status} /></div>
+              </div>
             </div>
 
             {detailLoading ?(
@@ -459,7 +467,7 @@ const AttendanceSubmissionsOptimized = () => {
             )}
           </div>
 
-          <DialogFooter className="border-t pt-4">
+          <DialogFooter className="border-t bg-white px-6 py-4">
             <Button variant="outline" onClick={() => setDetailSubmission(null)}>Zavřít</Button>
             {canAdmin && detailSubmission?.status === 'submitted' && (
               <>
@@ -473,7 +481,7 @@ const AttendanceSubmissionsOptimized = () => {
 
       {/* Reject Reason Dialog */}
       <Dialog open={!!rejectDialog} onOpenChange={(open) => !open && setRejectDialog(null)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Zamítnout docházku</DialogTitle>
             <DialogDescription>

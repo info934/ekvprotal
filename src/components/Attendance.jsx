@@ -445,7 +445,7 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
                           <Send className="w-4 h-4 mr-2" /> Odeslat
                         </Button>
                       </AlertDialogTrigger>
-                      <AlertDialogContent>
+                      <AlertDialogContent className="sm:max-w-2xl">
                         <AlertDialogHeader>
                           <AlertDialogTitle>Odeslat docházku ke schválení?</AlertDialogTitle>
                           <AlertDialogDescription>
@@ -688,7 +688,7 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deletingRecord} onOpenChange={() => setDeletingRecord(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>Smazat záznam?</AlertDialogTitle>
             <AlertDialogDescription>
