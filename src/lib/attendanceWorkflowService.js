@@ -52,6 +52,24 @@ export const submitAttendanceMonth = async (memberId, monthDate) => {
   return data;
 };
 
+export const withdrawAttendanceSubmission = async (submissionId) => {
+  const { data, error } = await supabase.rpc('withdraw_attendance_submission', {
+    p_submission_id: submissionId,
+  });
+
+  if (error) throw error;
+  return data;
+};
+
+export const deleteAttendanceSubmission = async (submissionId) => {
+  const { data, error } = await supabase.rpc('delete_attendance_submission', {
+    p_submission_id: submissionId,
+  });
+
+  if (error) throw error;
+  return data;
+};
+
 export const approveAttendanceSubmission = async (submissionId) => {
   const { data, error } = await supabase.rpc('approve_attendance_submission', {
     p_submission_id: submissionId,
@@ -63,6 +81,16 @@ export const approveAttendanceSubmission = async (submissionId) => {
 
 export const rejectAttendanceSubmission = async (submissionId, notes) => {
   const { data, error } = await supabase.rpc('reject_attendance_submission', {
+    p_submission_id: submissionId,
+    p_notes: notes || null,
+  });
+
+  if (error) throw error;
+  return data;
+};
+
+export const returnAttendanceSubmissionForEdit = async (submissionId, notes) => {
+  const { data, error } = await supabase.rpc('return_attendance_submission_for_edit', {
     p_submission_id: submissionId,
     p_notes: notes || null,
   });

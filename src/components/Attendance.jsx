@@ -4,7 +4,7 @@ import {
   Plus, Download, Clock, Edit, Trash2, ChevronLeft, ChevronRight, Users, Send,
   CheckCircle, XCircle, Hourglass, Calendar, TrendingUp,
   Target, AlertTriangle, BarChart3, FileText,
-  Edit2, Zap, Timer, Wallet,
+  Edit2, Zap, Timer, Wallet, RotateCcw, FileX,
   HardHat, Briefcase, FileBarChart
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import PageHeader from '@/components/ui/page-header';
 import AttendanceDialog from './AttendanceDialog';
 import { sendAttendanceApprovalRequestEmail } from '@/lib/email';
-import { deleteAttendanceRecord, saveAttendanceRecords, submitAttendanceMonth } from '@/lib/attendanceWorkflowService';
+import { deleteAttendanceRecord, deleteAttendanceSubmission, saveAttendanceRecords, submitAttendanceMonth, withdrawAttendanceSubmission } from '@/lib/attendanceWorkflowService';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const metricToneFromColor = (color = '') => {
@@ -61,6 +61,7 @@ const statusConfig = {
   submitted: { label: 'Odesláno ke schválení', icon: Hourglass, color: 'text-orange-500', bg: 'bg-orange-100', variant: 'warning' },
   approved: { label: 'Schváleno', icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-100', variant: 'success' },
   rejected: { label: 'Zamítnuto', icon: XCircle, color: 'text-red-500', bg: 'bg-red-100', variant: 'destructive' },
+  returned: { label: 'Vráceno k úpravě', icon: RotateCcw, color: 'text-amber-600', bg: 'bg-amber-100', variant: 'warning' },
 };
 
 const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
@@ -79,7 +80,8 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
   const [deletingRecord, setDeletingRecord] = useState(null);
   const [selectedDialogDate, setSelectedDialogDate] = useState(null);
 
-  const isEditable = !submission || submission.status === 'draft' || submission.status === 'rejected';
+  const isEditable = !submission || submission.status === 'draft' || submission.status === 'rejected' || submission.status === 'returned';
+  const canManageSubmission = submission && submission.status !== 'approved';
 
   useEffect(() => {
     let isMounted = true;
@@ -229,6 +231,38 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
       }
     } catch (error) {
       toast({ title: 'Chyba při odesílání ke schválení', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const handleWithdrawSubmission = async () => {
+    if (!submission?.id || submission.status === 'approved') return;
+
+    try {
+      await withdrawAttendanceSubmission(submission.id);
+      toast({ title: 'Žádost stažena k úpravě', description: 'Docházku můžete znovu upravovat a poté odeslat ke schválení.' });
+      const result = await fetchAttendanceAndSubmission();
+      if (result) {
+        setSubmission(result.submissionRes.data || null);
+        if (result.attendanceRes.data) setAttendance(result.attendanceRes.data);
+      }
+    } catch (error) {
+      toast({ title: 'Žádost se nepodařilo stáhnout', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteSubmission = async () => {
+    if (!submission?.id || submission.status === 'approved') return;
+
+    try {
+      await deleteAttendanceSubmission(submission.id);
+      toast({ title: 'Žádost smazána', description: 'Docházkové záznamy zůstaly zachované a můžete je dál upravovat.' });
+      const result = await fetchAttendanceAndSubmission();
+      if (result) {
+        setSubmission(result.submissionRes.data || null);
+        if (result.attendanceRes.data) setAttendance(result.attendanceRes.data);
+      }
+    } catch (error) {
+      toast({ title: 'Žádost se nepodařilo smazat', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -466,6 +500,69 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
         </CardContent>
       </Card>
 
+      {canManageSubmission && (
+        <Card className="border-amber-200 bg-amber-50/60">
+          <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <Hourglass className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+              <div className="min-w-0">
+                <p className="font-semibold text-amber-950">
+                  {submission.status === 'submitted' ? 'Docházka čeká na schválení' : submission.status === 'returned' ? 'Docházka byla vrácena k úpravě' : 'Žádost docházky je rozpracovaná'}
+                </p>
+                <p className="text-sm text-amber-800">
+                  Do schválení můžete žádost stáhnout nebo smazat. Docházkové řádky zůstanou zachované, dokud je nesmažete samostatně.
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {submission.status === 'submitted' && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-100">
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Stáhnout k úpravě
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="sm:max-w-xl">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Stáhnout žádost zpět k úpravě?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Žádost se vrátí do konceptu a nebude vidět ve frontě ke schválení. Docházkové záznamy zůstanou zachované.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleWithdrawSubmission}>Stáhnout</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="border-red-200 text-red-600 hover:bg-red-50">
+                    <FileX className="mr-2 h-4 w-4" />
+                    Smazat žádost
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="sm:max-w-xl">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Smazat žádost o schválení?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Smaže se pouze měsíční žádost a její stav. Samotné docházkové záznamy v měsíci zůstanou zachované a půjdou znovu odeslat.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDeleteSubmission} className="bg-destructive hover:bg-destructive/90">
+                      Smazat žádost
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {submission?.status === 'rejected' && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}

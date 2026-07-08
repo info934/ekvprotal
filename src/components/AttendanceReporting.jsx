@@ -49,6 +49,7 @@ const STATUS_CONFIG = {
   submitted: { label: 'Ke schválení', className: 'border-orange-200 bg-orange-50 text-orange-700', icon: Hourglass, tone: 'orange' },
   approved: { label: 'Schváleno', className: 'border-emerald-200 bg-emerald-50 text-emerald-700', icon: ShieldCheck, tone: 'green' },
   rejected: { label: 'Zamítnuto', className: 'border-red-200 bg-red-50 text-red-700', icon: AlertTriangle, tone: 'red' },
+  returned: { label: 'Vráceno k úpravě', className: 'border-amber-200 bg-amber-50 text-amber-700', icon: Hourglass, tone: 'orange' },
   missing: { label: 'Neodesláno', className: 'border-slate-200 bg-white text-slate-500', icon: FileText, tone: 'slate' }
 };
 
@@ -162,7 +163,7 @@ const AttendanceReporting = () => {
           .order('date', { ascending: true }),
         supabase
           .from('attendance_submissions')
-          .select('id, member_id, status, total_hours, month_date, submitted_at, approved_at, rejected_at')
+          .select('id, member_id, status, total_hours, month_date, submitted_at, approved_at')
           .eq('month_date', startDate)
       ]);
 
@@ -266,7 +267,7 @@ const AttendanceReporting = () => {
   const statusCounts = useMemo(() => aggregatedData.reduce((acc, row) => {
     acc[row.status] = (acc[row.status] || 0) + 1;
     return acc;
-  }, { approved: 0, submitted: 0, rejected: 0, draft: 0, missing: 0 }), [aggregatedData]);
+  }, { approved: 0, submitted: 0, rejected: 0, returned: 0, draft: 0, missing: 0 }), [aggregatedData]);
 
   const averageRate = totals.hours > 0 ? totals.cost / totals.hours : 0;
 
@@ -608,6 +609,7 @@ const AttendanceReporting = () => {
         <DataVizMetricCard icon={ShieldCheck} label="Schváleno" value={loading ? '...' : statusCounts.approved} tone="green" />
         <DataVizMetricCard icon={Hourglass} label="Ke schválení" value={loading ? '...' : statusCounts.submitted} tone="orange" />
         <DataVizMetricCard icon={AlertTriangle} label="Zamítnuto" value={loading ? '...' : statusCounts.rejected} tone="red" />
+        <DataVizMetricCard icon={Hourglass} label="Vráceno k úpravě" value={loading ? '...' : statusCounts.returned} tone="orange" />
         <DataVizMetricCard icon={FileText} label="Neodesláno / koncept" value={loading ? '...' : (statusCounts.missing || 0) + (statusCounts.draft || 0)} tone="slate" />
       </div>
 

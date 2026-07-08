@@ -22,7 +22,7 @@ import { sendEmail } from '@/lib/email';
 import {
   approveAttendanceSubmission,
   rejectAttendanceSubmission,
-  revertAttendanceSubmission,
+  returnAttendanceSubmissionForEdit,
 } from '@/lib/attendanceWorkflowService';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
 
@@ -81,6 +81,7 @@ const StatusBadge = React.memo(({ status }) => {
     submitted: { label: 'Ke schválení', icon: Clock, variant: 'warning', className: 'bg-orange-100 text-orange-800 border-orange-200' },
     approved: { label: 'Schváleno', icon: CheckCircle, variant: 'success', className: 'bg-green-100 text-green-800 border-green-200' },
     rejected: { label: 'Zamítnuto', icon: XCircle, variant: 'destructive', className: 'bg-red-100 text-red-800 border-red-200' },
+    returned: { label: 'Vráceno k úpravě', icon: RotateCcw, variant: 'warning', className: 'bg-amber-100 text-amber-800 border-amber-200' },
     draft: { label: 'Koncept', icon: FileText, variant: 'secondary', className: 'bg-gray-100 text-gray-800 border-gray-200' }
   };
 
@@ -101,7 +102,7 @@ const StatCard = ({ label, value, icon: Icon, tone }) => (
   <DataVizMetricCard icon={Icon} label={label} value={value} tone={tone} />
 );
 
-const SubmissionCard = React.memo(({ submission, onDetail, onApprove, onReject, onRevert, showActions }) => {
+const SubmissionCard = React.memo(({ submission, onDetail, onApprove, onReject, onReturnForEdit, showActions }) => {
   const memberName = submission.member?.name || 'Neznámý uživatel';
   const monthLabel = format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs });
   const totalHours = Number(submission.total_hours).toFixed(1);
@@ -138,9 +139,12 @@ const SubmissionCard = React.memo(({ submission, onDetail, onApprove, onReject, 
           <Button variant="ghost" size="sm" onClick={() => onDetail(submission)} className="text-blue-600 hover:bg-blue-50 hover:text-blue-700">
             <Eye className="mr-2 h-4 w-4" /> Detail
           </Button>
-          
           {showActions && submission.status === 'submitted' && (
             <div className="flex flex-wrap justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => onReturnForEdit(submission)} className="border-amber-100 text-amber-700 hover:bg-amber-50 hover:text-amber-800">
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Vrátit k úpravě
+              </Button>
               <Button size="sm" variant="outline" onClick={() => onReject(submission)} className="border-red-100 text-red-600 hover:bg-red-50 hover:text-red-700">
                 <XCircle className="mr-2 h-4 w-4" />
                 Zamítnout
@@ -150,13 +154,6 @@ const SubmissionCard = React.memo(({ submission, onDetail, onApprove, onReject, 
                 Schválit
               </Button>
             </div>
-          )}
-          
-          {showActions && submission.status !== 'submitted' && submission.status !== 'draft' && (
-             <Button size="sm" variant="outline" onClick={() => onRevert(submission)} className="border-orange-100 text-orange-600 hover:bg-orange-50 hover:text-orange-700" title="Vrátit do zpracování">
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Vrátit
-             </Button>
           )}
         </div>
       </div>
@@ -185,6 +182,8 @@ const AttendanceSubmissionsOptimized = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [rejectDialog, setRejectDialog] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [returnDialog, setReturnDialog] = useState(null);
+  const [returnReason, setReturnReason] = useState('');
 
   const canAdmin = hasPermission('attendance', 'can_admin');
 
@@ -237,8 +236,9 @@ const AttendanceSubmissionsOptimized = () => {
       if (sub.status === 'submitted') acc.pending++;
       if (sub.status === 'approved') acc.approved++;
       if (sub.status === 'rejected') acc.rejected++;
+      if (sub.status === 'returned') acc.returned++;
       return acc;
-    }, { total: 0, pending: 0, approved: 0, rejected: 0 });
+    }, { total: 0, pending: 0, approved: 0, rejected: 0, returned: 0 });
   }, [submissions]);
 
   // --- Detail Logic ---
@@ -337,16 +337,27 @@ const AttendanceSubmissionsOptimized = () => {
     }
   }, [canAdmin, rejectDialog, rejectReason, fetchSubmissions, toast]);
 
-  const handleRevert = useCallback(async (submission) => {
-    if (!canAdmin) return;
+  const handleReturnConfirm = useCallback(async () => {
+    if (!canAdmin || !returnDialog) return;
     try {
-      await revertAttendanceSubmission(submission.id);
-      toast({ title: 'Vráceno do schvalování' });
+      await returnAttendanceSubmissionForEdit(returnDialog.id, returnReason);
+
+      toast({ title: 'Vráceno k úpravě', description: 'Zaměstnanec může výkaz upravit a znovu odeslat.' });
+      setReturnDialog(null);
+      setReturnReason('');
       fetchSubmissions();
+
+      if (returnDialog.member?.email) {
+        await sendEmail({
+          to: returnDialog.member.email,
+          subject: `Docházka vrácena k úpravě: ${format(parseISO(returnDialog.month_date), 'LLLL yyyy', { locale: cs })}`,
+          content: `<p>Vaše docházka byla vrácena k úpravě.</p><p>Poznámka: ${returnReason || 'Bez poznámky.'}</p>`
+        });
+      }
     } catch (error) {
       toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
     }
-  }, [canAdmin, fetchSubmissions, toast]);
+  }, [canAdmin, returnDialog, returnReason, fetchSubmissions, toast]);
 
   return (
     <div className="space-y-6">
@@ -355,6 +366,7 @@ const AttendanceSubmissionsOptimized = () => {
         <StatCard label="Ke schválení" value={stats.pending} icon={Clock} tone="orange" />
         <StatCard label="Schváleno" value={stats.approved} icon={CheckCircle} tone="green" />
         <StatCard label="Zamítnuto" value={stats.rejected} icon={XCircle} tone="red" />
+        <StatCard label="Vráceno" value={stats.returned} icon={RotateCcw} tone="amber" />
         <StatCard label="Celkem" value={stats.total} icon={FileText} tone="slate" />
       </div>
 
@@ -380,6 +392,7 @@ const AttendanceSubmissionsOptimized = () => {
               <SelectItem value="submitted">Ke schválení</SelectItem>
               <SelectItem value="approved">Schváleno</SelectItem>
               <SelectItem value="rejected">Zamítnuto</SelectItem>
+              <SelectItem value="returned">Vráceno k úpravě</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -401,7 +414,7 @@ const AttendanceSubmissionsOptimized = () => {
                 onDetail={handleOpenDetail}
                 onApprove={handleApprove}
                 onReject={(s) => setRejectDialog(s)}
-                onRevert={handleRevert}
+                onReturnForEdit={(s) => setReturnDialog(s)}
                 showActions={canAdmin}
               />
             ))}
@@ -471,10 +484,38 @@ const AttendanceSubmissionsOptimized = () => {
             <Button variant="outline" onClick={() => setDetailSubmission(null)}>Zavřít</Button>
             {canAdmin && detailSubmission?.status === 'submitted' && (
               <>
+                <Button variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => { setReturnDialog(detailSubmission); setDetailSubmission(null); }}>Vrátit k úpravě</Button>
                 <Button variant="destructive" onClick={() => { setRejectDialog(detailSubmission); setDetailSubmission(null); }}>Zamítnout</Button>
                 <Button onClick={() => { handleApprove(detailSubmission); setDetailSubmission(null); }} className="bg-green-600 hover:bg-green-700">Schválit</Button>
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Return For Edit Dialog */}
+      <Dialog open={!!returnDialog} onOpenChange={(open) => !open && setReturnDialog(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Vrátit docházku k úpravě</DialogTitle>
+            <DialogDescription>
+              Výkaz se nebude počítat jako zamítnutý. Zaměstnanec ho může upravit a znovu odeslat ke schválení.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Doporučení: napište, co přesně má zaměstnanec doplnit nebo opravit.
+            </div>
+            <Textarea
+              placeholder="Poznámka pro zaměstnance..."
+              value={returnReason}
+              onChange={(e) => setReturnReason(e.target.value)}
+              className="min-h-[120px]"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setReturnDialog(null)}>Zrušit</Button>
+            <Button onClick={handleReturnConfirm} className="bg-amber-600 hover:bg-amber-700">Vrátit k úpravě</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
