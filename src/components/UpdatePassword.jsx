@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
@@ -19,6 +19,15 @@ const getPasswordStrength = (password) => {
   const labels = ['Velmi slabé', 'Slabé', 'Střední', 'Silné', 'Velmi silné'];
   const colors = ['bg-rose-500', 'bg-rose-500', 'bg-amber-500', 'bg-blue-500', 'bg-emerald-500'];
   return { score, label: labels[score], color: colors[score] };
+};
+
+const readAuthParams = () => {
+  const searchParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+  return {
+    tokenHash: searchParams.get('token_hash') || hashParams.get('token_hash'),
+    type: searchParams.get('type') || hashParams.get('type'),
+  };
 };
 
 const PasswordField = ({ id, label, value, onChange, autoComplete }) => {
@@ -63,14 +72,63 @@ const UpdatePassword = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [verifyingLink, setVerifyingLink] = useState(true);
+  const [linkReady, setLinkReady] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const verifyRecoveryLink = async () => {
+      const { tokenHash, type } = readAuthParams();
+
+      if (!tokenHash) {
+        const { data } = await supabase.auth.getSession();
+        if (!cancelled) {
+          setLinkReady(Boolean(data.session));
+          setVerifyingLink(false);
+        }
+        return;
+      }
+
+      const authType = type === 'invite' ? 'invite' : 'recovery';
+      const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: authType });
+
+      if (cancelled) return;
+
+      if (error) {
+        setLinkReady(false);
+        toast({
+          title: 'Odkaz není platný',
+          description: humanizeUpdateError(error.message),
+          variant: 'destructive',
+        });
+      } else {
+        setLinkReady(true);
+        window.history.replaceState({}, document.title, '/update-password');
+      }
+
+      setVerifyingLink(false);
+    };
+
+    verifyRecoveryLink();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [toast]);
 
   const strength = useMemo(() => getPasswordStrength(password), [password]);
   const passwordsMatch = password && confirmPassword && password === confirmPassword;
 
   const handlePasswordUpdate = async (event) => {
     event.preventDefault();
+
+    if (!linkReady) {
+      toast({ title: 'Neplatný odkaz', description: 'Nejdřív si prosím vygenerujte nový odkaz pro obnovu hesla.', variant: 'destructive' });
+      return;
+    }
 
     if (password.length < 10) {
       toast({ title: 'Heslo je příliš krátké', description: 'Zadejte alespoň 10 znaků.', variant: 'destructive' });
@@ -130,31 +188,44 @@ const UpdatePassword = () => {
           </div>
         </div>
 
-        <form onSubmit={handlePasswordUpdate} className="space-y-5">
-          <PasswordField id="new-password" label="Nové heslo" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
-
-          {password && (
-            <div className="space-y-2">
-              <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                <div className={`${strength.color} h-full rounded-full transition-all`} style={{ width: `${Math.max(16, (strength.score / 4) * 100)}%` }} />
+        {verifyingLink ? (
+          <div className="flex items-center justify-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-5 text-sm font-semibold text-blue-800">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Ověřuji odkaz pro změnu hesla...
+          </div>
+        ) : (
+          <form onSubmit={handlePasswordUpdate} className="space-y-5">
+            {!linkReady && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Odkaz není platný nebo už expiroval. Vraťte se na přihlášení a pošlete si nový reset hesla.
               </div>
-              <p className="text-xs font-medium text-slate-500">Síla hesla: {strength.label}</p>
-            </div>
-          )}
+            )}
 
-          <PasswordField id="confirm-password" label="Potvrzení nového hesla" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
+            <PasswordField id="new-password" label="Nové heslo" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
 
-          {confirmPassword && (
-            <p className={`text-sm font-medium ${passwordsMatch ? 'text-emerald-700' : 'text-rose-700'}`}>
-              {passwordsMatch ? 'Hesla se shodují.' : 'Hesla se zatím neshodují.'}
-            </p>
-          )}
+            {password && (
+              <div className="space-y-2">
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className={`${strength.color} h-full rounded-full transition-all`} style={{ width: `${Math.max(16, (strength.score / 4) * 100)}%` }} />
+                </div>
+                <p className="text-xs font-medium text-slate-500">Síla hesla: {strength.label}</p>
+              </div>
+            )}
 
-          <Button type="submit" className="h-12 w-full rounded-xl bg-blue-600 text-base font-semibold text-white shadow-lg shadow-blue-600/20 hover:bg-blue-700" disabled={loading}>
-            {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <ShieldCheck className="mr-2 h-5 w-5" />}
-            {loading ? 'Ukládání...' : 'Změnit heslo'}
-          </Button>
-        </form>
+            <PasswordField id="confirm-password" label="Potvrzení nového hesla" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
+
+            {confirmPassword && (
+              <p className={`text-sm font-medium ${passwordsMatch ? 'text-emerald-700' : 'text-rose-700'}`}>
+                {passwordsMatch ? 'Hesla se shodují.' : 'Hesla se zatím neshodují.'}
+              </p>
+            )}
+
+            <Button type="submit" className="h-12 w-full rounded-xl bg-blue-600 text-base font-semibold text-white shadow-lg shadow-blue-600/20 hover:bg-blue-700" disabled={loading || !linkReady}>
+              {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <ShieldCheck className="mr-2 h-5 w-5" />}
+              {loading ? 'Ukládání...' : 'Změnit heslo'}
+            </Button>
+          </form>
+        )}
       </motion.section>
     </main>
   );

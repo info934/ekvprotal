@@ -17,6 +17,13 @@ const getSiteUrl = (supabaseUrl: string) => {
 
 const normalizeEmail = (email?: string) => (email || '').trim().toLowerCase()
 
+const buildUpdatePasswordUrl = (siteUrl: string, linkData: Record<string, any>, type = 'recovery') => {
+  const tokenHash = linkData?.properties?.hashed_token || linkData?.properties?.token_hash
+  if (!tokenHash) return linkData?.properties?.action_link
+  const params = new URLSearchParams({ token_hash: tokenHash, type })
+  return `${siteUrl}/update-password?${params.toString()}`
+}
+
 const brandedEmail = ({ title, intro, ctaLabel, ctaUrl, note }: { title: string; intro: string; ctaLabel: string; ctaUrl: string; note?: string }) => `
   <div style="margin:0;padding:0;background:#f4f7fb;font-family:Inter,Segoe UI,Arial,sans-serif;color:#0f172a">
     <div style="max-width:640px;margin:0 auto;padding:32px 20px">
@@ -107,7 +114,7 @@ serve(async (req) => {
         title: 'Obnova hesla',
         intro: 'Požádali jste o bezpečné nastavení nového hesla do EKV Portal.',
         ctaLabel: 'Změnit heslo',
-        ctaUrl: linkData.properties.action_link,
+        ctaUrl: buildUpdatePasswordUrl(siteUrl, linkData as Record<string, any>),
         note: 'Pokud jste o obnovu hesla nežádali, tento e-mail ignorujte nebo kontaktujte administrátora.',
       }))
 
@@ -325,7 +332,7 @@ serve(async (req) => {
           title: 'Obnova hesla',
           intro: 'Administrátor vám odeslal odkaz pro bezpečné nastavení nového hesla.',
           ctaLabel: 'Změnit heslo',
-          ctaUrl: linkData.properties.action_link,
+          ctaUrl: buildUpdatePasswordUrl(siteUrl, linkData as Record<string, any>),
           note: 'Pokud jste o obnovu hesla nežádali, tento e-mail ignorujte nebo kontaktujte administrátora.',
         }))
         await logAdminAction('reset_password', payload.userId || linkData.user?.id || null, email, null, { reset_link_sent: true })
