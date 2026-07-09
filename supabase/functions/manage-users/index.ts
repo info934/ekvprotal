@@ -7,8 +7,11 @@ const jsonResponse = (body: Record<string, unknown>, status = 200) => new Respon
   headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 })
 
+const DEFAULT_SITE_URL = 'https://portal.ekvproject.cz'
+
 const getSiteUrl = (supabaseUrl: string) => {
-  const raw = Deno.env.get('VITE_SITE_URL') || Deno.env.get('SITE_URL') || supabaseUrl
+  const raw = Deno.env.get('SITE_URL') || Deno.env.get('VITE_SITE_URL') || DEFAULT_SITE_URL
+  if (!raw || raw.includes('.supabase.co')) return DEFAULT_SITE_URL
   return raw.replace(/\/$/, '')
 }
 
@@ -33,6 +36,36 @@ const brandedEmail = ({ title, intro, ctaLabel, ctaUrl, note }: { title: string;
   </div>
 `
 
+const sendBrandedEmailDirect = async (to: string, subject: string, htmlContent: string) => {
+  const resendApiKey = Deno.env.get('RESEND_API_KEY')
+  const fromEmail = Deno.env.get('FROM_EMAIL') || 'EKV Portal <portal@web.ekvproject.cz>'
+
+  if (!resendApiKey) {
+    throw new Error('Email server is not configured.')
+  }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${resendApiKey}`,
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to,
+      subject,
+      html: htmlContent,
+    }),
+  })
+
+  if (!response.ok) {
+    const details = await response.text()
+    throw new Error(`Failed to send email: ${details}`)
+  }
+
+  return response.json()
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -51,6 +84,35 @@ serve(async (req) => {
     const siteUrl = getSiteUrl(supabaseUrl)
 
     const { action, payload = {} } = await req.json()
+
+    if (action === 'request_password_reset') {
+      const email = normalizeEmail(payload.email)
+      if (!email) return jsonResponse({ error: 'Chybí e-mail.' }, 400)
+
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo: `${siteUrl}/update-password` },
+      })
+
+      if (linkError) {
+        const message = linkError.message?.toLowerCase() || ''
+        if (message.includes('not found') || message.includes('user not')) {
+          return jsonResponse({ sent: true })
+        }
+        throw linkError
+      }
+
+      await sendBrandedEmailDirect(email, 'Obnova hesla do EKV Portal', brandedEmail({
+        title: 'Obnova hesla',
+        intro: 'Požádali jste o bezpečné nastavení nového hesla do EKV Portal.',
+        ctaLabel: 'Změnit heslo',
+        ctaUrl: linkData.properties.action_link,
+        note: 'Pokud jste o obnovu hesla nežádali, tento e-mail ignorujte nebo kontaktujte administrátora.',
+      }))
+
+      return jsonResponse({ sent: true })
+    }
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) return jsonResponse({ error: 'Missing Authorization header' }, 401)
 

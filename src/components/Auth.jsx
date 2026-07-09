@@ -401,8 +401,11 @@ const Auth = () => {
   };
 
   const handlePasswordReset = async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/update-password`,
+    const { error } = await supabase.functions.invoke('manage-users', {
+      body: {
+        action: 'request_password_reset',
+        payload: { email },
+      },
     });
 
     if (error) {
