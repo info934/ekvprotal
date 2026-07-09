@@ -15,7 +15,6 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
-  User,
   Users,
   Zap,
 } from 'lucide-react';
@@ -155,7 +154,7 @@ const PrimaryButton = ({ loading, icon: Icon, loadingText, children }) => (
   </Button>
 );
 
-const LoginForm = ({ onSwitchToSignup, onSwitchToReset, onSubmit, onSocialLogin }) => {
+const LoginForm = ({ onSwitchToReset, onSubmit, onSocialLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -236,72 +235,8 @@ const LoginForm = ({ onSwitchToSignup, onSwitchToReset, onSubmit, onSocialLogin 
           </Button>
         </div>
 
-        <p className="text-center text-sm text-slate-500">
-          Nemáte účet?{' '}
-          <Button type="button" variant="link" onClick={onSwitchToSignup} className="h-auto p-0 font-semibold text-blue-700 hover:text-blue-800">
-            Požádat o přístup
-          </Button>
-        </p>
-      </form>
-    </AuthPanel>
-  );
-};
-
-const SignupForm = ({ onSwitchToLogin, onSubmit }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setLoading(true);
-    await onSubmit(email, password, fullName);
-    setLoading(false);
-  };
-
-  return (
-    <AuthPanel title="Žádost o přístup" description="Vytvořte účet a po potvrzení e-mailu se přihlaste do portálu." icon={User}>
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <Field id="full-name-signup" icon={User} label="Jméno a příjmení">
-          <Input
-            id="full-name-signup"
-            type="text"
-            value={fullName}
-            onChange={(event) => setFullName(event.target.value)}
-            required
-            autoComplete="name"
-            placeholder="Jan Novák"
-            className="h-12 rounded-xl border-slate-200 bg-white text-base shadow-sm transition focus-visible:ring-blue-500"
-          />
-        </Field>
-
-        <Field id="email-signup" icon={Mail} label="E-mail">
-          <Input
-            id="email-signup"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-            autoComplete="email"
-            placeholder="jmeno@ekvproject.cz"
-            className="h-12 rounded-xl border-slate-200 bg-white text-base shadow-sm transition focus-visible:ring-blue-500"
-          />
-        </Field>
-
-        <Field id="password-signup" icon={Lock} label="Heslo">
-          <PasswordInput id="password-signup" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Zvolte silné heslo" />
-        </Field>
-
-        <PrimaryButton loading={loading} loadingText="Odesílání..." icon={User}>
-          Vytvořit účet
-        </PrimaryButton>
-
-        <p className="text-center text-sm text-slate-500">
-          Už máte účet?{' '}
-          <Button type="button" variant="link" onClick={onSwitchToLogin} className="h-auto p-0 font-semibold text-blue-700 hover:text-blue-800">
-            Přihlaste se
-          </Button>
+        <p className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-center text-sm text-blue-900">
+          Nový účet vytváří administrátor pozvánkou. Pokud přístup nemáte, obraťte se na správce portálu.
         </p>
       </form>
     </AuthPanel>
@@ -320,7 +255,7 @@ const ResetPasswordForm = ({ onSwitchToLogin, onSubmit }) => {
   };
 
   return (
-    <AuthPanel title="Obnova hesla" description="Pošleme vám odkaz pro nastavení nového hesla." icon={Lock}>
+    <AuthPanel title="Obnova hesla" description="Pošleme vám bezpečný odkaz pro nastavení nového hesla." icon={Lock}>
       <form onSubmit={handleSubmit} className="space-y-5">
         <Field id="email-reset" icon={Mail} label="E-mail">
           <Input
@@ -445,25 +380,23 @@ const PortalPreview = () => (
 
 const Auth = () => {
   const [view, setView] = useState('login');
-  const { signIn, signUp, signInWithSso } = useAuth();
+  const { signIn, signInWithSso } = useAuth();
   const { toast } = useToast();
+
+  const humanizeAuthError = (message) => {
+    const normalized = (message || '').toLowerCase();
+    if (normalized.includes('invalid login') || normalized.includes('invalid credentials')) return 'E-mail nebo heslo není správné.';
+    if (normalized.includes('email not confirmed')) return 'E-mail ještě není potvrzený. Zkontrolujte pozvánku nebo požádejte administrátora o nové odeslání.';
+    if (normalized.includes('rate limit')) return 'Příliš mnoho pokusů. Zkuste to prosím za chvíli.';
+    return message || 'Přihlášení se nepodařilo.';
+  };
 
   const handleSignIn = async (email, password) => {
     const { error } = await signIn(email, password);
     if (!error) {
       toast({ title: 'Přihlášení úspěšné' });
-    }
-  };
-
-  const handleSignUp = async (email, password, fullName) => {
-    const { error } = await signUp(email, password, fullName);
-    if (!error) {
-      toast({
-        title: 'Registrace úspěšná',
-        description: 'Zkontrolujte svůj e-mail pro potvrzení účtu.',
-        duration: 9000,
-      });
-      setView('login');
+    } else {
+      toast({ title: 'Přihlášení se nepodařilo', description: humanizeAuthError(error.message), variant: 'destructive' });
     }
   };
 
@@ -474,8 +407,8 @@ const Auth = () => {
 
     if (error) {
       toast({
-        title: 'Obnova hesla se nezdařila',
-        description: error.message,
+        title: 'Obnova hesla se nepodařila',
+        description: humanizeAuthError(error.message),
         variant: 'destructive',
       });
       return;
@@ -483,7 +416,7 @@ const Auth = () => {
 
     toast({
       title: 'Odkaz odeslán',
-      description: 'Zkontrolujte svou e-mailovou schránku.',
+      description: 'Zkontrolujte svou e-mailovou schránku. Odkaz může po čase expirovat.',
       duration: 9000,
     });
     setView('login');
@@ -531,13 +464,9 @@ const Auth = () => {
                 <LoginForm
                   key="login"
                   onSubmit={handleSignIn}
-                  onSwitchToSignup={() => setView('signup')}
                   onSwitchToReset={() => setView('reset')}
                   onSocialLogin={handleSocialLogin}
                 />
-              )}
-              {view === 'signup' && (
-                <SignupForm key="signup" onSubmit={handleSignUp} onSwitchToLogin={() => setView('login')} />
               )}
               {view === 'reset' && (
                 <ResetPasswordForm key="reset" onSubmit={handlePasswordReset} onSwitchToLogin={() => setView('login')} />

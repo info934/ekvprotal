@@ -117,43 +117,15 @@ export const AuthProvider = ({ children }) => {
     }
   }, [session, signOut, toast]);
 
-  const signUp = useCallback(async (email, password, fullName) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-        }
-      }
-    });
-
-    if (error) {
-      toast({
-        variant: "destructive",
-        title: "Registrace se nezdařila",
-        description: error.message || "Něco se pokazilo",
-      });
-    }
-
-    return { error };
-  }, [toast]);
-
   const signIn = useCallback(async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) {
-      toast({
-        variant: "destructive",
-        title: "Přihlášení se nezdařilo",
-        description: error.message || "Neplatné přihlašovací údaje",
-      });
-    }
 
     return { error };
+
   }, [toast]);
 
   const signInWithSso = useCallback(async (provider) => {
@@ -164,15 +136,9 @@ export const AuthProvider = ({ children }) => {
       },
     });
 
-    if (error) {
-      toast({
-        variant: "destructive",
-        title: "SSO přihlášení se nezdařilo",
-        description: error.message || "Zkontrolujte nastavení poskytovatele v Supabase Auth.",
-      });
-    }
 
     return { error };
+
   }, [toast]);
 
   const togglePrivateMode = useCallback(async (enable) => {
@@ -218,6 +184,27 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
+      const { data: accountStatus, error: accountStatusError } = await supabase
+        .from('user_account_status')
+        .select('status, reason')
+        .eq('auth_user_id', currentUser.id)
+        .maybeSingle()
+        .abortSignal(AbortSignal.timeout(8000));
+
+      if (accountStatusError && accountStatusError.code !== 'PGRST116' && accountStatusError.code !== '42P01') {
+        throw accountStatusError;
+      }
+
+      if (accountStatus?.status === 'disabled') {
+        toast({
+          title: 'Účet je deaktivovaný',
+          description: accountStatus.reason || 'Kontaktujte administrátora portálu.',
+          variant: 'destructive',
+        });
+        await signOut();
+        return;
+      }
+
       const cacheKey = getCacheKey('permissions', currentUser.id);
       const cachedData = getCache(cacheKey);
       
@@ -474,10 +461,10 @@ export const AuthProvider = ({ children }) => {
     signOut,
     signIn,
     signInWithSso,
-    signUp,
+
     isPrivateMode,
     togglePrivateMode,
-  }), [user, session, loading, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signInWithSso, signUp, isPrivateMode, togglePrivateMode]);
+  }), [user, session, loading, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signInWithSso, isPrivateMode, togglePrivateMode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
