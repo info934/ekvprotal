@@ -113,17 +113,30 @@ const AttendanceReporting = () => {
 
   useEffect(() => {
     const fetchInitialData = async () => {
-      const { data: membersData, error: membersError } = await supabase
-        .from('members')
-        .select('id, name, hourly_rate')
-        .eq('attendance_enabled', true)
-        .order('name');
+      const [membersResult, compensationResult] = await Promise.all([
+        supabase
+          .from('members')
+          .select('id, name')
+          .eq('attendance_enabled', true)
+          .order('name'),
+        supabase.rpc('list_member_compensations_admin'),
+      ]);
+      const { data: membersData, error: membersError } = membersResult;
 
       if (membersError) {
         toast({ title: 'Chyba při načítání pracovníků', description: membersError.message, variant: 'destructive' });
       }
 
-      setMembers(membersData || []);
+      if (compensationResult.error) {
+        toast({ title: 'Chyba při načítání sazeb', description: compensationResult.error.message, variant: 'destructive' });
+      }
+      const compensationByMember = new Map(
+        (compensationResult.data || []).map((item) => [String(item.member_id), Number(item.hourly_rate || 0)])
+      );
+      setMembers((membersData || []).map((member) => ({
+        ...member,
+        hourly_rate: compensationByMember.get(String(member.id)) || 0,
+      })));
 
       const { data: settingsData } = await supabase
         .from('app_settings')
@@ -154,7 +167,7 @@ const AttendanceReporting = () => {
             date,
             hours,
             description,
-            members:members!attendance_member_id_fkey(id, name, hourly_rate),
+            members:members!attendance_member_id_fkey(id, name),
             projects (id, name, code),
             realizations (id, name)
           `)
@@ -200,6 +213,10 @@ const AttendanceReporting = () => {
     hasMemberFilter ? members.filter((member) => selectedSet.has(member.id)) : members
   ), [hasMemberFilter, members, selectedSet]);
 
+  const rateByMember = useMemo(() => new Map(
+    members.map((member) => [String(member.id), Number(member.hourly_rate || 0)])
+  ), [members]);
+
   const submissionByMember = useMemo(() => {
     const map = new Map();
     submissions.forEach((submission) => map.set(submission.member_id, submission));
@@ -235,7 +252,7 @@ const AttendanceReporting = () => {
         grouped.set(memberId, {
           memberId,
           name: record.members?.name || 'Neznámý pracovník',
-          rate: Number(record.members?.hourly_rate || 0),
+          rate: rateByMember.get(String(memberId)) || 0,
           totalHours: 0,
           totalCost: 0,
           recordCount: 0,
@@ -245,7 +262,7 @@ const AttendanceReporting = () => {
       }
 
       const row = grouped.get(memberId);
-      const rate = Number(record.members?.hourly_rate ?? row.rate ?? 0);
+      const rate = rateByMember.get(String(memberId)) ?? Number(row.rate || 0);
       const hours = Number(record.hours || 0);
 
       row.rate = rate;
@@ -256,7 +273,7 @@ const AttendanceReporting = () => {
 
     return Array.from(grouped.values())
       .sort((a, b) => b.totalCost - a.totalCost || a.name.localeCompare(b.name, 'cs'));
-  }, [visibleMembers, filteredRecords, submissionByMember]);
+  }, [visibleMembers, filteredRecords, submissionByMember, rateByMember]);
 
   const totals = useMemo(() => aggregatedData.reduce((acc, curr) => ({
     hours: acc.hours + curr.totalHours,
@@ -330,7 +347,7 @@ const AttendanceReporting = () => {
       const submission = submissionByMember.get(memberId);
       const status = submission?.status || 'missing';
       const hours = Number(record.hours || 0);
-      const rate = Number(record.members?.hourly_rate || 0);
+      const rate = rateByMember.get(String(memberId)) || 0;
       detailRows.push([
         format(new Date(record.date), 'dd.MM.yyyy'),
         record.members?.name || 'Neznámý',

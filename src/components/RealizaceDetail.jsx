@@ -194,55 +194,16 @@ const RealizaceDetail = () => {
     setLoading(false);
   }, [realizaceId, navigate, toast, canViewAmounts, canViewCosts, canViewProfit]);
 
-  // Fetch Hourly Costs Total - Includes BOTH direct attendance and linked project attendance
+  // The labor summary is the authoritative source. Direct member-rate reads are
+  // intentionally forbidden because compensation is private.
   useEffect(() => {
-    const fetchHourlyTotal = async () => {
-      if (!realizaceId || !canViewCosts) {
-        setHourlyCostsTotal(0);
-        setHourlyLoading(false);
-        return;
-      }
-      setHourlyLoading(true);
-      try {
-        // 1. Direct Realization Attendance
-        const { data: directData, error: directError } = await supabase
-          .from('attendance')
-          .select('hours, members:members!attendance_member_id_fkey(hourly_rate)')
-          .eq('realizace_id', realizaceId);
-
-        if (directError) throw directError;
-
-        // 2. Linked Project Attendance (if applicable)
-        let projectData = [];
-        if (linkedProjectId) {
-          const { data: pData, error: pError } = await supabase
-            .from('attendance')
-            .select('hours, members:members!attendance_member_id_fkey(hourly_rate)')
-            .eq('project_id', linkedProjectId);
-
-          if (pError) throw pError;
-          projectData = pData || [];
-        }
-
-        // Calculate Total
-        const allRecords = [...(directData || []), ...projectData];
-        const total = allRecords.reduce((sum, item) => {
-          const hours = Number(item.hours) || 0;
-          const rate = item.members?.hourly_rate ? Number(item.members.hourly_rate) : 0;
-          return sum + (hours * rate);
-        }, 0);
-
-        setHourlyCostsTotal(total);
-      } catch (err) {
-        console.error("Error calculating hourly costs:", err);
-        // Fail silently on calc error, display 0
-      } finally {
-        setHourlyLoading(false);
-      }
-    };
-
-    fetchHourlyTotal();
-  }, [realizaceId, linkedProjectId, canViewCosts]);
+    if (!canViewCosts) {
+      setHourlyCostsTotal(0);
+    } else {
+      setHourlyCostsTotal(toNumber(laborFinancialSummary?.direct_project_cost));
+    }
+    setHourlyLoading(false);
+  }, [canViewCosts, laborFinancialSummary]);
 
   useEffect(() => {
     fetchData();
