@@ -59,6 +59,7 @@ output/
 *.tar
 *.tar.gz
 *.tgz
+!vendor/xlsx-0.20.3.tgz
 *.zip
 *.7z
 
