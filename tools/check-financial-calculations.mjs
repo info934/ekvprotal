@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import {
+  calculateCrmItem,
   calculateCrmLineTotal,
   calculateCrmTotals,
+  calculateUnitPriceForMargin,
 } from '../src/lib/crmItemPayloads.js';
 import {
   calculateCostAdjustedTeamBudget,
@@ -55,6 +57,47 @@ for (const testCase of crmCases) {
   assertMoney(totals.total, testCase.expected.total, `${testCase.name}: total`);
   assertMoney(totals.tax_total, testCase.expected.tax_total, `${testCase.name}: tax_total`);
 }
+
+const commissionedItem = calculateCrmItem({
+  quantity: 2,
+  unit_price: 1250,
+  unit_cost: 800,
+  discount_percent: 10,
+  vat_rate: 21,
+  commission_percent: 5,
+});
+assertMoney(commissionedItem.grossSubtotal, 2500, 'commission case: gross subtotal');
+assertMoney(commissionedItem.discountAmount, 250, 'commission case: discount');
+assertMoney(commissionedItem.subtotal, 2250, 'commission case: net subtotal');
+assertMoney(commissionedItem.taxTotal, 472.5, 'commission case: tax');
+assertMoney(commissionedItem.costTotal, 1600, 'commission case: cost');
+assertMoney(commissionedItem.marginAmount, 650, 'commission case: margin');
+assertMoney(commissionedItem.commissionAmount, 112.5, 'commission case: commission');
+assertMoney(commissionedItem.profitAfterCommission, 537.5, 'commission case: profit after commission');
+
+const clampedItem = calculateCrmItem({
+  quantity: 1,
+  unit_price: 1000,
+  unit_cost: 100,
+  discount_percent: 120,
+  vat_rate: 19,
+  commission_percent: -5,
+});
+assertMoney(clampedItem.discountPercent, 100, 'discount is clamped to 100 percent');
+assertMoney(clampedItem.vatRate, 21, 'unsupported VAT falls back to the default rate');
+assertMoney(clampedItem.commissionPercent, 0, 'negative commission is clamped to zero');
+assertMoney(clampedItem.total, 0, 'full discount produces zero net total');
+
+assertMoney(
+  calculateUnitPriceForMargin({ quantity: 1, unit_cost: 80, discount_percent: 0 }, 20),
+  100,
+  'sale price for 20 percent margin'
+);
+assertMoney(
+  calculateUnitPriceForMargin({ quantity: 1, unit_cost: 80, discount_percent: 10 }, 20),
+  111.11,
+  'sale price accounts for discount while preserving margin'
+);
 
 const project = { price: 100000, budget_percentage: 60, overhead_percentage: 10 };
 const subcontractors = [{ price: 10000 }];
@@ -113,5 +156,6 @@ assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 
 assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 50000 }, 12000), 12000, 'fixed realization share is capped by team budget');
 assertMoney(calculateRealizationMemberShare({ share_type: 'percent', share_value: 25 }, 12000), 3000, 'percentage realization share uses non-negative team budget');
 assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 50000 }, -1000), 0, 'fixed realization share is zero when team budget is exhausted');
+assertMoney(calculateRealizationMemberShare({ share_type: 'percent', share_value: 100 }, 12000), 12000, '100 percent realization share equals available budget');
 
 console.log('Financial calculation checks passed');
