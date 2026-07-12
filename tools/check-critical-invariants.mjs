@@ -96,4 +96,17 @@ for (const requiredSafetyRule of [
   assert.ok(rolloutSafetyMigration.includes(requiredSafetyRule), `missing rollout safety rule: ${requiredSafetyRule}`);
 }
 
+const adminSummaryMigration = readFileSync(
+  new URL('../supabase/migrations/20260712190000_admin_company_financial_summaries.sql', import.meta.url),
+  'utf8'
+);
+for (const requiredAdminSummaryRule of [
+  'get_company_financials',
+  'get_overhead_summary',
+  "get_user_role() <> 'admin'",
+  'security definer',
+]) {
+  assert.ok(adminSummaryMigration.toLowerCase().includes(requiredAdminSummaryRule), `missing admin summary rule: ${requiredAdminSummaryRule}`);
+}
+
 console.log('Critical route and numbering checks passed');
