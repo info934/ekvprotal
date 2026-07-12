@@ -16,8 +16,8 @@ export const PendingApprovalsWidget = () => {
     const [payouts, setPayouts] = useState([]);
     const [attendance, setAttendance] = useState([]);
     const [loading, setLoading] = useState(true);
-    const { isSuperUser, isPrivateMode } = useAuth();
-    const canViewApprovalAmounts = isSuperUser && !isPrivateMode;
+    const { isAdmin, isPrivateMode } = useAuth();
+    const canViewApprovalAmounts = isAdmin && !isPrivateMode;
 
     useEffect(() => {
         const fetchData = async () => {

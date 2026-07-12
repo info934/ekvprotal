@@ -7,6 +7,8 @@ import {
 } from '../src/lib/crmItemPayloads.js';
 import {
   assessFinancialHealth,
+  calculateLaborFunding,
+  calculateMemberRewardAfterLabor,
   calculateCostAdjustedTeamBudget,
   calculateProjectMemberReward,
   calculateRealizationMemberShare,
@@ -164,5 +166,22 @@ assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 20000,
 assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 10000, availableAmount: 0 }).status, 'critical');
 assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 9000, availableAmount: 9000 }).status, 'warning');
 assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 30000, availableAmount: 30000 }).status, 'healthy');
+
+const sponsoredLabor = calculateLaborFunding({ hours: 40, hourlyRate: 500, fundingMode: 'member_reward', sponsorPercent: 100 });
+assertMoney(sponsoredLabor.payAmount, 20000, 'sponsored worker payout');
+assertMoney(sponsoredLabor.sponsorRewardDeduction, 20000, 'sponsored worker reward deduction');
+assertMoney(sponsoredLabor.projectCostImpact, 0, 'sponsored worker does not reduce common pool twice');
+
+const splitLabor = calculateLaborFunding({ hours: 40, hourlyRate: 500, fundingMode: 'member_reward', sponsorPercent: 60 });
+assertMoney(splitLabor.sponsorRewardDeduction, 12000, 'partial sponsor deduction');
+assertMoney(splitLabor.projectCostImpact, 8000, 'unfunded labor remainder belongs to project');
+
+const memberReward = calculateMemberRewardAfterLabor({ grossReward: 50000, sponsoredLaborCosts: 20000 });
+assertMoney(memberReward.netReward, 30000, 'member reward after sponsored labor');
+assertMoney(memberReward.deficit, 0, 'member reward has no deficit');
+
+const overdrawnReward = calculateMemberRewardAfterLabor({ grossReward: 15000, sponsoredLaborCosts: 20000 });
+assertMoney(overdrawnReward.netReward, 0, 'overdrawn member reward is capped at zero');
+assertMoney(overdrawnReward.deficit, 5000, 'overdrawn member reward reports deficit');
 
 console.log('Financial calculation checks passed');

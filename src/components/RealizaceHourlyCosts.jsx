@@ -31,7 +31,14 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
             if (!realizaceId) return;
             setLoading(true);
             try {
-                const memberSelect = canViewAmounts ? 'members(name, hourly_rate)' : 'members(name)';
+                const memberSelect = 'members(name)';
+                const compensationResult = canViewAmounts
+                    ? await supabase.rpc('list_member_compensations_admin')
+                    : { data: [], error: null };
+                if (compensationResult.error) throw compensationResult.error;
+                const rateByMember = new Map(
+                    (compensationResult.data || []).map((item) => [String(item.member_id), Number(item.hourly_rate || 0)])
+                );
                 // 1. Fetch direct attendance on this Realization
                 const { data: directData, error: directError } = await supabase
                     .from('attendance')
@@ -55,8 +62,8 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                 // Combine and Deduplicate (though keys should differ)
                 // Mark source
                 const combined = [
-                    ...(directData || []).map(r => ({ ...r, source: 'realization' })),
-                    ...(projectData || []).map(r => ({ ...r, source: 'project' }))
+                    ...(directData || []).map(r => ({ ...r, source: 'realization', _hourly_rate: rateByMember.get(String(r.member_id)) || 0 })),
+                    ...(projectData || []).map(r => ({ ...r, source: 'project', _hourly_rate: rateByMember.get(String(r.member_id)) || 0 }))
                 ];
 
                 // Sort by date desc
@@ -67,7 +74,7 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                 const tHours = combined.reduce((acc, r) => acc + Number(r.hours), 0);
                 const tCost = canViewAmounts
                     ? combined.reduce((acc, r) => {
-                        const rate = r.members?.hourly_rate ? Number(r.members.hourly_rate) : 0;
+                        const rate = Number(r._hourly_rate || 0);
                         return acc + (Number(r.hours) * rate);
                     }, 0)
                     : 0;
@@ -115,7 +122,7 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
             const name = r.members?.name || 'Neznámý';
             if (!summary[name]) summary[name] = { hours: 0, cost: 0, count: 0 };
             const h = Number(r.hours);
-            const rate = canViewAmounts && r.members?.hourly_rate ? Number(r.members.hourly_rate) : 0;
+            const rate = canViewAmounts ? Number(r._hourly_rate || 0) : 0;
             summary[name].hours += h;
             summary[name].cost += h * rate;
             summary[name].count += 1;
@@ -279,7 +286,7 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                                             </TableCell>
                                             {canViewAmounts && (
                                                 <TableCell className="text-right text-muted-foreground">
-                                                    <FinancialValueGuard value={formatCurrency(Number(record.hours) * (record.members?.hourly_rate || 0))} />
+                                                    <FinancialValueGuard value={formatCurrency(Number(record.hours) * Number(record._hourly_rate || 0))} />
                                                 </TableCell>
                                             )}
                                         </TableRow>

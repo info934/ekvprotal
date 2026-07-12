@@ -10,15 +10,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { formatCurrency } from '@/lib/utils';
 
 const RealizaceTeam = ({ realizaceId, teamBudget }) => {
     const { toast } = useToast();
-    const { hasPermission, userRole } = useAuth();
+    const { userRole } = useAuth();
     const [teamMembers, setTeamMembers] = useState([]);
     const [availableMembers, setAvailableMembers] = useState([]);
+    const [rewardedMemberIds, setRewardedMemberIds] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
@@ -27,10 +30,16 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
     const [selectedMemberId, setSelectedMemberId] = useState('');
     const [responsibility, setResponsibility] = useState('');
     const [editingId, setEditingId] = useState(null);
+    const [isHourly, setIsHourly] = useState(false);
+    const [fundingMode, setFundingMode] = useState('direct_project');
+    const [sponsorMemberId, setSponsorMemberId] = useState('');
+    const [sponsorPercent, setSponsorPercent] = useState('100');
+    const [validFrom, setValidFrom] = useState(new Date().toISOString().slice(0, 10));
+    const [validTo, setValidTo] = useState('');
     const [saving, setSaving] = useState(false);
 
     // Strictly disable edit for 'user' role
-    const canEdit = hasPermission('realizace', 'can_edit') && userRole !== 'user';
+    const canEdit = userRole === 'admin';
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -41,6 +50,12 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                 .select(`
                     id,
                     responsibility,
+                    is_hourly,
+                    valid_from,
+                    valid_to,
+                    hourly_funding_mode,
+                    hourly_sponsor_member_id,
+                    hourly_sponsor_percent,
                     member:members!realizace_team_members_member_id_fkey (
                         id,
                         name,
@@ -54,15 +69,22 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
             if (teamError) throw teamError;
 
             // Fetch all members for selection
-            const { data: allMembers, error: membersError } = await supabase
+            const [{ data: allMembers, error: membersError }, { data: profitShares, error: sharesError }] = await Promise.all([
+              supabase
                 .from('members')
                 .select('id, name, member_roles(name)')
-                .order('name');
+                .order('name'),
+              userRole === 'admin'
+                ? supabase.from('realization_profit_shares').select('member_id').eq('realizace_id', realizaceId)
+                : Promise.resolve({ data: [], error: null }),
+            ]);
             
             if (membersError) throw membersError;
+            if (sharesError) throw sharesError;
 
             setTeamMembers(teamData || []);
             setAvailableMembers(allMembers || []);
+            setRewardedMemberIds((profitShares || []).map((share) => share.member_id));
 
         } catch (error) {
             console.error('Error fetching team:', error);
@@ -70,7 +92,7 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
         } finally {
             setLoading(false);
         }
-    }, [realizaceId, toast]);
+    }, [realizaceId, toast, userRole]);
 
     useEffect(() => {
         fetchData();
@@ -78,12 +100,22 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
 
     const handleAddMember = async () => {
         if (!selectedMemberId) return;
+        if (isHourly && fundingMode === 'member_reward' && !sponsorMemberId) {
+            toast({ title: 'Chybí financující člen', description: 'Vyberte člena s podílem na realizaci.', variant: 'destructive' });
+            return;
+        }
         setSaving(true);
         try {
             const { error } = await supabase.from('realizace_team_members').insert({
                 realizace_id: realizaceId,
                 member_id: selectedMemberId,
-                responsibility: responsibility
+                responsibility,
+                is_hourly: isHourly,
+                valid_from: validFrom,
+                valid_to: validTo || null,
+                hourly_funding_mode: isHourly ? fundingMode : 'direct_project',
+                hourly_sponsor_member_id: isHourly && fundingMode === 'member_reward' ? sponsorMemberId : null,
+                hourly_sponsor_percent: isHourly && fundingMode === 'member_reward' ? Number(sponsorPercent || 100) : 0,
             });
 
             if (error) throw error;
@@ -101,11 +133,23 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
 
     const handleEditMember = async () => {
         if (!editingId) return;
+        if (isHourly && fundingMode === 'member_reward' && !sponsorMemberId) {
+            toast({ title: 'Chybí financující člen', description: 'Vyberte člena s podílem na realizaci.', variant: 'destructive' });
+            return;
+        }
         setSaving(true);
         try {
             const { error } = await supabase
                 .from('realizace_team_members')
-                .update({ responsibility: responsibility })
+                .update({
+                    responsibility,
+                    is_hourly: isHourly,
+                    valid_from: validFrom,
+                    valid_to: validTo || null,
+                    hourly_funding_mode: isHourly ? fundingMode : 'direct_project',
+                    hourly_sponsor_member_id: isHourly && fundingMode === 'member_reward' ? sponsorMemberId : null,
+                    hourly_sponsor_percent: isHourly && fundingMode === 'member_reward' ? Number(sponsorPercent || 100) : 0,
+                })
                 .eq('id', editingId);
 
             if (error) throw error;
@@ -134,7 +178,14 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
 
     const openEdit = (member) => {
         setEditingId(member.id);
+        setSelectedMemberId(member.member?.id || '');
         setResponsibility(member.responsibility || '');
+        setIsHourly(member.is_hourly || false);
+        setFundingMode(member.hourly_funding_mode || 'direct_project');
+        setSponsorMemberId(member.hourly_sponsor_member_id || '');
+        setSponsorPercent(String(member.hourly_sponsor_percent ?? 100));
+        setValidFrom(member.valid_from || new Date().toISOString().slice(0, 10));
+        setValidTo(member.valid_to || '');
         setIsEditOpen(true);
     };
 
@@ -142,6 +193,12 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
         setSelectedMemberId('');
         setResponsibility('');
         setEditingId(null);
+        setIsHourly(false);
+        setFundingMode('direct_project');
+        setSponsorMemberId('');
+        setSponsorPercent('100');
+        setValidFrom(new Date().toISOString().slice(0, 10));
+        setValidTo('');
     };
 
     // Filter out members already in the team
@@ -150,6 +207,49 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
     );
 
     const isBudgetPositive = teamBudget >= 0;
+    const sponsorOptions = teamMembers.filter((item) => rewardedMemberIds.includes(item.member?.id) && item.member?.id !== selectedMemberId);
+
+    const renderLaborFields = () => (
+        <div className="space-y-3 rounded-lg border bg-slate-50 p-3">
+            <div className="flex items-center gap-2">
+                <Checkbox id="realization-is-hourly" checked={isHourly} onCheckedChange={(checked) => setIsHourly(Boolean(checked))} />
+                <Label htmlFor="realization-is-hourly">Hodinová práce a docházka</Label>
+            </div>
+            {isHourly && (
+                <>
+                    <div className="space-y-2">
+                        <Label>Zdroj hodinového nákladu</Label>
+                        <Select value={fundingMode} onValueChange={(value) => { setFundingMode(value); if (value === 'direct_project') setSponsorMemberId(''); }}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="direct_project">Přímo z rozpočtu realizace</SelectItem>
+                                <SelectItem value="member_reward">Z podílu člena týmu</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {fundingMode === 'member_reward' && (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_130px]">
+                            <div className="space-y-2">
+                                <Label>Financující člen s podílem</Label>
+                                <Select value={sponsorMemberId} onValueChange={setSponsorMemberId}>
+                                    <SelectTrigger><SelectValue placeholder="Vyberte člena" /></SelectTrigger>
+                                    <SelectContent>{sponsorOptions.map((item) => <SelectItem key={item.member.id} value={item.member.id}>{item.member.name}</SelectItem>)}</SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Podíl (%)</Label>
+                                <Input type="number" min="0" max="100" step="0.01" value={sponsorPercent} onChange={(event) => setSponsorPercent(event.target.value)} className="text-right" />
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-2"><Label>Platnost od</Label><Input type="date" value={validFrom} onChange={(event) => setValidFrom(event.target.value)} /></div>
+                <div className="space-y-2"><Label>Platnost do</Label><Input type="date" value={validTo} onChange={(event) => setValidTo(event.target.value)} /></div>
+            </div>
+        </div>
+    );
 
     return (
         <Card className="h-full flex flex-col">
@@ -211,6 +311,13 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                                         ) : (
                                             <div className="text-sm text-muted-foreground italic mt-1">
                                                 Bez specifické odpovědnosti
+                                            </div>
+                                        )}
+                                        {item.is_hourly && (
+                                            <div className="mt-2 text-xs text-muted-foreground">
+                                                {item.hourly_funding_mode === 'member_reward'
+                                                    ? `Hodinová práce z podílu člena (${Number(item.hourly_sponsor_percent || 0).toLocaleString('cs-CZ')} %)`
+                                                    : 'Hodinová práce z rozpočtu realizace'}
                                             </div>
                                         )}
                                     </div>
@@ -280,6 +387,7 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                                 rows={3}
                             />
                         </div>
+                        {renderLaborFields()}
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setIsAddOpen(false)}>Zrušit</Button>
@@ -310,6 +418,7 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                                 rows={4}
                             />
                         </div>
+                        {renderLaborFields()}
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setIsEditOpen(false)}>Zrušit</Button>

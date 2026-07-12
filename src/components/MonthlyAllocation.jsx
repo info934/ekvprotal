@@ -225,13 +225,13 @@ const MonthlyAllocation = () => {
       if (costsError) throw costsError;
       setCosts(costsData);
 
-      const { data: projectsData, error: projectsError } = await supabase.from('projects').select('id, name, code, price, budget_percentage, overhead_percentage').order('code');
+      const { data: projectsData, error: projectsError } = await supabase.rpc('list_projects_safe');
       if (projectsError) throw projectsError;
       
       const { data: allocatedOverheads, error: overheadsError } = await supabase.from('project_overhead_costs').select('project_id, amount');
       if(overheadsError) throw overheadsError;
 
-      const projectsWithCalculatedBudgets = projectsData.map(p => {
+      const projectsWithCalculatedBudgets = [...(projectsData || [])].sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'cs')).map(p => {
         const { overheadBudget } = calculateProjectBudget(p);
         const alreadyAllocated = allocatedOverheads.filter(ao => ao.project_id === p.id).reduce((sum, ao) => sum + (ao.amount || 0), 0);
         

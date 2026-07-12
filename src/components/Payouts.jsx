@@ -38,7 +38,7 @@ import ForwardInvoiceDialog from '@/components/payouts/ForwardInvoiceDialog';
 
 const Payouts = () => {
   const { toast } = useToast();
-  const { memberId, hasPermission, user } = useAuth();
+  const { memberId, hasPermission, user, isAdmin } = useAuth();
   const navigate = useNavigate();
   
   const [payouts, setPayouts] = useState([]);
@@ -56,11 +56,19 @@ const Payouts = () => {
   const [withoutInvoiceFilter, setWithoutInvoiceFilter] = useState('all');
   const [loading, setLoading] = useState(false);
 
-  const canAdmin = hasPermission('payouts', 'can_admin');
+  const canAdmin = isAdmin;
   const canEditOwn = hasPermission('payouts', 'can_edit');
   const canCreateOwnPayout = canAdmin || Boolean(memberId);
 
-  useEffect(() => { if(memberId) supabase.from('members').select('*').eq('id', memberId).single().then(({data}) => setMemberInfo(data)); }, [memberId]);
+  useEffect(() => {
+    if (!memberId) return;
+    Promise.all([
+      supabase.from('members').select('id, name, email, attendance_enabled').eq('id', memberId).single(),
+      supabase.rpc('get_member_compensation', { p_member_id: memberId }),
+    ]).then(([memberResult, compensationResult]) => {
+      setMemberInfo({ ...(memberResult.data || {}), ...(compensationResult.data || {}) });
+    });
+  }, [memberId]);
 
   const fetchPayouts = useCallback(async () => {
     setLoading(true);

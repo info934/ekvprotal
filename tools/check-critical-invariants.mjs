@@ -33,4 +33,67 @@ for (const requiredGuard of [
   assert.ok(financialGuardMigration.includes(requiredGuard), `missing financial database guard: ${requiredGuard}`);
 }
 
+const laborFundingMigration = readFileSync(
+  new URL('../supabase/migrations/20260712173000_project_labor_funding_workflow.sql', import.meta.url),
+  'utf8'
+);
+for (const requiredInvariant of [
+  'labor_cost_ledger',
+  'member_hourly_rate_history',
+  'hourly_sponsor_member_id',
+  'project_labor_financial_summary',
+  'realization_labor_financial_summary',
+  'member_labor_reward_deduction',
+  'validate_labor_funding_assignment',
+  'materialize_attendance_labor_costs',
+]) {
+  assert.ok(laborFundingMigration.includes(requiredInvariant), `missing labor funding invariant: ${requiredInvariant}`);
+}
+
+const financialPrivacyMigration = readFileSync(
+  new URL('../supabase/migrations/20260712180000_admin_only_financial_privacy.sql', import.meta.url),
+  'utf8'
+);
+for (const requiredPrivacyRule of [
+  "get_user_role() = 'admin'",
+  'project_financial_summary_admin_internal',
+  'realization_financial_summary_admin_internal',
+  'Labor ledger visible to admin or worker',
+  'Project members read own or admin',
+  'Realization profit shares read own or admin',
+  'Enable read for own payouts or admins',
+  'protect_member_financial_columns',
+  'Realization costs admin access',
+]) {
+  assert.ok(financialPrivacyMigration.includes(requiredPrivacyRule), `missing financial privacy rule: ${requiredPrivacyRule}`);
+}
+
+const privateCompensationMigration = readFileSync(
+  new URL('../supabase/migrations/20260712181000_private_member_compensation.sql', import.meta.url),
+  'utf8'
+);
+for (const requiredCompensationRule of [
+  'member_compensation_private',
+  'get_member_compensation',
+  'list_member_compensations_admin',
+  'revoke select on table public.members from authenticated',
+]) {
+  assert.ok(privateCompensationMigration.includes(requiredCompensationRule), `missing private compensation rule: ${requiredCompensationRule}`);
+}
+
+const rolloutSafetyMigration = readFileSync(
+  new URL('../supabase/migrations/20260712182000_financial_rollout_safety.sql', import.meta.url),
+  'utf8'
+);
+for (const requiredSafetyRule of [
+  'economic_project_cost',
+  'prevent_paid_attendance_submission_reopen',
+  'hourly_payout_request_created_from_labor_ledger',
+  'replace_realization_profit_shares',
+  'protect_labor_assignment_financial_fields',
+  'Realization profit shares admin write',
+]) {
+  assert.ok(rolloutSafetyMigration.includes(requiredSafetyRule), `missing rollout safety rule: ${requiredSafetyRule}`);
+}
+
 console.log('Critical route and numbering checks passed');

@@ -251,6 +251,7 @@ const ProjectDetail = () => {
     const [overheadCosts, setOverheadCosts] = useState([]);
     const [payoutItems, setPayoutItems] = useState([]);
     const [projectFinancialSummary, setProjectFinancialSummary] = useState(null);
+    const [projectLaborSummary, setProjectLaborSummary] = useState(null);
     const [projectLinks, setProjectLinks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [briefContent, setBriefContent] = useState('');
@@ -271,9 +272,7 @@ const ProjectDetail = () => {
 
     const canEdit = useMemo(() => hasPermission('projects', 'can_edit'), [hasPermission]);
     const canViewHistory = isAdmin;
-    const canViewFinance = useMemo(() => (
-        (hasPermission('finance', 'can_read') || hasPermission('projects', 'can_edit')) && !isPrivateMode
-    ), [hasPermission, isPrivateMode]);
+    const canViewFinance = isAdmin && !isPrivateMode;
 
     const updateProjectStatus = useCallback(async (nextStatus) => {
         if (!project || isUpdatingStatus) return;
@@ -331,6 +330,7 @@ const ProjectDetail = () => {
 
             const payoutItemsPromise = canViewFinance ? supabase.from('payout_items').select('id, amount, project_id, payouts(status, member:members!payouts_member_id_fkey(name))').eq('project_id', projectId) : Promise.resolve({ data: [], error: null });
             const financialSummaryPromise = canViewFinance ? supabase.rpc('project_financial_summary', { p_project_id: projectId }) : Promise.resolve({ data: null, error: null });
+            const laborSummaryPromise = canViewFinance ? supabase.rpc('project_labor_financial_summary', { p_project_id: projectId }) : Promise.resolve({ data: null, error: null });
             const costsPromise = canViewFinance
                 ? supabase.from('project_costs').select('*, member:members!project_costs_member_id_fkey(id, name, email)').eq('project_id', projectId)
                 : Promise.resolve({ data: [], error: null });
@@ -338,7 +338,7 @@ const ProjectDetail = () => {
                 ? supabase.from('project_overhead_costs').select('*, overhead_allocation_items!inner(overhead_costs(name, category))').eq('project_id', projectId)
                 : Promise.resolve({ data: [], error: null });
 
-            const [membersRes, subcontractorsRes, tasksRes, costsRes, linksRes, overheadCostsRes, payoutItemsRes, financialSummaryRes] = await Promise.all([
+            const [membersRes, subcontractorsRes, tasksRes, costsRes, linksRes, overheadCostsRes, payoutItemsRes, financialSummaryRes, laborSummaryRes] = await Promise.all([
                 supabase.rpc('list_project_members_safe', { p_project_id: projectId }),
                 supabase.rpc('list_project_subcontractors_safe', { p_project_id: projectId }),
                 supabase.from('project_tasks').select('*').eq('project_id', projectId),
@@ -347,6 +347,7 @@ const ProjectDetail = () => {
                 overheadCostsPromise,
                 payoutItemsPromise,
                 financialSummaryPromise,
+                laborSummaryPromise,
             ]);
 
             setMembers(membersRes.data || []);
@@ -361,6 +362,12 @@ const ProjectDetail = () => {
                 setProjectFinancialSummary(null);
             } else {
                 setProjectFinancialSummary(financialSummaryRes.data || null);
+            }
+            if (laborSummaryRes.error) {
+                console.warn('project_labor_financial_summary failed, using legacy labor model:', laborSummaryRes.error.message);
+                setProjectLaborSummary(null);
+            } else {
+                setProjectLaborSummary(laborSummaryRes.data || null);
             }
 
         } catch (error) {
@@ -382,6 +389,15 @@ const ProjectDetail = () => {
 
     const paidOutAmount = useMemo(() => paidPayoutItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0), [paidPayoutItems]);
 
+    const sponsorDeductionByMember = useMemo(() => {
+        const deductions = Array.isArray(projectLaborSummary?.sponsor_deductions) ? projectLaborSummary.sponsor_deductions : [];
+        return new Map(deductions.map((entry) => [String(entry.sponsor_member_id), toAmount(entry.amount)]));
+    }, [projectLaborSummary]);
+
+    const getSponsoredLaborDeduction = useCallback((targetMemberId) => (
+        sponsorDeductionByMember.get(String(targetMemberId)) || 0
+    ), [sponsorDeductionByMember]);
+
     const buildRewardSnapshot = useCallback((sourceMembers = members, sourceCosts = costs, sourceSummary = projectFinancialSummary) => {
         if (!canViewFinance || !project) return [];
         const fallbackFinancials = calculateProjectFinancials({
@@ -394,11 +410,13 @@ const ProjectDetail = () => {
         });
         const rewardBaseBudget = sourceSummary
             ? toAmount(sourceSummary.team_budget_after_paid_payouts ?? sourceSummary.remaining_after_costs ?? sourceSummary.team_budget)
+                + (projectLaborSummary ? toAmount(sourceSummary.paid_hourly_payouts) - toAmount(projectLaborSummary.direct_project_cost) : 0)
             : toAmount(fallbackFinancials.remainingAfterCosts) - toAmount(paidOutAmount);
 
         return (sourceMembers || []).map((assignment) => {
             const grossReward = calculateProjectMemberReward(assignment, rewardBaseBudget);
             const assignedCosts = sumProjectCostsForMember(sourceCosts, assignment.member_id);
+            const sponsoredLaborCosts = getSponsoredLaborDeduction(assignment.member_id);
             return {
                 member_id: assignment.member_id,
                 member_name: assignment.member?.name || assignment.member?.email || 'Neznámý člen',
@@ -406,28 +424,29 @@ const ProjectDetail = () => {
                 reward_percentage: toAmount(assignment.reward_percentage),
                 reward_fixed_amount: toAmount(assignment.reward_amount),
                 gross_reward: grossReward,
-                assigned_costs: assignedCosts,
-                total_reward: Math.max(0, grossReward - assignedCosts),
+                assigned_costs: assignedCosts + sponsoredLaborCosts,
+                sponsored_labor_costs: sponsoredLaborCosts,
+                total_reward: Math.max(0, grossReward - assignedCosts - sponsoredLaborCosts),
             };
         });
-    }, [canViewFinance, project, members, costs, projectFinancialSummary, subcontractors, overheadCosts, paidOutAmount]);
+    }, [canViewFinance, project, members, costs, projectFinancialSummary, projectLaborSummary, subcontractors, overheadCosts, paidOutAmount, getSponsoredLaborDeduction]);
 
     const fetchBackendRewardSnapshot = useCallback(async () => {
         if (!canViewFinance) return [];
-        const { data, error } = await supabase.rpc('project_financial_summary', { p_project_id: projectId });
+        const { data, error } = await supabase.rpc('get_member_project_rewards', { p_member_id: null });
         if (error) throw error;
-        const rows = Array.isArray(data?.member_rewards) ? data.member_rewards : [];
+        const rows = (Array.isArray(data) ? data : []).filter((row) => String(row.project_id) === String(projectId));
         return rows.map((row) => ({
                 member_id: row.member_id,
-                member_name: row.member_name || row.member_id,
+                member_name: members.find((assignment) => String(assignment.member_id) === String(row.member_id))?.member?.name || row.member_id,
                 reward_type: row.reward_type,
                 reward_percentage: toAmount(row.reward_percentage),
-                reward_fixed_amount: toAmount(row.reward_amount),
-                gross_reward: toAmount(row.gross_reward),
-                assigned_costs: toAmount(row.assigned_costs),
+                reward_fixed_amount: toAmount(row.reward_fixed_amount),
+                gross_reward: toAmount(row.total_reward),
+                assigned_costs: 0,
                 total_reward: toAmount(row.total_reward),
             }));
-    }, [canViewFinance, projectId]);
+    }, [canViewFinance, members, projectId]);
 
     const logRewardSnapshot = useCallback(async ({ action, table, itemId, before }) => {
         if (!canViewFinance || !project) return;
@@ -536,8 +555,8 @@ const ProjectDetail = () => {
     }, []);
 
     const getMemberReward = useCallback((member, teamBudget) => {
-        return calculateProjectMemberNetReward(member, teamBudget, costs);
-    }, [costs]);
+        return Math.max(0, calculateProjectMemberNetReward(member, teamBudget, costs) - getSponsoredLaborDeduction(member.member_id));
+    }, [costs, getSponsoredLaborDeduction]);
 
     const myRewardDisplay = useMemo(() => {
         if (!memberId || !project) return 'N/A';
@@ -560,14 +579,22 @@ const ProjectDetail = () => {
     const formatReward = (member, teamBudget) => {
         if (!canViewFinance) return 'Skryto';
         let parts = [];
-        if (member.is_hourly) parts.push("Hodinová sazba");
+        if (member.is_hourly) {
+            const sponsorName = member.member?.hourly_sponsor_name;
+            const sponsorPercent = toAmount(member.member?.hourly_sponsor_percent);
+            parts.push(member.member?.hourly_funding_mode === 'member_reward'
+                ? `Hodinová sazba z odměny ${sponsorName || 'člena týmu'} (${sponsorPercent.toFixed(2)} %)`
+                : 'Hodinová sazba z rozpočtu projektu');
+        }
         if (member.reward_type) {
             const grossAmount = calculateProjectMemberReward(member, teamBudget);
             const assignedCosts = sumProjectCostsForMember(costs, member.member_id);
-            const amount = Math.max(0, grossAmount - assignedCosts);
+            const sponsoredLaborCosts = getSponsoredLaborDeduction(member.member_id);
+            const totalDeductions = assignedCosts + sponsoredLaborCosts;
+            const amount = Math.max(0, grossAmount - totalDeductions);
             const amountStr = amount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' Kč';
-            const deduction = assignedCosts > 0
-                ? `, hrubá ${grossAmount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč - náklady ${assignedCosts.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč`
+            const deduction = totalDeductions > 0
+                ? `, hrubá ${grossAmount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč - běžné náklady ${assignedCosts.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč - práce týmu ${sponsoredLaborCosts.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč`
                 : '';
             if (member.reward_type === 'percentage') parts.push(`${amountStr} (${(parseFloat(member.reward_percentage) || 0).toFixed(2)}%${deduction})`);
             if (member.reward_type === 'fixed') parts.push(`${amountStr} (fixní${deduction})`);
@@ -584,8 +611,13 @@ const ProjectDetail = () => {
 
         const summary = projectFinancialSummary;
         const teamBudget = toAmount(summary.team_budget);
-        const rewardBaseBudget = toAmount(summary.team_budget_after_paid_payouts ?? summary.remaining_after_costs ?? summary.team_budget);
-        const teamRewards = members.reduce((sum, member) => sum + calculateProjectMemberNetReward(member, rewardBaseBudget, costs), 0);
+        const laborReplacementAdjustment = projectLaborSummary
+            ? toAmount(summary.paid_hourly_payouts) - toAmount(projectLaborSummary.direct_project_cost)
+            : 0;
+        const rewardBaseBudget = toAmount(summary.team_budget_after_paid_payouts ?? summary.remaining_after_costs ?? summary.team_budget) + laborReplacementAdjustment;
+        const teamRewards = members.reduce((sum, member) => (
+            sum + Math.max(0, calculateProjectMemberNetReward(member, rewardBaseBudget, costs) - getSponsoredLaborDeduction(member.member_id))
+        ), 0);
         const totalBudget = toAmount(summary.gross_project_budget);
         const totalCosts = toAmount(summary.direct_costs);
         const unassignedCosts = toAmount(summary.unassigned_direct_costs ?? sumUnassignedProjectCosts(costs));
@@ -596,7 +628,7 @@ const ProjectDetail = () => {
         const reservedPayouts = toAmount(summary.reserved_payouts);
         const costsBeforePaidPayouts = toAmount(summary.costs_before_paid_payouts);
         const costsAfterPaidPayouts = toAmount(summary.costs_after_paid_payouts);
-        const teamBudgetAfterPaidPayouts = toAmount(summary.team_budget_after_paid_payouts);
+        const teamBudgetAfterPaidPayouts = toAmount(summary.team_budget_after_paid_payouts) + laborReplacementAdjustment;
 
         return {
             ...fallbackFinancials,
@@ -623,13 +655,13 @@ const ProjectDetail = () => {
             paidPayoutCosts,
             reservedPayouts,
             reservedOrPaidPayouts: toAmount(summary.reserved_or_paid_payouts),
-            remainingAfterCosts: toAmount(summary.remaining_after_costs),
+            remainingAfterCosts: toAmount(summary.remaining_after_costs) - (projectLaborSummary ? toAmount(projectLaborSummary.direct_project_cost) : 0),
             costsBeforePaidPayouts,
             costsAfterPaidPayouts,
             teamBudgetAfterPaidPayouts,
-            availableForPayout: toAmount(summary.available_for_payout),
+            availableForPayout: toAmount(summary.available_for_payout) + laborReplacementAdjustment,
         };
-    }, [project, members, subcontractors, costs, overheadCosts, canViewFinance, paidOutAmount, projectFinancialSummary]);
+    }, [project, members, subcontractors, costs, overheadCosts, canViewFinance, paidOutAmount, projectFinancialSummary, projectLaborSummary, getSponsoredLaborDeduction]);
 
     const rewardCalculationBudget = financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts ?? financials.teamBudget ?? 0;
 
@@ -812,7 +844,7 @@ const ProjectDetail = () => {
                     </TabsContent>
                     
                     <TabsContent value="team" className="space-y-6">
-                        <CollapsibleSection title="Tým" icon={Users} actions={canEdit && <Button size="sm" onClick={() => { setEditingMember(null); setIsMemberDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat člena</Button>}>
+                        <CollapsibleSection title="Tým" icon={Users} actions={isAdmin && <Button size="sm" onClick={() => { setEditingMember(null); setIsMemberDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat člena</Button>}>
                             <Table>
                                 <TableHeader>
                                     <TableRow>
@@ -829,7 +861,7 @@ const ProjectDetail = () => {
                                             <TableCell>{m.member?.email}</TableCell>
                                             {canViewFinance && <TableCell>{formatReward(m, rewardCalculationBudget)}</TableCell>}
                                             <TableCell className="text-right">
-                                                {canEdit && (
+                                                {isAdmin && (
                                                     <>
                                                         <Button variant="ghost" size="icon" onClick={() => { setEditingMember(m); setIsMemberDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
                                                         <Button variant="ghost" size="icon" onClick={() => requestDeleteMember(m)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
@@ -845,7 +877,7 @@ const ProjectDetail = () => {
                                 </TableBody>
                             </Table>
                         </CollapsibleSection>
-                        <CollapsibleSection title="Subdodavatelé" icon={Briefcase} actions={canEdit && <Button size="sm" onClick={() => { setEditingSubcontractor(null); setIsSubcontractorDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat subdodavatele</Button>}>
+                        <CollapsibleSection title="Subdodavatelé" icon={Briefcase} actions={isAdmin && <Button size="sm" onClick={() => { setEditingSubcontractor(null); setIsSubcontractorDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat subdodavatele</Button>}>
                             <Table>
                                 <TableHeader>
                                     <TableRow>
@@ -862,7 +894,7 @@ const ProjectDetail = () => {
                                             <TableCell>{s.scope_of_work}</TableCell>
                                             {canViewFinance && <TableCell>{(s.price || 0).toLocaleString('cs-CZ')} Kč</TableCell>}
                                             <TableCell className="text-right">
-                                                {canEdit && (
+                                                {isAdmin && (
                                                     <>
                                                         <Button variant="ghost" size="icon" onClick={() => { setEditingSubcontractor(s); setIsSubcontractorDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
                                                         <Button variant="ghost" size="icon" onClick={() => requestDeleteSubcontractor(s)}><Trash2 className="h-4 w-4 text-red-500" /></Button>

@@ -178,7 +178,7 @@ const SubjectDetail = () => {
   const { subjectId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { hasPermission, isSuperUser } = useAuth();
+  const { hasPermission, isAdmin } = useAuth();
 
   const [subject, setSubject] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
@@ -192,10 +192,7 @@ const SubjectDetail = () => {
   const [aresInfo, setAresInfo] = useState(null);
 
   const canEdit = hasPermission('subjects', 'can_edit');
-  const canViewProjectFinance = isSuperUser
-    || hasPermission('finance', 'can_read')
-    || hasPermission('projects', 'can_admin')
-    || hasPermission('projects', 'can_edit');
+  const canViewProjectFinance = isAdmin;
   const subjectKind = formData.subject_kind || getSubjectKind(subject);
   const isPerson = subjectKind === 'person';
 
@@ -227,10 +224,7 @@ const SubjectDetail = () => {
         supabase.from('subjects').select('*, subject_types(name)').eq('id', subjectId).single(),
         supabase.from('subject_types').select('*').order('name'),
         canViewProjectFinance
-          ? supabase
-            .from('project_subcontractors')
-            .select('id, project_id, subject_id, scope_of_work, price, projects(id, name, code)')
-            .eq('subject_id', subjectId)
+          ? supabase.rpc('list_subject_project_subcontractors_admin', { p_subject_id: subjectId })
           : Promise.resolve({ data: [], error: null }),
         supabase.from('subcontractor_orders').select('*, projects(name)').eq('subject_id', subjectId).order('created_at', { ascending: false }),
       ]);

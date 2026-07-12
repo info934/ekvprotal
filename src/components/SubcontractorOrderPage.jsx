@@ -72,7 +72,7 @@ import React, { useState, useEffect } from 'react';
             const fetchOrder = async () => {
                 const { data, error: fetchError } = await supabase
                     .from('subcontractor_orders')
-                    .select('*, projects(*), subjects(*)')
+                    .select('*, projects(id, name, code), subjects(id, name, address, city, postal_code, ico, dic)')
                     .eq('unique_token', token)
                     .single();
 

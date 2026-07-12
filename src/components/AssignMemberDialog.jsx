@@ -21,6 +21,11 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
     reward_type: null,
     reward_percentage: '',
     reward_amount: '',
+    valid_from: '',
+    valid_to: '',
+    hourly_funding_mode: 'direct_project',
+    hourly_sponsor_member_id: '',
+    hourly_sponsor_percent: '100',
     createOrder: false,
     orderValidity: 7,
     completion_date: '',
@@ -57,6 +62,11 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
           reward_type: member.reward_type || null,
           reward_percentage: member.reward_percentage || '',
           reward_amount: member.reward_amount || '',
+          valid_from: member.member?.valid_from || '',
+          valid_to: member.member?.valid_to || '',
+          hourly_funding_mode: member.member?.hourly_funding_mode || 'direct_project',
+          hourly_sponsor_member_id: member.member?.hourly_sponsor_member_id || '',
+          hourly_sponsor_percent: member.member?.hourly_sponsor_percent ?? '100',
           createOrder: false,
           orderValidity: 7,
           completion_date: '',
@@ -68,6 +78,11 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
           reward_type: null,
           reward_percentage: '',
           reward_amount: '',
+          valid_from: new Date().toISOString().slice(0, 10),
+          valid_to: '',
+          hourly_funding_mode: 'direct_project',
+          hourly_sponsor_member_id: '',
+          hourly_sponsor_percent: '100',
           createOrder: false,
           orderValidity: 7,
           completion_date: '',
@@ -159,8 +174,19 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
           return;
         }
     }
+
+    if (formData.is_hourly && formData.hourly_funding_mode === 'member_reward' && !formData.hourly_sponsor_member_id) {
+      toast({ title: 'Chybí financující člen', description: 'Vyberte člena týmu, z jehož odměny se bude hodinová práce odečítat.', variant: 'destructive' });
+      return;
+    }
     
     const { createOrder, orderValidity, completion_date, ...dataToSave } = formData;
+
+    if (!dataToSave.is_hourly || dataToSave.hourly_funding_mode === 'direct_project') {
+      dataToSave.hourly_funding_mode = 'direct_project';
+      dataToSave.hourly_sponsor_member_id = null;
+      dataToSave.hourly_sponsor_percent = 0;
+    }
     
     if (!dataToSave.reward_type) {
         dataToSave.reward_amount = null;
@@ -224,6 +250,10 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
   }, 0);
   
   const availableRewardPercentage = 100 - currentTotalPercentage;
+  const sponsorOptions = team.filter((teamMember) => {
+      if (teamMember.member_id === formData.member_id) return false;
+      return teamMember.reward_type === 'fixed' || teamMember.reward_type === 'percentage';
+  });
 
   const handleRewardTypeChange = (value) => {
       if (formData.reward_type === value) {
@@ -274,6 +304,70 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
                 <Label htmlFor="is_hourly" className="flex items-center gap-2 cursor-pointer text-sm">
                   <Clock className="h-4 w-4" /> Hodinová sazba (pro vykazování docházky)
                 </Label>
+              </div>
+              {formData.is_hourly && (
+                <div className="rounded-lg border bg-slate-50 p-3 space-y-3">
+                  <div className="space-y-2">
+                    <Label>Zdroj hodinového nákladu</Label>
+                    <Select
+                      value={formData.hourly_funding_mode}
+                      onValueChange={(value) => setFormData((current) => ({
+                        ...current,
+                        hourly_funding_mode: value,
+                        hourly_sponsor_member_id: value === 'direct_project' ? '' : current.hourly_sponsor_member_id,
+                        hourly_sponsor_percent: value === 'direct_project' ? '0' : (current.hourly_sponsor_percent || '100'),
+                      }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="direct_project">Přímo z rozpočtu projektu</SelectItem>
+                        <SelectItem value="member_reward">Z odměny konkrétního člena týmu</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {formData.hourly_funding_mode === 'member_reward' && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_140px]">
+                      <div className="space-y-2">
+                        <Label>Financující člen týmu</Label>
+                        <Select value={formData.hourly_sponsor_member_id} onValueChange={(value) => setFormData({ ...formData, hourly_sponsor_member_id: value })}>
+                          <SelectTrigger><SelectValue placeholder="Vyberte člena s odměnou" /></SelectTrigger>
+                          <SelectContent>
+                            {sponsorOptions.map((assignment) => (
+                              <SelectItem key={assignment.member_id} value={assignment.member_id}>
+                                {assignment.member?.name || assignment.member?.email || 'Člen týmu'}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Podíl nákladu (%)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={formData.hourly_sponsor_percent}
+                          onChange={(event) => setFormData({ ...formData, hourly_sponsor_percent: event.target.value })}
+                          className="text-right font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Přímý náklad sníží společný rozpočet. Náklad financovaný členem sníží jeho hrubou odměnu a do společného rozpočtu vstoupí jen případný nepokrytý zbytek.
+                  </p>
+                </div>
+              )}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="assignment-valid-from">Platnost od</Label>
+                  <Input id="assignment-valid-from" type="date" value={formData.valid_from} onChange={(event) => setFormData({ ...formData, valid_from: event.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="assignment-valid-to">Platnost do</Label>
+                  <Input id="assignment-valid-to" type="date" value={formData.valid_to} onChange={(event) => setFormData({ ...formData, valid_to: event.target.value })} />
+                </div>
               </div>
               <div className="p-3 border rounded-lg space-y-4">
                  <Label className="flex items-center gap-2 text-sm font-medium">

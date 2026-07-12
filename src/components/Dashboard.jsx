@@ -521,7 +521,7 @@ const AdminFinancials = ({ companyFinance, approvals }) => {
 const TrendingIcon = (props) => <BarChart3 {...props} />;
 
 const Dashboard = () => {
-  const { isSuperUser, memberId, isPrivateMode } = useAuth();
+  const { isSuperUser, isAdmin, memberId, isPrivateMode } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState('month');
@@ -543,7 +543,7 @@ const Dashboard = () => {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const canViewCompanyFinance = isSuperUser && !isPrivateMode;
+      const canViewCompanyFinance = isAdmin && !isPrivateMode;
       const next = {
         userProjects: [],
         projects: [],
@@ -629,8 +629,8 @@ const Dashboard = () => {
           companyFinanceRes,
           overheadRes,
         ] = await Promise.all([
-          supabase.from('projects').select('id, name, code, status, start_date, completion_date, created_at, price').order('created_at', { ascending: false }).limit(500),
-          supabase.from('realizations').select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, contract_amount').order('created_at', { ascending: false }).limit(500),
+          supabase.rpc('list_projects_safe'),
+          supabase.rpc('list_realizations_safe'),
           supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').order('end_date', { ascending: true }).limit(200),
           supabase.from('engineering_activities').select('id, subject, status, project_id, end_date, projects(name)').neq('status', 'done').order('end_date', { ascending: true }).limit(12),
           supabase.rpc('get_company_financials'),
@@ -665,7 +665,7 @@ const Dashboard = () => {
   useEffect(() => {
     fetchDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperUser, memberId, isPrivateMode]);
+  }, [isAdmin, isSuperUser, memberId, isPrivateMode]);
 
   const summary = useMemo(() => {
     const visibleProjects = isSuperUser ? data.projects : data.userProjects;
@@ -746,7 +746,7 @@ const Dashboard = () => {
     data.payouts.slice(0, 2).forEach((payout) => {
       items.push({
         title: payout.member?.name || 'Žádost o výplatu',
-        subtitle: isSuperUser && !isPrivateMode ? `Čeká na schválení: ${formatCurrency(payout.amount)}` : 'Čeká na schválení',
+        subtitle: isAdmin && !isPrivateMode ? `Čeká na schválení: ${formatCurrency(payout.amount)}` : 'Čeká na schválení',
         meta: 'Výplata',
         tone: 'rose',
         to: '/payouts',
@@ -802,7 +802,7 @@ const Dashboard = () => {
   );
 
   const chartData = useMemo(() => {
-    const canViewCompanyFinance = isSuperUser && !isPrivateMode;
+    const canViewCompanyFinance = isAdmin && !isPrivateMode;
     const pipelineTrend = [
       { name: 'CRM', pipeline: summary.pipelineValue, weighted: summary.weightedPipeline },
       { name: 'Nabídky', pipeline: summary.offersValue, weighted: summary.ordersValue },
@@ -830,9 +830,9 @@ const Dashboard = () => {
     const healthScore = Math.max(0, Math.min(100, 100 - riskPenalty));
 
     return { healthScore, pipelineTrend: canViewCompanyFinance ? pipelineTrend : [], stageCounts, workload };
-  }, [data.companyFinance.potentialProfit, data.companyFinance.realizedProfit, isPrivateMode, isSuperUser, stageSummary, summary]);
+  }, [data.companyFinance.potentialProfit, data.companyFinance.realizedProfit, isAdmin, isPrivateMode, stageSummary, summary]);
 
-  const canViewCompanyFinance = isSuperUser && !isPrivateMode;
+  const canViewCompanyFinance = isAdmin && !isPrivateMode;
   const moduleTiles = [
     {
       title: 'CRM',

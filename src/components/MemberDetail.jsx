@@ -172,7 +172,7 @@ const MemberDetail = () => {
   const { memberId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission, user, isAdmin, memberId: currentMemberId } = useAuth();
   const [member, setMember] = useState(null);
   const [projects, setProjects] = useState([]);
   const [projectRewards, setProjectRewards] = useState({});
@@ -194,29 +194,35 @@ const MemberDetail = () => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const { data: memberData, error: memberError } = await supabase
-      .from('members')
-      .select('*, member_roles(name)')
-      .eq('id', memberId)
-      .single();
+    const canViewCompensation = isAdmin || String(currentMemberId) === String(memberId);
+    const [{ data: memberData, error: memberError }, compensationResult] = await Promise.all([
+      supabase
+        .from('members')
+        .select('id, name, role_id, email, phone, attendance_enabled, user_role, internal_note, languages, company, job_title, department, bio, avatar_url, language, notification_preferences, member_roles(name)')
+        .eq('id', memberId)
+        .single(),
+      canViewCompensation
+        ? supabase.rpc('get_member_compensation', { p_member_id: memberId })
+        : Promise.resolve({ data: null, error: null }),
+    ]);
 
-    if (memberError || !memberData) {
+    if (memberError || compensationResult.error || !memberData) {
       toast({ title: 'Chyba při načítání zaměstnance', variant: 'destructive' });
       setLoading(false);
       return;
     }
-    setMember(memberData);
+    setMember({ ...memberData, ...(compensationResult.data || {}) });
 
     const { data: projectAssignments, error: projectError } = await supabase
       .from('project_members')
-      .select('*, project:projects(*, project_subcontractors(price))')
+      .select('id, project_id, member_id, role, created_at, project:projects(id, name, code, status)')
       .eq('member_id', memberId);
 
     if (!projectError) setProjects(projectAssignments.filter(Boolean));
 
-    const { data: projectRewardRows, error: projectRewardsError } = await supabase.rpc('get_member_project_rewards', {
-      p_member_id: memberId,
-    });
+    const { data: projectRewardRows, error: projectRewardsError } = canViewCompensation
+      ? await supabase.rpc('get_member_project_rewards', { p_member_id: memberId })
+      : { data: [], error: null };
     if (projectRewardsError) {
       toast({ title: 'Chyba při načítání projektových odměn', variant: 'destructive', description: projectRewardsError.message });
       setProjectRewards({});
@@ -228,11 +234,13 @@ const MemberDetail = () => {
       setProjectRewards(rewardsByProject);
     }
 
-    const { data: payoutsData, error: payoutsError } = await supabase
-      .from('payouts')
-      .select('*, payout_items(*, projects(name), realizations:realizations!payout_items_realizace_id_fkey(name), realization:realizations!payout_items_realization_id_fkey(name))')
-      .eq('member_id', memberId)
-      .order('request_date', { ascending: false });
+    const { data: payoutsData, error: payoutsError } = canViewCompensation
+      ? await supabase
+        .from('payouts')
+        .select('*, payout_items(*, projects(name), realizations:realizations!payout_items_realizace_id_fkey(name), realization:realizations!payout_items_realization_id_fkey(name))')
+        .eq('member_id', memberId)
+        .order('request_date', { ascending: false })
+      : { data: [], error: null };
     if (payoutsError) {
       toast({ title: 'Chyba při načítání výplat', variant: 'destructive', description: payoutsError.message });
     } else {
@@ -242,19 +250,19 @@ const MemberDetail = () => {
     const { data: tasksData, error: tasksError } = await supabase.from('project_tasks').select('*, projects(name)').eq('member_id', memberId).order('end_date', { ascending: true });
     if (!tasksError) setTasks(tasksData);
 
-    const { data: ordersData, error: ordersError } = await supabase.from('project_orders').select('*, projects(*)').eq('member_id', memberId).order('created_at', { ascending: false });
+    const { data: ordersData, error: ordersError } = await supabase.from('project_orders').select('id, project_id, member_id, name, status, created_at, projects(id, name, code, status)').eq('member_id', memberId).order('created_at', { ascending: false });
     if (!ordersError) setOrders(ordersData);
 
     const { data: certsData, error: certsError } = await supabase.from('member_certifications').select('*').eq('member_id', memberId).order('expiry_date');
     if (!certsError) setCertifications(certsData);
 
     setLoading(false);
-  }, [memberId, toast]);
+  }, [currentMemberId, isAdmin, memberId, toast]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const getProjectReward = (projectAssignment) => {
-    if (!projectAssignment || !projectAssignment.project || projectAssignment.reward_type === null) return 0;
+    if (!projectAssignment || !projectAssignment.project) return 0;
     return Number(projectRewards[projectAssignment.project_id]?.total_reward || 0);
   };
 

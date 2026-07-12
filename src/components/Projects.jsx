@@ -274,7 +274,7 @@ const ProjectionExecutiveDashboard = ({ chartData, showFinance, showReward, stat
 
 const Projects = () => {
   const navigate = useNavigate();
-  const { user, isPrivateMode, hasPermission, memberId } = useAuth();
+  const { user, isPrivateMode, hasPermission, memberId, isAdmin } = useAuth();
   const { toast } = useToast();
 
   const [projects, setProjects] = useState([]);
@@ -295,7 +295,7 @@ const Projects = () => {
   const statusOrder = useMemo(() => Object.keys(projectStatusConfig), []);
 
   const canEdit = hasPermission('projects', 'can_edit');
-  const canViewFinance = hasPermission('finance', 'can_read');
+  const canViewFinance = isAdmin;
   const showFinance = canViewFinance && !isPrivateMode;
   const showReward = !isPrivateMode && !canViewFinance;
   const projectTableColumns = useMemo(() => [

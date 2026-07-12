@@ -87,8 +87,8 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
     let isMounted = true;
     const fetchHourlyRate = async () => {
       if (!memberId) return;
-      const { data: memberData } = await supabase.from('members').select('hourly_rate').eq('id', memberId).single();
-      if (isMounted && memberData) setHourlyRate(memberData.hourly_rate || 0);
+      const { data: compensationData } = await supabase.rpc('get_member_compensation', { p_member_id: memberId });
+      if (isMounted && compensationData) setHourlyRate(compensationData.hourly_rate || 0);
     };
     fetchHourlyRate();
     return () => { isMounted = false; };

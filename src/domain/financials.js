@@ -165,6 +165,38 @@ export const calculateRealizationMemberAvailableShare = ({
   };
 };
 
+export const calculateLaborFunding = ({
+  hours = 0,
+  hourlyRate = 0,
+  employerBurdenPercent = 0,
+  fundingMode = 'direct_project',
+  sponsorPercent = 0,
+} = {}) => {
+  const payAmount = toAmount(hours) * toAmount(hourlyRate);
+  const employerCost = payAmount * (1 + Math.max(0, toAmount(employerBurdenPercent)) / 100);
+  const effectiveSponsorPercent = fundingMode === 'member_reward'
+    ? Math.min(100, Math.max(0, toAmount(sponsorPercent)))
+    : 0;
+  const sponsorRewardDeduction = employerCost * (effectiveSponsorPercent / 100);
+  return {
+    payAmount,
+    employerCost,
+    sponsorRewardDeduction,
+    projectCostImpact: Math.max(0, employerCost - sponsorRewardDeduction),
+  };
+};
+
+export const calculateMemberRewardAfterLabor = ({ grossReward = 0, assignedCosts = 0, sponsoredLaborCosts = 0 } = {}) => {
+  const deductions = Math.max(0, toAmount(assignedCosts)) + Math.max(0, toAmount(sponsoredLaborCosts));
+  const gross = Math.max(0, toAmount(grossReward));
+  return {
+    grossReward: gross,
+    deductions,
+    netReward: Math.max(0, gross - deductions),
+    deficit: Math.max(0, deductions - gross),
+  };
+};
+
 export const assessFinancialHealth = ({
   baseAmount = 0,
   remainingAmount = 0,

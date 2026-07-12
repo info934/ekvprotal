@@ -98,19 +98,23 @@ const SettingsProfile = () => {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('members')
-        .select('*, member_roles(name)')
-        .eq('id', memberId)
-        .single();
+      const [{ data, error }, { data: compensationData, error: compensationError }] = await Promise.all([
+        supabase
+          .from('members')
+          .select('id, name, role_id, email, phone, attendance_enabled, user_role, languages, company, job_title, department, bio, avatar_url, language, notification_preferences, member_roles(name)')
+          .eq('id', memberId)
+          .single(),
+        supabase.rpc('get_member_compensation', { p_member_id: memberId }),
+      ]);
 
-      if (error) {
-        toast({ title: 'Chyba při načítání profilu', description: error.message, variant: 'destructive' });
+      if (error || compensationError) {
+        toast({ title: 'Chyba při načítání profilu', description: (error || compensationError).message, variant: 'destructive' });
         return;
       }
 
       setProfile({
         ...data,
+        ...compensationData,
         languages: Array.isArray(data.languages) ? data.languages : [],
         notification_preferences: data.notification_preferences || {},
       });

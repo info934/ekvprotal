@@ -13,9 +13,9 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialValueGuard from './FinancialValueGuard';
 
-const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted }) => {
+const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, sponsorDeductions = [] }) => {
     const { toast } = useToast();
-    const { hasPermission, userRole } = useAuth();
+    const { userRole } = useAuth();
     const [shares, setShares] = useState([]);
     const [members, setMembers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -24,7 +24,7 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted }
     const { canViewAmounts } = getFinancialVisibility(userRole);
 
     // Strictly disable edit for 'user' role
-    const canEdit = hasPermission('realizace', 'can_edit') && userRole !== 'user';
+    const canEdit = userRole === 'admin';
 
     const fetchData = useCallback(async () => {
         try {
@@ -99,6 +99,14 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted }
 
     const { distributedProfit } = calculateTotals();
     const remainingProfit = distributionAmount - distributedProfit;
+    const sponsorDeductionByMember = new Map(
+        (Array.isArray(sponsorDeductions) ? sponsorDeductions : []).map((entry) => [
+            String(entry.sponsor_member_id),
+            Number(entry.amount) || 0,
+        ])
+    );
+    const totalSponsorDeductions = Array.from(sponsorDeductionByMember.values())
+        .reduce((sum, amount) => sum + amount, 0);
     
     // Valid if within budget tolerance (or if budget is negative, we can't distribute)
     const isValid = distributionAmount > 0 ? distributedProfit <= (distributionAmount + 1) : true;
@@ -123,29 +131,17 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted }
 
         setSaving(true);
         try {
-            // Delete existing shares for this realization (simple replace strategy)
-            const { error: deleteError } = await supabase
-                .from('realization_profit_shares')
-                .delete()
-                .eq('realizace_id', realizaceId);
-
-            if (deleteError) throw deleteError;
-
-            if (shares.length > 0) {
-                const payload = shares.map(s => ({
-                    realizace_id: realizaceId,
-                    member_id: s.member_id,
-                    share_type: s.share_type,
-                    share_value: parseFloat(s.share_value),
-                    note: s.note
-                }));
-
-                const { error: insertError } = await supabase
-                    .from('realization_profit_shares')
-                    .insert(payload);
-                
-                if (insertError) throw insertError;
-            }
+            const payload = shares.map(s => ({
+                member_id: s.member_id,
+                share_type: s.share_type,
+                share_value: parseFloat(s.share_value),
+                note: s.note
+            }));
+            const { error: replaceError } = await supabase.rpc('replace_realization_profit_shares', {
+                p_realization_id: realizaceId,
+                p_shares: payload,
+            });
+            if (replaceError) throw replaceError;
 
             toast({ title: 'Rozdělení uloženo' });
             fetchData();
@@ -222,6 +218,17 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted }
                 </Alert>
             )}
 
+            {canViewAmounts && totalSponsorDeductions > 0 && (
+                <Alert className="border-blue-200 bg-blue-50">
+                    <Users className="h-4 w-4 text-blue-700" />
+                    <AlertTitle className="text-blue-900">Práce hrazená z odměn členů týmu</AlertTitle>
+                    <AlertDescription className="text-blue-800">
+                        Z hrubých podílů se odečte celkem {formatCurrency(totalSponsorDeductions)} za hodinové pracovníky
+                        přiřazené pod konkrétní členy. Tato částka se již podruhé neodečítá z týmového rozpočtu.
+                    </AlertDescription>
+                </Alert>
+            )}
+
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                     <div>
@@ -260,6 +267,9 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted }
                                     const calculatedAmount = share.share_type === 'percent' 
                                         ? (distributionAmount * (parseFloat(share.share_value) || 0)) / 100 
                                         : (parseFloat(share.share_value) || 0);
+                                    const sponsoredLabor = sponsorDeductionByMember.get(String(share.member_id)) || 0;
+                                    const netReward = Math.max(0, calculatedAmount - sponsoredLabor);
+                                    const rewardDeficit = Math.max(0, sponsoredLabor - calculatedAmount);
 
                                     return (
                                         <TableRow key={index}>
@@ -314,8 +324,20 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted }
                                                 </TableCell>
                                             )}
                                             {canViewAmounts && (
-                                                <TableCell className="font-medium">
-                                                    <FinancialValueGuard value={formatCurrency(calculatedAmount)} />
+                                                <TableCell>
+                                                    <div className="font-semibold text-slate-900">
+                                                        <FinancialValueGuard value={formatCurrency(netReward)} />
+                                                    </div>
+                                                    {sponsoredLabor > 0 && (
+                                                        <div className="mt-1 text-xs text-muted-foreground">
+                                                            Hrubá {formatCurrency(calculatedAmount)} - práce {formatCurrency(sponsoredLabor)}
+                                                        </div>
+                                                    )}
+                                                    {rewardDeficit > 0 && (
+                                                        <div className="mt-1 text-xs font-medium text-red-600">
+                                                            Nekrytý rozdíl {formatCurrency(rewardDeficit)}
+                                                        </div>
+                                                    )}
                                                 </TableCell>
                                             )}
                                             <TableCell>

@@ -17,16 +17,20 @@ export const checkOrphanedRecords = async () => {
 
 export const checkInvalidBudgets = async () => {
   const issues = [];
-  const { data } = await supabase.from('projects')
-    .select('id, name, budget_percentage, overhead_percentage')
-    .or('budget_percentage.lt.0,budget_percentage.gt.100,overhead_percentage.lt.0,overhead_percentage.gt.100');
+  const { data } = await supabase.rpc('list_projects_safe');
+  const invalid = (data || []).filter((project) =>
+    Number(project.budget_percentage) < 0
+    || Number(project.budget_percentage) > 100
+    || Number(project.overhead_percentage) < 0
+    || Number(project.overhead_percentage) > 100
+  );
     
-  if (data && data.length > 0) {
+  if (invalid.length > 0) {
     issues.push({ 
       type: 'INVALID_PROJECT_PCT', 
-      count: data.length, 
+      count: invalid.length,
       details: 'Projects with percentages outside 0-100 range',
-      ids: data.map(p => p.id)
+      ids: invalid.map(p => p.id)
     });
   }
   return issues;
@@ -52,8 +56,7 @@ export const checkInvalidPayouts = async () => {
 export const checkInconsistentRealizationCosts = async () => {
     const issues = [];
     // Identify realizations where actual costs exceed contract amount (potential risk, not strictly "invalid" but "warning")
-    const { data } = await supabase.from('realizations')
-        .select('id, name, contract_amount, actual_costs');
+    const { data } = await supabase.rpc('list_realizations_safe');
         
     if (data) {
         const risky = data.filter(r => (r.actual_costs || 0) > (r.contract_amount || 0));

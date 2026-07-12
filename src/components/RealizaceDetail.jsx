@@ -51,6 +51,7 @@ const RealizaceDetail = () => {
   const [costs, setCosts] = useState([]);
   const [extraCosts, setExtraCosts] = useState([]);
   const [financialSummary, setFinancialSummary] = useState(null);
+  const [laborFinancialSummary, setLaborFinancialSummary] = useState(null);
 
   // Hourly costs state (calculated)
   const [hourlyCostsTotal, setHourlyCostsTotal] = useState(0);
@@ -158,11 +159,15 @@ const RealizaceDetail = () => {
     const financialSummaryPromise = shouldLoadFinancialSummary
       ? supabase.rpc('realization_financial_summary', { p_realization_id: realizaceId })
       : Promise.resolve({ data: null, error: null });
+    const laborSummaryPromise = shouldLoadFinancialSummary
+      ? supabase.rpc('realization_labor_financial_summary', { p_realization_id: realizaceId })
+      : Promise.resolve({ data: null, error: null });
 
-    const [costsRes, extraRes, financialSummaryRes] = await Promise.all([
+    const [costsRes, extraRes, financialSummaryRes, laborSummaryRes] = await Promise.all([
       costsPromise,
       extraCostsPromise,
-      financialSummaryPromise
+      financialSummaryPromise,
+      laborSummaryPromise,
     ]);
 
     if (canViewCosts) {
@@ -178,6 +183,12 @@ const RealizaceDetail = () => {
       setFinancialSummary(null);
     } else {
       setFinancialSummary(financialSummaryRes.data || null);
+    }
+    if (laborSummaryRes.error) {
+      console.warn('realization_labor_financial_summary failed, using legacy labor model:', laborSummaryRes.error.message);
+      setLaborFinancialSummary(null);
+    } else {
+      setLaborFinancialSummary(laborSummaryRes.data || null);
     }
 
     setLoading(false);
@@ -252,7 +263,10 @@ const RealizaceDetail = () => {
   const paidHourlyPayouts = hasFinancialSummary ? toNumber(financialSummary.paid_hourly_payouts) : 0;
   const paidPayoutCosts = hasFinancialSummary ? toNumber(financialSummary.paid_payout_costs) : 0;
   const costsBeforePaidPayouts = hasFinancialSummary ? toNumber(financialSummary.costs_before_paid_payouts) : totalManualCosts + totalExtraCostsCost;
-  const grandTotalCosts = hasFinancialSummary ? toNumber(financialSummary.costs_after_paid_payouts) : totalManualCosts + totalExtraCostsCost;
+  const legacyGrandTotalCosts = hasFinancialSummary ? toNumber(financialSummary.costs_after_paid_payouts) : totalManualCosts + totalExtraCostsCost;
+  const grandTotalCosts = laborFinancialSummary
+    ? legacyGrandTotalCosts - paidHourlyPayouts + toNumber(laborFinancialSummary.direct_project_cost)
+    : legacyGrandTotalCosts;
   const contractAmountBase = hasFinancialSummary ? toNumber(financialSummary.base_contract_amount) : Number(realization?.contract_amount || 0);
   const totalRevenue = hasFinancialSummary ? toNumber(financialSummary.total_revenue) : contractAmountBase + totalExtraCostsSale;
   
@@ -392,7 +406,9 @@ const RealizaceDetail = () => {
             <FinancialHealthAlert
               baseAmount={totalRevenue}
               remainingAmount={calculatedFinancials.teamBudget}
-              availableAmount={financialSummary?.available_for_payout ?? calculatedFinancials.teamBudget}
+              availableAmount={financialSummary
+                ? toNumber(financialSummary.available_for_payout) + paidHourlyPayouts - toNumber(laborFinancialSummary?.direct_project_cost)
+                : calculatedFinancials.teamBudget}
             />
           </div>
         )}
@@ -599,6 +615,7 @@ const RealizaceDetail = () => {
               <RealizaceProfitSharing
                 realizaceId={realizaceId}
                 distributionAmount={calculatedFinancials.teamBudget}
+                sponsorDeductions={laborFinancialSummary?.sponsor_deductions || []}
                 isCompleted={realization.status === 'Dokončeno'}
               />
             </TabsContent>

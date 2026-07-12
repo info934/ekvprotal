@@ -51,7 +51,7 @@ const getCertificationStatus = (certifications) => {
 const Members = () => {
     const { toast } = useToast();
     const navigate = useNavigate();
-    const { hasPermission, memberId, isSuperUser } = useAuth();
+    const { hasPermission, memberId, isSuperUser, isAdmin } = useAuth();
     const [members, setMembers] = useState([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingMember, setEditingMember] = useState(null);
@@ -64,17 +64,14 @@ const Members = () => {
 
     const canEdit = hasPermission('members', 'can_edit');
     const canAdmin = hasPermission('members', 'can_admin');
-    const canViewFinance = hasPermission('projects', 'can_edit');
+    const canViewFinance = isAdmin;
 
     const fetchMembersAndRewards = useCallback(async () => {
+        const memberSelect = 'id, name, email, phone, role_id, auth_user_id, attendance_enabled, user_role, internal_note, languages, company, job_title, department, bio, avatar_url, language, notification_preferences, member_roles(name), member_certifications(expiry_date)';
         let membersQuery = supabase
             .from('members')
-            .select('*, member_roles(name), member_certifications(expiry_date)')
+            .select(memberSelect)
             .order('name');
-
-        if (!isSuperUser && memberId) {
-            membersQuery = membersQuery.eq('id', memberId);
-        }
 
         const { data: membersData, error: membersError } = await membersQuery;
 
@@ -82,7 +79,20 @@ const Members = () => {
             toast({ title: "Chyba při načítání zaměstnanců", variant: "destructive" });
             return;
         }
-        setMembers(membersData || []);
+        let visibleMembers = membersData || [];
+        if (isAdmin) {
+            const { data: compensationRows, error: compensationError } = await supabase.rpc('list_member_compensations_admin');
+            if (compensationError) {
+                toast({ title: 'Chyba při načítání sazeb', description: compensationError.message, variant: 'destructive' });
+                return;
+            }
+            const compensationByMember = new Map((compensationRows || []).map((row) => [String(row.member_id), row]));
+            visibleMembers = visibleMembers.map((member) => ({
+                ...member,
+                hourly_rate: compensationByMember.get(String(member.id))?.hourly_rate || 0,
+            }));
+        }
+        setMembers(visibleMembers);
 
         if (!canViewFinance) return;
 
@@ -127,7 +137,7 @@ const Members = () => {
             setPayouts(totalPaidByMember);
         }
 
-    }, [toast, isSuperUser, memberId, canViewFinance]);
+    }, [toast, isAdmin, isSuperUser, memberId, canViewFinance]);
 
     useEffect(() => {
         fetchMembersAndRewards();
@@ -298,10 +308,12 @@ const Members = () => {
                         <span className="truncate">{member.email || 'Není nastaven'}</span>
                     </div>
 
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Clock className="w-3 h-3" />
-                        <span>{member.hourly_rate ? `${Number(member.hourly_rate).toLocaleString('cs-CZ')} Kč/h` : 'Nenastavena'}</span>
-                    </div>
+                    {canViewFinance && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Clock className="w-3 h-3" />
+                            <span>{member.hourly_rate ? `${Number(member.hourly_rate).toLocaleString('cs-CZ')} Kč/h` : 'Nenastavena'}</span>
+                        </div>
+                    )}
 
                     {canViewFinance && (
                         <div className="pt-3 border-t space-y-2">
@@ -537,7 +549,7 @@ const Members = () => {
                                                 <TableHead className="w-[250px]">Jméno</TableHead>
                                                 <TableHead>Pozice / kategorie</TableHead>
                                                 <TableHead>Certifikace</TableHead>
-                                                <TableHead>Hodinová sazba</TableHead>
+                                                {canViewFinance && <TableHead>Hodinová sazba</TableHead>}
                                                 {canViewFinance && <TableHead>Celková odměna</TableHead>}
                                                 {canViewFinance && <TableHead>Zbývá k vyplacení</TableHead>}
                                                 <TableHead className="w-[50px]"></TableHead>
@@ -572,9 +584,11 @@ const Members = () => {
                                                                 />
                                                             )}
                                                         </TableCell>
-                                                        <TableCell className="font-semibold">
-                                                            {member.hourly_rate ? `${Number(member.hourly_rate).toLocaleString('cs-CZ')} Kč` : 'Nenastavena'}
-                                                        </TableCell>
+                                                        {canViewFinance && (
+                                                            <TableCell className="font-semibold">
+                                                                {member.hourly_rate ? `${Number(member.hourly_rate).toLocaleString('cs-CZ')} Kč` : 'Nenastavena'}
+                                                            </TableCell>
+                                                        )}
                                                         {canViewFinance && <TableCell>{totalReward.toLocaleString('cs-CZ')} Kč</TableCell>}
                                                         {canViewFinance && <TableCell className={cn(
                                                             "font-semibold",

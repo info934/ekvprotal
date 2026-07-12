@@ -20,7 +20,7 @@ const orderStatusConfig = {
 const SubcontractorDetail = () => {
     const { subcontractorId } = useParams();
     const { toast } = useToast();
-    const { hasPermission, isSuperUser } = useAuth();
+    const { hasPermission, isAdmin } = useAuth();
     const [subcontractor, setSubcontractor] = useState(null);
     const [projects, setProjects] = useState([]);
     const [orders, setOrders] = useState([]);
@@ -32,10 +32,7 @@ const SubcontractorDetail = () => {
         toast({ title: '✅ Odkaz na objednávku zkopírován!' });
     };
 
-    const canViewProjectFinance = isSuperUser
-        || hasPermission('finance', 'can_read')
-        || hasPermission('projects', 'can_admin')
-        || hasPermission('projects', 'can_edit');
+    const canViewProjectFinance = isAdmin;
 
     const fetchData = useCallback(async () => {
         setLoading(true);

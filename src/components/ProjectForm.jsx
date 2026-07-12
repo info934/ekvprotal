@@ -29,7 +29,7 @@ const ProjectForm = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const { toast } = useToast();
-    const { memberId, user, hasPermission } = useAuth();
+    const { memberId, user, hasPermission, isAdmin } = useAuth();
     
     const isEditing = Boolean(projectId);
     const sourceOpportunityId = !isEditing ? searchParams.get('crmOpportunityId') : null;
@@ -192,6 +192,11 @@ const ProjectForm = () => {
 
     const onSubmit = async (formData) => {
         let dataToSave = { ...formData };
+        if (!isAdmin) {
+            delete dataToSave.price;
+            delete dataToSave.budget_percentage;
+            delete dataToSave.overhead_percentage;
+        }
         
         if (investorIsClient) {
             dataToSave.client_id = dataToSave.investor_id;
@@ -499,7 +504,7 @@ const ProjectForm = () => {
                     </CardContent>
                 </Card>
 
-                <Card className="shadow-sm border-slate-200">
+                {isAdmin && <Card className="shadow-sm border-slate-200">
                      <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
                          <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
                             <DollarSign className="w-5 h-5 text-slate-500" />Finance a nastavení
@@ -539,7 +544,7 @@ const ProjectForm = () => {
                              )} />
                          </div>
                      </CardContent>
-                </Card>
+                </Card>}
 
                 <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4 pt-4">
                     <div>

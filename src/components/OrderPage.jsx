@@ -73,7 +73,7 @@ const OrderPage = () => {
         const fetchOrder = async () => {
             const { data, error } = await supabase
                 .from('project_orders')
-                .select('*, projects(*), members(*)')
+                .select('*, projects(id, name, code, brief), members(id, name, email)')
                 .eq('unique_token', token)
                 .single();
 

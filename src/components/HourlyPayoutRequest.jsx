@@ -7,7 +7,6 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import InvoiceUpload from './InvoiceUpload';
 import InvoicePreview from './InvoicePreview';
 import DeletePayoutRequestDialog from './DeletePayoutRequestDialog';
@@ -37,7 +36,8 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
   const [monthData, setMonthData] = useState({ records: [], totalHours: 0, breakdown: {} });
   const [attendanceSubmission, setAttendanceSubmission] = useState(null);
   const [submissionLoading, setSubmissionLoading] = useState(false);
-  const [requestType, setRequestType] = useState('regular');
+  const requestType = 'regular';
+  const [ledgerSummary, setLedgerSummary] = useState({ hours: 0, amount: 0, weightedRate: 0 });
   const [deleteRequestId, setDeleteRequestId] = useState(null);
   const [isDeletingRequest, setIsDeletingRequest] = useState(false);
 
@@ -45,8 +45,12 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
     if (!memberId) return;
     setLoading(true);
     try {
-      const { data: memberData } = await supabase.from('members').select('*').eq('id', memberId).single();
-      setMember(memberData);
+      const [{ data: memberData }, { data: compensationData, error: compensationError }] = await Promise.all([
+        supabase.from('members').select('id, name, email, attendance_enabled').eq('id', memberId).single(),
+        supabase.rpc('get_member_compensation', { p_member_id: memberId }),
+      ]);
+      if (compensationError) throw compensationError;
+      setMember({ ...memberData, ...compensationData });
 
       const { data: requestsData, error } = await supabase
         .from('hourly_payout_requests')
@@ -74,18 +78,31 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
       setSubmissionLoading(true);
       try {
         const monthDate = format(startOfMonth(new Date(selectedMonth)), 'yyyy-MM-dd');
-        const { data, error } = await supabase
-          .from('attendance_submissions')
-          .select('id, status, total_hours, month_date')
-          .eq('member_id', memberId)
-          .eq('month_date', monthDate)
-          .maybeSingle();
+        const [{ data, error }, ledgerResult] = await Promise.all([
+          supabase
+            .from('attendance_submissions')
+            .select('id, status, total_hours, month_date')
+            .eq('member_id', memberId)
+            .eq('month_date', monthDate)
+            .maybeSingle(),
+          supabase
+            .from('labor_cost_ledger')
+            .select('hours, pay_amount')
+            .eq('member_id', memberId)
+            .eq('posting_month', monthDate)
+            .eq('status', 'accrued'),
+        ]);
 
         if (error) throw error;
+        if (ledgerResult.error) throw ledgerResult.error;
         setAttendanceSubmission(data || null);
+        const hours = (ledgerResult.data || []).reduce((sum, row) => sum + Number(row.hours || 0), 0);
+        const amount = (ledgerResult.data || []).reduce((sum, row) => sum + Number(row.pay_amount || 0), 0);
+        setLedgerSummary({ hours, amount, weightedRate: hours > 0 ? amount / hours : 0 });
       } catch (error) {
         console.error('Attendance submission load failed:', error);
         setAttendanceSubmission(null);
+        setLedgerSummary({ hours: 0, amount: 0, weightedRate: 0 });
       } finally {
         setSubmissionLoading(false);
       }
@@ -94,8 +111,8 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
     fetchSubmission();
   }, [memberId, selectedMonth]);
 
-  const grandTotalHours = monthData.totalHours;
-  const grandTotalAmount = grandTotalHours * (member?.hourly_rate || 0);
+  const grandTotalHours = ledgerSummary.hours || monthData.totalHours;
+  const grandTotalAmount = ledgerSummary.amount;
 
   const requestStats = useMemo(() => {
     const active = myRequests.filter((request) => ['pending', 'approved', 'invoice_uploaded'].includes(request.status));
@@ -215,7 +232,7 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <PayoutMetricCard icon={Clock} label="Hodiny v měsíci" value={formatHours(grandTotalHours)} detail="Dle vybraného období" tone="blue" />
-          <PayoutMetricCard icon={Wallet} label="K žádosti za měsíc" value={formatCurrency(grandTotalAmount)} detail={`${formatCurrency(member.hourly_rate)}/h`} tone="emerald" />
+          <PayoutMetricCard icon={Wallet} label="K žádosti za měsíc" value={formatCurrency(grandTotalAmount)} detail={`Vážená sazba ${formatCurrency(ledgerSummary.weightedRate)}/h`} tone="emerald" />
           <PayoutMetricCard icon={FileText} label="Moje aktivní žádosti" value={requestStats.active.toString()} detail={formatCurrency(requestStats.activeAmount)} tone="amber" />
           <PayoutMetricCard icon={Wallet} label="Mně vyplaceno" value={requestStats.paid.toString()} detail={formatCurrency(requestStats.paidAmount)} tone="slate" />
         </div>
@@ -233,21 +250,8 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
           )
         }
       >
-        <div className="grid gap-3 border-b border-slate-200 bg-slate-50/60 p-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
+        <div className="grid gap-3 border-b border-slate-200 bg-slate-50/60 p-4 md:grid-cols-1 md:items-end">
           <MonthSelector value={selectedMonth} onChange={setSelectedMonth} />
-          <div>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Typ žádosti</div>
-            <Select value={requestType} onValueChange={setRequestType}>
-              <SelectTrigger className="bg-white">
-                <SelectValue placeholder="Typ žádosti" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="regular">Běžná</SelectItem>
-                <SelectItem value="supplement">Doplatek</SelectItem>
-                <SelectItem value="correction">Oprava</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
         </div>
         <div className="space-y-5 p-5">
           <div>
@@ -267,7 +271,7 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
             </div>
           )}
           <div className="flex justify-end border-t border-slate-100 pt-5">
-            <Button onClick={handleRequestPayout} disabled={grandTotalHours <= 0 || isSubmitting || submissionLoading || attendanceSubmission?.status !== 'approved'} className="gap-2 shadow-sm">
+            <Button onClick={handleRequestPayout} disabled={grandTotalHours <= 0 || grandTotalAmount <= 0 || isSubmitting || submissionLoading || attendanceSubmission?.status !== 'approved'} className="gap-2 shadow-sm">
               {isSubmitting ? <Clock className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Odeslat žádost
             </Button>
