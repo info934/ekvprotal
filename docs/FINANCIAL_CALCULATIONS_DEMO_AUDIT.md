@@ -7,7 +7,7 @@ Prostredi: lokalni Supabase `http://127.0.0.1:54321`, lokalni Vite `http://127.0
 Demo ucet:
 
 - Email: `demo.financial.admin@ekv.local`
-- Heslo: `Project_2021`
+- Heslo: použijte bezpečně předané testovací přihlašovací údaje; hesla se do repozitáře neukládají.
 - Role v portalu: `admin`
 
 Seed a kontrolni SQL je v `.codex-financial-demo.sql`. Scenar je idempotentni: svoje `DEMO-FIN` zaznamy smaze a znovu vytvori.

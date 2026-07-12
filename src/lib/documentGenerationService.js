@@ -55,7 +55,7 @@ const dataUriToUint8Array = (dataUri) => {
     const binary = atob(base64);
     return Uint8Array.from(binary, (char) => char.charCodeAt(0));
   }
-  return Uint8Array.from(Buffer.from(base64, 'base64'));
+  throw new Error('Prohlížeč nepodporuje dekódování obrázku v dokumentu.');
 };
 
 const replaceTemplatePlaceholders = (templateContent, placeholders) => (

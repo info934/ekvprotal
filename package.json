@@ -18,7 +18,9 @@
     "supabase:dump:seed": "supabase db dump --data-only --schema public --file supabase/seed.sql",
     "supabase:anonymize-seed": "node tools/anonymize-seed.mjs",
     "backend:check": "node tools/check-backend-env.mjs",
-    "vendor:import-sql": "node tools/import-supplier-price-export.mjs"
+    "vendor:import-sql": "node tools/import-supplier-price-export.mjs",
+    "test:critical": "node tools/check-critical-invariants.mjs",
+    "test": "npm run lint && npm run financial:check && npm run test:critical"
   },
   "dependencies": {
     "@babel/generator": "^7.26.3",
