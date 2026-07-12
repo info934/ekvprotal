@@ -23,11 +23,6 @@ import {
   signHandoverProtocol,
 } from '@/lib/handoverProtocolService';
 import {
-  downloadHandoverProtocolDocx,
-  downloadHandoverProtocolHtml,
-  downloadHandoverProtocolPdf,
-} from '@/lib/documentGenerationService';
-import {
   buildHandoverProtocolEmailDefaults,
   sendHandoverProtocolEmail,
 } from '@/lib/handoverProtocolEmailService';
@@ -203,6 +198,11 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
 
   const exportDocument = async (format) => {
     try {
+      const {
+        downloadHandoverProtocolDocx,
+        downloadHandoverProtocolHtml,
+        downloadHandoverProtocolPdf,
+      } = await import('@/lib/documentGenerationService');
       if (format === 'html') downloadHandoverProtocolHtml({ protocol: draft, template: selectedTemplate });
       if (format === 'docx') await downloadHandoverProtocolDocx({ protocol: draft, template: selectedTemplate });
       if (format === 'pdf') await downloadHandoverProtocolPdf({ protocol: draft, template: selectedTemplate });
@@ -211,8 +211,8 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
     }
   };
 
-  const openEmailDialog = () => {
-    const defaults = buildHandoverProtocolEmailDefaults(draft);
+  const openEmailDialog = async () => {
+    const defaults = await buildHandoverProtocolEmailDefaults(draft);
     setEmailDraft(defaults);
     setEmailOpen(true);
   };

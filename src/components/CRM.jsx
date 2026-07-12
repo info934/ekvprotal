@@ -55,14 +55,6 @@ import { useToast } from '@/components/ui/use-toast';
 import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
-import {
-  downloadGeneratedDocumentDocx,
-  downloadGeneratedDocumentHtml,
-  downloadGeneratedDocumentPdf,
-  downloadOpportunityOverviewDocx,
-  downloadOpportunityOverviewHtml,
-  downloadOpportunityOverviewPdf,
-} from '@/lib/documentGenerationService';
 import { DEFAULT_CRM_NUMBERING, formatCrmNumber, incrementCrmNumbering, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef } from '@/lib/crmRoutes';
 import {
@@ -2475,6 +2467,11 @@ const CRM = () => {
 
     setGeneratingDocument(true);
     try {
+      const {
+        downloadGeneratedDocumentDocx,
+        downloadGeneratedDocumentHtml,
+        downloadGeneratedDocumentPdf,
+      } = await import('@/lib/documentGenerationService');
       const generationInput = { opportunity: selectedOpportunity, document, template };
       if (format === 'pdf') {
         await downloadGeneratedDocumentPdf(generationInput);
@@ -2503,6 +2500,11 @@ const CRM = () => {
 
     setGeneratingDocument(true);
     try {
+      const {
+        downloadOpportunityOverviewDocx,
+        downloadOpportunityOverviewHtml,
+        downloadOpportunityOverviewPdf,
+      } = await import('@/lib/documentGenerationService');
       const generationInput = {
         opportunity: selectedOpportunity,
         documents: selectedOpportunityDocuments,

@@ -33,11 +33,6 @@ import {
   normalizeCrmItem,
   isMissingCrmRpcError,
 } from '@/lib/crmItemPayloads';
-import {
-  downloadGeneratedDocumentDocx,
-  downloadGeneratedDocumentHtml,
-  downloadGeneratedDocumentPdf,
-} from '@/lib/documentGenerationService';
 import { cn } from '@/lib/utils';
 
 const documentTypeConfig = {
@@ -860,6 +855,11 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     if (!selectedDocument) return;
     setSaving(true);
     try {
+      const {
+        downloadGeneratedDocumentDocx,
+        downloadGeneratedDocumentHtml,
+        downloadGeneratedDocumentPdf,
+      } = await import('@/lib/documentGenerationService');
       const template = documentTemplates.find((item) => item.id === selectedTemplateId) || null;
       const generationInput = {
         document: selectedDocument,

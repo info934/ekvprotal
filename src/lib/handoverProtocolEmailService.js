@@ -1,8 +1,4 @@
 ﻿import { sendEmail } from '@/lib/email';
-import {
-  buildHandoverProtocolPayload,
-  renderHandoverProtocolHtml,
-} from '@/lib/documentGenerationService';
 import { handoverProtocolTypeLabels } from '@/lib/handoverProtocolService';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -32,7 +28,8 @@ const buildAttachmentName = (payload) => {
     .replace(/\s+/g, '_') + '.html';
 };
 
-export const buildHandoverProtocolEmailDefaults = (protocol) => {
+export const buildHandoverProtocolEmailDefaults = async (protocol) => {
+  const { buildHandoverProtocolPayload } = await import('@/lib/documentGenerationService');
   const payload = buildHandoverProtocolPayload({ protocol });
   const documentLabel = handoverProtocolTypeLabels[protocol?.document_type] || payload.document.label || 'Dokument';
   const recipients = [payload.client.email].filter(Boolean).join(', ');
@@ -50,15 +47,20 @@ export const sendHandoverProtocolEmail = async ({ protocol, template, recipients
     throw new Error('Zadejte alespoň jednu platnou e-mailovou adresu.');
   }
 
+  const {
+    buildHandoverProtocolPayload,
+    renderHandoverProtocolHtml,
+  } = await import('@/lib/documentGenerationService');
   const payload = buildHandoverProtocolPayload({ protocol });
   const html = renderHandoverProtocolHtml(payload, template);
   const attachmentName = buildAttachmentName(payload);
+  const defaults = await buildHandoverProtocolEmailDefaults(protocol);
 
   const result = await sendEmail({
     to: normalizedRecipients.join(','),
-    subject: subject || buildHandoverProtocolEmailDefaults(protocol).subject,
+    subject: subject || defaults.subject,
     greeting: 'Dobrý den,',
-    content: message || buildHandoverProtocolEmailDefaults(protocol).message,
+    content: message || defaults.message,
     salutation: salutation || 'S pozdravem,<br>EKV Project',
     attachments: [{
       filename: attachmentName,
