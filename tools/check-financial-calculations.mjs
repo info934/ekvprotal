@@ -6,6 +6,7 @@ import {
   calculateUnitPriceForMargin,
 } from '../src/lib/crmItemPayloads.js';
 import {
+  assessFinancialHealth,
   calculateCostAdjustedTeamBudget,
   calculateProjectMemberReward,
   calculateRealizationMemberShare,
@@ -157,5 +158,11 @@ assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 
 assertMoney(calculateRealizationMemberShare({ share_type: 'percent', share_value: 25 }, 12000), 3000, 'percentage realization share uses non-negative team budget');
 assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 50000 }, -1000), 0, 'fixed realization share is zero when team budget is exhausted');
 assertMoney(calculateRealizationMemberShare({ share_type: 'percent', share_value: 100 }, 12000), 12000, '100 percent realization share equals available budget');
+
+assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: -1000, availableAmount: 0 }).status, 'loss');
+assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 20000, availableAmount: 10000, committedAmount: 25000 }).status, 'overallocated');
+assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 10000, availableAmount: 0 }).status, 'critical');
+assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 9000, availableAmount: 9000 }).status, 'warning');
+assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 30000, availableAmount: 30000 }).status, 'healthy');
 
 console.log('Financial calculation checks passed');

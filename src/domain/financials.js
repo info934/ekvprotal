@@ -164,3 +164,24 @@ export const calculateRealizationMemberAvailableShare = ({
     availableShare: Math.max(0, totalShare - toAmount(paidAmount)),
   };
 };
+
+export const assessFinancialHealth = ({
+  baseAmount = 0,
+  remainingAmount = 0,
+  availableAmount = remainingAmount,
+  committedAmount = 0,
+  minimumReservePercent = 10,
+} = {}) => {
+  const base = Math.max(0, toAmount(baseAmount));
+  const remaining = toAmount(remainingAmount);
+  const available = toAmount(availableAmount);
+  const committed = Math.max(0, toAmount(committedAmount));
+  const reservePercent = base > 0 ? (available / base) * 100 : 0;
+  const overallocation = Math.max(0, committed - Math.max(0, remaining));
+
+  if (remaining < 0) return { status: 'loss', base, remaining, available, committed, reservePercent, overallocation };
+  if (overallocation > 0) return { status: 'overallocated', base, remaining, available, committed, reservePercent, overallocation };
+  if (available <= 0) return { status: 'critical', base, remaining, available, committed, reservePercent, overallocation };
+  if (reservePercent < minimumReservePercent) return { status: 'warning', base, remaining, available, committed, reservePercent, overallocation };
+  return { status: 'healthy', base, remaining, available, committed, reservePercent, overallocation };
+};

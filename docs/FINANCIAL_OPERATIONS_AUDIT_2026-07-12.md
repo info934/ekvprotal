@@ -86,9 +86,16 @@ Nevyplacená docházka je pouze expozice a nesnižuje účetní budget. Náklade
 
 ## Zbývající rizika a doporučení
 
+### Logické guardrails projektu a realizace
+
+- Databázové RPC už před schválením i vyplacením znovu kontroluje aktuální disponibilní zůstatek, takže samotná výplata nemůže překročit dostupný rozpočet.
+- Audit plánovaných odměn našel 12 projektů, kde součet aktuálně vypočtených odměn členů převyšuje zůstatek týmového rozpočtu po nákladech a vyplacených odměnách. Jde o plánovací konflikt kombinace fixních a procentních odměn nebo o následné snížení rozpočtu; historická data nebyla automaticky měněna.
+- Detail projektu a realizace nyní používá jednotný finanční semafor: ztráta, přealokované závazky, vyčerpaný rozpočet, rezerva pod 10 % a zdravý stav.
+- Zápis skutečného nákladu není blokován ani při překročení rozpočtu. Zablokování účetní reality by stav pouze skrylo; blokovány mají zůstat nové výplaty a závazky.
+- Další vhodný krok je explicitní schvalovací workflow pro překročení plánovaného rozpočtu s důvodem, schvalovatelem a auditní stopou.
+
 1. Pole měny existuje u obchodních dokumentů, ale aplikace nemá kurzovní přepočty. Dokud se nepřidá FX vrstva, musí být finanční řízení považováno za CZK-only.
 2. Sazba DPH je technicky omezena na 0/12/21 %, ale aplikace sama neurčuje správný daňový režim konkrétního plnění. Odpovědnost zůstává na uživateli/účetní kontrole.
 3. JavaScript používá `Number`; autoritativní uložené částky proto musí nadále počítat PostgreSQL `numeric` a RPC.
 4. Dashboardové agregace je vhodné dlouhodobě přesunout na dedikované read modely, aby klient nesčítal velké datové sady a nevznikaly časové rozdíly mezi obrazovkami.
 5. Pro účetní uzávěrku doporučujeme pravidelný kontrolní export výplat, faktur a realizovaných nákladů proti účetnímu systému.
-

@@ -34,6 +34,7 @@ import {
     toAmount
 } from '@/domain/financials';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
+import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
   const tone = color === 'success' ? 'emerald' : color === 'warning' ? 'amber' : color === 'danger' ? 'rose' : color === 'info' ? 'blue' : 'slate';
@@ -757,6 +758,17 @@ const ProjectDetail = () => {
                     <StatCard title="Členové týmu" value={members.length} icon={Users} color="info" />
                     <StatCard title="Dokončení" value={project.completion_date ? format(parseISO(project.completion_date), 'd. M. yyyy') : "Není"} icon={Calendar} />
                 </motion.div>
+
+                {canViewFinance && (
+                    <div className="mb-4">
+                        <FinancialHealthAlert
+                            baseAmount={financials.teamBudget}
+                            remainingAmount={financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts}
+                            availableAmount={financials.availableForPayout}
+                            committedAmount={financials.teamRewards}
+                        />
+                    </div>
+                )}
 
                 <Tabs value={defaultTab} onValueChange={(value) => navigate(`#${value}`, { replace: true })} className="space-y-6">
                     <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-7">

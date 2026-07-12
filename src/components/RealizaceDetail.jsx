@@ -23,6 +23,7 @@ import { RealizaceCostDialog } from './RealizaceFinancials';
 import { calculateFinancials } from './RealizaceFinancialCalculations';
 import RealizaceTeam from './RealizaceTeam';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
+import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
 const toNumber = (value) => {
@@ -386,6 +387,15 @@ const RealizaceDetail = () => {
       </motion.div>
 
       <div className="app-page-wide">
+        {canViewAmounts && (
+          <div className="mb-4">
+            <FinancialHealthAlert
+              baseAmount={totalRevenue}
+              remainingAmount={calculatedFinancials.teamBudget}
+              availableAmount={financialSummary?.available_for_payout ?? calculatedFinancials.teamBudget}
+            />
+          </div>
+        )}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-6 mb-4">
             <TabsTrigger value="overview" className="flex items-center gap-2"><LayoutDashboard className="w-4 h-4" /> Přehled</TabsTrigger>
