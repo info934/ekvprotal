@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Cloud, FolderTree, RefreshCw, Save } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Cloud, FolderTree, RefreshCw, Save, TestTube2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,22 +14,27 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { isStorageConfigMissingError, storageProviderLabels } from '@/lib/documentStorageService';
 
+const TARGETS = [
+  { key: 'project', label: 'Projekty', description: 'Projektová dokumentace a předání' },
+  { key: 'realizace', label: 'Realizace', description: 'Realizační dokumentace, náklady a předání' },
+  { key: 'invoice', label: 'Faktury', description: 'Centrální účetní složka faktur' },
+];
+
+const emptyTarget = { siteId: '', driveId: '', rootFolderId: '', rootFolderPath: '' };
+
 const defaultForm = {
-  provider: 'supabase',
-  name: 'Supabase Storage',
+  provider: 'sharepoint',
+  name: 'EKV SharePoint',
   status: 'active',
-  rootFolderPath: '',
   tenantId: '',
-  siteId: '',
-  driveId: '',
-  rootFolderId: '',
   notes: '',
+  targets: Object.fromEntries(TARGETS.map(({ key }) => [key, { ...emptyTarget }])),
 };
 
 const providerHelp = {
-  supabase: 'Soucasne uloziste v Supabase Storage zustane aktivni bez dalsi konfigurace.',
-  sharepoint: 'Pro produkcni provoz bude Edge Function potrebovat Microsoft Graph OAuth credentials a cilovy site/drive.',
-  google_drive: 'Pro produkcni provoz bude Edge Function potrebovat Google OAuth credentials a cilovy Shared Drive nebo root folder.',
+  supabase: 'Soubory zůstávají v Supabase Storage.',
+  sharepoint: 'Přístupové údaje jsou bezpečně uložené pouze v Supabase Edge Function secrets.',
+  google_drive: 'Google Drive zatím není aktivovaný.',
 };
 
 const toForm = (connection) => {
@@ -37,12 +43,12 @@ const toForm = (connection) => {
     provider: connection?.provider || defaultForm.provider,
     name: connection?.name || storageProviderLabels[connection?.provider] || defaultForm.name,
     status: connection?.status || defaultForm.status,
-    rootFolderPath: config.rootFolderPath || '',
     tenantId: config.tenantId || '',
-    siteId: config.siteId || '',
-    driveId: config.driveId || '',
-    rootFolderId: config.rootFolderId || '',
     notes: config.notes || '',
+    targets: Object.fromEntries(TARGETS.map(({ key }) => [
+      key,
+      { ...emptyTarget, ...(config.targets?.[key] || {}) },
+    ])),
   };
 };
 
@@ -55,10 +61,12 @@ const SettingsStorage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [schemaMissing, setSchemaMissing] = useState(false);
+  const [testingTarget, setTestingTarget] = useState(null);
+  const [testResults, setTestResults] = useState({});
 
   const selectedConnection = useMemo(
     () => connections.find((connection) => connection.id === selectedId),
-    [connections, selectedId]
+    [connections, selectedId],
   );
 
   const fetchConnections = async () => {
@@ -75,11 +83,8 @@ const SettingsStorage = () => {
       .order('created_at', { ascending: true });
 
     if (error) {
-      if (isStorageConfigMissingError(error)) {
-        setSchemaMissing(true);
-      } else {
-        toast({ title: 'Chyba pri nacitani uloziste', description: error.message, variant: 'destructive' });
-      }
+      if (isStorageConfigMissingError(error)) setSchemaMissing(true);
+      else toast({ title: 'Chyba při načítání úložiště', description: error.message, variant: 'destructive' });
       setLoading(false);
       return;
     }
@@ -100,34 +105,38 @@ const SettingsStorage = () => {
   }, [hasPermission]);
 
   useEffect(() => {
-    if (selectedId === 'new') {
-      setForm(defaultForm);
-      return;
-    }
-    if (selectedConnection) setForm(toForm(selectedConnection));
+    if (selectedId === 'new') setForm(defaultForm);
+    else if (selectedConnection) setForm(toForm(selectedConnection));
+    setTestResults({});
   }, [selectedConnection, selectedId]);
 
-  const updateForm = (key, value) => {
-    setForm((current) => ({ ...current, [key]: value }));
-  };
+  const updateForm = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const updateTarget = (targetKey, field, value) => setForm((current) => ({
+    ...current,
+    targets: {
+      ...current.targets,
+      [targetKey]: { ...current.targets[targetKey], [field]: value },
+    },
+  }));
 
   const saveConnection = async () => {
-    if (!hasPermission('settings', 'can_admin')) {
-      toast({ title: 'Nedostatecna opravneni', variant: 'destructive' });
-      return;
-    }
-
+    if (!hasPermission('settings', 'can_admin')) return;
     setSaving(true);
-    const config = {
-      rootFolderPath: form.rootFolderPath.trim(),
-      tenantId: form.tenantId.trim(),
-      siteId: form.siteId.trim(),
-      driveId: form.driveId.trim(),
-      rootFolderId: form.rootFolderId.trim(),
-      notes: form.notes.trim(),
-      projectStructure: ['00_Admin', '01_Smlouvy', '02_Dokumentace', '03_Predani', '04_Fakturace'],
-      realizationStructure: ['00_Admin', '01_Objednavky', '02_Naklady', '03_Fotodokumentace', '04_Predani', '05_Fakturace'],
+
+    const structures = {
+      project: ['00_Admin', '01_Smlouvy', '02_Dokumentace', '03_Predani', '04_Fakturace'],
+      realizace: ['00_Admin', '01_Objednavky', '02_Naklady', '03_Fotodokumentace', '04_Predani', '05_Fakturace'],
+      invoice: [],
     };
+    const targets = Object.fromEntries(TARGETS.map(({ key }) => [key, {
+      ...form.targets[key],
+      siteId: form.targets[key].siteId.trim(),
+      driveId: form.targets[key].driveId.trim(),
+      rootFolderId: form.targets[key].rootFolderId.trim(),
+      rootFolderPath: form.targets[key].rootFolderPath.trim(),
+      structure: structures[key],
+    }]));
+    targets.product = { ...targets.project, rootFolderPath: 'EKVPortal' };
 
     await supabase
       .from('document_storage_connections')
@@ -139,104 +148,111 @@ const SettingsStorage = () => {
       name: form.name.trim() || storageProviderLabels[form.provider],
       status: form.status,
       is_default: true,
-      config,
+      config: {
+        tenantId: form.tenantId.trim(),
+        targets,
+        notes: form.notes.trim(),
+      },
       updated_at: new Date().toISOString(),
     };
 
     const request = selectedId === 'new'
       ? supabase.from('document_storage_connections').insert(payload).select('*').single()
       : supabase.from('document_storage_connections').update(payload).eq('id', selectedId).select('*').single();
-
     const { data, error } = await request;
 
     if (error) {
-      toast({ title: 'Chyba pri ukladani uloziste', description: error.message, variant: 'destructive' });
+      toast({ title: 'Chyba při ukládání úložiště', description: error.message, variant: 'destructive' });
       setSaving(false);
       return;
     }
 
-    toast({ title: 'Uloziste dokumentu ulozeno' });
+    toast({ title: 'Nastavení SharePointu bylo uloženo' });
     setSelectedId(data.id);
     await fetchConnections();
     setSaving(false);
   };
 
+  const testConnection = async (entityType) => {
+    if (selectedId === 'new') {
+      toast({ title: 'Nejprve konfiguraci uložte', variant: 'warning' });
+      return;
+    }
+    setTestingTarget(entityType);
+    const { data, error } = await supabase.functions.invoke('document-storage', {
+      body: { action: 'testConnection', provider: form.provider, connectionId: selectedId, entityType },
+    });
+    const success = !error && data?.success;
+    setTestResults((current) => ({ ...current, [entityType]: success ? 'success' : 'error' }));
+    toast({
+      title: success ? 'Spojení funguje' : 'Spojení se nezdařilo',
+      description: success ? `${data.drive?.name || 'SharePoint'} je dostupný.` : (data?.error || error?.message),
+      variant: success ? 'default' : 'destructive',
+    });
+    setTestingTarget(null);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         icon={Cloud}
-        title="Uloziste dokumentu"
-        description="Vychozi misto pro projektove dokumenty, realizace a budouci externi disky."
+        title="Úložiště dokumentů"
+        description="Oddělené SharePoint struktury pro projekty, realizace a účetní faktury."
       />
 
       {schemaMissing && (
         <Alert>
           <FolderTree className="h-4 w-4" />
-          <AlertTitle>Chybi databazova migrace</AlertTitle>
-          <AlertDescription>
-            Stranka je pripravena, ale v databazi jeste nejsou tabulky pro konfiguraci externiho uloziste.
-            Po nasazeni migrace bude mozne vybrat Supabase, SharePoint nebo Google Drive.
-          </AlertDescription>
+          <AlertTitle>Chybí databázová migrace</AlertTitle>
+          <AlertDescription>Databáze zatím neobsahuje tabulky pro externí úložiště.</AlertDescription>
         </Alert>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>Aktivni provider</CardTitle>
-          <CardDescription>
-            Tajne OAuth hodnoty se neukladaji ve frontendu. Patri do Supabase Edge Function secrets.
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Aktivní připojení</CardTitle>
+              <CardDescription>Tajný klíč se nikdy nezobrazuje ani neukládá do této stránky.</CardDescription>
+            </div>
+            <Badge variant={form.status === 'active' ? 'success' : 'secondary'}>{form.status === 'active' ? 'Aktivní' : form.status}</Badge>
+          </div>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-2 lg:col-span-2">
               <Label>Konfigurace</Label>
               <Select value={selectedId} onValueChange={setSelectedId} disabled={loading || schemaMissing}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Vyberte konfiguraci" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Vyberte konfiguraci" /></SelectTrigger>
                 <SelectContent>
                   {connections.map((connection) => (
                     <SelectItem key={connection.id} value={connection.id}>
-                      {connection.name} {connection.is_default ? '(vychozi)' : ''}
+                      {connection.name} {connection.is_default ? '(výchozí)' : ''}
                     </SelectItem>
                   ))}
-                  <SelectItem value="new">Nova konfigurace</SelectItem>
+                  <SelectItem value="new">Nová konfigurace</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-2">
               <Label>Provider</Label>
               <Select value={form.provider} onValueChange={(value) => updateForm('provider', value)} disabled={loading || schemaMissing}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="supabase">Supabase Storage</SelectItem>
                   <SelectItem value="sharepoint">SharePoint</SelectItem>
+                  <SelectItem value="supabase">Supabase Storage</SelectItem>
                   <SelectItem value="google_drive">Google Drive</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{providerHelp[form.provider]}</p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="storageName">Nazev</Label>
-              <Input id="storageName" value={form.name} onChange={(event) => updateForm('name', event.target.value)} disabled={loading || schemaMissing} />
             </div>
             <div className="space-y-2">
               <Label>Status</Label>
               <Select value={form.status} onValueChange={(value) => updateForm('status', value)} disabled={loading || schemaMissing}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">Aktivni</SelectItem>
-                  <SelectItem value="draft">Rozpracovane</SelectItem>
-                  <SelectItem value="disabled">Vypnute</SelectItem>
+                  <SelectItem value="active">Aktivní</SelectItem>
+                  <SelectItem value="draft">Rozpracované</SelectItem>
+                  <SelectItem value="disabled">Vypnuté</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -244,45 +260,66 @@ const SettingsStorage = () => {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="rootFolderPath">Root cesta</Label>
-              <Input id="rootFolderPath" placeholder="EKVPortal/Projekty" value={form.rootFolderPath} onChange={(event) => updateForm('rootFolderPath', event.target.value)} disabled={loading || schemaMissing} />
+              <Label htmlFor="storageName">Název připojení</Label>
+              <Input id="storageName" value={form.name} onChange={(event) => updateForm('name', event.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="rootFolderId">Root folder ID</Label>
-              <Input id="rootFolderId" value={form.rootFolderId} onChange={(event) => updateForm('rootFolderId', event.target.value)} disabled={loading || schemaMissing} />
+              <Label htmlFor="tenantId">Tenant ID</Label>
+              <Input id="tenantId" value={form.tenantId} onChange={(event) => updateForm('tenantId', event.target.value)} />
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">{providerHelp[form.provider]}</p>
 
-          {form.provider !== 'supabase' && (
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="tenantId">Tenant ID</Label>
-                <Input id="tenantId" value={form.tenantId} onChange={(event) => updateForm('tenantId', event.target.value)} disabled={loading || schemaMissing} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="siteId">Site ID</Label>
-                <Input id="siteId" value={form.siteId} onChange={(event) => updateForm('siteId', event.target.value)} disabled={loading || schemaMissing} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="driveId">Drive ID</Label>
-                <Input id="driveId" value={form.driveId} onChange={(event) => updateForm('driveId', event.target.value)} disabled={loading || schemaMissing} />
-              </div>
+          {form.provider === 'sharepoint' && (
+            <div className="grid gap-4 xl:grid-cols-3">
+              {TARGETS.map((target) => {
+                const result = testResults[target.key];
+                return (
+                  <div key={target.key} className="rounded-lg border bg-slate-50/60 p-4">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-semibold text-slate-900">{target.label}</h3>
+                        <p className="text-xs text-muted-foreground">{target.description}</p>
+                      </div>
+                      {result === 'success' && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
+                      {result === 'error' && <AlertCircle className="h-5 w-5 text-red-600" />}
+                    </div>
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`${target.key}-site`}>Site ID</Label>
+                        <Input id={`${target.key}-site`} value={form.targets[target.key].siteId} onChange={(event) => updateTarget(target.key, 'siteId', event.target.value)} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`${target.key}-drive`}>Drive ID</Label>
+                        <Input id={`${target.key}-drive`} value={form.targets[target.key].driveId} onChange={(event) => updateTarget(target.key, 'driveId', event.target.value)} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`${target.key}-root`}>Kořenová cesta</Label>
+                        <Input id={`${target.key}-root`} value={form.targets[target.key].rootFolderPath} onChange={(event) => updateTarget(target.key, 'rootFolderPath', event.target.value)} placeholder="EKVPortal" />
+                      </div>
+                      <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => testConnection(target.key)} disabled={testingTarget === target.key || selectedId === 'new'}>
+                        <TestTube2 className="mr-2 h-4 w-4" />
+                        {testingTarget === target.key ? 'Ověřuji...' : 'Otestovat přístup'}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="storageNotes">Poznamky k napojeni</Label>
-            <Textarea id="storageNotes" rows={3} value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} disabled={loading || schemaMissing} />
+            <Label htmlFor="storageNotes">Poznámky</Label>
+            <Textarea id="storageNotes" rows={2} value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} />
           </div>
 
           <div className="flex flex-wrap gap-2">
             <Button onClick={saveConnection} disabled={loading || saving || schemaMissing}>
               <Save className="mr-2 h-4 w-4" />
-              {saving ? 'Ukladam...' : 'Ulozit jako vychozi'}
+              {saving ? 'Ukládám...' : 'Uložit jako výchozí'}
             </Button>
             <Button variant="outline" onClick={fetchConnections} disabled={loading || saving}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Obnovit
+              <RefreshCw className="mr-2 h-4 w-4" /> Obnovit
             </Button>
           </div>
         </CardContent>

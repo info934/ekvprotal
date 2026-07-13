@@ -31,6 +31,7 @@ import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
 import { uploadInvoice, confirmInvoice, approveWithoutInvoice } from '@/lib/payoutWorkflowService';
 import { sendInvoiceUploadedNotification, sendPayoutPaidEmail as sendWorkflowPayoutPaidEmail } from '@/lib/payoutWorkflowEmailService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
+import { uploadInvoiceDocument } from '@/lib/documentStorageService';
 import { savePayoutRequest } from '@/lib/payoutRequestService';
 import PageHeader from '@/components/ui/page-header';
 import { formatCurrency, PayoutMetricCard, PayoutPanel } from '@/components/payouts/PayoutShared';
@@ -267,21 +268,19 @@ const Payouts = () => {
       return;
     }
 
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const bucketName = 'invoices';
-    const filePath = `${year}/${month}/payout_${payout.member_id}_${payout.id}_${Date.now()}_${safeName}`;
-    const dbUrlPath = `${bucketName}/${filePath}`;
-
     try {
-      const { error: uploadError } = await supabase.storage.from(bucketName).upload(filePath, file, { cacheControl: '3600', upsert: true });
-      if (uploadError) throw uploadError;
+      const storedInvoice = await uploadInvoiceDocument({
+        file,
+        recordId: payout.id,
+        projectReference: payout.payout_items?.find((item) => item.projects?.code)?.projects?.code
+          || payout.payout_items?.find((item) => item.project_id)?.project_id,
+        category: 'ukolove-vyplaty',
+      });
+      const dbUrlPath = storedInvoice.dbUrl;
 
       const result = await uploadInvoice(payout.id, dbUrlPath, file.name);
       if (!result.success) {
-        await supabase.storage.from(bucketName).remove([filePath]).catch(console.error);
+        if (storedInvoice.cleanup) await storedInvoice.cleanup().catch(console.error);
         throw new Error(result.error);
       }
 

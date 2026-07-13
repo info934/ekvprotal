@@ -33,6 +33,13 @@ const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
 }).format(Number(value || 0));
 
 const createInvoiceLink = async (invoiceUrl) => {
+  if (/^https?:\/\//i.test(invoiceUrl) && !invoiceUrl.includes('/storage/v1/object/')) {
+    return {
+      url: invoiceUrl,
+      fileName: decodeURIComponent(invoiceUrl.split('?')[0].split('/').pop() || 'faktura'),
+    };
+  }
+
   const parsed = parseInvoiceStoragePath(invoiceUrl);
   if (!parsed) {
     throw new Error('Výplata nemá platnou cestu k faktuře.');

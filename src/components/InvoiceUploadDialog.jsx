@@ -21,6 +21,7 @@ import { uploadInvoice } from '@/lib/payoutWorkflowService';
 import { sendInvoiceUploadedNotification } from '@/lib/payoutWorkflowEmailService';
 import { Upload, File, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { uploadInvoiceDocument } from '@/lib/documentStorageService';
 
 const InvoiceUploadDialog = ({ isOpen, onClose, payout, onSuccess }) => {
   const { toast } = useToast();
@@ -71,37 +72,24 @@ const InvoiceUploadDialog = ({ isOpen, onClose, payout, onSuccess }) => {
     setError(null);
 
     try {
-      // Generate unique filename
-      const timestamp = Date.now();
-      const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `invoice_${payout.id}_${timestamp}.${fileExt}`;
-      const filePath = `invoices/${fileName}`;
-
-      console.log('[InvoiceUpload] Uploading file:', filePath);
-
       // Simulate upload progress
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => Math.min(prev + 10, 90));
       }, 200);
 
-      // Upload to Supabase storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('invoices')
-        .upload(filePath, selectedFile, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
       clearInterval(progressInterval);
-
-      if (uploadError) throw uploadError;
+      const storedInvoice = await uploadInvoiceDocument({
+        file: selectedFile,
+        recordId: payout.id,
+        projectReference: payout.payout_items?.find((item) => item.projects?.code)?.projects?.code
+          || payout.payout_items?.find((item) => item.project_id)?.project_id,
+        category: 'ukolove-vyplaty',
+      });
 
       setUploadProgress(95);
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('invoices')
-        .getPublicUrl(filePath);
+      const publicUrl = storedInvoice.dbUrl;
+      const fileName = selectedFile.name;
 
       console.log('[InvoiceUpload] File uploaded, updating payout record...');
 

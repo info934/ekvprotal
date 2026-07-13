@@ -17,6 +17,7 @@ import ProjectLinkDialog from '@/components/ProjectLinkDialog';
 import ProjectContacts from '@/components/ProjectContacts';
 import SaveTemplateModal from '@/components/SaveTemplateModal';
 import HandoverProtocolsTab from '@/components/HandoverProtocolsTab';
+import SharePointFolderBrowser from '@/components/SharePointFolderBrowser';
 import { Textarea } from '@/components/ui/textarea';
 import { cn, projectStatusConfig } from '@/lib/utils';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
@@ -35,6 +36,7 @@ import {
 } from '@/domain/financials';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
+import { uploadProjectCostInvoice } from '@/lib/documentStorageService';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
   const tone = color === 'success' ? 'emerald' : color === 'warning' ? 'amber' : color === 'danger' ? 'rose' : color === 'info' ? 'blue' : 'slate';
@@ -519,6 +521,78 @@ const ProjectDetail = () => {
         }
     };
 
+    const handleSaveProjectCost = async (costData) => {
+        const {
+            invoiceFile,
+            existingInvoice,
+            removeInvoice,
+            ...financialData
+        } = costData;
+        const costId = editingCost?.id || crypto.randomUUID();
+        const rewardSnapshotBefore = buildRewardSnapshot();
+        let uploadedInvoice = null;
+        const payload = {
+            ...financialData,
+            id: costId,
+            project_id: projectId,
+        };
+
+        if (removeInvoice) {
+            Object.assign(payload, {
+                invoice_url: null,
+                invoice_name: null,
+                invoice_storage_connection_id: null,
+                invoice_external_file_id: null,
+                invoice_external_web_url: null,
+                invoice_storage_metadata: {},
+            });
+        } else if (existingInvoice) {
+            payload.invoice_url = existingInvoice.url;
+            payload.invoice_name = existingInvoice.name;
+        }
+
+        try {
+            if (invoiceFile) {
+                uploadedInvoice = await uploadProjectCostInvoice({
+                    file: invoiceFile,
+                    project,
+                    costId,
+                    createCentralLink: true,
+                });
+                Object.assign(payload, uploadedInvoice.storageFields);
+            }
+
+            const query = editingCost
+                ? supabase.from('project_costs').update(payload).eq('id', editingCost.id)
+                : supabase.from('project_costs').insert(payload);
+            const { error } = await query;
+            if (error) throw error;
+
+            await logRewardSnapshot({
+                action: editingCost ? 'update' : 'create',
+                table: 'project_costs',
+                itemId: costId,
+                before: rewardSnapshotBefore,
+            });
+            toast({ title: 'Náklad uložen' });
+            if (uploadedInvoice?.centralLinkError) {
+                toast({
+                    title: 'Faktura je u projektu, centrální odkaz se nevytvořil',
+                    description: uploadedInvoice.centralLinkError,
+                    variant: 'warning',
+                });
+            }
+            setIsCostDialogOpen(false);
+            setEditingCost(null);
+            refreshData();
+            return true;
+        } catch (error) {
+            if (uploadedInvoice?.cleanup) await uploadedInvoice.cleanup().catch(console.error);
+            toast({ title: 'Náklad se nepodařilo uložit', description: error.message, variant: 'destructive' });
+            return false;
+        }
+    };
+
     const handleDeleteGeneric = async () => {
         if (!itemToDelete) return;
         const { table, id } = itemToDelete;
@@ -914,7 +988,12 @@ const ProjectDetail = () => {
 
                     <TabsContent value="tasks"><ProjectTasks projectId={projectId} project={project} tasks={tasks} members={members} canEdit={canEdit} onTaskUpdate={refreshData} /></TabsContent>
                     <TabsContent value="engineering"><ProjectEngineering projectId={projectId} project={project} canEdit={canEdit} /></TabsContent>
-                    <TabsContent value="documents">
+                    <TabsContent value="documents" className="space-y-6">
+                        <SharePointFolderBrowser
+                            entityType="project"
+                            entity={project}
+                            canEdit={canEdit}
+                        />
                         <HandoverProtocolsTab
                             projectId={projectId}
                             project={project}
@@ -939,10 +1018,10 @@ const ProjectDetail = () => {
                         </div>
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 h-4 mr-2" />Přidat náklad</Button>}>
                             <Table>
-                                <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Odečíst z</TableHead><TableHead>Částka</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>
+                                <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Odečíst z</TableHead><TableHead>Částka</TableHead><TableHead>Faktura</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>
                                 <TableBody>
                                     {(costs.length === 0 && financeDerivedRows.length === 0) ? (
-                                        <TableRow><TableCell colSpan={4} className="text-center">Žádné náklady nebyly zadány.</TableCell></TableRow>
+                                        <TableRow><TableCell colSpan={5} className="text-center">Žádné náklady nebyly zadány.</TableCell></TableRow>
                                     ) : (
                                         <>
                                             {costs.map(cost => (
@@ -960,13 +1039,21 @@ const ProjectDetail = () => {
                                                         )}
                                                     </TableCell>
                                                     <TableCell>{(cost.amount || 0).toLocaleString('cs-CZ')} Kč</TableCell>
+                                                    <TableCell>
+                                                        {cost.invoice_url ? (
+                                                            <a href={cost.invoice_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:underline">
+                                                                <FileText className="h-4 w-4" />
+                                                                {cost.invoice_name || 'Otevřít'}
+                                                            </a>
+                                                        ) : '—'}
+                                                    </TableCell>
                                                     <TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => { setEditingCost(cost); setIsCostDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => requestDeleteCost(cost)}><Trash2 className="h-4 w-4 text-red-500" /></Button></TableCell>
                                                 </TableRow>
                                             ))}
                                             {financeDerivedRows.map((row) => (
                                                 <React.Fragment key={row.key}>
-                                                    <TableRow className="bg-slate-50/70"><TableCell><div className="font-semibold">{row.label}</div><p className="text-xs text-muted-foreground">{row.note}</p></TableCell><TableCell>Společný budget</TableCell><TableCell>{row.amount.toLocaleString('cs-CZ')} Kč</TableCell><TableCell className="text-right text-xs text-muted-foreground italic">automaticky</TableCell></TableRow>
-                                                    {row.details?.length ? (<TableRow><TableCell colSpan={4} className="bg-slate-50/40"><div className="space-y-3">{row.details.map((detail) => (<div key={`${row.key}-${detail.key ?? detail.label}`} className="flex flex-col gap-1 rounded-md border bg-white/80 px-3 py-2 text-sm shadow-sm"><div className="flex items-start justify-between gap-4"><div><p className="font-medium text-slate-900">{detail.label}</p>{detail.description && (<p className="text-xs text-muted-foreground">{detail.description}</p>)}</div><span className="font-semibold text-slate-900 whitespace-nowrap">{detail.amount.toLocaleString('cs-CZ')} Kč</span></div></div>))}</div></TableCell></TableRow>) : null}
+                                                    <TableRow className="bg-slate-50/70"><TableCell><div className="font-semibold">{row.label}</div><p className="text-xs text-muted-foreground">{row.note}</p></TableCell><TableCell>Společný budget</TableCell><TableCell>{row.amount.toLocaleString('cs-CZ')} Kč</TableCell><TableCell>—</TableCell><TableCell className="text-right text-xs text-muted-foreground italic">automaticky</TableCell></TableRow>
+                                                    {row.details?.length ? (<TableRow><TableCell colSpan={5} className="bg-slate-50/40"><div className="space-y-3">{row.details.map((detail) => (<div key={`${row.key}-${detail.key ?? detail.label}`} className="flex flex-col gap-1 rounded-md border bg-white/80 px-3 py-2 text-sm shadow-sm"><div className="flex items-start justify-between gap-4"><div><p className="font-medium text-slate-900">{detail.label}</p>{detail.description && (<p className="text-xs text-muted-foreground">{detail.description}</p>)}</div><span className="font-semibold text-slate-900 whitespace-nowrap">{detail.amount.toLocaleString('cs-CZ')} Kč</span></div></div>))}</div></TableCell></TableRow>) : null}
                                                 </React.Fragment>
                                             ))}
                                         </>
@@ -1046,7 +1133,7 @@ const ProjectDetail = () => {
 
             {isMemberDialogOpen && <AssignMemberDialog isOpen={isMemberDialogOpen} onClose={() => setIsMemberDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_members', data, editingMember?.id, () => setIsMemberDialogOpen(false), setEditingMember)} member={editingMember} team={members} project={project} projectSubcontractors={subcontractors} teamBudgetOverride={canViewFinance ? rewardCalculationBudget : null} />}
             {isSubcontractorDialogOpen && <AssignSubcontractorDialog isOpen={isSubcontractorDialogOpen} onClose={() => setIsSubcontractorDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_subcontractors', data, editingSubcontractor?.id, () => setIsSubcontractorDialogOpen(false), setEditingSubcontractor)} assignedSubcontractor={editingSubcontractor} projectSubcontractors={subcontractors} />}
-            {isCostDialogOpen && <ProjectCostDialog isOpen={isCostDialogOpen} onClose={() => setIsCostDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_costs', data, editingCost?.id, () => setIsCostDialogOpen(false), setEditingCost)} costData={editingCost} projectId={projectId} members={members} />}
+            {isCostDialogOpen && <ProjectCostDialog isOpen={isCostDialogOpen} onClose={() => setIsCostDialogOpen(false)} onSave={handleSaveProjectCost} costData={editingCost} projectId={projectId} members={members} />}
             {isLinkDialogOpen && <ProjectLinkDialog isOpen={isLinkDialogOpen} onClose={() => setIsLinkDialogOpen(false)} onSave={(data) => handleSaveGeneric('project_links', data, editingLink?.id, () => setIsLinkDialogOpen(false), setEditingLink)} linkData={editingLink} />}
             {isTemplateModalOpen && <SaveTemplateModal isOpen={isTemplateModalOpen} onClose={() => setIsTemplateModalOpen(false)} projectData={{ ...project, tasks }} />}
         </div>

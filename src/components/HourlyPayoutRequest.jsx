@@ -54,7 +54,7 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
 
       const { data: requestsData, error } = await supabase
         .from('hourly_payout_requests')
-        .select('*, projects(name)')
+        .select('*, projects(name, code)')
         .eq('member_id', memberId)
         .order('created_at', { ascending: false });
 
@@ -320,7 +320,12 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
                   {request.status === 'approved' && !request.invoice_url && !request.approved_without_invoice && (
-                    <InvoiceUpload requestId={request.id} memberId={memberId} onUploadSuccess={() => fetchBaseData()} />
+                    <InvoiceUpload
+                      requestId={request.id}
+                      memberId={memberId}
+                      projectReference={request.projects?.code || request.project_id}
+                      onUploadSuccess={() => fetchBaseData()}
+                    />
                   )}
                   {request.invoice_url && (
                     <InvoicePreview

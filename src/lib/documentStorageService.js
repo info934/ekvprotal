@@ -227,6 +227,189 @@ export const uploadProjectDocument = async ({ file, project, documentName }) => 
   };
 };
 
+export const uploadProjectCostInvoice = async ({ file, project, costId, createCentralLink = true }) => {
+  const connection = await getDefaultStorageConnection();
+  await ensureEntityFolder({
+    entityType: 'project',
+    entityId: project.id,
+    code: project.code,
+    name: project.name,
+    connection,
+  });
+  const now = new Date();
+  const uploadDate = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+  const projectReference = sanitizePathSegment(project.code || project.id);
+  const storedFileName = `${uploadDate}_${projectReference}_${sanitizePathSegment(costId)}_${sanitizePathSegment(file.name)}`;
+  const invoiceFolderPath = `${buildEntityFolderPath({
+    entityType: 'project',
+    entityId: project.id,
+    code: project.code,
+    name: project.name,
+  })}/04_Fakturace`;
+
+  if (connection.provider === 'supabase') {
+    const filePath = `${project.id}/04_Fakturace/${storedFileName}`;
+    const { error } = await supabase.storage
+      .from(PROJECT_BUCKET)
+      .upload(filePath, file, { cacheControl: '3600', upsert: false });
+    if (error) throw error;
+    const { data: publicData } = supabase.storage.from(PROJECT_BUCKET).getPublicUrl(filePath);
+
+    return {
+      provider: 'supabase',
+      connectionId: connection.id,
+      dbUrl: publicData.publicUrl,
+      filePath,
+      fileName: file.name,
+      storageFields: {
+        invoice_url: publicData.publicUrl,
+        invoice_name: file.name,
+        invoice_storage_provider: 'supabase',
+        invoice_storage_connection_id: connection.id,
+        invoice_external_file_id: filePath,
+        invoice_external_web_url: null,
+        invoice_storage_metadata: { bucket: PROJECT_BUCKET, folderPath: invoiceFolderPath },
+      },
+      cleanup: async () => supabase.storage.from(PROJECT_BUCKET).remove([filePath]),
+    };
+  }
+
+  const { data, error } = await supabase.functions.invoke('document-storage', {
+    body: {
+      action: 'uploadFile',
+      connectionId: connection.id,
+      provider: connection.provider,
+      entityType: 'project',
+      entityId: project.id,
+      folderPath: invoiceFolderPath,
+      fileName: storedFileName,
+      contentType: file.type || 'application/octet-stream',
+      fileBase64: await fileToBase64(file),
+      metadata: { documentKind: 'project_cost_invoice', costId, originalFileName: file.name },
+    },
+  });
+
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || 'Fakturu se nepodařilo nahrát do projektové složky.');
+
+  let centralLink = null;
+  let centralLinkError = null;
+  if (createCentralLink && data.webUrl) {
+    try {
+      const shortcut = new File(
+        [`[InternetShortcut]\r\nURL=${data.webUrl}\r\n`],
+        `Odkaz-${projectReference}-${sanitizePathSegment(file.name)}.url`,
+        { type: 'application/internet-shortcut' },
+      );
+      centralLink = await uploadInvoiceDocument({
+        file: shortcut,
+        recordId: costId,
+        projectReference: project.code || project.id,
+        category: 'odkaz-projektovy-naklad',
+        connection,
+      });
+    } catch (linkError) {
+      centralLinkError = linkError.message || 'Centrální odkaz se nepodařilo vytvořit.';
+    }
+  }
+
+  return {
+    provider: connection.provider,
+    connectionId: connection.id,
+    dbUrl: data.webUrl,
+    filePath: data.filePath,
+    fileId: data.fileId,
+    webUrl: data.webUrl,
+    fileName: file.name,
+    centralLink,
+    centralLinkError,
+    storageFields: {
+      invoice_url: data.webUrl,
+      invoice_name: file.name,
+      invoice_storage_provider: connection.provider,
+      invoice_storage_connection_id: connection.id,
+      invoice_external_file_id: data.fileId,
+      invoice_external_web_url: data.webUrl,
+      invoice_storage_metadata: {
+        ...(data.metadata || {}),
+        folderPath: invoiceFolderPath,
+        centralLinkFileId: centralLink?.fileId || null,
+        centralLinkWebUrl: centralLink?.webUrl || null,
+        centralLinkError,
+      },
+    },
+  };
+};
+
+export const getEntityStorageFolder = async ({ entityType, entityId }) => {
+  const connection = await getDefaultStorageConnection();
+  if (!connection?.id) return null;
+
+  const { data, error } = await supabase
+    .from('document_storage_folders')
+    .select('*')
+    .eq('connection_id', connection.id)
+    .eq('entity_type', entityType)
+    .eq('entity_id', entityId)
+    .maybeSingle();
+
+  if (error) {
+    if (isStorageConfigMissingError(error)) return null;
+    throw error;
+  }
+
+  return data ? { ...data, connection } : null;
+};
+
+export const listEntityStorageFolder = async ({ entityType, folderId, connection }) => {
+  if (!connection || connection.provider === 'supabase') {
+    return { items: [], provider: connection?.provider || 'supabase', supported: false };
+  }
+
+  const { data, error } = await supabase.functions.invoke('document-storage', {
+    body: {
+      action: 'listFiles',
+      connectionId: connection.id,
+      provider: connection.provider,
+      entityType,
+      folderId,
+    },
+  });
+
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || 'Obsah složky se nepodařilo načíst.');
+  return { items: data.items || [], provider: connection.provider, supported: true };
+};
+
+export const uploadEntityStorageFile = async ({ entityType, entityId, folderId, file, connection }) => {
+  if (!connection || connection.provider === 'supabase') {
+    throw new Error('Procházení složek je dostupné pouze pro externí úložiště.');
+  }
+
+  const { data, error } = await supabase.functions.invoke('document-storage', {
+    body: {
+      action: 'uploadFile',
+      connectionId: connection.id,
+      provider: connection.provider,
+      entityType,
+      entityId,
+      folderId,
+      fileName: file.name,
+      contentType: file.type || 'application/octet-stream',
+      fileBase64: await fileToBase64(file),
+      metadata: { originalFileName: file.name },
+    },
+  });
+
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || 'Soubor se nepodařilo nahrát.');
+  return data;
+};
+
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(String(reader.result).split(',')[1]);
@@ -328,6 +511,79 @@ export const uploadProductDatasheet = async ({ file, product, connectionId }) =>
       datasheet_file_name: file.name,
       datasheet_storage_metadata: data.metadata || {},
     },
+  };
+};
+
+export const uploadInvoiceDocument = async ({
+  file,
+  recordId,
+  projectReference,
+  category = 'ostatni',
+  connection: providedConnection,
+}) => {
+  const connection = providedConnection || await getDefaultStorageConnection();
+  const now = new Date();
+  const uploadDate = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+  const safeRecordId = sanitizePathSegment(recordId);
+  const safeProjectReference = sanitizePathSegment(projectReference || recordId);
+  const safeFileName = sanitizePathSegment(file.name);
+  const folderPath = '';
+  const recordSuffix = safeRecordId === safeProjectReference ? '' : `_${safeRecordId}`;
+  const storedFileName = `${uploadDate}_${safeProjectReference}${recordSuffix}_${safeFileName}`;
+
+  if (connection.provider === 'supabase') {
+    const filePath = storedFileName;
+    const { error } = await supabase.storage
+      .from(INVOICE_BUCKET)
+      .upload(filePath, file, { cacheControl: '3600', upsert: false });
+    if (error) throw error;
+
+    return {
+      provider: 'supabase',
+      connectionId: connection.id,
+      dbUrl: `${INVOICE_BUCKET}/${filePath}`,
+      filePath,
+      fileName: file.name,
+      cleanup: async () => supabase.storage.from(INVOICE_BUCKET).remove([filePath]),
+    };
+  }
+
+  const { data, error } = await supabase.functions.invoke('document-storage', {
+    body: {
+      action: 'uploadFile',
+      connectionId: connection.id,
+      provider: connection.provider,
+      entityType: 'invoice',
+      entityId: recordId,
+      folderPath,
+      fileName: storedFileName,
+      contentType: file.type || 'application/octet-stream',
+      fileBase64: await fileToBase64(file),
+      metadata: {
+        category,
+        originalFileName: file.name,
+        projectReference: projectReference || null,
+        uploadedAt: now.toISOString(),
+      },
+    },
+  });
+
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || 'Fakturu se nepodařilo nahrát na SharePoint.');
+
+  return {
+    provider: connection.provider,
+    connectionId: connection.id,
+    dbUrl: data.webUrl,
+    filePath: data.filePath,
+    fileId: data.fileId,
+    webUrl: data.webUrl,
+    fileName: file.name,
+    metadata: data.metadata || {},
   };
 };
 

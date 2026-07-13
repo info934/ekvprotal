@@ -14,6 +14,11 @@ export const downloadInvoiceFromStorage = async (invoiceUrl) => {
     }
 
     try {
+        if (/^https?:\/\//i.test(invoiceUrl) && !invoiceUrl.includes('/storage/v1/object/')) {
+            window.open(invoiceUrl, '_blank', 'noopener,noreferrer');
+            return { success: true };
+        }
+
         let filePath = invoiceUrl;
         let bucket = 'invoices';
 

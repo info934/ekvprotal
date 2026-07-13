@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature } from 'lucide-react';
+import { ChevronLeft, Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -19,11 +19,13 @@ import RealizaceHourlyCosts from './RealizaceHourlyCosts';
 import RealizaceProfitSharing from './RealizaceProfitSharing';
 import RealizaceExtraCosts from './RealizaceExtraCosts';
 import HandoverProtocolsTab from './HandoverProtocolsTab';
+import SharePointFolderBrowser from '@/components/SharePointFolderBrowser';
 import { RealizaceCostDialog } from './RealizaceFinancials';
 import { calculateFinancials } from './RealizaceFinancialCalculations';
 import RealizaceTeam from './RealizaceTeam';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
+import { uploadInvoiceDocument } from '@/lib/documentStorageService';
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
 const toNumber = (value) => {
@@ -252,6 +254,8 @@ const RealizaceDetail = () => {
     try {
       let fileUrl = costData.existingInvoice?.url || null;
       let fileName = costData.existingInvoice?.name || null;
+      let invoiceStorageFields = {};
+      let uploadedInvoice = null;
 
       if (costData.removeInvoice) {
         fileUrl = null;
@@ -260,18 +264,21 @@ const RealizaceDetail = () => {
 
       if (costData.invoiceFile) {
         const file = costData.invoiceFile;
-        const fileExt = file.name.split('.').pop();
-        const filePath = `${realizaceId}/${Date.now()}.${fileExt}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('invoices')
-          .upload(filePath, file);
-
-        if (uploadError) throw uploadError;
-
-        const { data: publicData } = supabase.storage.from('invoices').getPublicUrl(filePath);
-        fileUrl = publicData.publicUrl;
+        uploadedInvoice = await uploadInvoiceDocument({
+          file,
+          recordId: editingCost?.id || realizaceId,
+          projectReference: realization?.project_code || realization?.linked_project_code || linkedProjectId || realizaceId,
+          category: 'naklady-realizaci',
+        });
+        fileUrl = uploadedInvoice.dbUrl;
         fileName = file.name;
+        invoiceStorageFields = {
+          invoice_storage_provider: uploadedInvoice.provider,
+          invoice_storage_connection_id: uploadedInvoice.connectionId,
+          invoice_external_file_id: uploadedInvoice.fileId || null,
+          invoice_external_web_url: uploadedInvoice.webUrl || null,
+          invoice_storage_metadata: uploadedInvoice.metadata || {},
+        };
       }
 
       const payload = {
@@ -282,16 +289,23 @@ const RealizaceDetail = () => {
         variable_symbol: costData.variable_symbol,
         note: costData.note,
         invoice_url: fileUrl,
-        invoice_name: fileName
+        invoice_name: fileName,
+        ...invoiceStorageFields,
       };
 
       if (editingCost) {
         const { error } = await supabase.from('realizace_costs').update(payload).eq('id', editingCost.id);
-        if (error) throw error;
+        if (error) {
+          if (uploadedInvoice?.cleanup) await uploadedInvoice.cleanup().catch(console.error);
+          throw error;
+        }
         toast({ title: 'Náklad aktualizován' });
       } else {
         const { error } = await supabase.from('realizace_costs').insert(payload);
-        if (error) throw error;
+        if (error) {
+          if (uploadedInvoice?.cleanup) await uploadedInvoice.cleanup().catch(console.error);
+          throw error;
+        }
         toast({ title: 'Náklad přidán' });
       }
 
@@ -374,11 +388,12 @@ const RealizaceDetail = () => {
           </div>
         )}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-6 mb-4">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-7 mb-4">
             <TabsTrigger value="overview" className="flex items-center gap-2"><LayoutDashboard className="w-4 h-4" /> Přehled</TabsTrigger>
             {canViewCosts && <TabsTrigger value="finance" className="flex items-center gap-2"><DollarSign className="w-4 h-4" /> Náklady & Finance</TabsTrigger>}
             <TabsTrigger value="hourly" className="flex items-center gap-2"><Clock className="w-4 h-4" /> Hodinové náklady</TabsTrigger>
             <TabsTrigger value="orders" className="flex items-center gap-2"><ShoppingCart className="w-4 h-4" /> Objednávky</TabsTrigger>
+            <TabsTrigger value="documents" className="flex items-center gap-2"><FolderOpen className="w-4 h-4" /> Dokumenty</TabsTrigger>
             <TabsTrigger value="handover" className="flex items-center gap-2"><FileSignature className="w-4 h-4" /> Předání</TabsTrigger>
             {canViewProfit && (
               <TabsTrigger value="profit" className="flex items-center gap-2"><PieChart className="w-4 h-4" /> Zisk</TabsTrigger>
@@ -559,6 +574,14 @@ const RealizaceDetail = () => {
               realizaceId={realizaceId}
               realization={realization}
               distributionAmount={calculatedFinancials.teamBudget}
+            />
+          </TabsContent>
+
+          <TabsContent value="documents">
+            <SharePointFolderBrowser
+              entityType="realizace"
+              entity={realization}
+              canEdit={canEdit}
             />
           </TabsContent>
 

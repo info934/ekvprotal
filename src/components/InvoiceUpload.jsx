@@ -7,11 +7,12 @@ import { motion } from 'framer-motion';
 import { logPayoutAction } from '@/lib/payoutLogger';
 import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
 import { uploadHourlyPayoutInvoice } from '@/lib/hourlyPayoutWorkflowService';
+import { uploadInvoiceDocument } from '@/lib/documentStorageService';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_RETRIES = 3;
 
-const InvoiceUpload = ({ requestId, memberId, onUploadSuccess }) => {
+const InvoiceUpload = ({ requestId, memberId, projectReference, onUploadSuccess }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const { toast } = useToast();
@@ -36,42 +37,26 @@ const InvoiceUpload = ({ requestId, memberId, onUploadSuccess }) => {
     await logPayoutAction('invoice_upload_attempt', requestId, { fileName: file.name, fileSize: file.size });
 
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `invoice_${memberId}_${requestId}_${Date.now()}.${fileExt}`;
-      
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      
-      const bucketName = 'invoices';
-      const filePath = `${year}/${month}/${fileName}`;
-      const dbUrlPath = `${bucketName}/${filePath}`;
-
       setUploadProgress(30);
-
-      // Upload to storage with retry logic
-      let uploadError = null;
+      let storedInvoice;
+      let uploadError;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        const { error } = await supabase.storage
-          .from(bucketName)
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: true
+        try {
+          storedInvoice = await uploadInvoiceDocument({
+            file,
+            recordId: requestId,
+            projectReference,
+            category: 'hodinove-vyplaty',
           });
-        
-        uploadError = error;
-        if (!error) break;
-        
-        console.warn(`[InvoiceUpload] Upload attempt ${attempt} failed:`, error);
-        if (attempt < MAX_RETRIES) {
-           await new Promise(res => setTimeout(res, 1000 * attempt)); // Exponential backoff
+          uploadError = null;
+          break;
+        } catch (error) {
+          uploadError = error;
+          if (attempt < MAX_RETRIES) await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
       }
-
-      if (uploadError) {
-        console.error("[InvoiceUpload] Final storage upload error:", uploadError);
-        throw uploadError;
-      }
+      if (uploadError || !storedInvoice) throw uploadError || new Error('Fakturu se nepodařilo uložit.');
+      const dbUrlPath = storedInvoice.dbUrl;
 
       setUploadProgress(80);
 
@@ -80,7 +65,7 @@ const InvoiceUpload = ({ requestId, memberId, onUploadSuccess }) => {
         dbData = await uploadHourlyPayoutInvoice(requestId, dbUrlPath);
       } catch (dbError) {
         console.error("[InvoiceUpload] Database update error:", dbError);
-        await supabase.storage.from(bucketName).remove([filePath]).catch(console.error);
+        if (storedInvoice.cleanup) await storedInvoice.cleanup().catch(console.error);
         throw dbError;
       }
 
@@ -121,7 +106,7 @@ const InvoiceUpload = ({ requestId, memberId, onUploadSuccess }) => {
       setIsUploading(false);
       setUploadProgress(0);
     }
-  }, [requestId, memberId, onUploadSuccess, toast]);
+  }, [requestId, memberId, projectReference, onUploadSuccess, toast]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,

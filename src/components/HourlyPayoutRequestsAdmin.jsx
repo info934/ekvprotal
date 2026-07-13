@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { sendHourlyPayoutPaidEmail, sendPayoutApprovalEmail } from '@/lib/email';
 import { logPayoutAction } from '@/lib/payoutLogger';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
+import { uploadInvoiceDocument } from '@/lib/documentStorageService';
 import { auditInvoiceUrls } from '@/lib/invoiceAudit';
 import {
   approveHourlyPayoutRequestWorkflow,
@@ -95,7 +96,7 @@ const HourlyPayoutRequestsAdmin = () => {
           .select(`
             *,
             members:members!hourly_payout_requests_member_id_fkey(name, email, auth_user_id),
-            projects(name)
+            projects(name, code)
           `)
           .order('created_at', { ascending: false }),
         getHourlyPayoutDiscrepancies().catch((error) => {
@@ -185,23 +186,17 @@ const HourlyPayoutRequestsAdmin = () => {
       return;
     }
 
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const bucketName = 'invoices';
-    const filePath = `${year}/${month}/hourly_${request.member_id}_${request.id}_${Date.now()}_${safeName}`;
-    const dbUrlPath = `${bucketName}/${filePath}`;
-
     setProcessingId(request.id);
     await logPayoutAction('hourly_admin_invoice_upload_attempt', request.id, { fileName: file.name, fileSize: file.size });
 
     try {
-      const { error: uploadError } = await supabase.storage
-        .from(bucketName)
-        .upload(filePath, file, { cacheControl: '3600', upsert: true });
-
-      if (uploadError) throw uploadError;
+      const storedInvoice = await uploadInvoiceDocument({
+        file,
+        recordId: request.id,
+        projectReference: request.projects?.code || request.project_id,
+        category: 'hodinove-vyplaty',
+      });
+      const dbUrlPath = storedInvoice.dbUrl;
 
       const uploadedAt = new Date().toISOString();
       const { error: dbError } = await supabase
@@ -215,7 +210,7 @@ const HourlyPayoutRequestsAdmin = () => {
         .eq('id', request.id);
 
       if (dbError) {
-        await supabase.storage.from(bucketName).remove([filePath]).catch(console.error);
+        if (storedInvoice.cleanup) await storedInvoice.cleanup().catch(console.error);
         throw dbError;
       }
 
