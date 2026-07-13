@@ -49,7 +49,6 @@ export const emptyHandoverDefect = () => ({
 
 const protocolSelect = `
   *,
-  project:project_id(id, name, code, price),
   realization:realizace_id(id, name, status, linked_project_id),
   opportunity:opportunity_id(id, number, title, value),
   subject:subject_id(id, name, email, phone, ico, dic),
