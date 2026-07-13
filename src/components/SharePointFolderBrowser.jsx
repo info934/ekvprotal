@@ -82,10 +82,25 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
       let activeConnection = mapping?.connection;
 
       if (mapping?.external_folder_id) {
+        const hasManagedStructure = Array.isArray(mapping.metadata?.structure)
+          && mapping.metadata.structure.length > 0;
+
+        if (canEdit && !hasManagedStructure) {
+          const prepared = await ensureEntityFolder({
+            entityType,
+            entityId: entity.id,
+            code: entity.code,
+            name: entity.name,
+            connection: activeConnection,
+          });
+          activeConnection = prepared.connection;
+          mapping = await getEntityStorageFolder({ entityType, entityId: entity.id });
+        }
+
         folder = {
-          id: mapping.external_folder_id,
+          id: mapping?.external_folder_id || mapping?.externalFolderId,
           name: entity.code || entity.name || 'Dokumenty',
-          webUrl: mapping.external_web_url,
+          webUrl: mapping?.external_web_url || mapping?.webUrl,
         };
       } else if (canEdit) {
         const prepared = await ensureEntityFolder({
