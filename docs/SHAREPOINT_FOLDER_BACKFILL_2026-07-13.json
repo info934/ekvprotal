@@ -1,0 +1,494 @@
+{
+  "generatedAt": "2026-07-13T13:12:23.669Z",
+  "targets": {
+    "project": {
+      "recordCount": 55,
+      "legacyRootFolderCount": 105,
+      "matched": [
+        {
+          "id": "d0ce06c9-00c1-4783-9c4c-63add4c748f4",
+          "code": "OP-26-104",
+          "name": "PD - Rohan C - Sudie střech s FVE",
+          "folderName": "OP-26-104 PD - Rohan C - Sudie střech s FVE",
+          "folderId": "01V7SMFCJCL3BDX3GKDRDISFKBPIXLUBRI",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-26-104%20PD%20-%20Rohan%20C%20-%20Sudie%20st%C5%99ech%20s%20FVE",
+          "method": "exact_code"
+        },
+        {
+          "id": "923686bc-3c07-439d-8277-8d463e5027ac",
+          "code": "OP-26-105",
+          "name": "2x BD basic",
+          "folderName": "OP-26-105 PD - 2x BD basic",
+          "folderId": "01V7SMFCKPBL43D3MZWBEY2IWYDURYGMH4",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-26-105%20PD%20-%202x%20BD%20basic",
+          "method": "exact_code"
+        },
+        {
+          "id": "d0f90790-0961-4d90-927c-e2351ac92d05",
+          "code": "OP-26-059",
+          "name": "Petrovice u Sušice 105",
+          "folderName": "OP-26-059 PD - Petrovice u Sušice 105",
+          "folderId": "01V7SMFCIT62FOKPDDCNEZLKQXVM7BRP2H",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-26-059%20PD%20-%20Petrovice%20u%20Su%C5%A1ice%20105",
+          "method": "exact_code"
+        },
+        {
+          "id": "4b126061-a0a6-47fd-ba75-795e588254ca",
+          "code": "OP-26-078",
+          "name": "PD_DPS - FVE_DOMOV PRO SENIORY – ĎÁBLICE",
+          "folderName": "OP-26-078 PD_DPS - FVE_DOMOV PRO SENIORY – ĎÁBLICE",
+          "folderId": "01V7SMFCKTSPJ7FZDG7BGYABIIFTGQPTTK",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-26-078%20PD_DPS%20-%20FVE_DOMOV%20PRO%20SENIORY%20%E2%80%93%20%C4%8E%C3%81BLICE",
+          "method": "exact_code"
+        },
+        {
+          "id": "77d3a7a8-a0f5-4a68-8088-64bec17c4a99",
+          "code": "OP-26-071",
+          "name": "FVE - ČD STAVBA NOVÉ SKLADOVACÍ HALY",
+          "folderName": "OP-26-071 FVE  - ČD STAVBA NOVÉ SKLADOVACÍ HALY",
+          "folderId": "01V7SMFCN2MK2RKHHKO5EYDKDFIB7K4EDO",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-26-071%20FVE%20%20-%20%C4%8CD%20STAVBA%20NOV%C3%89%20SKLADOVAC%C3%8D%20HALY",
+          "method": "exact_code"
+        },
+        {
+          "id": "5ab2f212-c9f6-4ba1-b495-99cc9d635c69",
+          "code": "OP-26-060",
+          "name": "Vzorový projekt FVE 11,2kwp",
+          "folderName": "OP-26-060 - Vzorový projekt FVE 11,2kwp",
+          "folderId": "01V7SMFCMZKI4VZNPJXNF2BZORKFM2EPOV",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-26-060%20-%20Vzorov%C3%BD%20projekt%20FVE%2011,2kwp",
+          "method": "exact_code"
+        },
+        {
+          "id": "6f1c7910-69ae-48f7-9363-39294607247c",
+          "code": "OP-26-029",
+          "name": "PD - FVE 2026_1",
+          "folderName": "OP-26-029 PD - FVE 2026_1",
+          "folderId": "01V7SMFCP435DNJLZWENE2K2FJBGV7LAEI",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-26-029%20PD%20-%20FVE%202026_1",
+          "method": "exact_code"
+        },
+        {
+          "id": "73cf8fbe-d4c5-4128-be27-4b29bc4d83b3",
+          "code": "OP-26-028",
+          "name": "Dostupné bydlení v Radnicích",
+          "folderName": "OP-26-028 Dostupné bydlení v Radnicích",
+          "folderId": "01V7SMFCPE3UJXX26N7ZF2RHACTDZCMZL3",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-26-028%20Dostupn%C3%A9%20bydlen%C3%AD%20v%20Radnic%C3%ADch",
+          "method": "exact_code"
+        },
+        {
+          "id": "afd1abf1-b78c-4396-abf1-c71572e08de6",
+          "code": "OP-26-006",
+          "name": "FVE - Sokolovna Rychnov",
+          "folderName": "OP-26-006 FVE - Sokolovna Rychnov",
+          "folderId": "01V7SMFCLV5KTPQE76DVDKV3A7C5VN6BUV",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-26-006%20FVE%20-%20Sokolovna%20Rychnov",
+          "method": "exact_code"
+        },
+        {
+          "id": "66ee99f6-f705-4cac-8236-5e843298eb9e",
+          "code": "OP-25-188",
+          "name": "PD - SVR Klatovy DPZ",
+          "folderName": "OP-25-188 PD - SVR Klatovy DPZ",
+          "folderId": "01V7SMFCIB46JUXQUHHRDYQZCCLALWZ5CW",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-188%20PD%20-%20SVR%20Klatovy%20DPZ",
+          "method": "exact_code"
+        },
+        {
+          "id": "9f255e64-241f-4429-afa6-8dde533d811c",
+          "code": "OP-25-187",
+          "name": "BESS -  Papírna M+L  - Analýza, Návrh",
+          "folderName": "OP-25-187 BESS -  Papírna ML",
+          "folderId": "01V7SMFCJR5CICEVNE75HLSOZZ6VPFSUUV",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-187%20BESS%20-%20%20Pap%C3%ADrna%20ML",
+          "method": "exact_code"
+        },
+        {
+          "id": "d872a77b-004d-4662-b83d-6ad01c14d4a7",
+          "code": "OP-25-191",
+          "name": "PD - NAB INF. Beranka",
+          "folderName": "OP-25-191 PD - NAB. INF. Beranka",
+          "folderId": "01V7SMFCM3HVFQ7FICUVGKQGBYOJUKOGM5",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-191%20PD%20-%20NAB.%20INF.%20Beranka",
+          "method": "exact_code"
+        },
+        {
+          "id": "352369c4-fa99-4a01-8296-5753b9180e1e",
+          "code": "OP-25-177",
+          "name": "BAT - Trutnov ",
+          "folderName": "OP-25-177 BAT-  Trutnov",
+          "folderId": "01V7SMFCI6D3FNHNWCGBGK34R7BIR43JTS",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-177%20BAT-%20%20Trutnov",
+          "method": "exact_code"
+        },
+        {
+          "id": "f1270a2d-f35a-4aa5-8ba4-c5fc659a4019",
+          "code": "OP-25-184",
+          "name": "DPS FVE - PICH",
+          "folderName": "OP-25-184 DPS FVE  -  PICH",
+          "folderId": "01V7SMFCOLCOHMC7FOGVFZDVKCWIG4QIQY",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-184%20DPS%20FVE%20%20-%20%20PICH",
+          "method": "exact_code"
+        },
+        {
+          "id": "0b0bd9b3-f54f-4d30-8dea-c891950fb1d4",
+          "code": "OP-25-169",
+          "name": "TES - ORLEN 7",
+          "folderName": "OP-25-169 TES - ORLEN 7",
+          "folderId": "01V7SMFCO66WW6ZPO4UNBIXHLRMGWD225P",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-169%20TES%20-%20ORLEN%207",
+          "method": "exact_code"
+        },
+        {
+          "id": "f14da1d1-fc81-41d8-94b9-4a25b665a878",
+          "code": "OP-25-176",
+          "name": "Fuhrmann Medical 2",
+          "folderName": "OP-25-176 PD - FVE Fuhrmann Medical 2",
+          "folderId": "01V7SMFCNISKQNZQX7BBBZFAUYYARFLFHG",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-176%20PD%20-%20FVE%20Fuhrmann%20Medical%202",
+          "method": "exact_code"
+        },
+        {
+          "id": "4a4610ea-c021-4f99-a207-a040b2549b03",
+          "code": "OP-25-155",
+          "name": "ST - BESS Radnice",
+          "folderName": "OP-25-155 ST  - BESS Radnice",
+          "folderId": "01V7SMFCJPEEOGDPQL7FEZYEFLYUZNDE64",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-155%20ST%20%20-%20BESS%20Radnice",
+          "method": "exact_code"
+        },
+        {
+          "id": "97d13744-dc5a-4fd3-9d5c-44448ed14c99",
+          "code": "PRO-25-011",
+          "name": "PD - 6 Orlen FVE,BESS,NAB",
+          "folderName": "PRO-25-011 PD - 6 Orlen FVE,BESS,NAB",
+          "folderId": "01V7SMFCIN4SXFDTCJLFHZ2S2QOS25D5QJ",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/PRO-25-011%20PD%20-%206%20Orlen%20FVE,BESS,NAB",
+          "method": "exact_code"
+        },
+        {
+          "id": "27bf81d8-1dc9-40ae-b8a7-4cbd5aaf9f20",
+          "code": "OP-25-156",
+          "name": "PD - PŘÍSTAV SLOVÁCKO (ŘVC)",
+          "folderName": "OP-25-156 PD - PŘÍSTAV SLOVÁCKO (ŘVC)",
+          "folderId": "01V7SMFCN6JGY2SYL7VBDZGXGIFNEMU7P3",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-156%20PD%20-%20P%C5%98%C3%8DSTAV%20SLOV%C3%81CKO%20(%C5%98VC)",
+          "method": "exact_code"
+        },
+        {
+          "id": "e472b98f-0288-42a3-8f52-be25b0ddeed3",
+          "code": "OP-24-233",
+          "name": "PD - České Velenice (SŽ)",
+          "folderName": "OP-24-233_České_Velenice",
+          "folderId": "01V7SMFCK5P2SZIBVDWBFZNVDB4722ZNNR",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-24-233_%C4%8Cesk%C3%A9_Velenice",
+          "method": "exact_code"
+        },
+        {
+          "id": "a65dfa7d-412c-420a-82bf-14aafeb63bfa",
+          "code": "OP-25-026",
+          "name": "FVE Mrazírny Eurofrost",
+          "folderName": "OP-25-026 PD -  (DPS) FVE Mrazírny Eurofrost",
+          "folderId": "01V7SMFCKXU3B7LZ2IVFEZLR4DJMITGEGF",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-026%20PD%20-%20%20(DPS)%20FVE%20Mraz%C3%ADrny%20Eurofrost",
+          "method": "exact_code"
+        },
+        {
+          "id": "01ea39fe-3753-4551-a4b1-0e6875e91883",
+          "code": "OP-25-094",
+          "name": " FVE 400kWp, Mantov",
+          "folderName": "OP-25-094 FVE - FVE 400kWp, Mantov",
+          "folderId": "01V7SMFCJQ4MFDJEMIO5FLQDMLW3QPOR7U",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-094%20FVE%20-%20FVE%20400kWp,%20Mantov",
+          "method": "exact_code"
+        },
+        {
+          "id": "5aa6ea20-5f3b-4545-9a28-4e80d2a180dc",
+          "code": "OP-25-149",
+          "name": "ŽST Valašské Meziříčí",
+          "folderName": "OP-25-149 FVE  - ŽST Valašské Meziříčí",
+          "folderId": "01V7SMFCLU3R3UXGSBFJFI4W3CKJOL5HKP",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-149%20FVE%20%20-%20%C5%BDST%20Vala%C5%A1sk%C3%A9%20Mezi%C5%99%C3%AD%C4%8D%C3%AD",
+          "method": "exact_code"
+        },
+        {
+          "id": "6e2e589c-e2ef-4191-9710-08076ad72a85",
+          "code": "OP-24-274",
+          "name": "Tradiční pivovar v Rakovníku",
+          "folderName": "OP-24-274 PD -Tradiční pivovar v Rakovníku",
+          "folderId": "01V7SMFCPLLWVUZHSX6BDY2C6632C5SQXE",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-24-274%20PD%20-Tradi%C4%8Dn%C3%AD%20pivovar%20v%20Rakovn%C3%ADku",
+          "method": "exact_code"
+        },
+        {
+          "id": "cf601647-dbb7-4d52-a1b2-a9b6de739503",
+          "code": "OP-25-013",
+          "name": "PD - Contitental",
+          "folderName": "OP-25-013 PD - Continetnal",
+          "folderId": "01V7SMFCIIM4NCGBBCINE2LIRMAFHM5KJO",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-013%20PD%20-%20Continetnal",
+          "method": "exact_code"
+        },
+        {
+          "id": "d43c9823-19b1-4185-bf54-f18d64b3aebb",
+          "code": "OP-25-098",
+          "name": "eHUB - IVANOVICE NA HANÉ",
+          "folderName": "OP-25-098 eHUB - IVANOVICE NA HANÉ",
+          "folderId": "01V7SMFCJ2I3NNO33OQFFYGKDAORF34Q52",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/project/Shared%20Documents/OP-25-098%20eHUB%20-%20IVANOVICE%20NA%20HAN%C3%89",
+          "method": "exact_code"
+        }
+      ],
+      "ambiguous": [],
+      "unmatched": [
+        {
+          "id": "fe678a03-2ee0-44c6-bb52-cf1699dbe77a",
+          "code": "OP-26-081",
+          "name": "PD - TRUSTAV připojení odběru"
+        },
+        {
+          "id": "708c2748-ab2e-4b11-a121-0baf76ac347e",
+          "code": "OP-26-085",
+          "name": "SVR - Pulice"
+        },
+        {
+          "id": "a6fdf8c0-162c-4904-8f34-d444f661e47a",
+          "code": "OP-26-087",
+          "name": "SVR - Smečno"
+        },
+        {
+          "id": "ee5b496e-c193-48eb-b592-c95c01c14964",
+          "code": "OP-26-086",
+          "name": "SVR - Lubná"
+        },
+        {
+          "id": "d5225ca2-9edb-4ac8-b9af-17a8273e091d",
+          "code": "OBJ-26-004",
+          "name": "PD_DPS - FVE_DOMOV PRO SENIORY "
+        },
+        {
+          "id": "bf6a6cb9-77a8-4163-9660-9f8dcb29715e",
+          "code": "OP-26-066",
+          "name": "Michalská CETIN"
+        },
+        {
+          "id": "6526d3c2-0bfc-4118-8056-1d440a15c19e",
+          "code": "OP-26-063",
+          "name": "Tupolevova CETIN"
+        },
+        {
+          "id": "d9cea1f6-8801-4604-acde-f8cf610f159c",
+          "code": "OP-26-065",
+          "name": "Parizska CETIN"
+        },
+        {
+          "id": "37cd3da0-ca1e-4266-98bc-1dc24889cc5f",
+          "code": "OP-26-062",
+          "name": "Element males CETIN"
+        },
+        {
+          "id": "0141e6ca-6489-4159-89e4-c03cca22232d",
+          "code": "OP-26-033",
+          "name": "FVE TŘEBONICE OB-B"
+        },
+        {
+          "id": "e25f6574-f4b4-4263-b54f-350a28880601",
+          "code": "OP-26-500",
+          "name": "Studie PLTEP"
+        },
+        {
+          "id": "2744c714-d17b-427a-9c9f-d20994122562",
+          "code": "XXXXX",
+          "name": "OSTATNI"
+        },
+        {
+          "id": "3455b5c4-e64e-4d61-8617-1ae69fce8e82",
+          "code": "CT-25-008",
+          "name": "FTTX_RD_CECHBN001_Čechtice_Benešov"
+        },
+        {
+          "id": "21d45df8-15ed-4d71-952f-7da4f9532d69",
+          "code": "CT-25-009",
+          "name": "FTTX_Nadzem_VRDYKH002_Zbyslav_Vrdy_Kutná"
+        },
+        {
+          "id": "58748eb9-fdb4-421e-a4f2-db4bf32b08b1",
+          "code": "CT-25-007",
+          "name": "FTTX_RD_UNESUL002_Krásné Březno"
+        },
+        {
+          "id": "09bd3368-6d66-4a60-83ad-90a44544054e",
+          "code": "CT-25-006",
+          "name": "FTTX_RD_LINEPS002_B2B_Sulkov_Plzeň-sever"
+        },
+        {
+          "id": "d81b7b16-50d3-40fa-a22f-9b62beb47856",
+          "code": "CT-25-005",
+          "name": "FTTX_RD_BRZYKO001_Břežany II_Kolín"
+        },
+        {
+          "id": "427b2d77-c4ed-4e52-8433-525232467e45",
+          "code": "CT-25-004",
+          "name": "FTTX_Nadzem_SEDLPB002_Třebnice_Příbram"
+        },
+        {
+          "id": "b27a7a95-d52c-4341-8af1-4b5e9675ef74",
+          "code": "CT-25-003",
+          "name": "FTTX_Nadzem_NARSPB002_Narysov_Příbram"
+        },
+        {
+          "id": "d93b2359-848d-4e9c-b97c-9fdcb84a5280",
+          "code": "CT-25-002",
+          "name": "FTTH_C_RD350_SEKAR2_Dubina_OK"
+        },
+        {
+          "id": "a9e69b31-bb99-4314-bd7a-da0ec6204798",
+          "code": "CT-25-001",
+          "name": "FTTH_C_RD350_LIHAV1_Litoměřice_OK"
+        },
+        {
+          "id": "aeec11d8-ccac-4b4d-a677-cc2fc6cd2019",
+          "code": "PRO-25-002",
+          "name": "PD - Ústecký Kraj (SŽ)"
+        },
+        {
+          "id": "fa7d01fe-e5c8-4c0f-ae80-ac28c6751409",
+          "code": "PRO-25-003",
+          "name": "PD - JIZNI CECHY 2 (SŽ)"
+        },
+        {
+          "id": "4cd8abb8-0b7b-4ccf-89e8-e66cd7df3a36",
+          "code": "PRO-25-006",
+          "name": "PD - Jižní Morava (SZ)"
+        },
+        {
+          "id": "d92469be-e7a5-45fe-bf41-2f7673b66905",
+          "code": "PRO-25-007",
+          "name": "PD - Kralove Hradecky (SZ)"
+        },
+        {
+          "id": "6bd52f74-a7f6-49c4-a282-66fcac05533e",
+          "code": "FVE-0004",
+          "name": "Bosonohy (2 domy)"
+        },
+        {
+          "id": "e48ff51c-68ce-44d9-9367-3627281c5593",
+          "code": "FVE-0003",
+          "name": "ZUS Rokycany"
+        },
+        {
+          "id": "cf2a0559-7922-4db9-813c-47e710ea41ec",
+          "code": "FVE-0002",
+          "name": "FVE Debra  (DSPS - CEZ)"
+        },
+        {
+          "id": "5e6e9653-46b5-457c-ad6e-9be90f2bac28",
+          "code": "FVE-0001",
+          "name": "Fotovoltaické elektrárny Plzeň 2."
+        }
+      ]
+    },
+    "realizace": {
+      "recordCount": 12,
+      "legacyRootFolderCount": 134,
+      "matched": [
+        {
+          "id": "efee5845-3ad7-40df-8f6a-1609bf1d48d4",
+          "code": "OP-26-005",
+          "name": "OP-26-005",
+          "folderName": "OP-26-005 FVE - Psovské údolí, Palis",
+          "folderId": "01THPRNHKBP6MSB2RXKBEYOV7W3FXEO7YG",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/Realizace/Shared%20Documents/OP-26-005%20FVE%20-%20Psovsk%C3%A9%20%C3%BAdol%C3%AD,%20Palis",
+          "method": "exact_code"
+        },
+        {
+          "id": "55462f29-056b-49cb-8f3b-97a2c809a2f3",
+          "code": "OP-26-069",
+          "name": "OP-26-069 - Volary",
+          "folderName": "OP-26-069 FVE - Volary",
+          "folderId": "01THPRNHMJ3H3GSEBCLJGZUHKGKBTRDKTR",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/Realizace/Shared%20Documents/OP-26-069%20FVE%20-%20Volary",
+          "method": "exact_code"
+        },
+        {
+          "id": "dda7b688-ce2d-4e41-9b57-26c719ccb940",
+          "code": "OP-23-139",
+          "name": "OP-23-139 FVE - Varia Plus",
+          "folderName": "OP-23-139 FVE - Varia Plus",
+          "folderId": "01THPRNHK5WU6ZPS6U65GKD5A4NJBAXHOX",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/Realizace/Shared%20Documents/OP-23-139%20FVE%20-%20Varia%20Plus",
+          "method": "exact_code"
+        },
+        {
+          "id": "1db042ff-b0ac-4be3-a5e8-b2acd10c0311",
+          "code": "OP-23-074",
+          "name": "OP-23-074  FVE - Praní a čištění, s.r.o. 99kWp",
+          "folderName": "OP-23-074 FVE - Praní a čištění, s.r.o. 99kWp",
+          "folderId": "01THPRNHODLI3CINZDUVFYXJBPZWLYKUYL",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/Realizace/Shared%20Documents/OP-23-074%20FVE%20-%20Pran%C3%AD%20a%20%C4%8Di%C5%A1t%C4%9Bn%C3%AD,%20s.r.o.%2099kWp",
+          "method": "exact_code"
+        },
+        {
+          "id": "c2066050-9ad6-410b-af86-12c933c7c1ab",
+          "code": "OP-25-151",
+          "name": "OP-25-151 FVE - OTV Plzeň",
+          "folderName": "OP-25-151 FVE - OTV Plzeň",
+          "folderId": "01THPRNHLZFZB3XPHTHNDJXQAEAG2XAQJ3",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/Realizace/Shared%20Documents/OP-25-151%20FVE%20-%20OTV%20Plze%C5%88",
+          "method": "exact_code"
+        },
+        {
+          "id": "a07a035e-44ae-4f78-a45f-66c5f5094e2b",
+          "code": "OP-25-106",
+          "name": "OP-25-106 FVE - Kostelec (VZ)",
+          "folderName": "OP-25-106 FVE - Kostelec (VZ)",
+          "folderId": "01THPRNHIZLPZATGCABVFZZGMVUWXPMFIC",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/Realizace/Shared%20Documents/OP-25-106%20FVE%20-%20Kostelec%20(VZ)",
+          "method": "exact_code"
+        },
+        {
+          "id": "d9775fdc-9db4-4d4c-a6d8-e2abb3996491",
+          "code": "OP-25-014",
+          "name": "OP-25-014  FVE - MŠ ÚJEZD II",
+          "folderName": "OP-25-014 FVE - MŠ ÚJEZD II",
+          "folderId": "01THPRNHKG3I5RNSESF5B2IRSGB6GW4OGC",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/Realizace/Shared%20Documents/OP-25-014%20FVE%20-%20M%C5%A0%20%C3%9AJEZD%20II",
+          "method": "exact_code"
+        },
+        {
+          "id": "cf1e58d2-5af7-474e-9642-6c942ec26116",
+          "code": "OP-24-251",
+          "name": "OP-24-251 FVE - Kärcher Center Modletice u Prahy",
+          "folderName": "OP-24-251 FVE - Kärcher Center Modletice u Prahy",
+          "folderId": "01THPRNHIKN4SJJ57MGRFZ36UWPWVVS4TU",
+          "webUrl": "https://ekvproject.sharepoint.com/sites/Realizace/Shared%20Documents/OP-24-251%20FVE%20-%20K%C3%A4rcher%20Center%20Modletice%20u%20Prahy",
+          "method": "exact_code"
+        }
+      ],
+      "ambiguous": [],
+      "unmatched": [
+        {
+          "id": "fdccb458-659a-4e4c-8c57-8624367c85ee",
+          "code": null,
+          "name": "FVE - RESORT COTTO PLZENEC 2025"
+        },
+        {
+          "id": "9e2011fd-8699-49cc-9657-87eee241b344",
+          "code": null,
+          "name": "PPL Plzeň 6xProfi"
+        },
+        {
+          "id": "c149affc-be68-4d43-a3f3-253fbd2f2c98",
+          "code": null,
+          "name": "Ostatni"
+        },
+        {
+          "id": "a1db8707-0b0b-4c8e-9c5c-bca85e765eec",
+          "code": "PRO-25-004",
+          "name": "PRO-25-004  FVE - BD Blachutova, Praha"
+        }
+      ]
+    }
+  }
+}
