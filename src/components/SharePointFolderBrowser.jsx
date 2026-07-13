@@ -82,7 +82,8 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
       let activeConnection = mapping?.connection;
 
       if (mapping?.external_folder_id) {
-        const hasManagedStructure = Array.isArray(mapping.metadata?.structure)
+        const hasManagedStructure = mapping.metadata?.structureVersion === 1
+          && Array.isArray(mapping.metadata?.structure)
           && mapping.metadata.structure.length > 0;
 
         if (canEdit && !hasManagedStructure) {

@@ -163,11 +163,34 @@ const ensurePath = async (token: string, target: StorageTarget, folderPath: stri
   return { item: parent, folderPath: combinedPath };
 };
 
-const ensureStructure = async (token: string, target: StorageTarget, basePath: string) => {
+const ensureStructure = async (token: string, target: StorageTarget, baseFolderId: string) => {
   const created: Array<{ id: string; name: string; webUrl?: string }> = [];
   for (const folderName of target.structure || []) {
-    const result = await ensurePath(token, { ...target, rootFolderPath: '' }, normalizePath(basePath, folderName));
-    created.push({ id: result.item.id, name: result.item.name, webUrl: result.item.webUrl });
+    let item = await getChildByName(token, String(target.driveId), baseFolderId, folderName);
+
+    if (!item) {
+      try {
+        item = await graphFetch(
+          token,
+          `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(baseFolderId)}/children`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: safeSegment(folderName),
+              folder: {},
+              '@microsoft.graph.conflictBehavior': 'fail',
+            }),
+          },
+        );
+      } catch (error) {
+        if ((error as { status?: number }).status !== 409) throw error;
+        item = await getChildByName(token, String(target.driveId), baseFolderId, folderName);
+        if (!item) throw error;
+      }
+    }
+
+    created.push({ id: item.id, name: item.name, webUrl: item.webUrl });
   }
   return created;
 };
@@ -248,7 +271,7 @@ Deno.serve(async (req: Request) => {
       const requestedPath = String(body.folderPath || '');
       if (!requestedPath) return jsonResponse({ success: false, error: 'Folder path is required.' }, 400);
       const result = await ensurePath(graphToken, target, requestedPath);
-      const structure = await ensureStructure(graphToken, target, result.folderPath);
+      const structure = await ensureStructure(graphToken, target, result.item.id);
       return jsonResponse({
         success: true,
         provider,
@@ -257,7 +280,7 @@ Deno.serve(async (req: Request) => {
         externalFolderId: result.item.id,
         folderPath: result.folderPath,
         webUrl: result.item.webUrl,
-        metadata: { driveId: target.driveId, siteId: target.siteId, structure },
+        metadata: { driveId: target.driveId, siteId: target.siteId, structure, structureVersion: 1 },
       });
     }
 
