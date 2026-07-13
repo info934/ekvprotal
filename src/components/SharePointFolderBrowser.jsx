@@ -4,7 +4,9 @@ import {
   ExternalLink,
   File,
   Folder,
+  FolderPlus,
   FolderOpen,
+  Link2,
   Loader2,
   RefreshCw,
   Upload,
@@ -30,6 +32,11 @@ const formatDate = (value) => value
   ? new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
   : '—';
 
+const getMappedFolderName = (mapping, entity) => {
+  const pathSegments = String(mapping?.folder_path || '').split('/').filter(Boolean);
+  return pathSegments[pathSegments.length - 1] || entity?.code || entity?.name || 'Dokumenty';
+};
+
 const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
   const { toast } = useToast();
   const inputRef = useRef(null);
@@ -38,7 +45,10 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
   const [breadcrumbs, setBreadcrumbs] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [folderMissing, setFolderMissing] = useState(false);
+  const [mappingMetadata, setMappingMetadata] = useState({});
   const [error, setError] = useState('');
 
   const currentFolder = breadcrumbs[breadcrumbs.length - 1] || rootFolder;
@@ -76,52 +86,31 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
     if (!entity?.id) return;
     setLoading(true);
     setError('');
+    setFolderMissing(false);
     try {
-      let mapping = await getEntityStorageFolder({ entityType, entityId: entity.id });
+      const mapping = await getEntityStorageFolder({ entityType, entityId: entity.id });
       let folder;
-      let activeConnection = mapping?.connection;
+      const activeConnection = mapping?.connection;
 
       if (mapping?.external_folder_id) {
-        const hasManagedStructure = mapping.metadata?.structureVersion === 1
-          && Array.isArray(mapping.metadata?.structure)
-          && mapping.metadata.structure.length > 0;
-
-        if (canEdit && !hasManagedStructure) {
-          const prepared = await ensureEntityFolder({
-            entityType,
-            entityId: entity.id,
-            code: entity.code,
-            name: entity.name,
-            connection: activeConnection,
-          });
-          activeConnection = prepared.connection;
-          mapping = await getEntityStorageFolder({ entityType, entityId: entity.id });
-        }
-
         folder = {
-          id: mapping?.external_folder_id || mapping?.externalFolderId,
-          name: entity.code || entity.name || 'Dokumenty',
-          webUrl: mapping?.external_web_url || mapping?.webUrl,
-        };
-      } else if (canEdit) {
-        const prepared = await ensureEntityFolder({
-          entityType,
-          entityId: entity.id,
-          code: entity.code,
-          name: entity.name,
-          connection: activeConnection || undefined,
-        });
-        activeConnection = prepared.connection;
-        folder = {
-          id: prepared.externalFolderId || prepared.folderId,
-          name: entity.code || entity.name || 'Dokumenty',
-          webUrl: prepared.webUrl,
+          id: mapping.external_folder_id,
+          name: getMappedFolderName(mapping, entity),
+          webUrl: mapping.external_web_url,
         };
       } else {
-        throw new Error('Složka ještě nebyla vytvořena. Požádejte uživatele s právem editace.');
+        setConnection(activeConnection || null);
+        setRootFolder(null);
+        setBreadcrumbs([]);
+        setItems([]);
+        setMappingMetadata({});
+        setFolderMissing(true);
+        setLoading(false);
+        return;
       }
 
       setConnection(activeConnection);
+      setMappingMetadata(mapping.metadata || {});
       setRootFolder(folder);
       setBreadcrumbs([folder]);
       await loadFolder(folder, activeConnection);
@@ -129,7 +118,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
       setError(initializationError.message || 'SharePoint složku se nepodařilo připravit.');
       setLoading(false);
     }
-  }, [canEdit, entity, entityType, loadFolder]);
+  }, [entity, entityType, loadFolder]);
 
   useEffect(() => {
     initialize();
@@ -145,6 +134,30 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
     const next = breadcrumbs.slice(0, index + 1);
     setBreadcrumbs(next);
     await loadFolder(next[next.length - 1], connection);
+  };
+
+  const handleCreateFolder = async () => {
+    if (!entity?.id || creating) return;
+    setCreating(true);
+    setError('');
+    try {
+      await ensureEntityFolder({
+        entityType,
+        entityId: entity.id,
+        code: entity.code,
+        name: entity.name,
+        connection: connection || undefined,
+      });
+      toast({
+        title: 'SharePoint složka vytvořena',
+        description: 'Byla vytvořena hlavní složka i standardní struktura podsložek.',
+      });
+      await initialize();
+    } catch (creationError) {
+      setError(creationError.message || 'SharePoint složku se nepodařilo vytvořit.');
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleUpload = async (event) => {
@@ -191,20 +204,27 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
                 </button>
               </React.Fragment>
             ))}
+            {mappingMetadata.legacyFolder && breadcrumbs.length > 0 && (
+              <span className="ml-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700">
+                <Link2 className="h-3 w-3" /> Původní složka
+              </span>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => loadFolder(currentFolder, connection)} disabled={loading || !currentFolder}>
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            <span className="sr-only">Obnovit</span>
-          </Button>
+          {currentFolder && (
+            <Button variant="outline" size="sm" onClick={() => loadFolder(currentFolder, connection)} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <span className="sr-only">Obnovit</span>
+            </Button>
+          )}
           {rootFolder?.webUrl && (
             <Button variant="outline" size="sm" onClick={() => window.open(rootFolder.webUrl, '_blank', 'noopener,noreferrer')}>
               <ExternalLink className="mr-2 h-4 w-4" />
               SharePoint
             </Button>
           )}
-          {canEdit && (
+          {canEdit && currentFolder && (
             <>
               <input ref={inputRef} type="file" className="hidden" onChange={handleUpload} />
               <Button size="sm" onClick={() => inputRef.current?.click()} disabled={uploading || !currentFolder}>
@@ -216,8 +236,34 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
         </div>
       </div>
 
-      {error ? (
-        <div className="px-4 py-8 text-center text-sm text-rose-700">{error}</div>
+      {folderMissing ? (
+        <div className="flex flex-col items-center px-4 py-10 text-center">
+          <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+            <FolderPlus className="h-5 w-5" />
+          </div>
+          <h3 className="text-sm font-semibold text-slate-900">SharePoint složka zatím neexistuje</h3>
+          <p className="mt-1 max-w-xl text-sm text-slate-500">
+            {canEdit
+              ? 'Vytvoří se nová složka podle kódu a názvu záznamu včetně standardních podsložek.'
+              : 'Složku může vytvořit uživatel s právem upravovat tento záznam.'}
+          </p>
+          {error && <p className="mt-2 text-sm text-rose-700">{error}</p>}
+          {canEdit && (
+            <Button className="mt-4" size="sm" onClick={handleCreateFolder} disabled={creating}>
+              {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FolderPlus className="mr-2 h-4 w-4" />}
+              Vytvořit složku
+            </Button>
+          )}
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-3 px-4 py-8 text-center text-sm text-rose-700">
+          <span>{error}</span>
+          {rootFolder && (
+            <Button variant="outline" size="sm" onClick={() => loadFolder(rootFolder, connection)}>
+              <RefreshCw className="mr-2 h-4 w-4" /> Zkusit znovu
+            </Button>
+          )}
+        </div>
       ) : loading ? (
         <div className="flex items-center justify-center gap-2 px-4 py-10 text-sm text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" /> Načítám obsah složky…
