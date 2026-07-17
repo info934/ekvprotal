@@ -25,6 +25,7 @@ import { calculateFinancials } from './RealizaceFinancialCalculations';
 import RealizaceTeam from './RealizaceTeam';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
+import BillingTracker from '@/components/BillingTracker';
 import { uploadInvoiceDocument } from '@/lib/documentStorageService';
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
@@ -435,6 +436,7 @@ const RealizaceDetail = () => {
 
           {canViewCosts && (
             <TabsContent value="finance" className="space-y-6">
+                {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} />}
                 <RealizaceExtraCosts
                   realizaceId={realizaceId}
                   extraCosts={extraCosts}

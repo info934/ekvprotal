@@ -36,6 +36,7 @@ import {
 } from '@/domain/financials';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
+import BillingTracker from '@/components/BillingTracker';
 import { uploadProjectCostInvoice } from '@/lib/documentStorageService';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
@@ -1004,6 +1005,7 @@ const ProjectDetail = () => {
                     <TabsContent value="contacts"><ProjectContacts projectId={projectId} /></TabsContent>
 
                     {canViewFinance && <TabsContent value="finance" className="space-y-6">
+                        <BillingTracker entityType="project" entityId={projectId} />
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6">
                             <FinancialCard title="Celkový budget" value={financials.totalBudget} subValue={`${project.budget_percentage}% z ceny`} icon={Wallet} colorClass="bg-blue-500" />
                             <FinancialCard title="Budget na tým" value={financials.teamBudget} subValue={`Zbývá: ${financials.remainingTeamBudget.toLocaleString('cs-CZ')} Kč`} icon={Users} colorClass="bg-teal-500" />
