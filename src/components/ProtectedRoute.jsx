@@ -2,17 +2,14 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
+import EkvLoader from '@/components/ui/ekv-loader';
 import { ShieldAlert } from 'lucide-react';
 
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { user, userRole, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
+    return <EkvLoader title="Ověřuji přístup" description="Kontroluji uživatele a oprávnění modulu." className="min-h-screen" />;
   }
 
   if (!user) {

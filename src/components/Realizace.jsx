@@ -38,6 +38,7 @@ import {
     buildRealizationProjectionChartData,
     calculateRealizationProjectionStats,
 } from '@/domain/realizationProjections';
+import { ListViewModeToggle, ListWorkspaceToolbar } from '@/components/ui/list-workspace';
 
 const statusConfig = {
     'Připravuje se': { variant: 'info', label: 'Připravuje se' },
@@ -535,8 +536,9 @@ const Realizace = () => {
 
             <RealizationExecutiveDashboard canViewAmounts={canViewAmounts} chartData={chartData} stats={stats} />
 
-            <div className="app-surface sticky top-0 z-10 flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-center gap-2 flex-1 w-full md:w-auto">
+            <ListWorkspaceToolbar
+                primary={(
+                    <>
                     <div className="relative flex-1 md:max-w-sm">
                         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
@@ -555,15 +557,20 @@ const Realizace = () => {
                             ))}
                         </SelectContent>
                     </Select>
-                </div>
-                <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-                    <div className="border rounded-lg p-1 flex items-center bg-slate-50">
-                        <Button variant={viewMode === 'table' ? 'white' : 'ghost'} size="sm" onClick={() => setViewMode('table')} className="h-7 w-7 p-0 shadow-sm" aria-label="Zobrazit realizace jako tabulku"><List className="w-4 h-4" /></Button>
-                        <Button variant={viewMode === 'grid' ? 'white' : 'ghost'} size="sm" onClick={() => setViewMode('grid')} className="h-7 w-7 p-0 shadow-sm" aria-label="Zobrazit realizace jako karty"><LayoutGrid className="w-4 h-4" /></Button>
-                        <Button variant={viewMode === 'kanban' ? 'white' : 'ghost'} size="sm" onClick={() => setViewMode('kanban')} className="h-7 w-7 p-0 shadow-sm" aria-label="Zobrazit realizace jako kanban"><Columns className="w-4 h-4" /></Button>
-                    </div>
-                </div>
-            </div>
+                    </>
+                )}
+                secondary={(
+                    <ListViewModeToggle
+                        value={viewMode}
+                        onChange={setViewMode}
+                        options={[
+                            { value: 'table', label: 'Zobrazit realizace jako tabulku', icon: List },
+                            { value: 'grid', label: 'Zobrazit realizace jako karty', icon: LayoutGrid },
+                            { value: 'kanban', label: 'Zobrazit realizace jako kanban', icon: Columns },
+                        ]}
+                    />
+                )}
+            />
 
             {loading ? (
                 <div className="text-center py-12 text-muted-foreground">Načítání dat...</div>

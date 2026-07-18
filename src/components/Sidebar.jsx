@@ -42,12 +42,14 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { cn } from '@/lib/utils';
 import { WORKSPACES, canAccessWorkspace, getWorkspaceFromPathname } from '@/lib/workspaces';
 
 const FAVORITES_KEY = 'ekv-sidebar-favorites';
+const COLLAPSED_KEY = 'ekv-sidebar-collapsed';
 const DEFAULT_FAVORITES = ['/dashboard', '/projects', '/realizace'];
 
 const DarkModeContext = React.createContext();
@@ -181,6 +183,59 @@ const flattenItems = (groups) => groups.flatMap(group =>
   group.items.flatMap(item => [item, ...(item.children || [])])
 );
 
+const ALL_NAV_ITEMS = flattenItems(NAV_GROUPS);
+const ALL_NAV_PATHS = new Set(ALL_NAV_ITEMS.map(item => item.path));
+const SEARCH_ALIASES = {
+  '/dashboard': 'nástěnka souhrn firma kpi',
+  '/projects': 'projekty projekční dokumentace zakázky',
+  '/realizace': 'realizace stavba montáž zakázky',
+  '/planning': 'plán kalendář gantt kapacity zdroje',
+  '/tasks': 'úkol agenda práce',
+  '/crm': 'obchod pipeline crm dashboard',
+  '/crm/board': 'kanban pipeline obchod',
+  '/crm/opportunities': 'op příležitost obchodní případ',
+  '/crm/offers': 'nabídka cenová kalkulace',
+  '/crm/orders': 'objednávka obj',
+  '/subjects': 'firma klient kontakt adresář dodavatel',
+  '/products': 'produkt katalog ceník položka materiál',
+  '/attendance': 'docházka hodiny výkaz práce',
+  '/members': 'zaměstnanec pracovník lidé tým',
+  '/payouts': 'výplata mzda odměna faktura',
+  '/settings': 'nastavení konfigurace číselník',
+};
+
+const normalizeSearch = (value = '') => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase('cs')
+  .trim();
+
+const NAV_SEARCH_INDEX = NAV_GROUPS.flatMap(group => group.items.flatMap(item => {
+  const children = item.children || [];
+  const parentEntry = children.some(child => child.path === item.path)
+    ? []
+    : [{ ...item, groupLabel: group.label || 'Hlavní', parentLabel: null }];
+
+  return [
+    ...parentEntry,
+    ...children.map(child => ({
+      ...child,
+      groupLabel: group.label || 'Hlavní',
+      parentLabel: item.label,
+    })),
+  ];
+}));
+
+const loadFavorites = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(FAVORITES_KEY));
+    if (!Array.isArray(stored)) return DEFAULT_FAVORITES;
+    return [...new Set(stored.filter(path => typeof path === 'string' && ALL_NAV_PATHS.has(path)))];
+  } catch {
+    return DEFAULT_FAVORITES;
+  }
+};
+
 const canSeeItem = (item, hasPermission) => !item.module || hasPermission(item.module, item.level || 'can_read');
 
 const belongsToWorkspace = (item, workspace) => item.workspace === 'global' || item.workspace === workspace;
@@ -283,16 +338,17 @@ const SearchBox = ({ value, onChange, isCollapsed }) => {
   if (isCollapsed) return null;
 
   return (
-    <div className="mb-3">
+    <div className="mb-2.5">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
-          placeholder="Hledat modul..."
+          placeholder="Hledat v portálu..."
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          aria-label="Hledat modul v menu"
-          className="h-10 w-full rounded-md border border-slate-200 bg-white pl-9 pr-8 text-sm text-slate-900 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-gray-800 dark:bg-gray-900/80 dark:text-gray-100"
+          aria-label="Hledat stránku nebo modul v portálu"
+          autoComplete="off"
+          className="h-9 w-full rounded-md border border-slate-200 bg-slate-50/70 pl-9 pr-8 text-[13px] text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-primary/15 dark:border-gray-800 dark:bg-gray-900/80 dark:text-gray-100"
         />
         {value && (
           <button
@@ -319,26 +375,73 @@ const QuickActions = ({ isCollapsed, onLinkClick, workspace }) => {
   if (isCollapsed || visibleActions.length === 0) return null;
 
   return (
-    <div className="mb-4 grid grid-cols-3 gap-1.5">
-      {visibleActions.map(action => (
-        <button
-          key={action.path}
-          type="button"
-          onClick={() => {
-            navigate(action.path);
-            onLinkClick?.();
-          }}
-          className="flex min-w-0 flex-col items-center gap-1 rounded-md border border-slate-200/90 bg-white px-2 py-2 text-[10px] font-semibold text-slate-600 shadow-sm transition hover:border-primary/30 hover:bg-blue-50/50 hover:text-primary hover:shadow-md"
-          title={action.label}
-          aria-label={action.label}
-        >
-          <action.icon className="h-4 w-4" />
-          <span className="max-w-full truncate">{action.label.replace('Nový ', '').replace('Nová ', '')}</span>
-        </button>
-      ))}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button className="mb-3 h-9 w-full justify-between rounded-md px-3 text-[13px] font-semibold shadow-sm">
+          <span className="inline-flex items-center gap-2">
+            <Plus className="h-4 w-4" />
+            Nový záznam
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={6} className="w-56">
+        <DropdownMenuLabel>Vytvořit v zóně {WORKSPACES[workspace]?.label}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {visibleActions.map(action => (
+          <DropdownMenuItem
+            key={`${action.path}-${action.label}`}
+            onSelect={() => {
+              navigate(action.path);
+              onLinkClick?.();
+            }}
+            className="gap-2"
+          >
+            <action.icon className="h-4 w-4 text-slate-500" />
+            {action.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 };
+
+const NavigationSearchResults = ({ results, query, onLinkClick }) => (
+  <div className="space-y-1" role="region" aria-label="Výsledky hledání v navigaci">
+    <div className="flex items-center justify-between px-2 py-1">
+      <span className="text-[10px] font-semibold uppercase text-slate-500">Výsledky</span>
+      <span className="text-[11px] tabular-nums text-slate-400" aria-live="polite">{results.length}</span>
+    </div>
+    {results.length > 0 ? results.map(item => (
+      <NavLink
+        key={`${item.path}-${item.label}`}
+        to={item.path}
+        onClick={onLinkClick}
+        className={({ isActive }) => cn(
+          'group flex min-w-0 items-center gap-2.5 rounded-md border border-transparent px-2.5 py-2 transition',
+          isActive ? 'border-blue-100 bg-blue-50 text-primary' : 'text-slate-700 hover:border-slate-200 hover:bg-slate-50'
+        )}
+      >
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-slate-100 text-slate-600 group-hover:bg-white">
+          <item.icon className="h-3.5 w-3.5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold">{item.label}</span>
+          <span className="block truncate text-[10px] text-slate-400">
+            {WORKSPACES[item.workspace]?.label || 'Portál'} · {item.parentLabel || item.groupLabel}
+          </span>
+        </span>
+        <ChevronsRight className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-primary" />
+      </NavLink>
+    )) : (
+      <div className="rounded-md border border-dashed border-slate-200 px-3 py-6 text-center">
+        <Search className="mx-auto mb-2 h-5 w-5 text-slate-300" />
+        <p className="text-xs font-semibold text-slate-600">Nic jsme nenašli</p>
+        <p className="mt-1 text-[11px] leading-4 text-slate-400">Zkuste jiný název modulu nebo stránky než „{query}“.</p>
+      </div>
+    )}
+  </div>
+);
 
 const NavRow = ({ item, isCollapsed, isFavorite, onToggleFavorite, onLinkClick, depth = 0 }) => {
   const Icon = item.icon;
@@ -351,9 +454,9 @@ const NavRow = ({ item, isCollapsed, isFavorite, onToggleFavorite, onLinkClick, 
       onClick={onLinkClick}
       title={isCollapsed ? item.label : undefined}
       className={({ isActive }) => cn(
-        'group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold transition-all',
+        'group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-semibold transition-all',
         isCollapsed && 'h-10 justify-center px-0',
-        depth > 0 && !isCollapsed && 'ml-8 py-2 pl-3 text-xs font-medium',
+        depth > 0 && !isCollapsed && 'ml-7 py-1.5 pl-2.5 text-xs font-medium',
         isActive
           ? 'bg-blue-50 text-primary ring-1 ring-blue-100 before:absolute before:bottom-1.5 before:left-0 before:top-1.5 before:w-0.5 before:rounded-full before:bg-primary dark:bg-gray-800 dark:text-white dark:ring-gray-700'
           : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
@@ -386,7 +489,7 @@ const NavRow = ({ item, isCollapsed, isFavorite, onToggleFavorite, onLinkClick, 
 const NavGroup = ({ group, isCollapsed, favorites, onToggleFavorite, onLinkClick, query, hiddenPaths = [] }) => {
   const { hasPermission } = useAuth();
   const location = useLocation();
-  const [open, setOpen] = useState(!group.label);
+  const [open, setOpen] = useState(!group.label || group.id === 'work' || group.id === 'business');
 
   const visibleItems = group.items
     .filter(item => canSeeItem(item, hasPermission))
@@ -413,12 +516,12 @@ const NavGroup = ({ group, isCollapsed, favorites, onToggleFavorite, onLinkClick
   if (visibleItems.length === 0) return null;
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       {!isCollapsed && group.label && (
         <button
           type="button"
           onClick={() => setOpen(current => !current)}
-          className="flex w-full items-center justify-between px-3 py-1.5 text-[11px] font-semibold uppercase tracking-normal text-slate-500 hover:text-slate-700"
+          className="flex w-full items-center justify-between px-2.5 py-1 text-[10px] font-semibold uppercase text-slate-400 hover:text-slate-700"
         >
           <span>{group.label}</span>
           <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !open && '-rotate-90')} />
@@ -470,13 +573,7 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
   const location = useLocation();
   const { signOut, hasPermission, isPrivateMode } = useAuth();
   const [query, setQuery] = useState('');
-  const [favorites, setFavorites] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || DEFAULT_FAVORITES;
-    } catch {
-      return DEFAULT_FAVORITES;
-    }
-  });
+  const [favorites, setFavorites] = useState(loadFavorites);
 
   useEffect(() => {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
@@ -485,20 +582,54 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
   const activeWorkspace = getWorkspaceFromPathname(location.pathname);
   const activeWorkspaceConfig = WORKSPACES[activeWorkspace];
   const activeNavGroups = useMemo(() => filterGroupsForWorkspace(NAV_GROUPS, activeWorkspace), [activeWorkspace]);
-  const allItems = useMemo(() => flattenItems(activeNavGroups), [activeNavGroups]);
   const availableWorkspaces = useMemo(() => (
     Object.values(WORKSPACES).map(workspace => ({
       ...workspace,
       canAccess: canAccessWorkspace(workspace, hasPermission),
     }))
   ), [hasPermission]);
-  const favoriteItems = allItems
+  const favoriteItems = [...new Map(ALL_NAV_ITEMS
     .filter(item => favorites.includes(item.path))
-    .filter(item => canSeeItem(item, hasPermission));
+    .filter(item => canSeeItem(item, hasPermission))
+    .map(item => [item.path, item])).values()];
   const showFavorites = favoriteItems.length > 0 && !query && !isCollapsed;
+  const searchResults = useMemo(() => {
+    const normalizedQuery = normalizeSearch(query);
+    if (!normalizedQuery) return [];
+
+    return NAV_SEARCH_INDEX
+      .filter(item => canSeeItem(item, hasPermission))
+      .filter(item => {
+        const workspace = WORKSPACES[item.workspace];
+        return !workspace || canAccessWorkspace(workspace, hasPermission);
+      })
+      .map(item => {
+        const label = normalizeSearch(item.label);
+        const context = normalizeSearch([
+          item.label,
+          item.groupLabel,
+          item.parentLabel,
+          item.path.replaceAll('/', ' '),
+          SEARCH_ALIASES[item.path],
+          WORKSPACES[item.workspace]?.label,
+        ].filter(Boolean).join(' '));
+        const score = label === normalizedQuery ? 0 : label.startsWith(normalizedQuery) ? 1 : context.includes(normalizedQuery) ? 2 : 9;
+        return { ...item, score };
+      })
+      .filter(item => item.score < 9)
+      .sort((left, right) => left.score - right.score || left.label.localeCompare(right.label, 'cs'))
+      .slice(0, 12);
+  }, [hasPermission, query]);
   const hiddenFavoritePaths = showFavorites
-    ? favoriteItems.filter(item => !item.children?.length).map(item => item.path)
+    ? favoriteItems
+      .filter(item => belongsToWorkspace(item, activeWorkspace))
+      .filter(item => !item.children?.length)
+      .map(item => item.path)
     : [];
+
+  useEffect(() => {
+    setQuery('');
+  }, [location.pathname]);
 
   const toggleFavorite = (path) => {
     setFavorites(current => (
@@ -532,13 +663,13 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
           'relative flex items-center rounded-lg dark:bg-gray-900',
           isCollapsed ? 'h-10 w-10 justify-center bg-slate-50 ring-1 ring-slate-200/90' : 'min-w-0 gap-2 py-1'
         )}>
-          <img
-            src="https://horizons-cdn.hostinger.com/71f822ff-0858-4714-9f59-dcfbecb55c00/2f93fb620df7a7540852c9ec9f499aee.png"
-            alt="EKV Group Logo"
-            className={cn('w-auto', isCollapsed ? 'h-6' : 'h-7')}
-            loading="lazy"
-          />
-          {!isCollapsed && <span className="text-xl font-semibold tracking-tight text-slate-950">{activeWorkspaceConfig.title}</span>}
+          <img src="/favicon.svg" alt="EKV" className={cn('w-auto', isCollapsed ? 'h-7' : 'h-8')} />
+          {!isCollapsed && (
+            <span className="min-w-0">
+              <span className="block text-[15px] font-bold leading-5 text-slate-950">EKV {activeWorkspaceConfig.title}</span>
+              <span className="block truncate text-[10px] font-medium text-slate-400">Pracovní prostředí</span>
+            </span>
+          )}
           <div className={cn('absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white dark:border-gray-900', isPrivateMode ? 'bg-red-500' : 'bg-green-500')} />
         </div>
 
@@ -599,6 +730,10 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
       <QuickActions isCollapsed={isCollapsed} onLinkClick={onLinkClick} workspace={activeWorkspace} />
 
       <nav className={cn('min-h-0 flex-1 overflow-y-auto', isCollapsed ? 'w-full space-y-2' : 'space-y-2 pr-1')}>
+        {query && !isCollapsed ? (
+          <NavigationSearchResults results={searchResults} query={query} onLinkClick={onLinkClick} />
+        ) : (
+          <>
         {showFavorites && (
           <div className="space-y-1 rounded-md border border-slate-200/80 bg-slate-50/70 p-1.5 dark:border-gray-800 dark:bg-gray-900/60">
             <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-normal text-slate-500">
@@ -625,28 +760,16 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
             onLinkClick={onLinkClick}
-            query={query}
+            query=""
             hiddenPaths={hiddenFavoritePaths}
           />
         ))}
+          </>
+        )}
       </nav>
 
       <div className={cn('mt-3 space-y-2 border-t border-slate-200 px-1 pt-3 dark:border-gray-800', isCollapsed && 'w-full px-0')}>
-        {onToggleCollapse && (
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-900',
-              isCollapsed && 'h-10 justify-center px-0'
-            )}
-            title={isCollapsed ? 'Zobrazit menu' : undefined}
-            aria-label={isCollapsed ? 'Zobrazit menu' : 'Sbalit menu'}
-          >
-            {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
-            {!isCollapsed && <span>Sbalit menu</span>}
-          </button>
-        )}
+        <UserProfile isCollapsed={isCollapsed} />
         <button
           type="button"
           onClick={handleLogout}
@@ -672,10 +795,11 @@ const SidebarShell = ({ isCollapsed = false, onLinkClick, onToggleCollapse }) =>
 };
 
 const DesktopSidebar = () => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem(COLLAPSED_KEY) === 'true');
 
   useEffect(() => {
-    document.documentElement.style.setProperty('--sidebar-width', isCollapsed ? '4.5rem' : '15rem');
+    localStorage.setItem(COLLAPSED_KEY, String(isCollapsed));
+    document.documentElement.style.setProperty('--sidebar-width', isCollapsed ? '4.5rem' : '16rem');
     return () => document.documentElement.style.removeProperty('--sidebar-width');
   }, [isCollapsed]);
 
@@ -685,7 +809,7 @@ const DesktopSidebar = () => {
       animate={{ x: 0 }}
       className={cn(
         'fixed left-0 top-0 z-40 hidden h-full flex-col transition-all duration-300 print:hidden lg:flex',
-        isCollapsed ? 'w-[4.5rem]' : 'w-[15rem]'
+        isCollapsed ? 'w-[4.5rem]' : 'w-[16rem]'
       )}
     >
       <SidebarShell isCollapsed={isCollapsed} onToggleCollapse={() => setIsCollapsed(current => !current)} />
@@ -704,7 +828,7 @@ const MobileSidebar = () => {
             <Menu className="h-5 w-5" />
           </Button>
         </SheetTrigger>
-        <SheetContent side="left" className="w-[320px] max-w-[calc(100vw-1rem)] border-r-0 p-0">
+          <SheetContent side="left" className="w-[336px] max-w-[calc(100vw-1rem)] border-r-0 p-0">
           <SheetTitle className="sr-only">Navigace portálu</SheetTitle>
           <SheetDescription className="sr-only">Hlavní menu modulů, oblíbených položek a správy portálu.</SheetDescription>
           <SidebarShell onLinkClick={() => setIsOpen(false)} />

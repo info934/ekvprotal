@@ -6,8 +6,8 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { format, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle, Clock, History, GanttChart } from 'lucide-react';
+import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs";
+import { Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle, Clock, History, GanttChart } from 'lucide-react';
 import AssignMemberDialog from '@/components/AssignMemberDialog';
 import AssignSubcontractorDialog from '@/components/AssignSubcontractorDialog';
 import ProjectCostDialog from '@/components/ProjectCostDialog';
@@ -35,12 +35,14 @@ import {
     toAmount
 } from '@/domain/financials';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
+import EkvLoader from '@/components/ui/ekv-loader';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 import BillingTracker from '@/components/BillingTracker';
 import BillingOverviewSummary from '@/components/finance/BillingOverviewSummary';
 import { uploadProjectCostInvoice } from '@/lib/documentStorageService';
 import PlanningBoard from '@/components/PlanningBoard';
 import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
+import { RecordMetricGrid, RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
   const tone = color === 'success' ? 'emerald' : color === 'warning' ? 'amber' : color === 'danger' ? 'rose' : color === 'info' ? 'blue' : 'slate';
@@ -808,49 +810,53 @@ const ProjectDetail = () => {
 
     const getProjectProgress = useCallback(() => tasks.length ? Math.round(tasks.filter(t => t.status === 'Hotovo').length / tasks.length * 100) : 0, [tasks]);
 
-    if (loading) return <div className="flex items-center justify-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div></div>;
+    if (loading) return <EkvLoader title="Načítám detail projektu" description="Synchronizuji tým, úkoly, dokumenty a finance." />;
     if (!project) return <div className="p-8 text-center"><h1 className="text-2xl font-bold">Projekt nenalezen</h1></div>;
 
     const progress = getProjectProgress();
-    const defaultTab = location.hash.substring(1) || "overview";
+    const availableTabs = [
+        'overview', 'team', 'tasks', 'plan', 'engineering', 'documents', 'contacts',
+        ...(canViewFinance ? ['finance'] : []),
+    ];
+    const requestedTab = location.hash.substring(1);
+    const activeTab = availableTabs.includes(requestedTab) ? requestedTab : 'overview';
 
     return (
         <div>
-            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b">
-                <div className="app-page py-4">
-                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-center gap-4">
-                            <Button variant="ghost" size="sm" onClick={() => navigate('/projects')}><ChevronLeft className="h-4 w-4 mr-2" />Zpět</Button>
-                            <div><h1 className="text-2xl font-bold">{project.name}</h1><p className="text-muted-foreground font-mono text-sm">{project.code}</p></div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            {renderStatusMenu()}
-                            {canViewHistory && (
-                                <Button variant="outline" onClick={() => navigate(`/projects/${projectId}/history`)}>
-                                    <History className="h-4 w-4 mr-2" />Historie
+            <RecordWorkspaceHeader
+                title={project.name}
+                subtitle={project.code}
+                onBack={() => navigate('/projects')}
+                status={renderStatusMenu()}
+                actions={(
+                    <>
+                        {canViewHistory && (
+                            <Button variant="outline" size="sm" onClick={() => navigate(`/projects/${projectId}/history`)}>
+                                <History className="mr-2 h-4 w-4" />Historie
+                            </Button>
+                        )}
+                        {canEdit && (
+                            <>
+                                <Button variant="outline" size="sm" onClick={() => setIsTemplateModalOpen(true)}>
+                                    <Copy className="mr-2 h-4 w-4" />Uložit jako šablonu
                                 </Button>
-                            )}
-                            {canEdit && (
-                                <>
-                                    <Button variant="outline" onClick={() => setIsTemplateModalOpen(true)}>
-                                        <Copy className="h-4 w-4 mr-2" /> Uložit jako šablonu
-                                    </Button>
-                                    <Button onClick={() => navigate(`/projects/${projectId}/edit`)}>
-                                        <Edit2 className="h-4 w-4 mr-2" />Upravit
-                                    </Button>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </motion.div>
+                                <Button size="sm" onClick={() => navigate(`/projects/${projectId}/edit`)}>
+                                    <Edit2 className="mr-2 h-4 w-4" />Upravit
+                                </Button>
+                            </>
+                        )}
+                    </>
+                )}
+            />
 
-            <div className="app-page">
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="app-page-wide">
+                <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+                  <RecordMetricGrid className="mb-4">
                     {!isPrivateMode && <StatCard title="Celková cena" value={canViewFinance ? `${(project.price || 0).toLocaleString('cs-CZ')} Kč` : myRewardDisplay} icon={DollarSign} color="success" />}
                     <StatCard title="Pokrok projektu" value={`${progress}%`} icon={Target} color={progress > 80 ? "success" : progress > 50 ? "warning" : "danger"} />
                     <StatCard title="Členové týmu" value={members.length} icon={Users} color="info" />
                     <StatCard title="Dokončení" value={project.completion_date ? format(parseISO(project.completion_date), 'd. M. yyyy') : "Není"} icon={Calendar} />
+                  </RecordMetricGrid>
                 </motion.div>
 
                 {canViewFinance && (
@@ -864,8 +870,8 @@ const ProjectDetail = () => {
                     </div>
                 )}
 
-                <Tabs value={defaultTab} onValueChange={(value) => navigate(`#${value}`, { replace: true })} className="space-y-6">
-                    <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-8">
+                <Tabs value={activeTab} onValueChange={(value) => navigate(`#${value}`, { replace: true })} className="space-y-4">
+                    <RecordWorkspaceTabsList>
                         <TabsTrigger value="overview" className="flex items-center gap-2"><FileText className="w-4 h-4" />Přehled</TabsTrigger>
                         <TabsTrigger value="team" className="flex items-center gap-2"><Users className="w-4 h-4" />Tým</TabsTrigger>
                         <TabsTrigger value="tasks" className="flex items-center gap-2"><ClipboardList className="w-4 h-4" />Úkoly</TabsTrigger>
@@ -874,7 +880,7 @@ const ProjectDetail = () => {
                         <TabsTrigger value="documents" className="flex items-center gap-2"><FileText className="w-4 h-4" />Dokumenty</TabsTrigger>
                         <TabsTrigger value="contacts" className="flex items-center gap-2"><Contact className="w-4 h-4" />Kontakty</TabsTrigger>
                         {canViewFinance && <TabsTrigger value="finance" className="flex items-center gap-2"><DollarSign className="w-4 h-4" />Finance</TabsTrigger>}
-                    </TabsList>
+                    </RecordWorkspaceTabsList>
 
                     <TabsContent value="overview" className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

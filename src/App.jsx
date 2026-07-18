@@ -7,8 +7,9 @@ import Sidebar from '@/components/Sidebar';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import EkvLoader from '@/components/ui/ekv-loader';
 import { supabase } from '@/lib/customSupabaseClient';
-import { Loader2, LogOut, RefreshCw, ShieldCheck } from 'lucide-react';
+import { LogOut, RefreshCw } from 'lucide-react';
 
 const Dashboard = lazy(() => import('@/components/Dashboard'));
 const WorkspaceLanding = lazy(() => import('@/components/WorkspaceLanding'));
@@ -60,41 +61,18 @@ const BackupMaintenance = lazy(() => import('@/components/BackupMaintenance'));
 const PlanningBoard = lazy(() => import('@/components/PlanningBoard'));
 
 const PortalLoaderCard = ({ title = 'Načítání modulu', description = 'Připravujeme data a rozhraní portálu.', showActions = false, onResetSession }) => (
-  <div className="relative w-full max-w-[440px] overflow-hidden rounded-[28px] border border-white/70 bg-white/90 p-6 text-left shadow-2xl shadow-slate-950/10 backdrop-blur-xl">
-    <div className="pointer-events-none absolute -right-20 -top-20 h-44 w-44 rounded-full bg-blue-200/60 blur-3xl" />
-    <div className="pointer-events-none absolute -bottom-24 -left-20 h-48 w-48 rounded-full bg-emerald-100 blur-3xl" />
-    <div className="relative flex items-start gap-4">
-      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
-        <Loader2 className="h-6 w-6 animate-spin" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-lg font-semibold tracking-tight text-slate-950">{title}</p>
-        <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
-        <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
-          <div className="h-full w-2/3 animate-pulse rounded-full bg-blue-600" />
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500">
-          <span className="inline-flex items-center gap-1.5">
-            <ShieldCheck className="h-4 w-4 text-emerald-600" />
-            Bezpečná relace
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-blue-500" />
-            Online portal
-          </span>
-        </div>
-      </div>
-    </div>
+  <div className="w-full max-w-[440px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.10)]">
+    <EkvLoader title={title} description={description} compact className="py-7" />
     {showActions && (
-      <div className="relative mt-6 rounded-2xl border border-amber-200/80 bg-amber-50/90 p-4">
-        <p className="text-sm font-semibold text-amber-950">Načítání trvá déle než obvykle.</p>
-        <p className="mt-1 text-sm leading-5 text-amber-800">Může jít o pomalé připojení nebo zaseknutou relaci. Zkuste obnovit stránku nebo relaci bezpečně resetovat.</p>
+      <div className="border-t border-amber-200 bg-amber-50 p-4 text-left">
+        <p className="text-sm font-semibold text-amber-950">Načítání trvá déle než obvykle</p>
+        <p className="mt-1 text-xs leading-5 text-amber-800">Zkontrolujte připojení, obnovte stránku nebo bezpečně resetujte relaci.</p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Button type="button" onClick={() => window.location.reload()} className="rounded-xl bg-amber-600 text-white hover:bg-amber-700">
+          <Button type="button" onClick={() => window.location.reload()} size="sm" className="bg-amber-600 text-white hover:bg-amber-700">
             <RefreshCw className="mr-2 h-4 w-4" />
             Obnovit stránku
           </Button>
-          <Button type="button" variant="outline" onClick={onResetSession} className="rounded-xl border-amber-200 bg-white/80 text-amber-800 hover:bg-amber-100">
+          <Button type="button" variant="outline" size="sm" onClick={onResetSession} className="border-amber-200 bg-white text-amber-800 hover:bg-amber-100">
             <LogOut className="mr-2 h-4 w-4" />
             Odhlásit a resetovat
           </Button>
@@ -104,19 +82,8 @@ const PortalLoaderCard = ({ title = 'Načítání modulu', description = 'Připr
   </div>
 );
 
-const LegacyPageLoader = () => (
-  <div className="flex min-h-[50vh] w-full items-center justify-center p-8">
-    <div className="rounded-lg border border-slate-200/90 bg-white px-8 py-7 text-center shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
-      <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-b-primary" />
-      <p className="font-medium text-slate-700">Načítání modulu...</p>
-    </div>
-  </div>
-);
-
 const PageLoader = () => (
-  <div className="flex min-h-[50vh] w-full items-center justify-center p-8">
-    <PortalLoaderCard />
-  </div>
+  <EkvLoader title="Načítám modul" description="Synchronizuji data pracovního prostoru." />
 );
 
 const PrivateRoute = ({ children, module, level = 'can_read' }) => {

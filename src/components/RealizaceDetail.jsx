@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen, GanttChart, Wallet } from 'lucide-react';
+import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs";
+import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen, GanttChart, Wallet } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -30,6 +29,8 @@ import BillingOverviewSummary from '@/components/finance/BillingOverviewSummary'
 import { uploadInvoiceDocument } from '@/lib/documentStorageService';
 import PlanningBoard from '@/components/PlanningBoard';
 import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
+import { RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
+import EkvLoader from '@/components/ui/ekv-loader';
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
 const toNumber = (value) => {
@@ -49,6 +50,7 @@ const statusConfig = {
 const RealizaceDetail = () => {
   const { realizaceId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const { hasPermission, userRole } = useAuth();
 
@@ -68,11 +70,23 @@ const RealizaceDetail = () => {
   const [costSearch, setCostSearch] = useState('');
   const [isCostDialogOpen, setIsCostDialogOpen] = useState(false);
   const [editingCost, setEditingCost] = useState(null);
-  const [activeTab, setActiveTab] = useState("overview");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   // Get visibility rules
   const { canViewAmounts, canViewCosts, canViewProfit } = getFinancialVisibility(userRole);
+  const availableTabs = useMemo(() => [
+    'overview',
+    'plan',
+    ...(canViewCosts ? ['finance'] : []),
+    'hourly',
+    'orders',
+    'documents',
+    'handover',
+    ...(canViewProfit ? ['profit'] : []),
+  ], [canViewCosts, canViewProfit]);
+  const requestedTab = location.hash.substring(1);
+  const activeTab = availableTabs.includes(requestedTab) ? requestedTab : 'overview';
+  const setActiveTab = useCallback((value) => navigate(`#${value}`, { replace: true }), [navigate]);
 
   // Strictly disable edit for 'user' role
   const canEdit = hasPermission('realizace', 'can_edit') && userRole !== 'user';
@@ -346,38 +360,24 @@ const RealizaceDetail = () => {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center h-screen">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-    </div>
+    <EkvLoader title="Načítám detail realizace" description="Připravuji průběh zakázky, tým, dokumenty a finance." />
   );
 
   if (!realization) return null;
 
   return (
     <div>
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b">
-        <div className="app-page py-4">
-          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="sm" onClick={() => navigate('/realizace')}>
-                <ChevronLeft className="w-4 h-4 mr-2" /> Zpět
-              </Button>
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900">{realization.name}</h1>
-                <p className="text-muted-foreground text-sm">{realization.location_address || 'Adresa neuvedena'}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {renderStatusMenu()}
-              {canEdit && (
-                <Button onClick={() => navigate(`/realizace/${realizaceId}/edit`)}>
-                  <Edit2 className="w-4 h-4 mr-2" /> Upravit realizaci
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      </motion.div>
+      <RecordWorkspaceHeader
+        title={realization.name}
+        subtitle={realization.location_address || 'Adresa neuvedena'}
+        onBack={() => navigate('/realizace')}
+        status={renderStatusMenu()}
+        actions={canEdit && (
+          <Button size="sm" onClick={() => navigate(`/realizace/${realizaceId}/edit`)}>
+            <Edit2 className="mr-2 h-4 w-4" />Upravit
+          </Button>
+        )}
+      />
 
       <div className="app-page-wide">
         {canViewAmounts && (
@@ -391,8 +391,8 @@ const RealizaceDetail = () => {
             />
           </div>
         )}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-8 mb-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
+          <RecordWorkspaceTabsList>
             <TabsTrigger value="overview" className="flex items-center gap-2"><LayoutDashboard className="w-4 h-4" /> Přehled</TabsTrigger>
             <TabsTrigger value="plan" className="flex items-center gap-2"><GanttChart className="w-4 h-4" /> Plán</TabsTrigger>
             {canViewCosts && <TabsTrigger value="finance" className="flex items-center gap-2"><DollarSign className="w-4 h-4" /> Náklady & Finance</TabsTrigger>}
@@ -403,7 +403,7 @@ const RealizaceDetail = () => {
             {canViewProfit && (
               <TabsTrigger value="profit" className="flex items-center gap-2"><PieChart className="w-4 h-4" /> Zisk</TabsTrigger>
             )}
-          </TabsList>
+          </RecordWorkspaceTabsList>
 
           <TabsContent value="overview">
             <div className="space-y-6">

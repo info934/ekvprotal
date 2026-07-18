@@ -33,6 +33,7 @@ import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import PageHeader from '@/components/ui/page-header';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
+import EkvLoader from '@/components/ui/ekv-loader';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import {
@@ -43,6 +44,7 @@ import { formatCurrency, cn, projectStatusConfig } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { parseApiError } from '@/lib/apiValidation';
 import BatchProjectDialog from '@/components/BatchProjectDialog';
+import { ListViewModeToggle, ListWorkspaceToolbar } from '@/components/ui/list-workspace';
 import {
   buildProjectProjectionChartData,
   calculateProjectProjectionStats,
@@ -573,12 +575,7 @@ const Projects = () => {
   };
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary mb-4" />
-        <p className="text-muted-foreground">Načítání projektů...</p>
-      </div>
-    );
+    return <EkvLoader title="Načítám projekty" description="Připravuji projekty, rozpočty a aktuální stavy." />;
   }
 
   return (
@@ -618,8 +615,9 @@ const Projects = () => {
       )}
 
       {/* Filters & Controls */}
-      <div className="app-surface sticky top-0 z-10 flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-2 flex-1 w-full md:w-auto">
+      <ListWorkspaceToolbar
+        primary={(
+          <>
           <div className="relative flex-1 md:max-w-sm">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -660,9 +658,10 @@ const Projects = () => {
               <X className="w-4 h-4 mr-1" /> Reset
             </Button>
           )}
-        </div>
-
-        <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+          </>
+        )}
+        secondary={(
+          <>
           <Select value={sortConfig.key} onValueChange={handleSort}>
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Řazení" />
@@ -674,38 +673,18 @@ const Projects = () => {
               {showFinance && <SelectItem value="price">Cena</SelectItem>}
             </SelectContent>
           </Select>
-
-          <div className="border rounded-lg p-1 flex items-center bg-slate-50">
-            <Button
-              variant={viewMode === 'grid' ? 'white' : 'ghost'}
-              size="sm"
-              className={cn("h-7 w-7 p-0 shadow-sm", viewMode === 'grid' && "bg-white")}
-              onClick={() => setViewMode('grid')}
-              aria-label="Zobrazit projekty jako karty"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'list' ? 'white' : 'ghost'}
-              size="sm"
-              className={cn("h-7 w-7 p-0 shadow-sm", viewMode === 'list' && "bg-white")}
-              onClick={() => setViewMode('list')}
-              aria-label="Zobrazit projekty jako seznam"
-            >
-              <ListIcon className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'kanban' ? 'white' : 'ghost'}
-              size="sm"
-              className={cn("h-7 w-7 p-0 shadow-sm", viewMode === 'kanban' && "bg-white")}
-              onClick={() => setViewMode('kanban')}
-              aria-label="Zobrazit projekty jako kanban"
-            >
-              <Columns className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
+          <ListViewModeToggle
+            value={viewMode}
+            onChange={setViewMode}
+            options={[
+              { value: 'table', label: 'Zobrazit projekty jako tabulku', icon: ListIcon },
+              { value: 'grid', label: 'Zobrazit projekty jako karty', icon: LayoutGrid },
+              { value: 'kanban', label: 'Zobrazit projekty jako kanban', icon: Columns },
+            ]}
+          />
+          </>
+        )}
+      />
 
       {filteredProjects.length === 0 ? (
         <div className="text-center py-16 bg-slate-50 rounded-lg border border-dashed">
@@ -740,7 +719,7 @@ const Projects = () => {
                 );
               })}
             </div>
-          ) : viewMode === 'list' ? (
+          ) : viewMode === 'table' ? (
             <ManagedTableSection
               title="Projekce"
               count={filteredProjects.length}

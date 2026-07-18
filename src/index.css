@@ -2,6 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes ekv-loader-progress {
+  0% { transform: translateX(-115%); }
+  55% { transform: translateX(55%); }
+  100% { transform: translateX(230%); }
+}
+
+@keyframes ekv-loader-node {
+  0%, 100% { opacity: 0.3; transform: scale(0.75); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes ekv-loader-rail {
+  0%, 100% { transform: scaleX(0.45); opacity: 0.35; }
+  50% { transform: scaleX(1); opacity: 1; }
+}
+
+.ekv-ai-loader {
+  isolation: isolate;
+}
+
+.ekv-ai-loader__rail {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  height: 1px;
+  background: hsl(var(--primary));
+  transform-origin: center;
+  animation: ekv-loader-rail 1.8s ease-in-out infinite;
+}
+
+.ekv-ai-loader__rail--top { top: 4%; }
+.ekv-ai-loader__rail--bottom { bottom: 4%; animation-delay: -0.9s; }
+
+.ekv-ai-loader__node {
+  position: absolute;
+  z-index: 20;
+  width: 6px;
+  height: 6px;
+  border: 1px solid white;
+  border-radius: 2px;
+  background: hsl(var(--primary));
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.12);
+  animation: ekv-loader-node 1.4s ease-in-out infinite;
+}
+
+.ekv-ai-loader__node--one { left: 0; top: 22%; }
+.ekv-ai-loader__node--two { right: 0; top: 52%; animation-delay: -0.46s; }
+.ekv-ai-loader__node--three { bottom: 0; left: 32%; animation-delay: -0.92s; }
+
+.ekv-ai-loader__progress > span {
+  width: 42%;
+  animation: ekv-loader-progress 1.35s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ekv-ai-loader__rail,
+  .ekv-ai-loader__node,
+  .ekv-ai-loader__progress > span {
+    animation: none;
+  }
+}
+
 @layer base {
   :root {
     --background: 210 38% 97%;
