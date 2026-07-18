@@ -37,8 +37,10 @@ import {
 import { DataVizMetricCard } from '@/components/ui/data-viz';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 import BillingTracker from '@/components/BillingTracker';
+import BillingOverviewSummary from '@/components/finance/BillingOverviewSummary';
 import { uploadProjectCostInvoice } from '@/lib/documentStorageService';
 import PlanningBoard from '@/components/PlanningBoard';
+import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
   const tone = color === 'success' ? 'emerald' : color === 'warning' ? 'amber' : color === 'danger' ? 'rose' : color === 'info' ? 'blue' : 'slate';
@@ -223,22 +225,6 @@ const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = true, a
         </Card>
     );
 };
-
-const FinancialCard = ({ title, value, icon: Icon, colorClass, subValue, description }) => (
-    <div className="p-4 bg-white border rounded-lg">
-        <div className="flex items-center gap-3">
-            <div className={cn("p-2 rounded-full", colorClass)}>
-                <Icon className="h-5 w-5 text-white" />
-            </div>
-            <div>
-                <p className="text-sm text-muted-foreground">{title}</p>
-                <p className="text-lg font-bold">{value.toLocaleString('cs-CZ')} Kč</p>
-                {subValue && <p className="text-xs text-muted-foreground">{subValue}</p>}
-                {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
-            </div>
-        </div>
-    </div>
-);
 
 const ProjectDetail = () => {
     const { projectId } = useParams();
@@ -897,6 +883,13 @@ const ProjectDetail = () => {
                             <InfoCard label="Zadavatel" value={project.client?.name || 'N/A'} icon={User} isLink={!!project.client} to={`/subjects/${project.client?.id}`} />
                             <InfoCard label="Stupeň dokumentace" value={project.stage?.name || 'N/A'} icon={FileText} />
                         </div>
+                        {isAdmin && (
+                            <BillingOverviewSummary
+                                entityType="project"
+                                entityId={projectId}
+                                onOpenDetails={() => navigate('#finance', { replace: true })}
+                            />
+                        )}
                         <CollapsibleSection title="Popis projektu" icon={BookOpen}>
                             {canEdit && <Button variant="outline" size="sm" onClick={() => setIsEditingBrief(true)} className="float-right"><Edit2 className="h-4 w-4" /></Button>}
                             {isEditingBrief ? (
@@ -922,7 +915,7 @@ const ProjectDetail = () => {
                     
                     <TabsContent value="team" className="space-y-6">
                         <CollapsibleSection title="Tým" icon={Users} actions={isAdmin && <Button size="sm" onClick={() => { setEditingMember(null); setIsMemberDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat člena</Button>}>
-                            <Table>
+                            <Table className="finance-table">
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Jméno</TableHead>
@@ -955,7 +948,7 @@ const ProjectDetail = () => {
                             </Table>
                         </CollapsibleSection>
                         <CollapsibleSection title="Subdodavatelé" icon={Briefcase} actions={isAdmin && <Button size="sm" onClick={() => { setEditingSubcontractor(null); setIsSubcontractorDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat subdodavatele</Button>}>
-                            <Table>
+                            <Table className="finance-table">
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Firma</TableHead>
@@ -1009,20 +1002,30 @@ const ProjectDetail = () => {
 
                     {canViewFinance && <TabsContent value="finance" className="space-y-6">
                         <BillingTracker entityType="project" entityId={projectId} enableContractAnalysis={isAdmin} />
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6">
-                            <FinancialCard title="Celkový budget" value={financials.totalBudget} subValue={`${project.budget_percentage}% z ceny`} icon={Wallet} colorClass="bg-blue-500" />
-                            <FinancialCard title="Budget na tým" value={financials.teamBudget} subValue={`Zbývá: ${financials.remainingTeamBudget.toLocaleString('cs-CZ')} Kč`} icon={Users} colorClass="bg-teal-500" />
-                            <FinancialCard title="Budget na subdodavatele" value={financials.totalSubcontractorPrice} icon={Briefcase} colorClass="bg-yellow-500" />
-                            <FinancialCard title="Rozpočet na režie" value={financials.overheadBudget} subValue={`${project.overhead_percentage}% z budgetu`} icon={ClipboardList} colorClass="bg-purple-500" />
-                            <FinancialCard title="Plánovaná marže" value={financials.plannedMargin ?? financials.projectProfit} icon={DollarSign} colorClass="bg-green-500" description="Cena projektu minus hrubý projektový budget." />
-                            <FinancialCard title="Zůstatek po nákladech" value={financials.remainingAfterCosts ?? 0} icon={Wallet} colorClass="bg-emerald-500" description="Týmový budget po nepřiřazených nákladech a alokovaných režiích." />
-                            <FinancialCard title="Rezervované výplaty" value={financials.reservedPayouts ?? 0} icon={Clock} colorClass="bg-amber-500" description="Blokují další žádost, ale nejsou náklad." />
-                            <FinancialCard title="Vyplacené výplaty" value={financials.paidPayoutCosts ?? 0} icon={DollarSign} colorClass="bg-rose-500" description="Do nákladů vstupují až ve stavu paid." />
-                            <FinancialCard title="Náklady po vyplacení" value={financials.costsAfterPaidPayouts ?? 0} icon={Wallet} colorClass="bg-slate-600" description="Provozní náklady plus paid výplaty." />
-                            <FinancialCard title="Tým po vyplacení" value={financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts ?? 0} icon={Users} colorClass="bg-indigo-500" description="Zůstatek po provozních nákladech a paid výplatách." />
-                        </div>
+                        <FinancialHealthAlert
+                            baseAmount={financials.price ?? project.price}
+                            remainingAmount={financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts}
+                            availableAmount={financials.availableForPayout}
+                            committedAmount={financials.reservedPayouts}
+                            showHealthy
+                        />
+                        <FinanceMetricStrip metrics={[
+                            { label: 'Evidovaná hodnota zakázky', value: <FinanceAmount value={financials.price ?? project.price} />, detail: 'Základ projektového rozpočtu', tone: 'neutral', icon: DollarSign },
+                            { label: 'Plánovaný projektový budget', value: <FinanceAmount value={financials.totalBudget} />, detail: `${project.budget_percentage}% z hodnoty`, tone: 'plan', icon: Wallet },
+                            { label: 'Skutečné náklady', value: <FinanceAmount value={financials.costsAfterPaidPayouts} />, detail: 'Včetně vyplacených odměn', tone: 'neutral', icon: ClipboardList },
+                            { label: 'Rezervované výplaty', value: <FinanceAmount value={financials.reservedPayouts} />, detail: 'Závazek, zatím ne náklad', tone: Number(financials.reservedPayouts || 0) ? 'warning' : 'neutral', icon: Clock },
+                            { label: 'Dostupné pro výplatu', value: <FinanceAmount value={financials.availableForPayout} />, detail: 'Po kontrolách a rezervacích', tone: Number(financials.availableForPayout || 0) < 0 ? 'negative' : 'positive', icon: Users },
+                            { label: 'Plánovaná marže', value: <FinanceAmount value={financials.plannedMargin ?? financials.projectProfit} />, detail: 'Hodnota minus plánovaný budget', tone: Number(financials.plannedMargin || 0) < 0 ? 'negative' : 'positive', icon: DollarSign },
+                        ]} />
+                        <FinanceStageFlow stages={[
+                            { label: 'Hodnota zakázky', value: financials.price ?? project.price, barClassName: 'bg-slate-500' },
+                            { label: 'Projektový budget', value: financials.totalBudget, barClassName: 'bg-blue-500' },
+                            { label: 'Skutečné náklady', value: financials.costsAfterPaidPayouts, barClassName: 'bg-amber-500' },
+                            { label: 'Dostupné pro výplatu', value: financials.availableForPayout, barClassName: 'bg-emerald-500' },
+                        ]} />
+                        <FinanceDefinitionNote>Rezervovaná výplata snižuje dostupný limit, ale do skutečných nákladů vstoupí až po označení jako vyplacená. Náklady přiřazené konkrétnímu členovi snižují jeho odměnu a nesmí být započtené podruhé.</FinanceDefinitionNote>
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 h-4 mr-2" />Přidat náklad</Button>}>
-                            <Table>
+                            <Table className="finance-table">
                                 <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Odečíst z</TableHead><TableHead>Částka</TableHead><TableHead>Faktura</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>
                                 <TableBody>
                                     {(costs.length === 0 && financeDerivedRows.length === 0) ? (
@@ -1067,7 +1070,7 @@ const ProjectDetail = () => {
                             </Table>
                         </CollapsibleSection>
                         <CollapsibleSection title="Připsané režijní náklady" icon={ClipboardList}>
-                            <Table>
+                            <Table className="finance-table">
                                 <TableHeader><TableRow><TableHead>Název</TableHead><TableHead>Kategorie</TableHead><TableHead>Částka</TableHead><TableHead>Měsíc</TableHead></TableRow></TableHeader>
                                 <TableBody>
                                     {overheadCosts.length > 0 ? overheadCosts.map(cost => (

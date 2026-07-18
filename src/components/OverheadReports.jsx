@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
-import { BarChart3, FileDown, Filter } from 'lucide-react';
+import { BarChart3, FileDown, Filter, Layers3, RefreshCw, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -11,6 +11,7 @@ import { Bar, BarChart as RechartsBarChart, CartesianGrid, ResponsiveContainer, 
 import * as XLSX from 'xlsx';
 import PageHeader from '@/components/ui/page-header';
 import { DataVizCard, DATAVIZ_COLORS, DataVizEmptyState, formatVizCurrency, VizTooltip } from '@/components/ui/data-viz';
+import { FinanceAmount, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
 
 const OverheadReports = () => {
   const { toast } = useToast();
@@ -123,6 +124,11 @@ const OverheadReports = () => {
   }, [allocations, projects, costs, filters]);
 
   const uniqueCategories = useMemo(() => ['all', ...new Set(costs.map((cost) => cost.category).filter(Boolean))], [costs]);
+  const reportTotals = useMemo(() => reportData.byProject.reduce((sum, item) => ({
+    total: sum.total + item.total,
+    regular: sum.regular + item.regular,
+    variable: sum.variable + item.variable,
+  }), { total: 0, regular: 0, variable: 0 }), [reportData.byProject]);
 
   const handleExport = () => {
     const ws = XLSX.utils.json_to_sheet(
@@ -142,6 +148,13 @@ const OverheadReports = () => {
   return (
     <div className="space-y-6">
       <PageHeader icon={BarChart3} title="Reporty režie" description="Přehled rozdělení režijních nákladů podle projektů a kategorií." />
+
+      <FinanceMetricStrip metrics={[
+        { label: 'Přidělená režie celkem', value: <FinanceAmount value={reportTotals.total} />, detail: 'Pouze schválená období', tone: 'neutral', icon: Wallet },
+        { label: 'Pravidelné náklady', value: <FinanceAmount value={reportTotals.regular} />, detail: 'Opakované firemní náklady', tone: 'plan', icon: RefreshCw },
+        { label: 'Proměnlivé náklady', value: <FinanceAmount value={reportTotals.variable} />, detail: 'Jednorázové a variabilní položky', tone: 'warning', icon: BarChart3 },
+        { label: 'Projektů v reportu', value: reportData.byProject.length, detail: `${reportData.byCategory.length} kategorií`, tone: 'neutral', icon: Layers3 },
+      ]} className="xl:grid-cols-4 2xl:grid-cols-4" />
 
       <Card>
         <CardContent className="p-4">
@@ -177,7 +190,7 @@ const OverheadReports = () => {
             <DataVizEmptyState label="Žádné schválené režie k zobrazení." />
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <Table className="finance-table">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Projekt</TableHead>

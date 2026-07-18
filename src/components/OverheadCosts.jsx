@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -191,7 +190,7 @@ const OverheadCostsList = () => {
         if (error) {
             toast({ title: 'Chyba při ukládání nákladu', description: error.message, variant: 'destructive' });
         } else {
-            toast({ title: '✅ Náklad úspěšně uložen' });
+      toast({ title: 'Náklad byl uložen' });
             fetchCosts();
             setIsFormOpen(false);
             setEditingCost(null);
@@ -207,7 +206,7 @@ const OverheadCostsList = () => {
                 variant: 'destructive',
             });
         } else {
-            toast({ title: '🗑️ Náklad smazán' });
+      toast({ title: 'Náklad byl smazán' });
             fetchCosts();
         }
         setDeleteId(null);
@@ -600,23 +599,6 @@ const OverheadCosts = () => {
                     </Button>
                 }
             />
-            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-                <div className="hidden">
-                    <div>
-                        <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
-                            <FilePieChart className="w-8 h-8 text-primary" />
-                            Režijní náklady
-                        </h1>
-                        <p className="text-muted-foreground">Správa a rozdělování režijních nákladů firmy.</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={() => navigate('/overhead-costs/reports')}>
-                            <BarChart className="mr-2 h-4 w-4" /> Reporty
-                        </Button>
-                    </div>
-                </div>
-            </motion.div>
-
             <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="costs">

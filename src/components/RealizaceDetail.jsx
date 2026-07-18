@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen, GanttChart } from 'lucide-react';
+import { ChevronLeft, Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen, GanttChart, Wallet } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -26,8 +26,10 @@ import RealizaceTeam from './RealizaceTeam';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 import BillingTracker from '@/components/BillingTracker';
+import BillingOverviewSummary from '@/components/finance/BillingOverviewSummary';
 import { uploadInvoiceDocument } from '@/lib/documentStorageService';
 import PlanningBoard from '@/components/PlanningBoard';
+import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
 const toNumber = (value) => {
@@ -404,9 +406,10 @@ const RealizaceDetail = () => {
           </TabsList>
 
           <TabsContent value="overview">
-            <RealizaceOverview
-              realization={realization}
-              costStats={{
+            <div className="space-y-6">
+              <RealizaceOverview
+                realization={realization}
+                costStats={{
                 totalRecordedCosts: totalManualCosts,
                 hourlyCosts: effectiveHourlyCostsTotal,
                 extraCosts: totalExtraCostsCost,
@@ -431,9 +434,17 @@ const RealizaceDetail = () => {
                 paidPayoutCosts,
                 reservedPayouts
               }}
-              loading={hourlyLoading}
-              onRealizationUpdate={handleRealizationUpdate}
-            />
+                loading={hourlyLoading}
+                onRealizationUpdate={handleRealizationUpdate}
+              />
+              {userRole === 'admin' && (
+                <BillingOverviewSummary
+                  entityType="realization"
+                  entityId={realizaceId}
+                  onOpenDetails={() => setActiveTab('finance')}
+                />
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="plan">
@@ -442,6 +453,21 @@ const RealizaceDetail = () => {
 
           {canViewCosts && (
             <TabsContent value="finance" className="space-y-6">
+                <FinanceMetricStrip metrics={[
+                  { label: 'Výnos zakázky', value: <FinanceAmount value={totalRevenue} />, detail: 'Smlouva a schválené vícepráce', tone: 'neutral', icon: DollarSign },
+                  { label: 'Skutečné náklady', value: <FinanceAmount value={grandTotalCosts} />, detail: 'Včetně vyplacených odměn', tone: 'neutral', icon: Download },
+                  { label: 'Rezervované výplaty', value: <FinanceAmount value={reservedPayouts} />, detail: 'Závazek, zatím ne náklad', tone: Number(reservedPayouts || 0) ? 'warning' : 'neutral', icon: Clock },
+                  { label: 'Vyplacené odměny', value: <FinanceAmount value={paidPayoutCosts} />, detail: 'Součást skutečných nákladů', tone: 'neutral', icon: DollarSign },
+                  { label: 'Plánovaná marže', value: <FinanceAmount value={calculatedFinancials.profitAmount} />, detail: `${Number(realization.profit_margin_percent || 0).toLocaleString('cs-CZ')} % z výnosu`, tone: Number(calculatedFinancials.profitAmount || 0) < 0 ? 'negative' : 'positive', icon: PieChart },
+                  { label: 'Provozní zůstatek', value: <FinanceAmount value={profitAvailable} />, detail: 'Výnos minus skutečné náklady', tone: Number(profitAvailable || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
+                ]} />
+                <FinanceStageFlow stages={[
+                  { label: 'Výnos zakázky', value: totalRevenue, barClassName: 'bg-slate-500' },
+                  { label: 'Projektový budget', value: calculatedFinancials.grossProjectBudget, barClassName: 'bg-blue-500' },
+                  { label: 'Skutečné náklady', value: grandTotalCosts, barClassName: 'bg-amber-500' },
+                  { label: 'Provozní zůstatek', value: profitAvailable, barClassName: Number(profitAvailable || 0) < 0 ? 'bg-red-500' : 'bg-emerald-500' },
+                ]} />
+                <FinanceDefinitionNote>Rezervované výplaty snižují dostupný limit. Ve skutečných nákladech jsou zahrnuté až po uzavření výplaty jako vyplacené.</FinanceDefinitionNote>
                 {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} enableContractAnalysis />}
                 <RealizaceExtraCosts
                   realizaceId={realizaceId}
@@ -497,7 +523,7 @@ const RealizaceDetail = () => {
                     </div>
 
                     <div className="rounded-md border">
-                      <Table>
+                      <Table className="finance-table">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Popis</TableHead>

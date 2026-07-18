@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { calculateCrmTotals } from '@/lib/crmItemPayloads';
 import { buildFveOfferItems, chooseFveRuleSet, loadFveOfferRuleSets } from '@/lib/fveOfferRulesService';
+import { VAT_RATE_OPTIONS } from '@/lib/financePresentation';
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
   style: 'currency',
@@ -177,9 +178,7 @@ const FveOfferWizardDialog = ({ open, onOpenChange, onApply }) => {
                   <Select value={String(inputs.vat_rate)} onValueChange={(value) => update('vat_rate', Number(value))}>
                     <SelectTrigger className="h-9 w-28"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0">0 %</SelectItem>
-                      <SelectItem value="12">12 %</SelectItem>
-                      <SelectItem value="21">21 %</SelectItem>
+                      {VAT_RATE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>

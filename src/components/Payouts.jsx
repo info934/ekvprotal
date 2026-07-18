@@ -2,7 +2,6 @@
 import { useNavigate } from 'react-router-dom';
 import {
   Plus,
-  CheckCircle2,
   FileText,
   Target,
   RefreshCw,
@@ -34,8 +33,10 @@ import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import { uploadInvoiceDocument } from '@/lib/documentStorageService';
 import { savePayoutRequest } from '@/lib/payoutRequestService';
 import PageHeader from '@/components/ui/page-header';
-import { formatCurrency, PayoutMetricCard, PayoutPanel } from '@/components/payouts/PayoutShared';
+import { PayoutPanel } from '@/components/payouts/PayoutShared';
 import ForwardInvoiceDialog from '@/components/payouts/ForwardInvoiceDialog';
+import { FinanceAmount, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
+import { getFinanceErrorMessage } from '@/lib/financePresentation';
 
 const Payouts = () => {
   const { toast } = useToast();
@@ -123,7 +124,7 @@ const Payouts = () => {
       
       setHourlyRequests(hourlyData || []);
     } catch (error) { 
-      toast({ title: "Chyba při načítání dat.", description: error.message, variant: "destructive" }); 
+      toast({ title: "Výplaty se nepodařilo načíst", description: getFinanceErrorMessage(error), variant: "destructive" });
     } finally { 
       setLoading(false); 
     }
@@ -235,7 +236,7 @@ const Payouts = () => {
       }
     } catch (error) {
       console.error('Error updating payout status:', error);
-      toast({ title: "Chyba změny stavu", description: error.message, variant: "destructive" });
+      toast({ title: "Stav výplaty se nepodařilo změnit", description: getFinanceErrorMessage(error), variant: "destructive" });
     }
   };
 
@@ -294,7 +295,7 @@ const Payouts = () => {
       }
     } catch (error) {
       console.error('Invoice upload error:', error);
-      toast({ title: "Chyba nahrávání faktury", description: error.message, variant: "destructive" });
+      toast({ title: "Fakturu se nepodařilo nahrát", description: getFinanceErrorMessage(error), variant: "destructive" });
       throw error;
     }
   };
@@ -315,7 +316,7 @@ const Payouts = () => {
       fetchPayouts(); 
     } catch (error) {
       console.error('Delete error:', error);
-      toast({ title: "Chyba při mazání", description: error.message, variant: "destructive" });
+      toast({ title: "Žádost se nepodařilo odstranit", description: getFinanceErrorMessage(error), variant: "destructive" });
     }
   };
 
@@ -338,7 +339,7 @@ const Payouts = () => {
           <PageHeader
             icon={Wallet}
             title="Správa výplat"
-            description="Komplexní přehled o vašich odměnách a fakturaci"
+            description="Schválení žádostí, kontrola faktur a uzavření vyplacených odměn."
             actions={
               <>
                 <Button variant="outline" onClick={fetchPayouts} className="bg-white shadow-sm border-slate-200 hidden sm:flex">
@@ -356,46 +357,18 @@ const Payouts = () => {
       </div>
 
       <div className="app-page pt-0">
-        <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{overviewScopeLabel} úkolové mzdy</h2>
-                <p className="mt-1 text-sm text-slate-600">{stats.fixed.totalCount} {overviewCountLabel}</p>
-              </div>
-              <div className="rounded-lg border border-blue-100 bg-blue-50 p-2 text-blue-700">
-                <Target className="h-5 w-5" />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <PayoutMetricCard icon={Target} label="Aktivní úkolové" value={stats.fixed.activeCount.toString()} detail={formatCurrency(stats.fixed.activeAmount)} tone="blue" />
-              <PayoutMetricCard icon={Timer} label="Ke schválení" value={stats.fixed.pendingCount.toString()} detail={canAdmin ? 'Nové úkolové žádosti' : 'Moje nové žádosti'} tone="amber" />
-              <PayoutMetricCard icon={FileText} label="Faktury ke kontrole" value={stats.fixed.invoiceReadyCount.toString()} detail="Úkolové faktury" tone="slate" />
-              <PayoutMetricCard icon={PiggyBank} label="Vyplaceno úkolově" value={formatCurrency(stats.fixed.paidAmount)} detail={`${stats.fixed.paidCount} uzavřených`} tone="emerald" />
-            </div>
-          </section>
+        <FinanceMetricStrip metrics={[
+          { label: 'Aktivní žádosti', value: stats.fixed.activeCount + stats.hourly.activeCount, detail: <FinanceAmount value={stats.fixed.activeAmount + stats.hourly.activeAmount} />, tone: 'plan', icon: Target },
+          { label: 'Ke schválení', value: stats.fixed.pendingCount + stats.hourly.pendingCount, detail: canAdmin ? 'Čekají na rozhodnutí' : 'Vaše žádosti', tone: 'warning', icon: Timer },
+          { label: 'Faktury ke kontrole', value: stats.fixed.invoiceReadyCount + stats.hourly.invoiceReadyCount, detail: 'Po schválení žádosti', tone: 'warning', icon: FileText },
+          { label: 'Vyplaceno celkem', value: <FinanceAmount value={stats.fixed.paidAmount + stats.hourly.paidAmount} />, detail: `${stats.fixed.paidCount + stats.hourly.paidCount} uzavřených žádostí`, tone: 'positive', icon: PiggyBank },
+          { label: 'Úkolové žádosti', value: stats.fixed.totalCount, detail: overviewScopeLabel, tone: 'neutral', icon: Target },
+          { label: 'Hodinové žádosti', value: stats.hourly.totalCount, detail: overviewScopeLabel, tone: 'neutral', icon: Timer },
+        ]} />
 
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{overviewScopeLabel} hodinové mzdy</h2>
-                <p className="mt-1 text-sm text-slate-600">{stats.hourly.totalCount} {overviewCountLabel}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-2 text-emerald-700">
-                <Timer className="h-5 w-5" />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <PayoutMetricCard icon={Timer} label="Aktivní hodinové" value={stats.hourly.activeCount.toString()} detail={formatCurrency(stats.hourly.activeAmount)} tone="blue" />
-              <PayoutMetricCard icon={CheckCircle2} label="Ke schválení" value={stats.hourly.pendingCount.toString()} detail={canAdmin ? 'Nové hodinové žádosti' : 'Moje nové žádosti'} tone="amber" />
-              <PayoutMetricCard icon={FileText} label="Faktury ke kontrole" value={stats.hourly.invoiceReadyCount.toString()} detail="Hodinové faktury" tone="slate" />
-              <PayoutMetricCard icon={Wallet} label="Vyplaceno hodinově" value={formatCurrency(stats.hourly.paidAmount)} detail={`${stats.hourly.paidCount} uzavřených`} tone="emerald" />
-            </div>
-          </section>
-        </div>
-
-        <PayoutPanel className="mt-6">
-          <div className="grid divide-y divide-slate-100 md:grid-cols-4 md:divide-x md:divide-y-0">
+        <details className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-700">Jak probíhá výplata</summary>
+          <div className="grid divide-y divide-slate-100 border-t md:grid-cols-4 md:divide-x md:divide-y-0">
             {[
               ['1', 'Žádost', 'Zaměstnanec vytvoří úkolovou nebo hodinovou žádost.'],
               ['2', 'Schválení', 'Administrátor žádost schválí nebo zamítne.'],
@@ -411,10 +384,10 @@ const Payouts = () => {
               </div>
             ))}
           </div>
-        </PayoutPanel>
+        </details>
 
         <Tabs defaultValue={defaultTab} className="w-full">
-          <div className="mb-8 flex h-auto w-full flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-start">
+          <div className="mb-4 mt-5 flex h-auto w-full flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-start">
             <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm">
               <div className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">
                 Agenda výplat

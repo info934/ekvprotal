@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, CheckCircle2, Edit2, ExternalLink, FileText,
-  Link2, Plus, Receipt, Trash2, Upload,
+  Link2, MoreHorizontal, Plus, Receipt, Trash2, Upload,
 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { uploadInvoiceDocument } from '@/lib/documentStorageService';
@@ -17,6 +17,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import ContractExtractionPanel from '@/components/ContractExtractionPanel';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FinanceMetricStrip, FinanceStageFlow, FinanceDefinitionNote } from '@/components/finance/FinanceWorkspace';
+import { getFinanceErrorMessage, VAT_RATE_OPTIONS } from '@/lib/financePresentation';
 
 const money = (value) => new Intl.NumberFormat('cs-CZ', {
   style: 'currency', currency: 'CZK', maximumFractionDigits: 0,
@@ -87,7 +91,7 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
       p_entity_id: entityId,
     });
     if (error) {
-      toast({ title: 'Fakturaci se nepodařilo načíst', description: error.message, variant: 'destructive' });
+      toast({ title: 'Fakturaci se nepodařilo načíst', description: getFinanceErrorMessage(error), variant: 'destructive' });
       setLoading(false);
       return;
     }
@@ -189,7 +193,7 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
     const { error } = await query;
     setSaving(false);
     if (error) {
-      toast({ title: 'Etapu se nepodařilo uložit', description: error.message, variant: 'destructive' });
+      toast({ title: 'Etapu se nepodařilo uložit', description: getFinanceErrorMessage(error), variant: 'destructive' });
       return;
     }
     setMilestoneDialogOpen(false);
@@ -235,7 +239,7 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
     const { error } = await supabase.from('entity_billing_milestones').insert(rows);
     setSaving(false);
     if (error) {
-      toast({ title: 'Plán etap se nepodařilo vytvořit', description: error.message, variant: 'destructive' });
+      toast({ title: 'Plán etap se nepodařilo vytvořit', description: getFinanceErrorMessage(error), variant: 'destructive' });
       return;
     }
     setPlanDialogOpen(false);
@@ -308,7 +312,7 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
       await load();
     } catch (error) {
       if (storedDocument?.cleanup) await storedDocument.cleanup().catch(() => null);
-      toast({ title: 'Fakturu se nepodařilo uložit', description: error.message, variant: 'destructive' });
+      toast({ title: 'Fakturu se nepodařilo uložit', description: getFinanceErrorMessage(error), variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -318,7 +322,7 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
     if (!window.confirm(`Odstranit evidenci faktury ${entry.invoice_number || ''}? Změna zůstane v auditní historii.`)) return;
     const { error } = await supabase.from('entity_billing_entries').delete().eq('id', entry.id);
     if (error) {
-      toast({ title: 'Fakturu se nepodařilo odstranit', description: error.message, variant: 'destructive' });
+      toast({ title: 'Fakturu se nepodařilo odstranit', description: getFinanceErrorMessage(error), variant: 'destructive' });
       return;
     }
     await load();
@@ -339,7 +343,7 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
     if (!window.confirm(`Odstranit etapu „${milestone.name}“?`)) return;
     const { error } = await supabase.from('entity_billing_milestones').delete().eq('id', milestone.id);
     if (error) {
-      toast({ title: 'Etapu se nepodařilo odstranit', description: error.message, variant: 'destructive' });
+      toast({ title: 'Etapu se nepodařilo odstranit', description: getFinanceErrorMessage(error), variant: 'destructive' });
       return;
     }
     await load();
@@ -352,25 +356,37 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
 
   return (
     <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Receipt className="h-5 w-5 text-blue-700" />
             <h3 className="text-base font-semibold text-slate-950">Fakturační plán a úhrady</h3>
             <Badge variant={healthy ? 'success' : 'secondary'}>{coverageLabels[summary?.status] || summary?.status}</Badge>
           </div>
-          <p className="mt-1 max-w-4xl text-sm text-slate-500">
-            Plán etap hlídá termíny a hodnotu zakázky. Dostupnost výplat se počítá pouze ze skutečně uhrazených faktur, ne z plánovaných částek.
+          <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-500">
+            Plán fakturace, skutečně vystavené doklady a přijaté úhrady jsou vedené odděleně.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => setPlanDialogOpen(true)}><CalendarDays className="mr-2 h-4 w-4" />Rozdělit do etap</Button>
-          <Button size="sm" variant="outline" onClick={openCreateMilestone}><Plus className="mr-2 h-4 w-4" />Přidat etapu</Button>
           <Button size="sm" onClick={() => openCreateInvoice()}><Plus className="mr-2 h-4 w-4" />Přidat fakturu</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button size="sm" variant="outline"><MoreHorizontal className="mr-2 h-4 w-4" />Plán</Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setPlanDialogOpen(true)}><CalendarDays className="mr-2 h-4 w-4" />Rozdělit do etap</DropdownMenuItem>
+              <DropdownMenuItem onSelect={openCreateMilestone}><Plus className="mr-2 h-4 w-4" />Přidat jednu etapu</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
-      {enableContractAnalysis && <ContractExtractionPanel entityType={entityType} entityId={entityId} onApplied={load} />}
+      {enableContractAnalysis && (
+        <details className="group rounded-lg border border-blue-100 bg-blue-50/30" open={Boolean(summary?.warning)}>
+          <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-blue-900 marker:hidden">
+            AI kontrola smlouvy <span className="font-normal text-blue-700">· návrh vyžaduje schválení administrátorem</span>
+          </summary>
+          <div className="border-t border-blue-100 p-3"><ContractExtractionPanel entityType={entityType} entityId={entityId} onApplied={load} /></div>
+        </details>
+      )}
 
       {summary?.warning && (
         <Alert className="border-amber-200 bg-amber-50 text-amber-950">
@@ -380,28 +396,33 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
         </Alert>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {[
-          ['Hodnota zakázky', money(summary?.contract_amount)],
-          ['Naplánováno', money(summary?.planned_amount), planDiff === 0 ? 'Plán odpovídá zakázce' : `Odchylka ${money(planDiff)}`],
-          ['Vyfakturováno', money(summary?.invoiced_amount), percent(summary?.invoice_coverage_percent)],
-          ['Uhrazeno', money(summary?.paid_amount), percent(summary?.payment_coverage_percent)],
-          ['Zbývá uhradit', money(Math.max(0, Number(summary?.contract_amount || 0) - Number(summary?.paid_amount || 0)))],
-        ].map(([label, value, detail]) => (
-          <div key={label} className="rounded-md border bg-slate-50 px-3 py-2.5">
-            <div className="text-xs font-medium text-slate-500">{label}</div>
-            <div className="mt-1 font-semibold tabular-nums text-slate-950">{value}</div>
-            {detail && <div className={`text-xs ${label === 'Naplánováno' && planDiff !== 0 ? 'text-amber-700' : 'text-slate-500'}`}>{detail}</div>}
-          </div>
-        ))}
-      </div>
+      <FinanceMetricStrip metrics={[
+        { label: 'Hodnota zakázky s DPH', value: money(summary?.contract_amount), tone: 'neutral' },
+        { label: 'Plán fakturace s DPH', value: money(summary?.planned_amount), detail: planDiff === 0 ? 'Plán odpovídá zakázce' : `Odchylka ${money(planDiff)}`, tone: planDiff === 0 ? 'plan' : 'warning' },
+        { label: 'Vystaveno s DPH', value: money(summary?.invoiced_amount), detail: percent(summary?.invoice_coverage_percent), tone: 'plan' },
+        { label: 'Uhrazeno', value: money(summary?.paid_amount), detail: percent(summary?.payment_coverage_percent), tone: 'positive' },
+        { label: 'Zbývá uhradit', value: money(Math.max(0, Number(summary?.contract_amount || 0) - Number(summary?.paid_amount || 0))), tone: Number(summary?.overdue_milestone_count || 0) ? 'warning' : 'neutral' },
+      ]} className="2xl:grid-cols-5" />
 
-      <div className="space-y-2">
+      <FinanceStageFlow stages={[
+        { label: 'Hodnota zakázky', value: summary?.contract_amount, barClassName: 'bg-slate-500' },
+        { label: 'Naplánováno', value: summary?.planned_amount, barClassName: 'bg-blue-500' },
+        { label: 'Vystaveno', value: summary?.invoiced_amount, barClassName: 'bg-indigo-500' },
+        { label: 'Uhrazeno', value: summary?.paid_amount, barClassName: 'bg-emerald-500' },
+      ]} />
+      <FinanceDefinitionNote>Dostupnost výplat se počítá ze skutečně uhrazených faktur. Plánovaná ani pouze vystavená částka sama o sobě nezvyšuje limit pro výplatu.</FinanceDefinitionNote>
+
+      <Tabs defaultValue="milestones" className="space-y-3">
+        <TabsList className="h-9 w-full justify-start rounded-md bg-slate-100 p-1 sm:w-auto">
+          <TabsTrigger value="milestones" className="h-7 text-xs">Plán plnění ({milestones.length})</TabsTrigger>
+          <TabsTrigger value="invoices" className="h-7 text-xs">Faktury ({entries.length})</TabsTrigger>
+        </TabsList>
+      <TabsContent value="milestones" className="space-y-2">
         <div className="flex items-center justify-between">
           <div><h4 className="text-sm font-semibold text-slate-900">Plán dílčích plnění</h4><p className="text-xs text-slate-500">{milestones.length} etap, {summary?.overdue_milestone_count || 0} po termínu</p></div>
         </div>
         <div className="overflow-x-auto rounded-md border">
-          <Table className="min-w-[1040px]">
+          <Table className="finance-table min-w-[1040px]">
             <TableHeader><TableRow>
               <TableHead className="w-16">#</TableHead><TableHead>Etapa</TableHead><TableHead>Termín plnění</TableHead>
               <TableHead>Plán vystavení</TableHead><TableHead>Splatnost</TableHead><TableHead>Stav</TableHead>
@@ -430,12 +451,12 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
             </TableBody>
           </Table>
         </div>
-      </div>
+      </TabsContent>
 
-      <div className="space-y-2">
+      <TabsContent value="invoices" className="space-y-2">
         <div><h4 className="text-sm font-semibold text-slate-900">Vystavené faktury</h4><p className="text-xs text-slate-500">Doklad je povinný pro každou nově vystavenou fakturu.</p></div>
         <div className="overflow-x-auto rounded-md border">
-          <Table className="min-w-[1120px]">
+          <Table className="finance-table min-w-[1120px]">
             <TableHeader><TableRow>
               <TableHead>Číslo</TableHead><TableHead>Etapa</TableHead><TableHead>Typ</TableHead><TableHead>Plnění</TableHead>
               <TableHead>Vystaveno</TableHead><TableHead>Splatnost</TableHead><TableHead>Doklad</TableHead><TableHead>Stav</TableHead>
@@ -465,7 +486,8 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
             </TableBody>
           </Table>
         </div>
-      </div>
+      </TabsContent>
+      </Tabs>
 
       <Dialog open={planDialogOpen} onOpenChange={setPlanDialogOpen}>
         <DialogContent className="max-w-xl">
@@ -474,7 +496,7 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
             <div className="space-y-2"><Label>Počet etap</Label><Input type="number" min="1" max="24" value={planForm.count} onChange={(e) => setPlanForm((p) => ({ ...p, count: e.target.value }))} /></div>
             <div className="space-y-2"><Label>První termín plnění</Label><Input type="date" value={planForm.first_date} onChange={(e) => setPlanForm((p) => ({ ...p, first_date: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Rozestup etap (dnů)</Label><Input type="number" min="1" value={planForm.interval_days} onChange={(e) => setPlanForm((p) => ({ ...p, interval_days: e.target.value }))} /></div>
-            <div className="space-y-2"><Label>DPH</Label><Select value={planForm.vat_rate} onValueChange={(v) => setPlanForm((p) => ({ ...p, vat_rate: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['0', '12', '21'].map((v) => <SelectItem key={v} value={v}>{v} %</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Sazba DPH</Label><Select value={planForm.vat_rate} onValueChange={(v) => setPlanForm((p) => ({ ...p, vat_rate: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{VAT_RATE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>
             <div className="rounded-md border bg-slate-50 p-3 sm:col-span-2"><div className="text-xs text-slate-500">Zbývá naplánovat</div><div className="text-lg font-semibold">{money(Math.max(0, Number(summary?.contract_amount || 0) - Number(summary?.planned_amount || 0)))}</div></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setPlanDialogOpen(false)}>Zrušit</Button><Button onClick={createEqualPlan} disabled={saving}>{saving ? 'Vytvářím…' : 'Vytvořit etapy'}</Button></DialogFooter>
@@ -492,7 +514,7 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
             <div className="space-y-2"><Label>Plánovaná splatnost</Label><Input type="date" value={milestoneForm.due_date} onChange={(e) => setMilestoneForm((p) => ({ ...p, due_date: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Stav</Label><Select value={milestoneForm.status} onValueChange={(v) => setMilestoneForm((p) => ({ ...p, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(milestoneStatusLabels).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Částka bez DPH</Label><Input type="number" min="0" step="0.01" value={milestoneForm.amount_excl_vat} onChange={(e) => setMilestoneForm((p) => ({ ...p, amount_excl_vat: e.target.value }))} /></div>
-            <div className="space-y-2"><Label>DPH</Label><Select value={milestoneForm.vat_rate} onValueChange={(v) => setMilestoneForm((p) => ({ ...p, vat_rate: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['0', '12', '21'].map((v) => <SelectItem key={v} value={v}>{v} %</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Sazba DPH</Label><Select value={milestoneForm.vat_rate} onValueChange={(v) => setMilestoneForm((p) => ({ ...p, vat_rate: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{VAT_RATE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Podíl zakázky (%)</Label><Input type="number" min="0" max="100" step="0.001" value={milestoneForm.percent_of_contract} onChange={(e) => setMilestoneForm((p) => ({ ...p, percent_of_contract: e.target.value }))} /></div>
             <div className="space-y-2 sm:col-span-2"><Label>Poznámka / podmínka plnění</Label><Textarea rows={3} value={milestoneForm.note} onChange={(e) => setMilestoneForm((p) => ({ ...p, note: e.target.value }))} /></div>
           </div>
@@ -513,7 +535,7 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
             <div className="space-y-2"><Label>Datum splatnosti</Label><Input type="date" value={invoiceForm.due_date} onChange={(e) => setInvoiceForm((p) => ({ ...p, due_date: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Datum úhrady</Label><Input type="date" value={invoiceForm.paid_date} onChange={(e) => setInvoiceForm((p) => ({ ...p, paid_date: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Částka bez DPH</Label><Input type="number" min="0" step="0.01" value={invoiceForm.amount_excl_vat} onChange={(e) => setInvoiceForm((p) => ({ ...p, amount_excl_vat: e.target.value }))} /></div>
-            <div className="space-y-2"><Label>DPH</Label><Select value={invoiceForm.vat_rate} onValueChange={(v) => setInvoiceForm((p) => ({ ...p, vat_rate: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['0', '12', '21'].map((v) => <SelectItem key={v} value={v}>{v} %</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Sazba DPH</Label><Select value={invoiceForm.vat_rate} onValueChange={(v) => setInvoiceForm((p) => ({ ...p, vat_rate: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{VAT_RATE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Celkem s DPH</Label><Input value={money(grossPreview)} disabled /></div>
             <div className="space-y-2"><Label>Uhrazená částka</Label><Input type="number" min="0" step="0.01" value={invoiceForm.paid_amount} onChange={(e) => setInvoiceForm((p) => ({ ...p, paid_amount: e.target.value }))} /></div>
             <div className="space-y-2 rounded-md border border-dashed p-3 sm:col-span-2 lg:col-span-3">

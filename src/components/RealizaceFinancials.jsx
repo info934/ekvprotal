@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { AlertTriangle, BarChart, DollarSign, TrendingUp, TrendingDown, HardHat, Plus, Edit2, FileText, Upload, X } from 'lucide-react';
@@ -17,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import SubjectDialog from './SubjectDialog';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
-import { DataVizMetricCard } from '@/components/ui/data-viz';
+import { FinanceAmount, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
 
 // Main Dashboard Component
 const RealizaceFinancials = () => {
@@ -59,18 +58,19 @@ const RealizaceFinancials = () => {
             </div>
         );
     }
-    const formatCurrency = (val) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(val || 0);
-
     return (
         <div className="space-y-6 p-6">
-            <h2 className="text-2xl font-bold flex items-center gap-2"><BarChart className="w-6 h-6"/> Finance Realizace (Přehled)</h2>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-  <DataVizMetricCard icon={DollarSign} label="Celkové smlouvy" value={formatCurrency(financials?.total_revenue)} tone="slate" />
-  <DataVizMetricCard icon={TrendingUp} label="Zisk firmy" value={formatCurrency(financials?.total_profit)} tone="emerald" />
-  <DataVizMetricCard icon={FileText} label="Režie firmy" value={formatCurrency(financials?.total_overhead)} tone="violet" />
-  <DataVizMetricCard icon={TrendingDown} label="Rozpočet týmů" value={formatCurrency(financials?.total_distribution)} tone="blue" />
-  <DataVizMetricCard icon={HardHat} label="Počet realizací" value={financials?.realization_count || 0} tone="slate" />
-</div>
+            <div>
+                <h2 className="flex items-center gap-2 text-xl font-semibold text-slate-950"><BarChart className="h-5 w-5"/> Finance realizací</h2>
+                <p className="mt-1 text-sm text-slate-500">Souhrnný administrátorský pohled na výnosy, rozpočty a očekávaný výsledek realizací.</p>
+            </div>
+            <FinanceMetricStrip metrics={[
+                { label: 'Výnosy ze smluv', value: <FinanceAmount value={financials?.total_revenue} />, detail: 'Evidované realizace', tone: 'neutral', icon: DollarSign },
+                { label: 'Plánovaný zisk firmy', value: <FinanceAmount value={financials?.total_profit} />, detail: 'Podle nastavených marží', tone: Number(financials?.total_profit || 0) < 0 ? 'negative' : 'positive', icon: TrendingUp },
+                { label: 'Plánovaná režie', value: <FinanceAmount value={financials?.total_overhead} />, detail: 'Rozpočtová alokace', tone: 'warning', icon: FileText },
+                { label: 'Rozpočet týmů', value: <FinanceAmount value={financials?.total_distribution} />, detail: 'Základ pro odměny', tone: 'plan', icon: TrendingDown },
+                { label: 'Počet realizací', value: financials?.realization_count || 0, detail: 'V agregovaném přehledu', tone: 'neutral', icon: HardHat },
+            ]} className="2xl:grid-cols-5" />
             <RealizaceOverheadSummary />
             <RealizaceFinancialChart />
             <RealizaceFinancialTable />

@@ -270,6 +270,26 @@
     @apply mt-1 text-2xl font-semibold tracking-normal text-slate-950;
   }
 
+  .finance-table {
+    @apply text-xs;
+  }
+
+  .finance-table thead {
+    @apply sticky top-0 z-10 bg-slate-50;
+  }
+
+  .finance-table th {
+    @apply h-9 whitespace-nowrap text-[11px] font-semibold uppercase tracking-normal text-slate-500;
+  }
+
+  .finance-table td {
+    @apply h-10 py-2;
+  }
+
+  .finance-table td[data-money="true"] {
+    @apply text-right tabular-nums;
+  }
+
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;

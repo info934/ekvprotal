@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { uploadProductDatasheet } from '@/lib/documentStorageService';
 import { crmCommercialDocumentPath, crmOpportunityPath } from '@/lib/crmRoutes';
+import { VAT_RATE_OPTIONS } from '@/lib/financePresentation';
 
 const emptyProduct = {
   id: null,
@@ -692,8 +693,11 @@ const ProductForm = () => {
                   <Input id="product-purchase-price" type="number" value={form.purchase_price ?? 0} onChange={(event) => setForm({ ...form, purchase_price: event.target.value })} disabled={loading || saving || !canEdit} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="product-vat-rate">DPH %</Label>
-                  <Input id="product-vat-rate" type="number" value={form.default_vat_rate ?? 21} onChange={(event) => setForm({ ...form, default_vat_rate: event.target.value })} disabled={loading || saving || !canEdit} />
+                  <Label htmlFor="product-vat-rate">Výchozí sazba DPH</Label>
+                  <Select value={String(form.default_vat_rate ?? 21)} onValueChange={(value) => setForm({ ...form, default_vat_rate: Number(value) })} disabled={loading || saving || !canEdit}>
+                    <SelectTrigger id="product-vat-rate"><SelectValue /></SelectTrigger>
+                    <SelectContent>{VAT_RATE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="product-valid-from">Platnost od</Label>
@@ -1084,4 +1088,3 @@ const ProductForm = () => {
 };
 
 export default ProductForm;
-
