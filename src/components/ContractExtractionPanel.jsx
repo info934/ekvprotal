@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
 import {
@@ -39,6 +40,8 @@ const ContractExtractionPanel = ({ entityType, entityId, onApplied }) => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [updateContractValue, setUpdateContractValue] = useState(true);
   const [createBillingMilestones, setCreateBillingMilestones] = useState(true);
+  const [reviewedVatRate, setReviewedVatRate] = useState('');
+  const [reviewedContractValue, setReviewedContractValue] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -62,6 +65,26 @@ const ContractExtractionPanel = ({ entityType, entityId, onApplied }) => {
     () => [...(latest?.contract_extraction_milestones || [])].sort((a, b) => a.sequence_number - b.sequence_number),
     [latest],
   );
+
+  useEffect(() => {
+    const extractedVat = [0, 12, 21].includes(Number(extracted.vat_rate))
+      ? String(Number(extracted.vat_rate))
+      : '';
+    const extractedGross = Number(extracted.contract_value_incl_vat || 0);
+    const extractedNet = Number(extracted.contract_value_excl_vat || 0);
+    setReviewedVatRate(extractedVat);
+    setReviewedContractValue(extractedGross > 0
+      ? String(extractedGross)
+      : extractedNet > 0 && extractedVat !== ''
+        ? String(Math.round(extractedNet * (1 + Number(extractedVat) / 100) * 100) / 100)
+        : '');
+  }, [latest?.id, extracted.contract_value_excl_vat, extracted.contract_value_incl_vat, extracted.vat_rate]);
+
+  const changeReviewedVatRate = (value) => {
+    setReviewedVatRate(value);
+    const net = Number(extracted.contract_value_excl_vat || 0);
+    if (net > 0) setReviewedContractValue(String(Math.round(net * (1 + Number(value) / 100) * 100) / 100));
+  };
 
   const analyze = async () => {
     if (!file) return;
@@ -100,12 +123,22 @@ const ContractExtractionPanel = ({ entityType, entityId, onApplied }) => {
       toast({ title: 'Není vybraná žádná etapa', description: 'Vyberte alespoň jednu etapu, nebo vypněte vytvoření fakturačních etap.', variant: 'destructive' });
       return;
     }
+    if ((updateContractValue || createBillingMilestones) && reviewedVatRate === '') {
+      toast({ title: 'Vyberte sazbu DPH', description: 'Smlouva sazbu neurčila. Před schválením ji musí potvrdit administrátor.', variant: 'destructive' });
+      return;
+    }
+    if (updateContractValue && Number(reviewedContractValue) <= 0) {
+      toast({ title: 'Doplňte hodnotu zakázky', description: 'Pro aktualizaci projektu je nutná potvrzená hodnota s DPH.', variant: 'destructive' });
+      return;
+    }
     try {
       setApplying(true);
       await applyContractExtraction({
         extractionId: latest.id,
         updateContractValue,
         createBillingMilestones,
+        reviewedContractValue: updateContractValue ? Number(reviewedContractValue) : null,
+        reviewedVatRate: reviewedVatRate === '' ? null : Number(reviewedVatRate),
       });
       await load();
       await onApplied?.();
@@ -225,9 +258,28 @@ const ContractExtractionPanel = ({ entityType, entityId, onApplied }) => {
               </div>
 
               {latest.status === 'review' && <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-white p-3">
-                <div className="flex flex-wrap gap-5">
-                  <Label className="flex items-center gap-2 text-xs"><Checkbox checked={updateContractValue} onCheckedChange={(checked) => setUpdateContractValue(Boolean(checked))} />Aktualizovat hodnotu zakázky</Label>
-                  <Label className="flex items-center gap-2 text-xs"><Checkbox checked={createBillingMilestones} onCheckedChange={(checked) => setCreateBillingMilestones(Boolean(checked))} />Vytvořit vybrané fakturační etapy</Label>
+                <div className="flex flex-1 flex-wrap items-end gap-4">
+                  <Label className="flex h-9 items-center gap-2 text-xs"><Checkbox checked={updateContractValue} onCheckedChange={(checked) => setUpdateContractValue(Boolean(checked))} />Aktualizovat hodnotu zakázky</Label>
+                  <Label className="flex h-9 items-center gap-2 text-xs"><Checkbox checked={createBillingMilestones} onCheckedChange={(checked) => setCreateBillingMilestones(Boolean(checked))} />Vytvořit vybrané fakturační etapy</Label>
+                  {(updateContractValue || createBillingMilestones) && <div className="w-32 space-y-1">
+                    <Label className="text-[11px] text-slate-600">Potvrzená DPH</Label>
+                    <Select value={reviewedVatRate} onValueChange={changeReviewedVatRate}>
+                      <SelectTrigger className="h-9 bg-white text-xs"><SelectValue placeholder="Vyberte" /></SelectTrigger>
+                      <SelectContent>{['0', '12', '21'].map((vat) => <SelectItem key={vat} value={vat}>{vat} %</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>}
+                  {updateContractValue && <div className="w-52 space-y-1">
+                    <Label htmlFor="reviewed-contract-value" className="text-[11px] text-slate-600">Hodnota zakázky s DPH</Label>
+                    <Input
+                      id="reviewed-contract-value"
+                      className="h-9 bg-white text-right text-xs tabular-nums"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={reviewedContractValue}
+                      onChange={(event) => setReviewedContractValue(event.target.value)}
+                    />
+                  </div>}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="outline" className="text-red-700 hover:bg-red-50 hover:text-red-800" onClick={() => setRejectDialogOpen(true)}>

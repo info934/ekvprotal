@@ -94,11 +94,19 @@ export const rejectContractExtraction = async ({ extractionId, reason }) => {
   return data;
 };
 
-export const applyContractExtraction = async ({ extractionId, updateContractValue, createBillingMilestones }) => {
+export const applyContractExtraction = async ({
+  extractionId,
+  updateContractValue,
+  createBillingMilestones,
+  reviewedContractValue,
+  reviewedVatRate,
+}) => {
   const { data, error } = await supabase.rpc('apply_contract_extraction', {
     p_extraction_id: extractionId,
     p_update_contract_value: updateContractValue,
     p_create_billing_milestones: createBillingMilestones,
+    p_reviewed_contract_value: reviewedContractValue,
+    p_reviewed_vat_rate: reviewedVatRate,
   });
   if (error) throw error;
   return data;
