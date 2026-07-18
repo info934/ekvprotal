@@ -133,6 +133,14 @@ const outputText = (payload: Record<string, any>) => {
       if (content.type === 'output_text' && content.text) return content.text;
     }
   }
+  for (const step of payload.steps || []) {
+    if (step.type !== 'model_output') continue;
+    for (const content of step.content || []) {
+      if ((content.type === 'text' || content.type === 'output_text') && content.text) {
+        return content.text;
+      }
+    }
+  }
   throw new Error('AI response did not contain structured output.');
 };
 
