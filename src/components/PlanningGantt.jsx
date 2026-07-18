@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
+import { addDays, differenceInMinutes, format, parseISO } from 'date-fns';
+import { cs } from 'date-fns/locale';
 import { gantt } from 'dhtmlx-gantt';
 import 'dhtmlx-gantt/codebase/dhtmlxgantt.css';
 
@@ -7,21 +8,37 @@ const LINK_TO_DB = { 0: 'fs', 1: 'ss', 2: 'ff', 3: 'sf' };
 const LINK_FROM_DB = { fs: '0', ss: '1', ff: '2', sf: '3' };
 
 const toDate = (value) => value instanceof Date ? value : parseISO(value);
-const toDateOnly = (value) => format(value, 'yyyy-MM-dd');
+const toIso = (value) => value.toISOString();
+const formatAccessibleDate = (value) => format(value, 'd. M. yyyy HH:mm', { locale: cs });
 
 const toGanttTask = (item) => {
-  const start = toDate(item.start_date);
-  const inclusiveDuration = Math.max(1, differenceInCalendarDays(toDate(item.end_date), start) + 1);
+  const start = toDate(item.start_at || item.start_date);
+  const actualEnd = item.item_type === 'milestone' ? start : toDate(item.end_at || item.end_date);
+  const ganttEnd = item.end_at ? actualEnd : addDays(actualEnd, 1);
+  const durationMinutes = Math.max(0, differenceInMinutes(actualEnd, start));
+  const assignmentNames = (item.assignments || []).map((assignment) => assignment.member?.name).filter(Boolean);
+  const subcontractorNames = (item.subcontractor_assignments || [])
+    .map((assignment) => assignment.subcontractor?.name)
+    .filter(Boolean);
+  const resourceNames = [...assignmentNames, ...subcontractorNames];
 
   return {
     id: item.id,
     parent: item.parent_id || 0,
     text: item.name,
     start_date: start,
-    duration: item.item_type === 'milestone' ? 0 : inclusiveDuration,
+    end_date: item.item_type === 'milestone' ? start : ganttEnd,
+    duration: item.item_type === 'milestone' ? 0 : Math.max(1, durationMinutes / 60),
     type: item.item_type === 'milestone' ? gantt.config.types.milestone : gantt.config.types.task,
     progress: Number(item.progress) || 0,
-    member_name: item.member?.name || 'Nepřiřazeno',
+    member_name: resourceNames.join(', ') || item.member?.name || 'Nepřiřazeno',
+    resource_names: resourceNames,
+    actual_end: actualEnd,
+    duration_label: item.item_type === 'milestone'
+      ? 'Milník'
+      : durationMinutes < 1440
+        ? `${Math.max(1, Math.round((durationMinutes / 60) * 10) / 10)} h`
+        : `${Math.max(1, Math.ceil(durationMinutes / 1440))} d`,
     item_type: item.item_type,
     status: item.status,
     open: true,
@@ -85,6 +102,10 @@ const PlanningGantt = ({
 
     gantt.clearAll();
     gantt.config.date_format = '%Y-%m-%d';
+    gantt.config.duration_unit = 'hour';
+    gantt.config.time_step = 15;
+    gantt.config.round_dnd_dates = false;
+    gantt.config.wai_aria_attributes = true;
     gantt.config.readonly = !canEdit;
     gantt.config.drag_move = canEdit;
     gantt.config.drag_resize = canEdit;
@@ -97,9 +118,9 @@ const PlanningGantt = ({
     gantt.config.show_unscheduled = true;
     gantt.config.columns = [
       { name: 'text', label: 'Aktivita', tree: true, width: '*', min_width: 180 },
-      { name: 'start_date', label: 'Začátek', align: 'center', width: 82 },
-      { name: 'duration', label: 'Dny', align: 'center', width: 48 },
-      { name: 'member_name', label: 'Řešitel', align: 'left', width: 110 },
+      { name: 'start_date', label: 'Začátek', align: 'center', width: 112, template: (task) => format(task.start_date, 'd. M. HH:mm') },
+      { name: 'duration_label', label: 'Trvání', align: 'center', width: 62 },
+      { name: 'member_name', label: 'Zdroje', align: 'left', width: 140 },
     ];
     configureScale(scale);
 
@@ -114,6 +135,10 @@ const PlanningGantt = ({
     };
     gantt.templates.grid_row_class = (_start, _end, task) => `planning-grid-${task.item_type}`;
     gantt.templates.task_text = (_start, _end, task) => task.item_type === 'milestone' ? '' : task.text;
+    gantt.templates.tooltip_text = (start, _end, task) => {
+      const resources = task.resource_names?.length ? ` Zdroje: ${task.resource_names.join(', ')}.` : '';
+      return `${task.text}. Začátek ${formatAccessibleDate(start)}. Konec ${formatAccessibleDate(task.actual_end || start)}.${resources}`;
+    };
 
     gantt.init(containerRef.current);
     gantt.parse(data);
@@ -127,10 +152,10 @@ const PlanningGantt = ({
     eventIds.push(gantt.attachEvent('onAfterTaskUpdate', async (id, task) => {
       if (!canEdit) return;
       const start = task.start_date;
-      const end = task.item_type === 'milestone' ? start : addDays(task.end_date, -1);
+      const end = task.item_type === 'milestone' ? start : task.end_date;
       await onItemDatesChange?.(String(id), {
-        start_date: toDateOnly(start),
-        end_date: toDateOnly(end < start ? start : end),
+        start_at: toIso(start),
+        end_at: toIso(end < start ? start : end),
         progress: Number(task.progress) || 0,
       });
     }));
@@ -155,8 +180,10 @@ const PlanningGantt = ({
   }, [canEdit, data, items, onDependencyCreate, onDependencyDelete, onItemDatesChange, onItemEdit, scale]);
 
   return (
-    <div className="planning-gantt overflow-hidden rounded-md border border-slate-200 bg-white">
-      <div ref={containerRef} className="h-[620px] min-h-[420px] w-full" />
+    <div className="planning-gantt planning-gantt-scroll overflow-x-auto rounded-md border border-slate-200 bg-white">
+      <div className="planning-gantt-canvas min-w-[1080px]">
+        <div ref={containerRef} className="h-[620px] min-h-[420px] w-full" />
+      </div>
     </div>
   );
 };

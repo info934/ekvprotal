@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import {
@@ -55,9 +55,14 @@ import {
   checkPlanningItemAvailability,
   syncPlanningItemCalendar,
 } from '@/lib/planningService';
-import PlanningGantt from '@/components/PlanningGantt';
+
+const PlanningGantt = lazy(() => import('@/components/PlanningGantt'));
 
 const TODAY = () => format(new Date(), 'yyyy-MM-dd');
+const LOCAL_DATE_TIME = (hour = 8) => `${TODAY()}T${String(hour).padStart(2, '0')}:00`;
+const toLocalDateTime = (value, fallbackHour = 8) => value
+  ? format(parseISO(value), "yyyy-MM-dd'T'HH:mm")
+  : LOCAL_DATE_TIME(fallbackHour);
 
 const ITEM_STATUS = {
   planned: 'Plánováno',
@@ -95,14 +100,21 @@ const emptyItem = () => ({
   description: '',
   start_date: TODAY(),
   end_date: TODAY(),
+  start_at: LOCAL_DATE_TIME(8),
+  end_at: LOCAL_DATE_TIME(17),
   progress: 0,
   status: 'planned',
   member_id: '',
+  assignments: [],
+  subcontractor_assignments: [],
   calendar_sync_enabled: false,
 });
 
 const emptyTravel = () => ({
+  item_id: '',
   travel_date: TODAY(),
+  departure_at: LOCAL_DATE_TIME(7),
+  arrival_at: LOCAL_DATE_TIME(8),
   origin_label: '',
   destination_label: '',
   distance_km: '',
@@ -115,6 +127,8 @@ const emptyTravel = () => ({
 });
 
 const emptyAccommodation = () => ({
+  item_id: '',
+  guest_ids: [],
   hotel_name: '',
   address: '',
   check_in: TODAY(),
@@ -125,6 +139,7 @@ const emptyAccommodation = () => ({
 });
 
 const formatDate = (value) => value ? format(parseISO(value), 'd. M. yyyy', { locale: cs }) : '—';
+const formatDateTime = (value) => value ? format(parseISO(value), 'd. M. yyyy HH:mm', { locale: cs }) : '—';
 
 const getCalendarLink = (item) => Array.isArray(item?.calendar_link)
   ? item.calendar_link[0] || null
@@ -167,21 +182,65 @@ const Metric = ({ icon: Icon, label, value, tone = 'blue' }) => {
   );
 };
 
-const ItemDialog = ({ open, value, items, members, onClose, onSave, onDelete, onCheckAvailability, availability, saving }) => {
+const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSave, onDelete, onCheckAvailability, availability, saving }) => {
   const [form, setForm] = useState(emptyItem());
 
   useEffect(() => {
-    if (open) setForm(value ? { ...emptyItem(), ...value, member_id: value.member_id || '' } : emptyItem());
+    if (!open) return;
+    if (!value) {
+      setForm(emptyItem());
+      return;
+    }
+    const assignments = value.assignments?.length
+      ? value.assignments.map(({ member, ...assignment }) => assignment)
+      : value.member_id
+        ? [{ member_id: value.member_id, role: '', allocation_percent: 100, planned_hours: '' }]
+        : [];
+    setForm({
+      ...emptyItem(),
+      ...value,
+      member_id: value.member_id || '',
+      start_at: toLocalDateTime(value.start_at || `${value.start_date}T08:00`, 8),
+      end_at: toLocalDateTime(value.end_at || `${value.end_date}T17:00`, 17),
+      assignments,
+      subcontractor_assignments: (value.subcontractor_assignments || []).map(({ subcontractor, ...assignment }) => assignment),
+    });
   }, [open, value]);
 
   const update = (key, nextValue) => setForm((current) => ({ ...current, [key]: nextValue }));
+  const setPrimaryMember = (memberId) => setForm((current) => {
+    const assignments = memberId && !current.assignments.some((assignment) => assignment.member_id === memberId)
+      ? [...current.assignments, { member_id: memberId, role: '', allocation_percent: 100, planned_hours: '' }]
+      : current.assignments;
+    return { ...current, member_id: memberId, assignments };
+  });
+  const toggleMember = (memberId, checked) => setForm((current) => {
+    const assignments = checked
+      ? [...current.assignments, { member_id: memberId, role: '', allocation_percent: 100, planned_hours: '' }]
+      : current.assignments.filter((assignment) => assignment.member_id !== memberId);
+    return { ...current, assignments, member_id: current.member_id === memberId && !checked ? assignments[0]?.member_id || '' : current.member_id };
+  });
+  const updateMemberAssignment = (memberId, key, nextValue) => setForm((current) => ({
+    ...current,
+    assignments: current.assignments.map((assignment) => assignment.member_id === memberId ? { ...assignment, [key]: nextValue } : assignment),
+  }));
+  const toggleSubcontractor = (subcontractorId, checked) => setForm((current) => ({
+    ...current,
+    subcontractor_assignments: checked
+      ? [...current.subcontractor_assignments, { project_subcontractor_id: subcontractorId, role: '', allocation_percent: 100, planned_hours: '' }]
+      : current.subcontractor_assignments.filter((assignment) => assignment.project_subcontractor_id !== subcontractorId),
+  }));
+  const updateSubcontractorAssignment = (subcontractorId, key, nextValue) => setForm((current) => ({
+    ...current,
+    subcontractor_assignments: current.subcontractor_assignments.map((assignment) => assignment.project_subcontractor_id === subcontractorId ? { ...assignment, [key]: nextValue } : assignment),
+  }));
   const selectedMember = members.find((member) => member.id === form.member_id);
   const mailbox = selectedMember?.microsoft_calendar_email || selectedMember?.email;
   const calendarLink = getCalendarLink(value);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{form.id ? 'Upravit položku plánu' : 'Nová položka plánu'}</DialogTitle>
           <DialogDescription>Fáze seskupují práci, úkoly mají termín a milníky označují rozhodující okamžik.</DialogDescription>
@@ -207,15 +266,15 @@ const ItemDialog = ({ open, value, items, members, onClose, onSave, onDelete, on
           </div>
           <div className="space-y-2">
             <Label>Začátek</Label>
-            <Input type="date" value={form.start_date} onChange={(event) => update('start_date', event.target.value)} />
+            <Input type="datetime-local" step="900" value={form.start_at} onChange={(event) => update('start_at', event.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>{form.item_type === 'milestone' ? 'Datum milníku' : 'Konec'}</Label>
-            <Input type="date" value={form.item_type === 'milestone' ? form.start_date : form.end_date} disabled={form.item_type === 'milestone'} onChange={(event) => update('end_date', event.target.value)} />
+            <Input type="datetime-local" step="900" value={form.item_type === 'milestone' ? form.start_at : form.end_at} disabled={form.item_type === 'milestone'} onChange={(event) => update('end_at', event.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>Řešitel</Label>
-            <Select value={form.member_id || 'none'} onValueChange={(value) => update('member_id', value === 'none' ? '' : value)}>
+            <Select value={form.member_id || 'none'} onValueChange={(value) => setPrimaryMember(value === 'none' ? '' : value)}>
               <SelectTrigger><SelectValue placeholder="Nepřiřazeno" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Nepřiřazeno</SelectItem>
@@ -223,6 +282,48 @@ const ItemDialog = ({ open, value, items, members, onClose, onSave, onDelete, on
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/70 p-3 sm:col-span-2">
+            <div>
+              <div className="text-sm font-semibold text-slate-950">Interní zdroje a kapacita</div>
+              <div className="text-xs text-slate-500">Vyberte více osob a určete jejich vytížení. Hlavní řešitel se používá pro Outlook.</div>
+            </div>
+            <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
+              {members.map((member) => {
+                const assignment = form.assignments.find((entry) => entry.member_id === member.id);
+                return (
+                  <div key={member.id} className="grid items-center gap-2 rounded-md border bg-white p-2 sm:grid-cols-[minmax(180px,1fr)_90px_100px]">
+                    <label className="flex min-w-0 items-center gap-2 text-sm">
+                      <Checkbox checked={Boolean(assignment)} onCheckedChange={(checked) => toggleMember(member.id, Boolean(checked))} />
+                      <span className="truncate">{member.name || member.email}</span>
+                      {form.member_id === member.id && <Badge variant="secondary">Hlavní</Badge>}
+                    </label>
+                    <Input aria-label={`Vytížení ${member.name || member.email} v procentech`} type="number" min="1" max="100" disabled={!assignment} value={assignment?.allocation_percent ?? 100} onChange={(event) => updateMemberAssignment(member.id, 'allocation_percent', event.target.value)} />
+                    <Input aria-label={`Plánované hodiny ${member.name || member.email}`} type="number" min="0" step="0.5" disabled={!assignment} placeholder="Hodiny" value={assignment?.planned_hours ?? ''} onChange={(event) => updateMemberAssignment(member.id, 'planned_hours', event.target.value)} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {subcontractors.length > 0 && (
+            <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50/60 p-3 sm:col-span-2">
+              <div>
+                <div className="text-sm font-semibold text-slate-950">Subdodavatelé</div>
+                <div className="text-xs text-slate-600">Kapacita je plánovací údaj a nemění finanční část subdodávky.</div>
+              </div>
+              <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                {subcontractors.map((subcontractor) => {
+                  const assignment = form.subcontractor_assignments.find((entry) => entry.project_subcontractor_id === subcontractor.id);
+                  return (
+                    <div key={subcontractor.id} className="grid items-center gap-2 rounded-md border bg-white p-2 sm:grid-cols-[minmax(180px,1fr)_90px_100px]">
+                      <label className="flex min-w-0 items-center gap-2 text-sm"><Checkbox checked={Boolean(assignment)} onCheckedChange={(checked) => toggleSubcontractor(subcontractor.id, Boolean(checked))} /><span className="truncate">{subcontractor.name || subcontractor.scope_of_work || 'Subdodavatel'}</span></label>
+                      <Input aria-label="Vytížení subdodavatele v procentech" type="number" min="1" max="100" disabled={!assignment} value={assignment?.allocation_percent ?? 100} onChange={(event) => updateSubcontractorAssignment(subcontractor.id, 'allocation_percent', event.target.value)} />
+                      <Input aria-label="Plánované hodiny subdodavatele" type="number" min="0" step="0.5" disabled={!assignment} placeholder="Hodiny" value={assignment?.planned_hours ?? ''} onChange={(event) => updateSubcontractorAssignment(subcontractor.id, 'planned_hours', event.target.value)} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="space-y-2 rounded-md border border-blue-100 bg-blue-50/60 p-3 sm:col-span-2">
             <label className="flex items-start gap-3">
               <Checkbox
@@ -285,17 +386,24 @@ const ItemDialog = ({ open, value, items, members, onClose, onSave, onDelete, on
         <DialogFooter className="gap-2">
           {form.id && <Button type="button" variant="destructive" className="sm:mr-auto" onClick={() => onDelete(form.id)}><Trash2 className="mr-2 h-4 w-4" />Smazat</Button>}
           <Button type="button" variant="outline" onClick={onClose}>Zrušit</Button>
-          <Button type="button" disabled={saving || !form.name.trim() || !form.start_date || !form.end_date} onClick={() => onSave(form)}>{saving ? 'Ukládám…' : 'Uložit'}</Button>
+          <Button type="button" disabled={saving || !form.name.trim() || !form.start_at || !form.end_at} onClick={() => onSave(form)}>{saving ? 'Ukládám…' : 'Uložit'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 };
 
-const TravelDialog = ({ open, value, onClose, onSave, saving }) => {
+const TravelDialog = ({ open, value, items, onClose, onSave, saving }) => {
   const [form, setForm] = useState(emptyTravel());
   useEffect(() => {
-    if (open) setForm(value ? { ...emptyTravel(), ...value, distance_km: value.distance_m ? value.distance_m / 1000 : '' } : emptyTravel());
+    if (open) setForm(value ? {
+      ...emptyTravel(),
+      ...value,
+      item_id: value.item_id || '',
+      departure_at: toLocalDateTime(value.departure_at || `${value.travel_date}T07:00`, 7),
+      arrival_at: toLocalDateTime(value.arrival_at || `${value.travel_date}T08:00`, 8),
+      distance_km: value.distance_m ? value.distance_m / 1000 : '',
+    } : emptyTravel());
   }, [open, value]);
   const update = (key, nextValue) => setForm((current) => ({ ...current, [key]: nextValue }));
 
@@ -304,7 +412,9 @@ const TravelDialog = ({ open, value, onClose, onSave, saving }) => {
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader><DialogTitle>{form.id ? 'Upravit cestu' : 'Naplánovat cestu'}</DialogTitle><DialogDescription>Trasu nyní evidujeme ručně; datový model je připravený na pozdější doplnění Mapy.com API.</DialogDescription></DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2"><Label>Datum</Label><Input type="date" value={form.travel_date} onChange={(e) => update('travel_date', e.target.value)} /></div>
+          <div className="space-y-2 sm:col-span-2"><Label>Navázaná aktivita</Label><Select value={form.item_id || 'none'} onValueChange={(value) => update('item_id', value === 'none' ? '' : value)}><SelectTrigger><SelectValue placeholder="Bez vazby na aktivitu" /></SelectTrigger><SelectContent><SelectItem value="none">Bez vazby na aktivitu</SelectItem>{items.filter((item) => item.item_type !== 'phase').map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>Odjezd</Label><Input type="datetime-local" step="900" value={form.departure_at} onChange={(e) => update('departure_at', e.target.value)} /></div>
+          <div className="space-y-2"><Label>Příjezd</Label><Input type="datetime-local" step="900" value={form.arrival_at} onChange={(e) => update('arrival_at', e.target.value)} /></div>
           <div className="space-y-2"><Label>Stav</Label><Select value={form.status} onValueChange={(v) => update('status', v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(TRAVEL_STATUS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><Label>Odkud</Label><Input value={form.origin_label} onChange={(e) => update('origin_label', e.target.value)} /></div>
           <div className="space-y-2"><Label>Kam</Label><Input value={form.destination_label} onChange={(e) => update('destination_label', e.target.value)} /></div>
@@ -314,28 +424,40 @@ const TravelDialog = ({ open, value, onClose, onSave, saving }) => {
           <label className="flex items-center gap-2 text-sm"><Checkbox checked={form.overnight_required} onCheckedChange={(v) => update('overnight_required', Boolean(v))} />Přespání je nutné</label>
           <div className="space-y-2 sm:col-span-2"><Label>Poznámka</Label><Textarea rows={3} value={form.notes} onChange={(e) => update('notes', e.target.value)} /></div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={onClose}>Zrušit</Button><Button disabled={saving || !form.origin_label.trim() || !form.destination_label.trim()} onClick={() => onSave(form)}>{saving ? 'Ukládám…' : 'Uložit cestu'}</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={onClose}>Zrušit</Button><Button disabled={saving || !form.origin_label.trim() || !form.destination_label.trim() || !form.departure_at || !form.arrival_at} onClick={() => onSave(form)}>{saving ? 'Ukládám…' : 'Uložit cestu'}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
 };
 
-const AccommodationDialog = ({ open, value, onClose, onSave, saving }) => {
+const AccommodationDialog = ({ open, value, items, members, onClose, onSave, saving }) => {
   const [form, setForm] = useState(emptyAccommodation());
-  useEffect(() => { if (open) setForm(value ? { ...emptyAccommodation(), ...value } : emptyAccommodation()); }, [open, value]);
+  useEffect(() => { if (open) setForm(value ? { ...emptyAccommodation(), ...value, item_id: value.item_id || '', guest_ids: value.guest_ids || [] } : emptyAccommodation()); }, [open, value]);
   const update = (key, nextValue) => setForm((current) => ({ ...current, [key]: nextValue }));
+  const toggleGuest = (memberId, checked) => setForm((current) => ({
+    ...current,
+    guest_ids: checked ? [...current.guest_ids, memberId] : current.guest_ids.filter((id) => id !== memberId),
+  }));
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader><DialogTitle>{form.id ? 'Upravit ubytování' : 'Přidat ubytování'}</DialogTitle><DialogDescription>Evidence rezervace, termínu a návaznosti na plán projektu nebo realizace.</DialogDescription></DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2"><Label>Navázaná aktivita</Label><Select value={form.item_id || 'none'} onValueChange={(value) => update('item_id', value === 'none' ? '' : value)}><SelectTrigger><SelectValue placeholder="Bez vazby na aktivitu" /></SelectTrigger><SelectContent><SelectItem value="none">Bez vazby na aktivitu</SelectItem>{items.filter((item) => item.item_type !== 'phase').map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2 sm:col-span-2"><Label>Ubytování</Label><Input value={form.hotel_name} onChange={(e) => update('hotel_name', e.target.value)} placeholder="Název hotelu nebo ubytování" /></div>
           <div className="space-y-2 sm:col-span-2"><Label>Adresa</Label><Input value={form.address} onChange={(e) => update('address', e.target.value)} /></div>
           <div className="space-y-2"><Label>Příjezd</Label><Input type="date" value={form.check_in} onChange={(e) => update('check_in', e.target.value)} /></div>
           <div className="space-y-2"><Label>Odjezd</Label><Input type="date" value={form.check_out} onChange={(e) => update('check_out', e.target.value)} /></div>
           <div className="space-y-2"><Label>Stav</Label><Select value={form.status} onValueChange={(v) => update('status', v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(ACCOMMODATION_STATUS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><Label>Číslo rezervace</Label><Input value={form.booking_reference} onChange={(e) => update('booking_reference', e.target.value)} /></div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Ubytované osoby</Label>
+            <div className="grid max-h-40 gap-2 overflow-y-auto rounded-md border bg-slate-50 p-3 sm:grid-cols-2">
+              {members.map((member) => <label key={member.id} className="flex items-center gap-2 text-sm"><Checkbox checked={form.guest_ids.includes(member.id)} onCheckedChange={(checked) => toggleGuest(member.id, Boolean(checked))} /><span className="truncate">{member.name || member.email}</span></label>)}
+              {!members.length && <span className="text-sm text-slate-500">Pro tento plán nejsou dostupné žádné osoby.</span>}
+            </div>
+          </div>
           <div className="space-y-2 sm:col-span-2"><Label>Poznámka</Label><Textarea rows={3} value={form.notes} onChange={(e) => update('notes', e.target.value)} /></div>
         </div>
         <DialogFooter><Button variant="outline" onClick={onClose}>Zrušit</Button><Button disabled={saving || !form.hotel_name.trim() || !form.check_in || !form.check_out} onClick={() => onSave(form)}>{saving ? 'Ukládám…' : 'Uložit ubytování'}</Button></DialogFooter>
@@ -349,7 +471,7 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
   const { toast } = useToast();
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState('');
-  const [data, setData] = useState({ items: [], dependencies: [], travel: [], accommodations: [], members: [] });
+  const [data, setData] = useState({ items: [], dependencies: [], travel: [], accommodations: [], members: [], subcontractors: [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -464,7 +586,7 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
   }, [toast]);
 
   const handleItemSave = async (item) => {
-    if (item.item_type !== 'milestone' && item.end_date < item.start_date) {
+    if (item.item_type !== 'milestone' && new Date(item.end_at) < new Date(item.start_at)) {
       toast({ title: 'Konec nesmí být před začátkem', variant: 'destructive' });
       return;
     }
@@ -513,6 +635,10 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
   ), [runMutation]);
 
   const handleTravelSave = async (segment) => {
+    if (new Date(segment.arrival_at) < new Date(segment.departure_at)) {
+      toast({ title: 'Příjezd nesmí být před odjezdem', variant: 'destructive' });
+      return;
+    }
     const done = await runMutation(() => saveTravelSegment(selectedPlanId, segment), 'Cesta byla uložena');
     if (done) setTravelDialog({ open: false, value: null });
   };
@@ -589,16 +715,18 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
           </TabsList>
           <TabsContent value="gantt" className="mt-0 min-w-0">
             {loading ? <div className="flex h-[420px] items-center justify-center rounded-md border bg-white text-sm text-slate-500"><RefreshCw className="mr-2 h-4 w-4 animate-spin" />Načítám harmonogram…</div> : (
-              <PlanningGantt
-                items={data.items}
-                dependencies={data.dependencies}
-                canEdit={canEdit}
-                scale={scale}
-                onItemEdit={(item) => setItemDialog({ open: true, value: item })}
-                onItemDatesChange={handleItemDatesChange}
-                onDependencyCreate={handleDependencyCreate}
-                onDependencyDelete={handleDependencyDelete}
-              />
+              <Suspense fallback={<div className="flex h-[420px] items-center justify-center rounded-md border bg-white text-sm text-slate-500"><RefreshCw className="mr-2 h-4 w-4 animate-spin" />Načítám časovou osu…</div>}>
+                <PlanningGantt
+                  items={data.items}
+                  dependencies={data.dependencies}
+                  canEdit={canEdit}
+                  scale={scale}
+                  onItemEdit={(item) => setItemDialog({ open: true, value: item })}
+                  onItemDatesChange={handleItemDatesChange}
+                  onDependencyCreate={handleDependencyCreate}
+                  onDependencyDelete={handleDependencyDelete}
+                />
+              </Suspense>
             )}
           </TabsContent>
           <TabsContent value="milestones" className="mt-0">
@@ -607,7 +735,7 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
                 <TableHeader><TableRow><TableHead>Milník</TableHead><TableHead>Datum</TableHead><TableHead>Stav</TableHead><TableHead>Odpovědná osoba</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
                 <TableBody>
                   {data.items.filter((item) => item.item_type === 'milestone').map((item) => (
-                    <TableRow key={item.id}><TableCell className="font-medium">{item.name}</TableCell><TableCell>{formatDate(item.start_date)}</TableCell><TableCell><StatusBadge value={item.status} /></TableCell><TableCell>{item.member?.name || 'Nepřiřazeno'}</TableCell><TableCell>{canEdit && <Button variant="ghost" size="icon" onClick={() => setItemDialog({ open: true, value: item })}><Pencil className="h-4 w-4" /></Button>}</TableCell></TableRow>
+                    <TableRow key={item.id}><TableCell className="font-medium">{item.name}</TableCell><TableCell>{item.start_at ? formatDateTime(item.start_at) : formatDate(item.start_date)}</TableCell><TableCell><StatusBadge value={item.status} /></TableCell><TableCell>{item.assignments?.map((assignment) => assignment.member?.name).filter(Boolean).join(', ') || item.member?.name || 'Nepřiřazeno'}</TableCell><TableCell>{canEdit && <Button variant="ghost" size="icon" onClick={() => setItemDialog({ open: true, value: item })}><Pencil className="h-4 w-4" /></Button>}</TableCell></TableRow>
                   ))}
                   {!data.items.some((item) => item.item_type === 'milestone') && <TableRow><TableCell colSpan={5} className="h-28 text-center text-slate-500">Zatím nejsou naplánované žádné milníky.</TableCell></TableRow>}
                 </TableBody>
@@ -617,16 +745,16 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
           <TabsContent value="logistics" className="mt-0 space-y-4">
             <section className="overflow-hidden rounded-md border bg-white">
               <div className="flex items-center justify-between border-b px-4 py-3"><div><h3 className="font-semibold">Cesty</h3><p className="text-xs text-slate-500">Trasy, vzdálenosti a potřeba přespání.</p></div>{canEdit && <Button size="sm" onClick={() => setTravelDialog({ open: true, value: null })}><Plus className="mr-2 h-4 w-4" />Cesta</Button>}</div>
-              <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Datum</TableHead><TableHead>Trasa</TableHead><TableHead>Vzdálenost</TableHead><TableHead>Doba</TableHead><TableHead>Přespání</TableHead><TableHead>Stav</TableHead><TableHead className="w-20" /></TableRow></TableHeader><TableBody>
-                {data.travel.map((segment) => <TableRow key={segment.id}><TableCell>{formatDate(segment.travel_date)}</TableCell><TableCell className="min-w-[260px]"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400" />{segment.origin_label} → {segment.destination_label}</div></TableCell><TableCell>{segment.distance_m ? `${(segment.distance_m / 1000).toLocaleString('cs-CZ')} km` : '—'}</TableCell><TableCell>{segment.duration_minutes ? `${segment.duration_minutes} min` : '—'}</TableCell><TableCell>{segment.overnight_required ? 'Nutné' : segment.overnight_recommended ? 'Doporučeno' : 'Ne'}</TableCell><TableCell><StatusBadge value={segment.status} labels={TRAVEL_STATUS} /></TableCell><TableCell>{canEdit && <div className="flex"><Button variant="ghost" size="icon" onClick={() => setTravelDialog({ open: true, value: segment })}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => runMutation(() => deleteTravelSegment(segment.id), 'Cesta byla smazána')}><Trash2 className="h-4 w-4 text-red-600" /></Button></div>}</TableCell></TableRow>)}
-                {!data.travel.length && <TableRow><TableCell colSpan={7} className="h-24 text-center text-slate-500">Zatím nejsou naplánované žádné cesty.</TableCell></TableRow>}
+              <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Čas</TableHead><TableHead>Aktivita</TableHead><TableHead>Trasa</TableHead><TableHead>Vzdálenost</TableHead><TableHead>Doba</TableHead><TableHead>Přespání</TableHead><TableHead>Stav</TableHead><TableHead className="w-20" /></TableRow></TableHeader><TableBody>
+                {data.travel.map((segment) => <TableRow key={segment.id}><TableCell className="whitespace-nowrap">{segment.departure_at ? formatDateTime(segment.departure_at) : formatDate(segment.travel_date)}{segment.arrival_at ? <div className="text-xs text-slate-500">do {formatDateTime(segment.arrival_at)}</div> : null}</TableCell><TableCell className="min-w-[180px]">{data.items.find((item) => item.id === segment.item_id)?.name || 'Bez vazby'}</TableCell><TableCell className="min-w-[260px]"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400" />{segment.origin_label} → {segment.destination_label}</div></TableCell><TableCell>{segment.distance_m ? `${(segment.distance_m / 1000).toLocaleString('cs-CZ')} km` : '—'}</TableCell><TableCell>{segment.duration_minutes ? `${segment.duration_minutes} min` : '—'}</TableCell><TableCell>{segment.overnight_required ? 'Nutné' : segment.overnight_recommended ? 'Doporučeno' : 'Ne'}</TableCell><TableCell><StatusBadge value={segment.status} labels={TRAVEL_STATUS} /></TableCell><TableCell>{canEdit && <div className="flex"><Button variant="ghost" size="icon" onClick={() => setTravelDialog({ open: true, value: segment })}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => runMutation(() => deleteTravelSegment(segment.id), 'Cesta byla smazána')}><Trash2 className="h-4 w-4 text-red-600" /></Button></div>}</TableCell></TableRow>)}
+                {!data.travel.length && <TableRow><TableCell colSpan={8} className="h-24 text-center text-slate-500">Zatím nejsou naplánované žádné cesty.</TableCell></TableRow>}
               </TableBody></Table></div>
             </section>
             <section className="overflow-hidden rounded-md border bg-white">
               <div className="flex items-center justify-between border-b px-4 py-3"><div><h3 className="font-semibold">Ubytování</h3><p className="text-xs text-slate-500">Návrhy a potvrzené rezervace navázané na harmonogram.</p></div>{canEdit && <Button size="sm" onClick={() => setAccommodationDialog({ open: true, value: null })}><Plus className="mr-2 h-4 w-4" />Ubytování</Button>}</div>
-              <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Ubytování</TableHead><TableHead>Příjezd</TableHead><TableHead>Odjezd</TableHead><TableHead>Rezervace</TableHead><TableHead>Stav</TableHead><TableHead className="w-20" /></TableRow></TableHeader><TableBody>
-                {data.accommodations.map((stay) => <TableRow key={stay.id}><TableCell><div className="font-medium">{stay.hotel_name}</div><div className="text-xs text-slate-500">{stay.address || 'Bez adresy'}</div></TableCell><TableCell>{formatDate(stay.check_in)}</TableCell><TableCell>{formatDate(stay.check_out)}</TableCell><TableCell>{stay.booking_reference || '—'}</TableCell><TableCell><StatusBadge value={stay.status} labels={ACCOMMODATION_STATUS} /></TableCell><TableCell>{canEdit && <div className="flex"><Button variant="ghost" size="icon" onClick={() => setAccommodationDialog({ open: true, value: stay })}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => runMutation(() => deleteAccommodation(stay.id), 'Ubytování bylo smazáno')}><Trash2 className="h-4 w-4 text-red-600" /></Button></div>}</TableCell></TableRow>)}
-                {!data.accommodations.length && <TableRow><TableCell colSpan={6} className="h-24 text-center text-slate-500">Zatím není evidované žádné ubytování.</TableCell></TableRow>}
+              <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Ubytování</TableHead><TableHead>Aktivita</TableHead><TableHead>Osoby</TableHead><TableHead>Příjezd</TableHead><TableHead>Odjezd</TableHead><TableHead>Rezervace</TableHead><TableHead>Stav</TableHead><TableHead className="w-20" /></TableRow></TableHeader><TableBody>
+                {data.accommodations.map((stay) => <TableRow key={stay.id}><TableCell><div className="font-medium">{stay.hotel_name}</div><div className="text-xs text-slate-500">{stay.address || 'Bez adresy'}</div></TableCell><TableCell className="min-w-[180px]">{data.items.find((item) => item.id === stay.item_id)?.name || 'Bez vazby'}</TableCell><TableCell className="min-w-[180px]">{stay.guest_members?.map((member) => member.name || member.email).join(', ') || 'Nevybráno'}</TableCell><TableCell>{formatDate(stay.check_in)}</TableCell><TableCell>{formatDate(stay.check_out)}</TableCell><TableCell>{stay.booking_reference || '—'}</TableCell><TableCell><StatusBadge value={stay.status} labels={ACCOMMODATION_STATUS} /></TableCell><TableCell>{canEdit && <div className="flex"><Button variant="ghost" size="icon" onClick={() => setAccommodationDialog({ open: true, value: stay })}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => runMutation(() => deleteAccommodation(stay.id), 'Ubytování bylo smazáno')}><Trash2 className="h-4 w-4 text-red-600" /></Button></div>}</TableCell></TableRow>)}
+                {!data.accommodations.length && <TableRow><TableCell colSpan={8} className="h-24 text-center text-slate-500">Zatím není evidované žádné ubytování.</TableCell></TableRow>}
               </TableBody></Table></div>
             </section>
           </TabsContent>
@@ -645,7 +773,7 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
                       return (
                         <TableRow key={item.id}>
                           <TableCell><div className="font-medium">{item.name}</div><div className="text-xs text-slate-500">{ITEM_TYPE[item.item_type]}</div></TableCell>
-                          <TableCell className="whitespace-nowrap">{formatDate(item.start_date)}{item.end_date !== item.start_date ? ` – ${formatDate(item.end_date)}` : ''}</TableCell>
+                          <TableCell className="whitespace-nowrap">{item.start_at ? formatDateTime(item.start_at) : formatDate(item.start_date)}{item.item_type !== 'milestone' ? ` – ${item.end_at ? formatDateTime(item.end_at) : formatDate(item.end_date)}` : ''}</TableCell>
                           <TableCell><div>{item.member?.name || 'Nepřiřazeno'}</div><div className="text-xs text-slate-500">{item.member?.microsoft_calendar_email || item.member?.email || 'Bez e-mailu'}</div></TableCell>
                           <TableCell>
                             <Badge variant={link?.sync_status === 'synced' ? 'success' : link?.sync_status === 'error' ? 'destructive' : 'secondary'}>
@@ -674,9 +802,9 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
         </Tabs>
       </div>
 
-      <ItemDialog open={itemDialog.open} value={itemDialog.value} items={data.items} members={data.members} availability={availability} saving={saving} onCheckAvailability={handleAvailabilityCheck} onClose={() => setItemDialog({ open: false, value: null })} onSave={handleItemSave} onDelete={handleItemDelete} />
-      <TravelDialog open={travelDialog.open} value={travelDialog.value} saving={saving} onClose={() => setTravelDialog({ open: false, value: null })} onSave={handleTravelSave} />
-      <AccommodationDialog open={accommodationDialog.open} value={accommodationDialog.value} saving={saving} onClose={() => setAccommodationDialog({ open: false, value: null })} onSave={handleAccommodationSave} />
+      <ItemDialog open={itemDialog.open} value={itemDialog.value} items={data.items} members={data.members} subcontractors={data.subcontractors} availability={availability} saving={saving} onCheckAvailability={handleAvailabilityCheck} onClose={() => setItemDialog({ open: false, value: null })} onSave={handleItemSave} onDelete={handleItemDelete} />
+      <TravelDialog open={travelDialog.open} value={travelDialog.value} items={data.items} saving={saving} onClose={() => setTravelDialog({ open: false, value: null })} onSave={handleTravelSave} />
+      <AccommodationDialog open={accommodationDialog.open} value={accommodationDialog.value} items={data.items} members={data.members} saving={saving} onClose={() => setAccommodationDialog({ open: false, value: null })} onSave={handleAccommodationSave} />
     </div>
   );
 };

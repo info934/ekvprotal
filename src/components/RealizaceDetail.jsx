@@ -442,7 +442,7 @@ const RealizaceDetail = () => {
 
           {canViewCosts && (
             <TabsContent value="finance" className="space-y-6">
-                {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} />}
+                {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} enableContractAnalysis />}
                 <RealizaceExtraCosts
                   realizaceId={realizaceId}
                   extraCosts={extraCosts}

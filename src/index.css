@@ -79,6 +79,22 @@
   font-size: 12px;
 }
 
+.planning-gantt-scroll {
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+}
+
+.planning-gantt-canvas {
+  width: 100%;
+}
+
+@media (max-width: 1100px) {
+  .planning-gantt-canvas {
+    min-width: 1160px;
+  }
+}
+
 .planning-gantt .gantt_grid_scale,
 .planning-gantt .gantt_task_scale {
   background: #f8fafc;

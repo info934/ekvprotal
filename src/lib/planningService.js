@@ -5,6 +5,9 @@ const throwIfError = (result) => {
   return result.data;
 };
 
+const toIsoDateTime = (value) => value ? new Date(value).toISOString() : null;
+const toDateOnly = (value, fallback = null) => value ? String(value).slice(0, 10) : fallback;
+
 export const listPlanningPlans = async (entityType = null) => {
   const params = entityType ? { p_entity_type: entityType } : {};
   return throwIfError(await supabase.rpc('list_planning_plans_safe', params));
@@ -25,17 +28,36 @@ export const ensurePlanningPlan = async (entityType, entityId) => {
 };
 
 export const loadPlanningData = async (planId) => {
-  const [itemsResult, dependenciesResult, travelResult, accommodationResult, membersResult] = await Promise.all([
-    supabase
-      .from('planning_items')
-      .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
-      .eq('plan_id', planId)
-      .order('sort_order')
-      .order('start_date'),
+  const itemsResult = await supabase
+    .from('planning_items')
+    .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
+    .eq('plan_id', planId)
+    .order('sort_order')
+    .order('start_at');
+  const rawItems = throwIfError(itemsResult) || [];
+  const itemIds = rawItems.map(({ id }) => id);
+
+  const [
+    dependenciesResult,
+    assignmentsResult,
+    subcontractorAssignmentsResult,
+    travelResult,
+    accommodationResult,
+    membersResult,
+    subcontractorsResult,
+  ] = await Promise.all([
     supabase
       .from('planning_dependencies')
       .select('*')
       .eq('plan_id', planId),
+    itemIds.length ? supabase
+      .from('planning_assignments')
+      .select('*')
+      .in('item_id', itemIds) : Promise.resolve({ data: [], error: null }),
+    itemIds.length ? supabase
+      .from('planning_subcontractor_assignments')
+      .select('*')
+      .in('item_id', itemIds) : Promise.resolve({ data: [], error: null }),
     supabase
       .from('planning_travel_segments')
       .select('*')
@@ -47,33 +69,68 @@ export const loadPlanningData = async (planId) => {
       .eq('plan_id', planId)
       .order('check_in'),
     supabase.rpc('list_planning_members_safe', { p_plan_id: planId }),
+    supabase.rpc('list_planning_subcontractors_safe', { p_plan_id: planId }),
   ]);
 
   const members = throwIfError(membersResult) || [];
+  const subcontractors = throwIfError(subcontractorsResult) || [];
   const membersById = new Map(members.map((member) => [member.id, member]));
-  const items = (throwIfError(itemsResult) || []).map((item) => ({
+  const subcontractorsById = new Map(subcontractors.map((subcontractor) => [subcontractor.id, subcontractor]));
+  const assignmentsByItem = new Map();
+  for (const assignment of throwIfError(assignmentsResult) || []) {
+    const current = assignmentsByItem.get(assignment.item_id) || [];
+    current.push({ ...assignment, member: membersById.get(assignment.member_id) || null });
+    assignmentsByItem.set(assignment.item_id, current);
+  }
+  const subcontractorAssignmentsByItem = new Map();
+  for (const assignment of throwIfError(subcontractorAssignmentsResult) || []) {
+    const current = subcontractorAssignmentsByItem.get(assignment.item_id) || [];
+    current.push({
+      ...assignment,
+      subcontractor: subcontractorsById.get(assignment.project_subcontractor_id) || null,
+    });
+    subcontractorAssignmentsByItem.set(assignment.item_id, current);
+  }
+  const items = rawItems.map((item) => ({
     ...item,
     member: item.member_id ? membersById.get(item.member_id) || null : null,
+    assignments: assignmentsByItem.get(item.id) || [],
+    subcontractor_assignments: subcontractorAssignmentsByItem.get(item.id) || [],
+  }));
+
+  const accommodations = (throwIfError(accommodationResult) || []).map((accommodation) => ({
+    ...accommodation,
+    guest_ids: (accommodation.guests || []).map(({ member_id }) => member_id),
+    guest_members: (accommodation.guests || []).map(({ member_id }) => membersById.get(member_id)).filter(Boolean),
   }));
 
   return {
     items,
     dependencies: throwIfError(dependenciesResult) || [],
     travel: throwIfError(travelResult) || [],
-    accommodations: throwIfError(accommodationResult) || [],
+    accommodations,
     members,
+    subcontractors,
   };
 };
 
 export const savePlanningItem = async (planId, item) => {
+  const startAt = toIsoDateTime(item.start_at || `${item.start_date}T08:00`);
+  const endAt = item.item_type === 'milestone'
+    ? startAt
+    : toIsoDateTime(item.end_at || `${item.end_date}T17:00`);
   const payload = {
     plan_id: planId,
     parent_id: item.parent_id || null,
     item_type: item.item_type || 'task',
     name: item.name.trim(),
     description: item.description?.trim() || null,
-    start_date: item.start_date,
-    end_date: item.item_type === 'milestone' ? item.start_date : item.end_date,
+    start_date: toDateOnly(item.start_at, item.start_date),
+    end_date: item.item_type === 'milestone'
+      ? toDateOnly(item.start_at, item.start_date)
+      : toDateOnly(item.end_at, item.end_date),
+    start_at: startAt,
+    end_at: endAt,
     progress: Math.max(0, Math.min(1, Number(item.progress) || 0)),
     status: item.status || 'planned',
     member_id: item.member_id || null,
@@ -81,28 +138,49 @@ export const savePlanningItem = async (planId, item) => {
     sort_order: Number(item.sort_order) || 0,
   };
 
+  let saved;
   if (item.id) {
-    return throwIfError(await supabase
+    saved = throwIfError(await supabase
       .from('planning_items')
       .update(payload)
       .eq('id', item.id)
       .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
       .single());
+  } else {
+    saved = throwIfError(await supabase
+      .from('planning_items')
+      .insert(payload)
+      .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
+      .single());
   }
 
+  throwIfError(await supabase.rpc('replace_planning_item_resources', {
+    p_item_id: saved.id,
+    p_primary_member_id: item.member_id || null,
+    p_member_assignments: item.assignments || [],
+    p_subcontractor_assignments: item.subcontractor_assignments || [],
+  }));
+
+  return saved;
+};
+
+export const updatePlanningItemDates = async (id, values) => {
+  const payload = { ...values };
+  if (values.start_at) {
+    payload.start_at = toIsoDateTime(values.start_at);
+    payload.start_date = toDateOnly(values.start_at);
+  }
+  if (values.end_at) {
+    payload.end_at = toIsoDateTime(values.end_at);
+    payload.end_date = toDateOnly(values.end_at);
+  }
   return throwIfError(await supabase
     .from('planning_items')
-    .insert(payload)
+    .update(payload)
+    .eq('id', id)
     .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
     .single());
 };
-
-export const updatePlanningItemDates = async (id, values) => throwIfError(await supabase
-  .from('planning_items')
-  .update(values)
-  .eq('id', id)
-  .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
-  .single());
 
 const invokePlanningCalendar = async (action, itemId) => {
   const { data, error } = await supabase.functions.invoke('planning-calendar', {
@@ -140,16 +218,23 @@ export const deletePlanningDependency = async (id) => throwIfError(await supabas
   .eq('id', id));
 
 export const saveTravelSegment = async (planId, segment) => {
+  const departureAt = toIsoDateTime(segment.departure_at);
+  const arrivalAt = toIsoDateTime(segment.arrival_at);
+  const computedDuration = departureAt && arrivalAt
+    ? Math.max(0, Math.round((new Date(arrivalAt) - new Date(departureAt)) / 60000))
+    : null;
   const payload = {
     plan_id: planId,
     item_id: segment.item_id || null,
-    travel_date: segment.travel_date,
+    travel_date: toDateOnly(segment.departure_at, segment.travel_date),
     origin_label: segment.origin_label.trim(),
     destination_label: segment.destination_label.trim(),
     travel_mode: segment.travel_mode || 'car',
     route_provider: 'manual',
     distance_m: segment.distance_km ? Math.round(Number(segment.distance_km) * 1000) : null,
-    duration_minutes: segment.duration_minutes ? Number(segment.duration_minutes) : null,
+    duration_minutes: segment.duration_minutes ? Number(segment.duration_minutes) : computedDuration,
+    departure_at: departureAt,
+    arrival_at: arrivalAt,
     overnight_recommended: Boolean(segment.overnight_recommended),
     overnight_required: Boolean(segment.overnight_required),
     status: segment.status || 'planned',
@@ -183,7 +268,12 @@ export const saveAccommodation = async (planId, accommodation) => {
   const query = accommodation.id
     ? supabase.from('planning_accommodations').update(payload).eq('id', accommodation.id)
     : supabase.from('planning_accommodations').insert(payload);
-  return throwIfError(await query.select().single());
+  const saved = throwIfError(await query.select().single());
+  throwIfError(await supabase.rpc('replace_planning_accommodation_guests', {
+    p_accommodation_id: saved.id,
+    p_member_ids: accommodation.guest_ids || [],
+  }));
+  return saved;
 };
 
 export const deleteAccommodation = async (id) => throwIfError(await supabase

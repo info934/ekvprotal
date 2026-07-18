@@ -1008,7 +1008,7 @@ const ProjectDetail = () => {
                     <TabsContent value="contacts"><ProjectContacts projectId={projectId} /></TabsContent>
 
                     {canViewFinance && <TabsContent value="finance" className="space-y-6">
-                        <BillingTracker entityType="project" entityId={projectId} />
+                        <BillingTracker entityType="project" entityId={projectId} enableContractAnalysis={isAdmin} />
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6">
                             <FinancialCard title="Celkový budget" value={financials.totalBudget} subValue={`${project.budget_percentage}% z ceny`} icon={Wallet} colorClass="bg-blue-500" />
                             <FinancialCard title="Budget na tým" value={financials.teamBudget} subValue={`Zbývá: ${financials.remainingTeamBudget.toLocaleString('cs-CZ')} Kč`} icon={Users} colorClass="bg-teal-500" />

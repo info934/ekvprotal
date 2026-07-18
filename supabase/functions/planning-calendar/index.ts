@@ -10,6 +10,8 @@ type PlanningItem = {
   description?: string | null;
   start_date: string;
   end_date: string;
+  start_at?: string | null;
+  end_at?: string | null;
   status: string;
   calendar_sync_enabled: boolean;
   member_id?: string | null;
@@ -101,6 +103,23 @@ const resolveMailbox = (item: PlanningItem) => {
   return mailbox;
 };
 
+const eventWindow = (item: PlanningItem) => item.start_at && item.end_at
+  ? (() => {
+      const start = new Date(item.start_at);
+      const requestedEnd = new Date(item.end_at);
+      const end = requestedEnd > start ? requestedEnd : new Date(start.getTime() + 15 * 60 * 1000);
+      return {
+        start: { dateTime: start.toISOString().replace(/Z$/, ''), timeZone: 'UTC' },
+        end: { dateTime: end.toISOString().replace(/Z$/, ''), timeZone: 'UTC' },
+        isAllDay: false,
+      };
+    })()
+  : {
+      start: { dateTime: `${item.start_date}T00:00:00`, timeZone: TIMEZONE },
+      end: { dateTime: `${addDays(item.end_date, 1)}T00:00:00`, timeZone: TIMEZONE },
+      isAllDay: true,
+    };
+
 const eventPayload = (item: PlanningItem, siteUrl: string) => ({
   subject: `[EKV] ${item.name}`,
   body: {
@@ -111,9 +130,7 @@ const eventPayload = (item: PlanningItem, siteUrl: string) => ({
       `<p><a href="${escapeHtml(`${siteUrl}/planning`)}">Otevřít plán v EKVPortal</a></p>`,
     ].join(''),
   },
-  start: { dateTime: `${item.start_date}T00:00:00`, timeZone: TIMEZONE },
-  end: { dateTime: `${addDays(item.end_date, 1)}T00:00:00`, timeZone: TIMEZONE },
-  isAllDay: true,
+  ...eventWindow(item),
   showAs: item.status === 'cancelled' ? 'free' : 'busy',
   sensitivity: 'normal',
   categories: ['EKVPortal'],
@@ -171,7 +188,7 @@ Deno.serve(async (req: Request) => {
     if (!body.itemId) return jsonResponse({ success: false, error: 'Planning item is required.' }, 400);
     const { data: item, error: itemError } = await authenticated
       .from('planning_items')
-      .select('id, plan_id, name, description, start_date, end_date, status, calendar_sync_enabled, member_id')
+      .select('id, plan_id, name, description, start_date, end_date, start_at, end_at, status, calendar_sync_enabled, member_id')
       .eq('id', body.itemId)
       .single();
     if (itemError || !item) return jsonResponse({ success: false, error: 'Planning item was not found or is not accessible.' }, 404);
@@ -196,14 +213,15 @@ Deno.serve(async (req: Request) => {
       const mailbox = resolveMailbox(planningItem);
       const graphToken = await getGraphToken();
       logContext = { plan_id: item.plan_id, item_id: item.id, member_id: item.member_id, actor_user_id: user.id, mailbox_address: mailbox };
+      const window = eventWindow(planningItem);
       const schedule = await graphFetch(graphToken, `/users/${encodeURIComponent(mailbox)}/calendar/getSchedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Prefer: `outlook.timezone="${TIMEZONE}"` },
         body: JSON.stringify({
           schedules: [mailbox],
-          startTime: { dateTime: `${item.start_date}T00:00:00`, timeZone: TIMEZONE },
-          endTime: { dateTime: `${addDays(item.end_date, 1)}T00:00:00`, timeZone: TIMEZONE },
-          availabilityViewInterval: 60,
+          startTime: window.start,
+          endTime: window.end,
+          availabilityViewInterval: 15,
         }),
       });
       const result = schedule.value?.[0] || {};
