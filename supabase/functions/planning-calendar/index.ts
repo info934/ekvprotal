@@ -59,6 +59,17 @@ const getGraphToken = async () => {
   return String(payload.access_token);
 };
 
+const getTokenRoles = (token: string) => {
+  try {
+    const encoded = token.split('.')[1];
+    const normalized = encoded.replaceAll('-', '+').replaceAll('_', '/').padEnd(Math.ceil(encoded.length / 4) * 4, '=');
+    const payload = JSON.parse(atob(normalized));
+    return Array.isArray(payload.roles) ? payload.roles.map(String) : [];
+  } catch {
+    return [];
+  }
+};
+
 const graphFetch = async (token: string, path: string, init: RequestInit = {}) => {
   const response = await fetch(`${GRAPH_ROOT}${path}`, {
     ...init,
@@ -143,8 +154,18 @@ Deno.serve(async (req: Request) => {
     if (action === 'testConnection') {
       if (!isAdmin) return jsonResponse({ success: false, error: 'Admin role required.' }, 403);
       const graphToken = await getGraphToken();
-      const organization = await graphFetch(graphToken, '/organization?$select=id,displayName');
-      return jsonResponse({ success: true, organization: organization.value?.[0] || null });
+      const roles = getTokenRoles(graphToken);
+      if (!roles.includes('Calendars.ReadWrite')) {
+        return jsonResponse({
+          success: false,
+          error: 'Microsoft Graph application permission Calendars.ReadWrite is missing or admin consent was not granted.',
+          roles,
+        }, 403);
+      }
+      const mailbox = String(body.mailbox || user.email || '').trim().toLowerCase();
+      if (!mailbox) return jsonResponse({ success: false, error: 'A mailbox is required for the connection test.' }, 400);
+      const calendar = await graphFetch(graphToken, `/users/${encodeURIComponent(mailbox)}/calendar?$select=id,name`);
+      return jsonResponse({ success: true, mailbox, calendar: { id: calendar.id, name: calendar.name }, roles });
     }
 
     if (!body.itemId) return jsonResponse({ success: false, error: 'Planning item is required.' }, 400);
