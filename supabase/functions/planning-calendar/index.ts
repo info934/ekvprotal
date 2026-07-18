@@ -171,7 +171,7 @@ Deno.serve(async (req: Request) => {
     if (!body.itemId) return jsonResponse({ success: false, error: 'Planning item is required.' }, 400);
     const { data: item, error: itemError } = await authenticated
       .from('planning_items')
-      .select('id, plan_id, name, description, start_date, end_date, status, calendar_sync_enabled, member_id, member:members(id, name, email, microsoft_calendar_email, microsoft_calendar_enabled)')
+      .select('id, plan_id, name, description, start_date, end_date, status, calendar_sync_enabled, member_id')
       .eq('id', body.itemId)
       .single();
     if (itemError || !item) return jsonResponse({ success: false, error: 'Planning item was not found or is not accessible.' }, 404);
@@ -180,7 +180,17 @@ Deno.serve(async (req: Request) => {
     const { data: allowed, error: permissionError } = await authenticated.rpc(requiredPermission, { p_plan_id: item.plan_id });
     if (permissionError || !allowed) return jsonResponse({ success: false, error: 'Planning calendar access denied.' }, 403);
 
-    const planningItem = item as unknown as PlanningItem;
+    let assignedMember = null;
+    if (item.member_id) {
+      const { data: member, error: memberError } = await admin
+        .from('members')
+        .select('id, name, email, microsoft_calendar_email, microsoft_calendar_enabled')
+        .eq('id', item.member_id)
+        .maybeSingle();
+      if (memberError) throw memberError;
+      assignedMember = member;
+    }
+    const planningItem = { ...item, member: assignedMember } as PlanningItem;
 
     if (action === 'checkAvailability') {
       const mailbox = resolveMailbox(planningItem);

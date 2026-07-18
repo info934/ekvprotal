@@ -28,7 +28,7 @@ export const loadPlanningData = async (planId) => {
   const [itemsResult, dependenciesResult, travelResult, accommodationResult, membersResult] = await Promise.all([
     supabase
       .from('planning_items')
-      .select('*, member:members(id, name, email, microsoft_calendar_email, microsoft_calendar_enabled), calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
+      .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
       .eq('plan_id', planId)
       .order('sort_order')
       .order('start_date'),
@@ -46,18 +46,22 @@ export const loadPlanningData = async (planId) => {
       .select('*, guests:planning_accommodation_guests(member_id)')
       .eq('plan_id', planId)
       .order('check_in'),
-    supabase
-      .from('members')
-      .select('id, name, email, microsoft_calendar_email, microsoft_calendar_enabled')
-      .order('name'),
+    supabase.rpc('list_planning_members_safe', { p_plan_id: planId }),
   ]);
 
+  const members = throwIfError(membersResult) || [];
+  const membersById = new Map(members.map((member) => [member.id, member]));
+  const items = (throwIfError(itemsResult) || []).map((item) => ({
+    ...item,
+    member: item.member_id ? membersById.get(item.member_id) || null : null,
+  }));
+
   return {
-    items: throwIfError(itemsResult) || [],
+    items,
     dependencies: throwIfError(dependenciesResult) || [],
     travel: throwIfError(travelResult) || [],
     accommodations: throwIfError(accommodationResult) || [],
-    members: throwIfError(membersResult) || [],
+    members,
   };
 };
 
@@ -82,14 +86,14 @@ export const savePlanningItem = async (planId, item) => {
       .from('planning_items')
       .update(payload)
       .eq('id', item.id)
-      .select('*, member:members(id, name, email, microsoft_calendar_email, microsoft_calendar_enabled), calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
+      .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
       .single());
   }
 
   return throwIfError(await supabase
     .from('planning_items')
     .insert(payload)
-    .select('*, member:members(id, name, email, microsoft_calendar_email, microsoft_calendar_enabled), calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
+    .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
     .single());
 };
 
@@ -97,7 +101,7 @@ export const updatePlanningItemDates = async (id, values) => throwIfError(await 
   .from('planning_items')
   .update(values)
   .eq('id', id)
-  .select('*, member:members(id, name, email, microsoft_calendar_email, microsoft_calendar_enabled), calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
+  .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
   .single());
 
 const invokePlanningCalendar = async (action, itemId) => {
