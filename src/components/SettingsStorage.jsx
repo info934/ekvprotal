@@ -370,7 +370,7 @@ const SettingsStorage = () => {
               </div>
             </div>
             <Badge variant={googleDrive.connected ? 'success' : 'secondary'}>
-              {googleDrive.loading ? 'Ověřuji...' : googleDrive.connected ? 'Propojeno' : 'Nepřipojeno'}
+              {googleDrive.loading ? 'Ověřuji...' : googleDrive.connected ? (googleDrive.shared ? 'Firemní účet' : 'Propojeno') : 'Nepřipojeno'}
             </Badge>
           </div>
         </CardHeader>
@@ -379,7 +379,7 @@ const SettingsStorage = () => {
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Kontrolovaný pilotní režim</AlertTitle>
             <AlertDescription>
-              Soubory mají prefix TEST-. SharePoint zůstává hlavním úložištěm a Google Drive slouží jen podpisovým žádostem administrátora.
+              Soubory mají prefix TEST-. SharePoint zůstává hlavním úložištěm a připojený Google účet mohou pro podpisové žádosti používat všichni administrátoři.
             </AlertDescription>
           </Alert>
           <div className="grid gap-3 rounded-lg border bg-slate-50/70 p-4 sm:grid-cols-3">

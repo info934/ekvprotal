@@ -4,7 +4,23 @@ const invoke = async (action, payload = {}) => {
   const { data, error } = await supabase.functions.invoke('google-drive-esign', {
     body: { action, ...payload },
   });
-  if (error) throw error;
+  if (error) {
+    let message = error.message;
+    const response = error.context;
+    if (response && typeof response.clone === 'function') {
+      try {
+        const details = await response.clone().json();
+        message = details?.error || details?.message || message;
+      } catch {
+        try {
+          message = (await response.clone().text()) || message;
+        } catch {
+          // Keep the SDK error when the response body is unavailable.
+        }
+      }
+    }
+    throw new Error(message || 'Google Drive eSignature request failed.');
+  }
   if (!data?.success) throw new Error(data?.error || 'Google Drive eSignature request failed.');
   return data;
 };

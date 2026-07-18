@@ -72,6 +72,14 @@ const decrypt = async (encrypted: string) => {
   return new TextDecoder().decode(plain);
 };
 
+const decryptStoredToken = async (encrypted: string) => {
+  try {
+    return await decrypt(encrypted);
+  } catch {
+    throw new Error('Uložené Google Drive připojení nelze odemknout. Propojte účet znovu v Nastavení > Úložiště.');
+  }
+};
+
 const authenticateAdmin = async (req: Request) => {
   const authorization = req.headers.get('Authorization') || '';
   const jwt = authorization.replace(/^Bearer\s+/i, '');
@@ -118,12 +126,37 @@ const refreshAccessToken = async (refreshToken: string) => {
 };
 
 const activeAccessToken = async (db: ReturnType<typeof serviceClient>, userId: string) => {
-  const { data: connection, error } = await db.from('google_drive_oauth_connections').select('*').eq('user_id', userId).maybeSingle();
-  if (error || !connection) throw new Error('Google Drive account is not connected.');
+  const { data: ownConnection, error: ownError } = await db
+    .from('google_drive_oauth_connections')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (ownError) throw ownError;
+
+  let connection = ownConnection?.status === 'active' ? ownConnection : null;
+  if (!connection) {
+    const { data: organizationConnection, error: organizationError } = await db
+      .from('google_drive_oauth_connections')
+      .select('*')
+      .eq('status', 'active')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (organizationError) throw organizationError;
+    connection = organizationConnection;
+  }
+
+  if (!connection) {
+    throw new Error('Google Drive účet není připojen. Administrátor ho musí propojit v Nastavení > Úložiště.');
+  }
   const expiresAt = connection.token_expires_at ? new Date(connection.token_expires_at).getTime() : 0;
-  if (expiresAt > Date.now() + 60_000) return { token: await decrypt(connection.encrypted_access_token), connection };
-  if (!connection.encrypted_refresh_token) throw new Error('Google Drive connection expired. Reconnect the account.');
-  const refreshed = await refreshAccessToken(await decrypt(connection.encrypted_refresh_token));
+  if (expiresAt > Date.now() + 60_000) {
+    return { token: await decryptStoredToken(connection.encrypted_access_token), connection, shared: connection.user_id !== userId };
+  }
+  if (!connection.encrypted_refresh_token) {
+    throw new Error('Platnost Google Drive připojení vypršela. Propojte účet znovu v Nastavení > Úložiště.');
+  }
+  const refreshed = await refreshAccessToken(await decryptStoredToken(connection.encrypted_refresh_token));
   const encryptedAccessToken = await encrypt(refreshed.access_token);
   const tokenExpiresAt = new Date(Date.now() + Number(refreshed.expires_in || 3600) * 1000).toISOString();
   await db.from('google_drive_oauth_connections').update({
@@ -132,7 +165,31 @@ const activeAccessToken = async (db: ReturnType<typeof serviceClient>, userId: s
     status: 'active',
     updated_at: new Date().toISOString(),
   }).eq('id', connection.id);
-  return { token: refreshed.access_token, connection: { ...connection, token_expires_at: tokenExpiresAt } };
+  return {
+    token: refreshed.access_token,
+    connection: { ...connection, token_expires_at: tokenExpiresAt },
+    shared: connection.user_id !== userId,
+  };
+};
+
+const resolveOrganizationConnection = async (db: ReturnType<typeof serviceClient>, userId: string) => {
+  const { data: ownConnection, error: ownError } = await db
+    .from('google_drive_oauth_connections')
+    .select('user_id,google_email,status,token_expires_at,updated_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (ownError) throw ownError;
+  if (ownConnection?.status === 'active') return { connection: ownConnection, shared: false };
+
+  const { data: organizationConnection, error } = await db
+    .from('google_drive_oauth_connections')
+    .select('user_id,google_email,status,token_expires_at,updated_at')
+    .eq('status', 'active')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return { connection: organizationConnection, shared: Boolean(organizationConnection) };
 };
 
 const driveRequest = async (token: string, path: string, init: RequestInit = {}) => {
@@ -216,7 +273,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   const url = new URL(req.url);
   if (req.method === 'GET' && url.pathname.endsWith('/callback')) return callback(url);
-  if (Deno.env.get('GOOGLE_ESIGNATURE_POC_ENABLED') !== 'true') return json({ success: false, error: 'Google Drive eSignature PoC is disabled.' }, 503);
+  if (Deno.env.get('GOOGLE_ESIGNATURE_POC_ENABLED') === 'false') {
+    return json({ success: false, error: 'Google Drive eSignature je v konfiguraci vypnutý.' }, 503);
+  }
 
   try {
     const { db, user } = await authenticateAdmin(req);
@@ -224,9 +283,8 @@ Deno.serve(async (req) => {
     const action = String(body.action || 'status');
 
     if (action === 'status') {
-      const { data: connection } = await db.from('google_drive_oauth_connections')
-        .select('google_email,status,token_expires_at,updated_at').eq('user_id', user.id).maybeSingle();
-      return json({ success: true, configured: true, connected: connection?.status === 'active', connection });
+      const { connection, shared } = await resolveOrganizationConnection(db, user.id);
+      return json({ success: true, configured: true, connected: connection?.status === 'active', shared, connection });
     }
 
     if (action === 'getAuthorizationUrl') {
@@ -263,7 +321,7 @@ Deno.serve(async (req) => {
       if (!bytes.length || bytes.length > MAX_PDF_SIZE) throw new Error('PDF is empty or exceeds 18 MB.');
       const signers = Array.isArray(body.signers) ? body.signers.slice(0, 10) : [];
       if (!signers.length || signers.some((signer: Record<string, unknown>) => !signer.name || !signer.email)) throw new Error('At least one valid signer is required.');
-      const { token } = await activeAccessToken(db, user.id);
+      const { token, connection, shared } = await activeAccessToken(db, user.id);
       const root = await ensureFolder(token, ROOT_FOLDER);
       const target = await ensureFolder(token, SIGNATURE_FOLDER, root.id);
       const fileName = `TEST-${String(body.fileName || 'dokument.pdf').replace(/[^a-zA-Z0-9._() -]+/g, '_')}`;
@@ -276,7 +334,13 @@ Deno.serve(async (req) => {
         drive_web_url: uploaded.webViewLink,
         source_document_hash: await sha256(bytes),
         requested_by: user.id,
-        metadata: { file_name: fileName, template_id: body.templateId || null, poc: true },
+        metadata: {
+          file_name: fileName,
+          template_id: body.templateId || null,
+          poc: true,
+          google_account: connection.google_email || null,
+          organization_connection: shared,
+        },
       }).select('*').single();
       if (error) throw error;
       await db.from('document_signature_signers').insert(signers.map((signer: Record<string, unknown>, index: number) => ({

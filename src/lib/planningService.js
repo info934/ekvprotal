@@ -134,7 +134,7 @@ export const savePlanningItem = async (planId, item) => {
     progress: Math.max(0, Math.min(1, Number(item.progress) || 0)),
     status: item.status || 'planned',
     member_id: item.member_id || null,
-    calendar_sync_enabled: item.item_type !== 'phase' && Boolean(item.member_id) && Boolean(item.calendar_sync_enabled),
+    calendar_sync_enabled: item.item_type !== 'phase' && Boolean(item.calendar_sync_enabled),
     sort_order: Number(item.sort_order) || 0,
   };
 
@@ -192,6 +192,19 @@ const invokePlanningCalendar = async (action, itemId) => {
 };
 
 export const syncPlanningItemCalendar = async (itemId) => invokePlanningCalendar('syncItem', itemId);
+
+export const syncPlanningPlanCalendar = async (items) => {
+  const enabledItems = (items || []).filter((item) => item.calendar_sync_enabled && item.item_type !== 'phase');
+  const results = [];
+  for (const item of enabledItems) {
+    try {
+      results.push({ itemId: item.id, success: true, result: await syncPlanningItemCalendar(item.id) });
+    } catch (error) {
+      results.push({ itemId: item.id, success: false, error });
+    }
+  }
+  return results;
+};
 
 export const checkPlanningItemAvailability = async (itemId) => invokePlanningCalendar('checkAvailability', itemId);
 

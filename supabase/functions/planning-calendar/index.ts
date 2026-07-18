@@ -3,6 +3,11 @@ import { corsHeaders } from '../_shared/cors.ts';
 
 type CalendarAction = 'checkAvailability' | 'syncItem' | 'testConnection';
 
+type CompanyCalendarTarget = {
+  mailbox: string;
+  name: string;
+};
+
 type PlanningItem = {
   id: string;
   plan_id: string;
@@ -95,12 +100,35 @@ const addDays = (date: string, days: number) => {
   return value.toISOString().slice(0, 10);
 };
 
-const resolveMailbox = (item: PlanningItem) => {
+const resolveMemberMailbox = (item: PlanningItem) => {
   if (!item.member_id || !item.member) throw new Error('Calendar synchronization requires an assigned employee.');
   if (item.member.microsoft_calendar_enabled === false) throw new Error('Microsoft calendar is disabled for the assigned employee.');
   const mailbox = String(item.member.microsoft_calendar_email || item.member.email || '').trim().toLowerCase();
   if (!mailbox) throw new Error('The assigned employee does not have a Microsoft calendar email.');
   return mailbox;
+};
+
+const resolveCompanyCalendar = async (admin: ReturnType<typeof createClient>): Promise<CompanyCalendarTarget> => {
+  const { data, error } = await admin
+    .from('app_settings')
+    .select('key, value')
+    .in('key', ['planning_company_calendar_mailbox', 'planning_company_calendar_name']);
+  if (error) throw error;
+
+  const settings = Object.fromEntries((data || []).map(({ key, value }) => [key, value]));
+  const mailbox = String(
+    settings.planning_company_calendar_mailbox
+      || Deno.env.get('MS_GRAPH_PLANNING_CALENDAR_MAILBOX')
+      || '',
+  ).trim().toLowerCase();
+  if (!mailbox) {
+    throw new Error('Company planning calendar is not configured. Set its shared mailbox in Portal settings.');
+  }
+
+  return {
+    mailbox,
+    name: String(settings.planning_company_calendar_name || 'EKV Planning').trim() || 'EKV Planning',
+  };
 };
 
 const eventWindow = (item: PlanningItem) => item.start_at && item.end_at
@@ -120,13 +148,15 @@ const eventWindow = (item: PlanningItem) => item.start_at && item.end_at
       isAllDay: true,
     };
 
-const eventPayload = (item: PlanningItem, siteUrl: string) => ({
+const eventPayload = (item: PlanningItem, siteUrl: string, calendarName: string) => ({
   subject: `[EKV] ${item.name}`,
   body: {
     contentType: 'HTML',
     content: [
       `<p><strong>${escapeHtml(item.name)}</strong></p>`,
+      `<p><strong>Řešitel:</strong> ${escapeHtml(item.member?.name || item.member?.email || 'Nepřiřazeno')}</p>`,
       item.description ? `<p>${escapeHtml(item.description).replaceAll('\n', '<br>')}</p>` : '',
+      `<p><strong>Kalendář:</strong> ${escapeHtml(calendarName)}</p>`,
       `<p><a href="${escapeHtml(`${siteUrl}/planning`)}">Otevřít plán v EKVPortal</a></p>`,
     ].join(''),
   },
@@ -179,10 +209,13 @@ Deno.serve(async (req: Request) => {
           roles,
         }, 403);
       }
-      const mailbox = String(body.mailbox || user.email || '').trim().toLowerCase();
-      if (!mailbox) return jsonResponse({ success: false, error: 'A mailbox is required for the connection test.' }, 400);
+      const requestedMailbox = String(body.mailbox || '').trim().toLowerCase();
+      const target = requestedMailbox
+        ? { mailbox: requestedMailbox, name: 'EKV Planning' }
+        : await resolveCompanyCalendar(admin);
+      const mailbox = target.mailbox;
       const calendar = await graphFetch(graphToken, `/users/${encodeURIComponent(mailbox)}/calendar?$select=id,name`);
-      return jsonResponse({ success: true, mailbox, calendar: { id: calendar.id, name: calendar.name }, roles });
+      return jsonResponse({ success: true, mailbox, configuredName: target.name, calendar: { id: calendar.id, name: calendar.name }, roles });
     }
 
     if (!body.itemId) return jsonResponse({ success: false, error: 'Planning item is required.' }, 400);
@@ -210,7 +243,7 @@ Deno.serve(async (req: Request) => {
     const planningItem = { ...item, member: assignedMember } as PlanningItem;
 
     if (action === 'checkAvailability') {
-      const mailbox = resolveMailbox(planningItem);
+      const mailbox = resolveMemberMailbox(planningItem);
       const graphToken = await getGraphToken();
       logContext = { plan_id: item.plan_id, item_id: item.id, member_id: item.member_id, actor_user_id: user.id, mailbox_address: mailbox };
       const window = eventWindow(planningItem);
@@ -270,10 +303,11 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ success: true, status: 'disabled' });
     }
 
-    const mailbox = resolveMailbox(planningItem);
+    const target = await resolveCompanyCalendar(admin);
+    const mailbox = target.mailbox;
     const graphToken = await getGraphToken();
     logContext = { plan_id: item.plan_id, item_id: item.id, member_id: item.member_id, actor_user_id: user.id, mailbox_address: mailbox };
-    const payload = eventPayload(planningItem, Deno.env.get('SITE_URL') || 'https://portal.ekvproject.cz');
+    const payload = eventPayload(planningItem, Deno.env.get('SITE_URL') || 'https://portal.ekvproject.cz', target.name);
     let event;
     let eventAction = 'create';
     if (existingLink?.external_event_id && existingLink.mailbox_address === mailbox) {
@@ -297,6 +331,7 @@ Deno.serve(async (req: Request) => {
     await admin.from('planning_calendar_links').upsert({
       item_id: item.id,
       member_id: item.member_id,
+      target_scope: 'company',
       mailbox_address: mailbox,
       external_event_id: event.id,
       external_change_key: event.changeKey || null,

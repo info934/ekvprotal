@@ -11,11 +11,12 @@ Release pridava spolecny planovaci board pro projekty a realizace:
 - obousmernou synchronizaci projektovych ukolu,
 - audit a RLS navazane na existujici pristup k projektu nebo realizaci.
 
-Release obsahuje dvě databázové migrace a jednu Edge Function:
+Release obsahuje databázové migrace a jednu Edge Function:
 
 ```text
 supabase/migrations/20260717193000_project_realization_planning_board.sql
 supabase/migrations/20260718101500_planning_microsoft_calendar_sync.sql
+supabase/migrations/20260718200000_planning_company_calendar.sql
 supabase/functions/planning-calendar/index.ts
 ```
 
@@ -33,6 +34,8 @@ Pred rolloutem musi platit:
 - existujici `project_tasks` nemaji neplatne datum `end_date < start_date`.
 - Entra aplikace má Microsoft Graph Application oprávnění `Calendars.ReadWrite` a tenant administrátor udělil admin consent.
 - Supabase secrets obsahují `MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_CLIENT_SECRET` a `SITE_URL=https://portal.ekvproject.cz`.
+- V Microsoft 365 existuje sdílený mailbox pro firemní plánování a jeho hlavní kalendář je nasdílen celé firmě alespoň pro čtení.
+- V `Nastavení > Portál` je vyplněna adresa tohoto mailboxu a test připojení proběhne úspěšně.
 
 Pokud dry-run ukaze jinou nez schvalenou migraci, rollout zastavit. Na produkci nepoustet `supabase db reset` a neimportovat seed soubory.
 
@@ -131,9 +134,10 @@ Na `https://portal.ekvproject.cz` overit:
 7. Nelze vytvorit zavislost mezi ruznymi plany ani cyklus.
 8. Cesta a ubytovani lze vytvorit, upravit a smazat pouze uzivatelem s pravem editace.
 9. Konzole neobsahuje React ani Supabase chyby a tabulka nepreteka mimo vlastni wrapper.
-10. Úkol s přiřazeným pracovníkem lze synchronizovat do Outlooku a následná změna termínu upraví stejnou událost.
+10. Úkol nebo milník lze publikovat do firemního Outlook kalendáře a následná změna termínu upraví stejnou událost.
 11. `Ověřit dostupnost` vrátí volný termín nebo počet kolizí; běžný uživatel nemůže číst plán, ke kterému nemá přístup.
 12. Vypnutí synchronizace odstraní Outlook událost a ponechá auditní záznam.
+13. Hromadná synchronizace aktuálního plánu dokončí všechny zapnuté položky bez duplicitních událostí.
 
 Testovaci zaznamy oznacit `TEST PLAN` a po overeni je odstranit.
 

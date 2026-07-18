@@ -19,8 +19,9 @@ flowchart LR
   G --> H[Vzdálenost a doba]
   G --> I[Potřeba přespání]
   I --> J[Ubytování]
-  D --> L[Outlook kalendář řešitele]
+  D --> L[Firemní Outlook kalendář EKV]
   E --> L
+  D --> M[Kontrola dostupnosti řešitele]
   C --> K[Gantt]
   D --> K
   E --> K
@@ -38,11 +39,13 @@ flowchart LR
 ## Microsoft 365 kalendář
 
 - EKVPortal zůstává zdrojem pravdy. První verze synchronizuje termíny jedním směrem z plánu do Outlooku.
-- Synchronizaci lze zapnout pouze pro úkol nebo milník s přiřazeným pracovníkem. Fáze se do kalendáře neposílají.
-- Událost je celodenní, obsahuje název, popis a odkaz do portálu. Neobsahuje rozpočty, mzdy ani jiné finanční údaje.
+- Synchronizaci lze zapnout pro úkol nebo milník i bez přiřazeného pracovníka. Fáze se do kalendáře neposílají.
+- Událost vzniká v hlavním kalendáři sdíleného mailboxu nastaveného jako `planning_company_calendar_mailbox`. Tento kalendář se v Microsoft 365 sdílí celé firmě.
+- Událost obsahuje název, řešitele, popis a odkaz do portálu. Neobsahuje rozpočty, mzdy ani jiné finanční údaje.
 - Změna názvu, termínu, stavu nebo řešitele aktualizuje existující událost. Vypnutí synchronizace nebo zrušení položky událost odstraní.
 - Tlačítko `Ověřit dostupnost` čte free/busy stav schránky přes Microsoft Graph a upozorní na kolize před uložením termínu.
-- Výchozí schránka je e-mail pracovníka. Pokud se jeho Microsoft 365 UPN liší, použije se `members.microsoft_calendar_email`.
+- Osobní schránka pracovníka se používá pouze pro kontrolu dostupnosti. Pokud se jeho Microsoft 365 UPN liší, použije se `members.microsoft_calendar_email`.
+- Akce `Synchronizovat celý plán` znovu publikuje všechny zapnuté úkoly a milníky aktuálního plánu a převede případné staré osobní události do firemního kalendáře.
 - Stav a chyba synchronizace jsou dohledatelné v `planning_calendar_links` a audit v `planning_calendar_sync_log`.
 
 ## Datový model
@@ -56,7 +59,7 @@ flowchart LR
 - `planning_accommodations`: ubytování a rezervace.
 - `planning_baselines`: připravený prostor pro verzované baseline plánu.
 - `planning_change_log`: audit důležitých změn.
-- `planning_calendar_links`: vazba položky plánu na konkrétní Outlook událost.
+- `planning_calendar_links`: vazba položky plánu na konkrétní Outlook událost včetně cíle `personal` (legacy) nebo `company`.
 - `planning_calendar_sync_queue`: odolná fronta změn pro opakování neúspěšné synchronizace.
 - `planning_calendar_sync_log`: audit kontrol dostupnosti a synchronizací.
 

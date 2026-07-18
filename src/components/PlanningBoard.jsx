@@ -54,6 +54,7 @@ import {
   updatePlanningItemDates,
   checkPlanningItemAvailability,
   syncPlanningItemCalendar,
+  syncPlanningPlanCalendar,
 } from '@/lib/planningService';
 
 const PlanningGantt = lazy(() => import('@/components/PlanningGantt'));
@@ -235,7 +236,7 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
     subcontractor_assignments: current.subcontractor_assignments.map((assignment) => assignment.project_subcontractor_id === subcontractorId ? { ...assignment, [key]: nextValue } : assignment),
   }));
   const selectedMember = members.find((member) => member.id === form.member_id);
-  const mailbox = selectedMember?.microsoft_calendar_email || selectedMember?.email;
+  const personalMailbox = selectedMember?.microsoft_calendar_email || selectedMember?.email;
   const calendarLink = getCalendarLink(value);
 
   return (
@@ -285,7 +286,7 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
           <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/70 p-3 sm:col-span-2">
             <div>
               <div className="text-sm font-semibold text-slate-950">Interní zdroje a kapacita</div>
-              <div className="text-xs text-slate-500">Vyberte více osob a určete jejich vytížení. Hlavní řešitel se používá pro Outlook.</div>
+              <div className="text-xs text-slate-500">Vyberte více osob a určete jejich vytížení. Osobní kalendář hlavního řešitele se používá jen pro kontrolu dostupnosti.</div>
             </div>
             <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
               {members.map((member) => {
@@ -328,17 +329,15 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
             <label className="flex items-start gap-3">
               <Checkbox
                 checked={Boolean(form.calendar_sync_enabled)}
-                disabled={form.item_type === 'phase' || !form.member_id || selectedMember?.microsoft_calendar_enabled === false}
+                disabled={form.item_type === 'phase'}
                 onCheckedChange={(checked) => update('calendar_sync_enabled', Boolean(checked))}
               />
               <span className="min-w-0">
-                <span className="block text-sm font-semibold text-slate-950">Synchronizovat s Outlook kalendářem</span>
+                <span className="block text-sm font-semibold text-slate-950">Publikovat do firemního Outlook kalendáře</span>
                 <span className="mt-0.5 block text-xs text-slate-600">
                   {form.item_type === 'phase'
                     ? 'Fáze se do kalendáře neposílají; synchronizovat lze úkol nebo milník.'
-                    : mailbox
-                      ? `Událost bude vytvořena v kalendáři ${mailbox}.`
-                      : 'Nejdříve vyberte řešitele s firemním e-mailem.'}
+                    : 'Událost bude viditelná ve firemním kalendáři EKV Plánování. Finanční údaje se nepřenášejí.'}
                 </span>
               </span>
             </label>
@@ -348,6 +347,7 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
                   <CalendarDays className="mr-2 h-4 w-4" />
                   {availability?.checking ? 'Kontroluji…' : 'Ověřit dostupnost'}
                 </Button>
+                {personalMailbox && <span className="text-xs text-slate-500">Osobní dostupnost: {personalMailbox}</span>}
                 {availability?.result && (
                   <Badge variant={availability.result.available ? 'success' : 'destructive'}>
                     {availability.result.available ? 'Termín je volný' : `${availability.result.conflicts?.length || 0} kolizí`}
@@ -621,8 +621,19 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
 
   const handleCalendarSync = useCallback((id) => runMutation(
     () => syncPlanningItemCalendar(id),
-    'Outlook kalendář byl synchronizován',
+    'Firemní Outlook kalendář byl synchronizován',
   ), [runMutation]);
+
+  const handlePlanCalendarSync = useCallback(() => runMutation(
+    async () => {
+      const results = await syncPlanningPlanCalendar(data.items);
+      const failed = results.filter((result) => !result.success);
+      if (failed.length) {
+        throw new Error(`${failed.length} z ${results.length} událostí se nepodařilo synchronizovat.`);
+      }
+    },
+    'Celý plán byl publikován do firemního kalendáře',
+  ), [data.items, runMutation]);
 
   const handleDependencyCreate = useCallback((dependency) => runMutation(
     () => savePlanningDependency(selectedPlanId, dependency),
@@ -760,13 +771,21 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
           </TabsContent>
           <TabsContent value="calendar" className="mt-0">
             <section className="overflow-hidden rounded-md border bg-white">
-              <div className="border-b px-4 py-3">
-                <h3 className="font-semibold">Microsoft 365 kalendář</h3>
-                <p className="text-xs text-slate-500">EKVPortal je zdroj termínů. Outlook obsahuje pouze pracovní událost bez finančních údajů.</p>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+                <div>
+                  <h3 className="font-semibold">Firemní Microsoft 365 kalendář</h3>
+                  <p className="text-xs text-slate-500">EKVPortal je zdroj termínů. Události jsou publikované do sdíleného kalendáře celé firmy bez finančních údajů.</p>
+                </div>
+                {canEdit && (
+                  <Button size="sm" variant="outline" disabled={saving || !data.items.some((item) => item.calendar_sync_enabled)} onClick={handlePlanCalendarSync}>
+                    <RefreshCw className={`mr-2 h-4 w-4 ${saving ? 'animate-spin' : ''}`} />
+                    Synchronizovat celý plán
+                  </Button>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader><TableRow><TableHead>Aktivita</TableHead><TableHead>Termín</TableHead><TableHead>Řešitel</TableHead><TableHead>Synchronizace</TableHead><TableHead>Poslední změna</TableHead><TableHead className="w-36">Akce</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Aktivita</TableHead><TableHead>Termín</TableHead><TableHead>Řešitel</TableHead><TableHead>Firemní kalendář</TableHead><TableHead>Synchronizace</TableHead><TableHead>Poslední změna</TableHead><TableHead className="w-36">Akce</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {data.items.filter((item) => item.item_type !== 'phase').map((item) => {
                       const link = getCalendarLink(item);
@@ -775,6 +794,7 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
                           <TableCell><div className="font-medium">{item.name}</div><div className="text-xs text-slate-500">{ITEM_TYPE[item.item_type]}</div></TableCell>
                           <TableCell className="whitespace-nowrap">{item.start_at ? formatDateTime(item.start_at) : formatDate(item.start_date)}{item.item_type !== 'milestone' ? ` – ${item.end_at ? formatDateTime(item.end_at) : formatDate(item.end_date)}` : ''}</TableCell>
                           <TableCell><div>{item.member?.name || 'Nepřiřazeno'}</div><div className="text-xs text-slate-500">{item.member?.microsoft_calendar_email || item.member?.email || 'Bez e-mailu'}</div></TableCell>
+                          <TableCell><div className="font-medium">EKV Plánování</div><div className="text-xs text-slate-500">{link?.mailbox_address || 'Nastaví administrátor'}</div></TableCell>
                           <TableCell>
                             <Badge variant={link?.sync_status === 'synced' ? 'success' : link?.sync_status === 'error' ? 'destructive' : 'secondary'}>
                               {item.calendar_sync_enabled ? CALENDAR_STATUS[link?.sync_status || 'pending'] : 'Vypnuto'}
@@ -793,7 +813,7 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
                         </TableRow>
                       );
                     })}
-                    {!data.items.some((item) => item.item_type !== 'phase') && <TableRow><TableCell colSpan={6} className="h-28 text-center text-slate-500">Nejdříve přidejte úkol nebo milník.</TableCell></TableRow>}
+                    {!data.items.some((item) => item.item_type !== 'phase') && <TableRow><TableCell colSpan={7} className="h-28 text-center text-slate-500">Nejdříve přidejte úkol nebo milník.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </div>
