@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Download, FileSignature, Lock, Mail, Plus, RefreshCw, Save, Send, Trash2 } from 'lucide-react';
+import { Check, Download, ExternalLink, FileSignature, Lock, Mail, Plus, RefreshCw, Save, Send, Trash2, UploadCloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,12 @@ import {
   buildHandoverProtocolEmailDefaults,
   sendHandoverProtocolEmail,
 } from '@/lib/handoverProtocolEmailService';
+import {
+  googleSignatureStatusLabels,
+  listProtocolSignatureRequests,
+  prepareProtocolForGoogleDrive,
+  setGoogleDriveSignatureStatus,
+} from '@/lib/googleDriveEsignService';
 
 const protocolTypes = ['handover_full', 'handover_partial', 'service_protocol', 'contract'];
 const editableStatuses = ['draft', 'ready_for_signature'];
@@ -106,7 +112,7 @@ const SignaturePad = ({ onChange }) => {
 
 const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, opportunityId, subjectId, canEdit = false }) => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [protocols, setProtocols] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -118,6 +124,10 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
   const [emailOpen, setEmailOpen] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailDraft, setEmailDraft] = useState({ recipients: '', subject: '', message: '' });
+  const [googleDialogOpen, setGoogleDialogOpen] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleRequests, setGoogleRequests] = useState([]);
+  const [googleSigners, setGoogleSigners] = useState([{ name: '', email: '', role: 'Klient' }]);
 
   const selectedTemplate = useMemo(() => templates.find((template) => template.id === templateId) || null, [templates, templateId]);
   const isLocked = Boolean(draft?.locked_at || draft?.status === 'signed' || draft?.status === 'archived');
@@ -156,6 +166,22 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
     };
     loadTemplates();
   }, [draft?.document_type]);
+
+  const refreshGoogleRequests = useCallback(async () => {
+    if (!isAdmin || !draft?.id) {
+      setGoogleRequests([]);
+      return;
+    }
+    try {
+      setGoogleRequests(await listProtocolSignatureRequests(draft.id));
+    } catch (error) {
+      if (!/disabled|not configured|does not exist/i.test(error.message || '')) {
+        console.warn('Google signature requests could not be loaded', error);
+      }
+    }
+  }, [draft?.id, isAdmin]);
+
+  useEffect(() => { refreshGoogleRequests(); }, [refreshGoogleRequests]);
 
   const createProtocol = async (documentType) => {
     try {
@@ -254,6 +280,46 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
     }
   };
 
+  const openGoogleDialog = () => {
+    const subject = draft?.subject || project?.subject || realization?.subject || {};
+    setGoogleSigners([{
+      name: subject.name || subject.company_name || '',
+      email: subject.email || '',
+      role: 'Klient',
+    }]);
+    setGoogleDialogOpen(true);
+  };
+
+  const prepareGoogleSignature = async () => {
+    setGoogleBusy(true);
+    try {
+      const result = await prepareProtocolForGoogleDrive({
+        protocol: draft,
+        template: selectedTemplate,
+        signers: googleSigners,
+      });
+      setGoogleDialogOpen(false);
+      await refreshGoogleRequests();
+      window.open(result.driveFile?.webViewLink || result.request?.drive_web_url, '_blank', 'noopener,noreferrer');
+      toast({ title: 'PDF je připravené v Google Drive', description: 'V Drive doplňte podpisová pole a odešlete žádost.' });
+    } catch (error) {
+      toast({ title: 'Příprava podpisu selhala', description: error.message, variant: 'destructive' });
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
+  const updateGoogleStatus = async (requestId, status) => {
+    try {
+      await setGoogleDriveSignatureStatus(requestId, status);
+      await refreshGoogleRequests();
+      if (status === 'signed') await refresh();
+      toast({ title: status === 'signed' ? 'Dokument označen jako podepsaný' : 'Stav podpisu byl aktualizován' });
+    } catch (error) {
+      toast({ title: 'Stav nelze změnit', description: error.message, variant: 'destructive' });
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
@@ -268,6 +334,20 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
           ))}
         </div>
       </div>
+
+      {isAdmin && googleRequests.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2 text-sm">
+          <span className="font-semibold text-blue-950">Google podpis:</span>
+          {googleRequests.slice(0, 3).map((request) => (
+            <div key={request.id} className="flex items-center gap-2 rounded-md border bg-white px-2 py-1">
+              <Badge variant="outline">{googleSignatureStatusLabels[request.status] || request.status}</Badge>
+              {request.drive_web_url && <a href={request.drive_web_url} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">Otevřít</a>}
+              {request.status === 'prepared' && <Button size="sm" variant="ghost" className="h-7" onClick={() => updateGoogleStatus(request.id, 'sent')}>Odesláno</Button>}
+              {request.status === 'sent' && <Button size="sm" variant="ghost" className="h-7" onClick={() => updateGoogleStatus(request.id, 'signed')}>Podepsáno</Button>}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
         <Card className="overflow-hidden">
@@ -325,6 +405,7 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
                   <Button variant="outline" size="sm" onClick={() => exportDocument('pdf')}>PDF</Button>
                   <Button variant="outline" size="sm" onClick={() => exportDocument('docx')}>DOCX</Button>
                   {canEdit && <Button variant="outline" size="sm" onClick={openEmailDialog}><Mail className="mr-2 h-4 w-4" />Odeslat</Button>}
+                  {isAdmin && <Button variant="outline" size="sm" onClick={openGoogleDialog}><UploadCloud className="mr-2 h-4 w-4" />Google podpis</Button>}
                   {canModifyDraft && <Button size="sm" onClick={() => save()}><Save className="mr-2 h-4 w-4" />Uložit</Button>}
                 </div>
               </div>
@@ -434,6 +515,44 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
           </Card>
         )}
       </div>
+
+      <Dialog open={googleDialogOpen} onOpenChange={setGoogleDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Připravit dokument v Google Drive</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950">
+              Portál vygeneruje neměnné PDF s prefixem TEST- a uloží ho do složky K podpisu. Podpisová pole a odeslání příjemcům dokončíte v Google Drive.
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Podepisující osoby</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={googleSigners.length >= 10}
+                  onClick={() => setGoogleSigners((current) => [...current, { name: '', email: '', role: 'Podepisující' }])}
+                ><Plus className="mr-2 h-4 w-4" />Přidat</Button>
+              </div>
+              {googleSigners.map((signer, index) => (
+                <div key={index} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_1.2fr_0.8fr_auto]">
+                  <Input value={signer.name} placeholder="Jméno" onChange={(event) => setGoogleSigners((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} />
+                  <Input type="email" value={signer.email} placeholder="email@example.cz" onChange={(event) => setGoogleSigners((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, email: event.target.value } : item))} />
+                  <Input value={signer.role} placeholder="Role" onChange={(event) => setGoogleSigners((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, role: event.target.value } : item))} />
+                  <Button type="button" variant="ghost" size="icon" disabled={googleSigners.length === 1} onClick={() => setGoogleSigners((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4" /></Button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGoogleDialogOpen(false)} disabled={googleBusy}>Zrušit</Button>
+            <Button onClick={prepareGoogleSignature} disabled={googleBusy || googleSigners.some((signer) => !signer.name.trim() || !signer.email.trim())}>
+              {googleBusy ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+              {googleBusy ? 'Připravuji PDF...' : 'Připravit v Google Drive'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={emailOpen} onOpenChange={setEmailOpen}>
         <DialogContent className="max-w-2xl">

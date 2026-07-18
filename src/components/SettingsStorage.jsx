@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Cloud, FolderTree, RefreshCw, Save, TestTube2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Cloud, ExternalLink, FileSignature, FolderTree, RefreshCw, Save, TestTube2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { isStorageConfigMissingError, storageProviderLabels } from '@/lib/documentStorageService';
+import { getGoogleDriveAuthorizationUrl, getGoogleDriveEsignStatus } from '@/lib/googleDriveEsignService';
 
 const TARGETS = [
   { key: 'project', label: 'Projekty', description: 'Projektová dokumentace a předání' },
@@ -63,6 +64,8 @@ const SettingsStorage = () => {
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [testingTarget, setTestingTarget] = useState(null);
   const [testResults, setTestResults] = useState({});
+  const [googleDrive, setGoogleDrive] = useState({ loading: true, connected: false, connection: null });
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
 
   const selectedConnection = useMemo(
     () => connections.find((connection) => connection.id === selectedId),
@@ -103,6 +106,36 @@ const SettingsStorage = () => {
     fetchConnections();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPermission]);
+
+  const refreshGoogleDrive = async () => {
+    if (!hasPermission('settings', 'can_admin')) return;
+    setGoogleDrive((current) => ({ ...current, loading: true }));
+    try {
+      const status = await getGoogleDriveEsignStatus();
+      setGoogleDrive({ ...status, loading: false });
+    } catch (error) {
+      setGoogleDrive({ loading: false, connected: false, connection: null, error: error.message });
+    }
+  };
+
+  useEffect(() => {
+    refreshGoogleDrive();
+    const result = new URLSearchParams(window.location.search).get('googleDrive');
+    if (result === 'connected') toast({ title: 'Google Drive byl propojen', description: 'Podpisový PoC je připravený k použití.' });
+    if (result && result !== 'connected') toast({ title: 'Google Drive se nepodařilo propojit', description: result, variant: 'destructive' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasPermission]);
+
+  const connectGoogleDrive = async () => {
+    setConnectingGoogle(true);
+    try {
+      const result = await getGoogleDriveAuthorizationUrl();
+      window.location.assign(result.authorizationUrl);
+    } catch (error) {
+      toast({ title: 'Propojení nelze zahájit', description: error.message, variant: 'destructive' });
+      setConnectingGoogle(false);
+    }
+  };
 
   useEffect(() => {
     if (selectedId === 'new') setForm(defaultForm);
@@ -241,7 +274,6 @@ const SettingsStorage = () => {
                 <SelectContent>
                   <SelectItem value="sharepoint">SharePoint</SelectItem>
                   <SelectItem value="supabase">Supabase Storage</SelectItem>
-                  <SelectItem value="google_drive">Google Drive</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -320,6 +352,48 @@ const SettingsStorage = () => {
             </Button>
             <Button variant="outline" onClick={fetchConnections} disabled={loading || saving}>
               <RefreshCw className="mr-2 h-4 w-4" /> Obnovit
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-2 text-blue-700"><FileSignature className="h-5 w-5" /></div>
+              <div>
+                <CardTitle>Google Drive eSignature PoC</CardTitle>
+                <CardDescription>
+                  Portál připraví neměnné PDF v Google Drive. Umístění podpisových polí a odeslání proběhne ručně v Google Drive.
+                </CardDescription>
+              </div>
+            </div>
+            <Badge variant={googleDrive.connected ? 'success' : 'secondary'}>
+              {googleDrive.loading ? 'Ověřuji...' : googleDrive.connected ? 'Propojeno' : 'Nepřipojeno'}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Kontrolovaný pilotní režim</AlertTitle>
+            <AlertDescription>
+              Soubory mají prefix TEST-. SharePoint zůstává hlavním úložištěm a Google Drive slouží jen podpisovým žádostem administrátora.
+            </AlertDescription>
+          </Alert>
+          <div className="grid gap-3 rounded-lg border bg-slate-50/70 p-4 sm:grid-cols-3">
+            <div><div className="text-xs font-medium uppercase text-slate-500">Google účet</div><div className="mt-1 text-sm font-semibold text-slate-900">{googleDrive.connection?.google_email || 'Není propojen'}</div></div>
+            <div><div className="text-xs font-medium uppercase text-slate-500">Cílová složka</div><div className="mt-1 text-sm font-semibold text-slate-900">EKVPortal-eSignature-POC / K podpisu</div></div>
+            <div><div className="text-xs font-medium uppercase text-slate-500">Rozsah</div><div className="mt-1 text-sm font-semibold text-slate-900">Pouze soubory vytvořené portálem</div></div>
+          </div>
+          {googleDrive.error && <p className="text-sm text-red-600">{googleDrive.error}</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={connectGoogleDrive} disabled={connectingGoogle || googleDrive.loading}>
+              <ExternalLink className="mr-2 h-4 w-4" />{googleDrive.connected ? 'Znovu propojit účet' : 'Propojit Google účet'}
+            </Button>
+            <Button variant="outline" onClick={refreshGoogleDrive} disabled={googleDrive.loading}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${googleDrive.loading ? 'animate-spin' : ''}`} />Obnovit stav
             </Button>
           </div>
         </CardContent>

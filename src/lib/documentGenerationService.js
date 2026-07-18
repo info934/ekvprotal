@@ -1668,6 +1668,16 @@ export const downloadHandoverProtocolPdf = async ({ protocol, template }) => {
   return payload;
 };
 
+export const createHandoverProtocolPdfBlob = async ({ protocol, template }) => {
+  const payload = buildHandoverProtocolPayload({ protocol });
+  const pdf = await createHandoverPdf(payload, template);
+  return {
+    blob: pdf.output('blob'),
+    payload,
+    fileName: generateHandoverFileName(payload, 'pdf'),
+  };
+};
+
 export const documentGenerationTargets = [
   { type: 'offer', label: 'Nabídky', output: ['html', 'docx', 'pdf'] },
   { type: 'order', label: 'Objednávky', output: ['html', 'docx', 'pdf'] },
