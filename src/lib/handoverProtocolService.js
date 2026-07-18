@@ -200,6 +200,17 @@ export const saveHandoverProtocol = async (protocol) => {
   return sortProtocolChildren(refreshed);
 };
 
+export const deleteHandoverProtocol = async (protocolId, reason = 'Odstraněno administrátorem') => {
+  if (!protocolId) throw new Error('Chybí identifikátor dokumentu.');
+
+  const { data, error } = await supabase.rpc('delete_handover_protocol', {
+    p_protocol_id: protocolId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  return data;
+};
+
 const hashProtocol = async (protocol, signatureDataUrl) => {
   const payload = JSON.stringify({
     id: protocol.id,

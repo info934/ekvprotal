@@ -9,10 +9,21 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
   createHandoverProtocol,
+  deleteHandoverProtocol,
   emptyHandoverDefect,
   emptyHandoverItem,
   handoverProtocolStatusLabels,
@@ -128,6 +139,8 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleRequests, setGoogleRequests] = useState([]);
   const [googleSigners, setGoogleSigners] = useState([{ name: '', email: '', role: 'Klient' }]);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const selectedTemplate = useMemo(() => templates.find((template) => template.id === templateId) || null, [templates, templateId]);
   const isLocked = Boolean(draft?.locked_at || draft?.status === 'signed' || draft?.status === 'archived');
@@ -219,6 +232,25 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
       toast({ title: 'Dokument uložen' });
     } catch (error) {
       toast({ title: 'Nelze uložit dokument', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const removeProtocol = async () => {
+    if (!draft?.id) return;
+    setDeleting(true);
+    try {
+      await deleteHandoverProtocol(draft.id);
+      const remaining = protocols.filter((protocol) => protocol.id !== draft.id);
+      const next = remaining[0] || null;
+      setProtocols(remaining);
+      setSelectedId(next?.id || null);
+      setDraft(next ? normalizeProtocolForEdit(next) : null);
+      setDeleteOpen(false);
+      toast({ title: 'Dokument byl odstraněn', description: `${draft.number || draft.title} byl smazán a akce byla zapsána do auditu.` });
+    } catch (error) {
+      toast({ title: 'Dokument nelze odstranit', description: error.message, variant: 'destructive' });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -407,6 +439,11 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
                   {canEdit && <Button variant="outline" size="sm" onClick={openEmailDialog}><Mail className="mr-2 h-4 w-4" />Odeslat</Button>}
                   {isAdmin && <Button variant="outline" size="sm" onClick={openGoogleDialog}><UploadCloud className="mr-2 h-4 w-4" />Google podpis</Button>}
                   {canModifyDraft && <Button size="sm" onClick={() => save()}><Save className="mr-2 h-4 w-4" />Uložit</Button>}
+                  {isAdmin && !isLocked && (
+                    <Button variant="outline" size="sm" className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800" onClick={() => setDeleteOpen(true)}>
+                      <Trash2 className="mr-2 h-4 w-4" />Smazat
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardHeader>
@@ -608,6 +645,29 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Odstranit dokument?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">Dokument <strong className="text-slate-900">{draft?.number || draft?.title}</strong> bude trvale odstraněn včetně položek, vad a souvisejících rozpracovaných žádostí o podpis.</span>
+              <span className="block">Podepsané, archivované a uzamčené dokumenty nelze odstranit. Akce se uloží do auditního logu.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Ponechat dokument</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(event) => { event.preventDefault(); removeProtocol(); }}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {deleting ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              {deleting ? 'Odstraňuji...' : 'Trvale odstranit'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
