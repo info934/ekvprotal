@@ -172,26 +172,6 @@ const activeAccessToken = async (db: ReturnType<typeof serviceClient>, userId: s
   };
 };
 
-const resolveOrganizationConnection = async (db: ReturnType<typeof serviceClient>, userId: string) => {
-  const { data: ownConnection, error: ownError } = await db
-    .from('google_drive_oauth_connections')
-    .select('user_id,google_email,status,token_expires_at,updated_at')
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (ownError) throw ownError;
-  if (ownConnection?.status === 'active') return { connection: ownConnection, shared: false };
-
-  const { data: organizationConnection, error } = await db
-    .from('google_drive_oauth_connections')
-    .select('user_id,google_email,status,token_expires_at,updated_at')
-    .eq('status', 'active')
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return { connection: organizationConnection, shared: Boolean(organizationConnection) };
-};
-
 const driveRequest = async (token: string, path: string, init: RequestInit = {}) => {
   const response = await fetch(path.startsWith('http') ? path : `${DRIVE_API}${path}`, {
     ...init,
@@ -283,8 +263,32 @@ Deno.serve(async (req) => {
     const action = String(body.action || 'status');
 
     if (action === 'status') {
-      const { connection, shared } = await resolveOrganizationConnection(db, user.id);
-      return json({ success: true, configured: true, connected: connection?.status === 'active', shared, connection });
+      try {
+        const { token, connection, shared } = await activeAccessToken(db, user.id);
+        const about = await driveRequest(token, '/about?fields=user(displayName,emailAddress,permissionId)');
+        return json({
+          success: true,
+          configured: true,
+          connected: true,
+          shared,
+          connection: {
+            google_email: connection.google_email || about.user?.emailAddress || null,
+            status: connection.status,
+            token_expires_at: connection.token_expires_at,
+            updated_at: connection.updated_at,
+          },
+          drive_user: about.user || null,
+        });
+      } catch (error) {
+        return json({
+          success: true,
+          configured: true,
+          connected: false,
+          shared: false,
+          connection: null,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     if (action === 'getAuthorizationUrl') {
