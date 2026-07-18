@@ -34,8 +34,8 @@ Neznámé údaje se vrací jako `null`; model je nesmí odhadovat. Cizí měna s
 ## Bezpečnost
 
 - Funkce i databázové tabulky jsou dostupné pouze roli `admin`.
-- `OPENAI_API_KEY` je pouze v Supabase secrets, nikdy ve frontendu.
-- OpenAI požadavek používá `store: false`.
+- `GEMINI_API_KEY` je pouze v Supabase secrets, nikdy ve frontendu.
+- Poskytovatel je volitelný serverovým nastavením; OpenAI lze ponechat jako záložní variantu.
 - Originál zůstává v SharePointu a jeho SHA-256 hash je uložen u analýzy.
 - Finanční změna proběhne výhradně přes schvalovací RPC a zapíše se do `audit_logs`.
 - AI výsledek je pomocný návrh, nikoliv právní nebo účetní posouzení smlouvy.
@@ -45,11 +45,19 @@ Neznámé údaje se vrací jako `null`; model je nesmí odhadovat. Cizí měna s
 Supabase Edge Function vyžaduje secrets:
 
 ```text
-OPENAI_API_KEY
-CONTRACT_EXTRACTION_MODEL=gpt-5-mini
+CONTRACT_AI_PROVIDER=gemini
+GEMINI_API_KEY
+GEMINI_CONTRACT_EXTRACTION_MODEL=gemini-3.5-flash
 MS_GRAPH_TENANT_ID
 MS_GRAPH_CLIENT_ID
 MS_GRAPH_CLIENT_SECRET
+```
+
+Volitelná záložní konfigurace pro OpenAI:
+
+```text
+OPENAI_API_KEY
+OPENAI_CONTRACT_EXTRACTION_MODEL=gpt-5-mini
 ```
 
 Před nasazením je nutné aplikovat migrace v pořadí:
@@ -61,15 +69,16 @@ Poté nasadit Edge Function `analyze-contract`.
 
 ## Serverové tajemství
 
-OpenAI klíč patří pouze do Supabase Edge Function secrets. Nesmí být ve `.env` frontendu,
+Gemini i případný OpenAI klíč patří pouze do Supabase Edge Function secrets. Nesmí být ve `.env` frontendu,
 zdrojovém kódu, migraci ani v Git historii.
 
 ```powershell
-supabase secrets set OPENAI_API_KEY
-supabase secrets set CONTRACT_EXTRACTION_MODEL=gpt-5-mini
+supabase secrets set CONTRACT_AI_PROVIDER=gemini
+supabase secrets set GEMINI_API_KEY
+supabase secrets set GEMINI_CONTRACT_EXTRACTION_MODEL=gemini-3.5-flash
 ```
 
-Produkční workflow používá `store: false`. Jeden identický soubor u stejného projektu nebo
+OpenAI záložní workflow používá `store: false`. Jeden identický soubor u stejného projektu nebo
 realizace se podle SHA-256 neposílá modelu opakovaně.
 
 ## Schválení návrhu

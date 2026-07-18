@@ -4,8 +4,8 @@ import { corsHeaders } from '../_shared/cors.ts';
 const GRAPH_ROOT = 'https://graph.microsoft.com/v1.0';
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const GRAPH_TIMEOUT_MS = 45_000;
-const OPENAI_TIMEOUT_MS = 150_000;
-const PROMPT_VERSION = 'contract-finance-v2';
+const AI_TIMEOUT_MS = 150_000;
+const PROMPT_VERSION = 'contract-finance-v3';
 const ALLOWED_TYPES = new Set([
   'application/pdf',
   'application/msword',
@@ -136,6 +136,88 @@ const outputText = (payload: Record<string, any>) => {
   throw new Error('AI response did not contain structured output.');
 };
 
+const extractionPrompt = [
+  'Jsi přesný analytik českých smluv. Vyčti pouze údaje výslovně obsažené v dokumentu.',
+  'Najdi cenu smlouvy, DPH, splatnost, zálohy, zádržné a všechny fakturační nebo platební etapy.',
+  'Datum vrať jako YYYY-MM-DD. Co v dokumentu není, vrať jako null a nic neodhaduj.',
+  'Ke každé etapě přidej krátký důkaz z příslušného ustanovení a confidence 0 až 1.',
+  'Rozliš cenu bez DPH a s DPH. Upozorni na rozpory, neúplné podmínky a součty, které nedávají 100 %.',
+].join('\n');
+
+const analyzeWithGemini = async ({
+  apiKey,
+  model,
+  bytes,
+  mimeType,
+}: {
+  apiKey: string;
+  model: string;
+  bytes: Uint8Array;
+  mimeType: string;
+}) => {
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    method: 'POST',
+    headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    body: JSON.stringify({
+      model,
+      input: [
+        { type: 'document', data: bytesToBase64(bytes), mime_type: mimeType },
+        { type: 'text', text: extractionPrompt },
+      ],
+      response_format: {
+        type: 'text',
+        mime_type: 'application/json',
+        schema,
+      },
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Gemini contract analysis failed (${response.status}): ${detail.slice(0, 500)}`);
+  }
+  return JSON.parse(outputText(await response.json()));
+};
+
+const analyzeWithOpenAI = async ({
+  apiKey,
+  model,
+  bytes,
+  mimeType,
+  fileName,
+}: {
+  apiKey: string;
+  model: string;
+  bytes: Uint8Array;
+  mimeType: string;
+  fileName: string;
+}) => {
+  const encodedFile = `data:${mimeType};base64,${bytesToBase64(bytes)}`;
+  const fileInput = mimeType.startsWith('image/')
+    ? { type: 'input_image', image_url: encodedFile, detail: 'high' }
+    : { type: 'input_file', filename: fileName, file_data: encodedFile };
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    body: JSON.stringify({
+      model,
+      store: false,
+      max_output_tokens: 12000,
+      input: [{
+        role: 'user',
+        content: [fileInput, { type: 'input_text', text: extractionPrompt }],
+      }],
+      text: { format: { type: 'json_schema', name: 'contract_finance_extraction', strict: true, schema } },
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`OpenAI contract analysis failed (${response.status}): ${detail.slice(0, 500)}`);
+  }
+  return JSON.parse(outputText(await response.json()));
+};
+
 const validDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 const allowedVat = (value: unknown) => value == null ? null : [0, 12, 21].includes(Number(value)) ? Number(value) : null;
 const nonNegativeNumber = (value: unknown) => {
@@ -202,8 +284,12 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
+    const geminiKey = Deno.env.get('GEMINI_API_KEY');
     if (!supabaseUrl || !serviceRoleKey) throw new Error('Missing Supabase service configuration.');
-    if (!openAiKey) throw new Error('OPENAI_API_KEY is not configured in Supabase secrets.');
+    const provider = String(Deno.env.get('CONTRACT_AI_PROVIDER') || (geminiKey ? 'gemini' : 'openai')).toLowerCase();
+    if (!['gemini', 'openai'].includes(provider)) throw new Error('CONTRACT_AI_PROVIDER must be gemini or openai.');
+    if (provider === 'gemini' && !geminiKey) throw new Error('GEMINI_API_KEY is not configured in Supabase secrets.');
+    if (provider === 'openai' && !openAiKey) throw new Error('OPENAI_API_KEY is not configured in Supabase secrets.');
 
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) return json({ success: false, error: 'Missing authorization.' }, 401);
@@ -272,41 +358,13 @@ Deno.serve(async (req) => {
     if (jobError) throw jobError;
     jobId = job.id;
 
-    const model = Deno.env.get('CONTRACT_EXTRACTION_MODEL') || 'gpt-5-mini';
-    const encodedFile = `data:${mimeType};base64,${bytesToBase64(bytes)}`;
-    const fileInput = mimeType.startsWith('image/')
-      ? { type: 'input_image', image_url: encodedFile, detail: 'high' }
-      : { type: 'input_file', filename: fileName, file_data: encodedFile };
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
-      body: JSON.stringify({
-        model,
-        store: false,
-        max_output_tokens: 12000,
-        input: [{
-          role: 'user',
-          content: [
-            fileInput,
-            { type: 'input_text', text: [
-              'Jsi přesný analytik českých smluv. Vyčti pouze údaje výslovně obsažené v dokumentu.',
-              'Najdi cenu smlouvy, DPH, splatnost, zálohy, zádržné a všechny fakturační nebo platební etapy.',
-              'Datum vrať jako YYYY-MM-DD. Co v dokumentu není, vrať jako null a nic neodhaduj.',
-              'Ke každé etapě přidej krátký důkaz z příslušného ustanovení a confidence 0 až 1.',
-              'Rozliš cenu bez DPH a s DPH. Upozorni na rozpory, neúplné podmínky a součty, které nedávají 100 %.',
-            ].join('\n') },
-          ],
-        }],
-        text: { format: { type: 'json_schema', name: 'contract_finance_extraction', strict: true, schema } },
-      }),
-    });
-    if (!response.ok) {
-      const detail = await response.text();
-      throw new Error(`Contract analysis failed (${response.status}): ${detail.slice(0, 500)}`);
-    }
-
-    const extracted = validateExtraction(JSON.parse(outputText(await response.json())));
+    const model = provider === 'gemini'
+      ? Deno.env.get('GEMINI_CONTRACT_EXTRACTION_MODEL') || 'gemini-3.5-flash'
+      : Deno.env.get('OPENAI_CONTRACT_EXTRACTION_MODEL') || Deno.env.get('CONTRACT_EXTRACTION_MODEL') || 'gpt-5-mini';
+    const rawExtraction = provider === 'gemini'
+      ? await analyzeWithGemini({ apiKey: geminiKey!, model, bytes, mimeType })
+      : await analyzeWithOpenAI({ apiKey: openAiKey!, model, bytes, mimeType, fileName });
+    const extracted = validateExtraction(rawExtraction);
     const milestoneRows = extracted.milestones.map((item: Record<string, any>) => ({
       extraction_id: jobId,
       sequence_number: item.sequence_number,
@@ -337,7 +395,7 @@ Deno.serve(async (req) => {
       user_id: user.id,
       user_email: user.email || null,
       action: 'contract_extraction_created',
-      details: { extraction_id: jobId, entity_type: entityType, entity_id: entityId, model, prompt_version: PROMPT_VERSION },
+      details: { extraction_id: jobId, entity_type: entityType, entity_id: entityId, provider, model, prompt_version: PROMPT_VERSION },
     });
     return json({ success: true, extractionId: jobId, extraction: extracted });
   } catch (error) {
