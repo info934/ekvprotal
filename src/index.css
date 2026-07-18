@@ -72,6 +72,84 @@
   }
 }
 
+/* Planning board: keep the third-party Gantt visually aligned with the portal. */
+.planning-gantt .gantt_container {
+  border: 0;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.planning-gantt .gantt_grid_scale,
+.planning-gantt .gantt_task_scale {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.planning-gantt .gantt_grid_head_cell,
+.planning-gantt .gantt_scale_cell,
+.planning-gantt .gantt_cell,
+.planning-gantt .gantt_row,
+.planning-gantt .gantt_task_row {
+  border-color: #e8edf3;
+}
+
+.planning-gantt .gantt_row:hover,
+.planning-gantt .gantt_task_row:hover {
+  background: #f8fafc;
+}
+
+.planning-gantt .planning-weekend {
+  background: #f8fafc;
+}
+
+.planning-gantt .gantt_task_line {
+  border: 0;
+  border-radius: 4px;
+  background: #4268d5;
+  box-shadow: none;
+}
+
+.planning-gantt .gantt_task_content {
+  padding-inline: 7px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.planning-gantt .planning-task-phase {
+  background: #334155;
+}
+
+.planning-gantt .planning-status-done {
+  background: #3f946f;
+}
+
+.planning-gantt .planning-status-blocked,
+.planning-gantt .planning-task-late {
+  background: #c64236;
+}
+
+.planning-gantt .planning-status-cancelled {
+  background: #94a3b8;
+  opacity: 0.7;
+}
+
+.planning-gantt .gantt_milestone {
+  background: #d18128;
+  border-color: #d18128;
+}
+
+.planning-gantt .gantt_link_arrow,
+.planning-gantt .gantt_link_line_down,
+.planning-gantt .gantt_link_line_left,
+.planning-gantt .gantt_link_line_right,
+.planning-gantt .gantt_link_line_up {
+  border-color: #64748b;
+}
+
 @layer base {
   * {
     @apply border-border;

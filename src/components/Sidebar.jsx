@@ -5,6 +5,7 @@ import {
   BarChart,
   Briefcase,
   Building,
+  GanttChart,
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
@@ -90,6 +91,7 @@ const NAV_GROUPS = [
     items: [
       { icon: Folder, label: 'Projekce', path: '/projects', module: 'projects', workspace: 'portal' },
       { icon: HardHat, label: 'Realizace', path: '/realizace', module: 'realizace', workspace: 'portal' },
+      { icon: GanttChart, label: 'Plánování', path: '/planning', workspace: 'portal' },
       { icon: Wrench, label: 'Inženýring', path: '/engineering', module: 'engineering', workspace: 'portal' },
       { icon: ListTodo, label: 'Úkoly', path: '/tasks', module: 'tasks', workspace: 'portal' },
     ],

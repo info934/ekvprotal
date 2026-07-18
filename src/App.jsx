@@ -57,6 +57,7 @@ const SettingsCRM = lazy(() => import('@/components/SettingsCRM'));
 const ProjectTemplatesSettings = lazy(() => import('@/components/ProjectTemplatesSettings'));
 const ProjectTemplatesPage = lazy(() => import('@/components/ProjectTemplatesPage'));
 const BackupMaintenance = lazy(() => import('@/components/BackupMaintenance'));
+const PlanningBoard = lazy(() => import('@/components/PlanningBoard'));
 
 const PortalLoaderCard = ({ title = 'Načítání modulu', description = 'Připravujeme data a rozhraní portálu.', showActions = false, onResetSession }) => (
   <div className="relative w-full max-w-[440px] overflow-hidden rounded-[28px] border border-white/70 bg-white/90 p-6 text-left shadow-2xl shadow-slate-950/10 backdrop-blur-xl">
@@ -218,6 +219,7 @@ function AppContent() {
                   <Route path="/" element={<WorkspaceLanding />} />
                   <Route path="/dashboard" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />
                   <Route path="/projects" element={<PrivateRoute module="projects"><Projects /></PrivateRoute>} />
+                  <Route path="/planning" element={<ProtectedRoute><PlanningBoard /></ProtectedRoute>} />
                   <Route path="/projects/new" element={<PrivateRoute module="projects" level="can_edit"><ProjectForm /></PrivateRoute>} />
                   <Route path="/projects/:projectId/edit" element={<PrivateRoute module="projects" level="can_edit"><ProjectForm /></PrivateRoute>} />
                   <Route path="/projects/:projectId" element={<PrivateRoute module="projects"><ProjectDetail /></PrivateRoute>} />

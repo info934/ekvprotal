@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { format, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle, Clock, History } from 'lucide-react';
+import { ChevronLeft, Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle, Clock, History, GanttChart } from 'lucide-react';
 import AssignMemberDialog from '@/components/AssignMemberDialog';
 import AssignSubcontractorDialog from '@/components/AssignSubcontractorDialog';
 import ProjectCostDialog from '@/components/ProjectCostDialog';
@@ -38,6 +38,7 @@ import { DataVizMetricCard } from '@/components/ui/data-viz';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 import BillingTracker from '@/components/BillingTracker';
 import { uploadProjectCostInvoice } from '@/lib/documentStorageService';
+import PlanningBoard from '@/components/PlanningBoard';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
   const tone = color === 'success' ? 'emerald' : color === 'warning' ? 'amber' : color === 'danger' ? 'rose' : color === 'info' ? 'blue' : 'slate';
@@ -878,10 +879,11 @@ const ProjectDetail = () => {
                 )}
 
                 <Tabs value={defaultTab} onValueChange={(value) => navigate(`#${value}`, { replace: true })} className="space-y-6">
-                    <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-7">
+                    <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-8">
                         <TabsTrigger value="overview" className="flex items-center gap-2"><FileText className="w-4 h-4" />Přehled</TabsTrigger>
                         <TabsTrigger value="team" className="flex items-center gap-2"><Users className="w-4 h-4" />Tým</TabsTrigger>
                         <TabsTrigger value="tasks" className="flex items-center gap-2"><ClipboardList className="w-4 h-4" />Úkoly</TabsTrigger>
+                        <TabsTrigger value="plan" className="flex items-center gap-2"><GanttChart className="w-4 h-4" />Plán</TabsTrigger>
                         <TabsTrigger value="engineering" className="flex items-center gap-2"><Briefcase className="w-4 h-4" />Inženýring</TabsTrigger>
                         <TabsTrigger value="documents" className="flex items-center gap-2"><FileText className="w-4 h-4" />Dokumenty</TabsTrigger>
                         <TabsTrigger value="contacts" className="flex items-center gap-2"><Contact className="w-4 h-4" />Kontakty</TabsTrigger>
@@ -988,6 +990,7 @@ const ProjectDetail = () => {
                     </TabsContent>
 
                     <TabsContent value="tasks"><ProjectTasks projectId={projectId} project={project} tasks={tasks} members={members} canEdit={canEdit} onTaskUpdate={refreshData} /></TabsContent>
+                    <TabsContent value="plan"><PlanningBoard entityType="project" entityId={projectId} embedded canEdit={canEdit} /></TabsContent>
                     <TabsContent value="engineering"><ProjectEngineering projectId={projectId} project={project} canEdit={canEdit} /></TabsContent>
                     <TabsContent value="documents" className="space-y-6">
                         <SharePointFolderBrowser

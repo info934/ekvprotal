@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen } from 'lucide-react';
+import { ChevronLeft, Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen, GanttChart } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -27,6 +27,7 @@ import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 import BillingTracker from '@/components/BillingTracker';
 import { uploadInvoiceDocument } from '@/lib/documentStorageService';
+import PlanningBoard from '@/components/PlanningBoard';
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
 const toNumber = (value) => {
@@ -389,8 +390,9 @@ const RealizaceDetail = () => {
           </div>
         )}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-7 mb-4">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-8 mb-4">
             <TabsTrigger value="overview" className="flex items-center gap-2"><LayoutDashboard className="w-4 h-4" /> Přehled</TabsTrigger>
+            <TabsTrigger value="plan" className="flex items-center gap-2"><GanttChart className="w-4 h-4" /> Plán</TabsTrigger>
             {canViewCosts && <TabsTrigger value="finance" className="flex items-center gap-2"><DollarSign className="w-4 h-4" /> Náklady & Finance</TabsTrigger>}
             <TabsTrigger value="hourly" className="flex items-center gap-2"><Clock className="w-4 h-4" /> Hodinové náklady</TabsTrigger>
             <TabsTrigger value="orders" className="flex items-center gap-2"><ShoppingCart className="w-4 h-4" /> Objednávky</TabsTrigger>
@@ -432,6 +434,10 @@ const RealizaceDetail = () => {
               loading={hourlyLoading}
               onRealizationUpdate={handleRealizationUpdate}
             />
+          </TabsContent>
+
+          <TabsContent value="plan">
+            <PlanningBoard entityType="realization" entityId={realizaceId} embedded canEdit={canEdit} />
           </TabsContent>
 
           {canViewCosts && (
