@@ -32,13 +32,6 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
             setLoading(true);
             try {
                 const memberSelect = 'members(name)';
-                const compensationResult = canViewAmounts
-                    ? await supabase.rpc('list_member_compensations_admin')
-                    : { data: [], error: null };
-                if (compensationResult.error) throw compensationResult.error;
-                const rateByMember = new Map(
-                    (compensationResult.data || []).map((item) => [String(item.member_id), Number(item.hourly_rate || 0)])
-                );
                 // 1. Fetch direct attendance on this Realization
                 const { data: directData, error: directError } = await supabase
                     .from('attendance')
@@ -59,12 +52,31 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                      if (!pError) projectData = pData || [];
                 }
 
-                // Combine and Deduplicate (though keys should differ)
-                // Mark source
-                const combined = [
-                    ...(directData || []).map(r => ({ ...r, source: 'realization', _hourly_rate: rateByMember.get(String(r.member_id)) || 0 })),
-                    ...(projectData || []).map(r => ({ ...r, source: 'project', _hourly_rate: rateByMember.get(String(r.member_id)) || 0 }))
+                const attendanceRows = [
+                    ...(directData || []).map(r => ({ ...r, source: 'realization' })),
+                    ...(projectData || []).map(r => ({ ...r, source: 'project' }))
                 ];
+
+                // Compensation is private. Request it only for workers that are
+                // actually present in this realization instead of listing every
+                // member compensation for an otherwise empty detail.
+                const rateByMember = new Map();
+                if (canViewAmounts && attendanceRows.length > 0) {
+                    const memberIds = [...new Set(attendanceRows.map(row => row.member_id).filter(Boolean))];
+                    const compensationResults = await Promise.all(
+                        memberIds.map(memberId => supabase.rpc('get_member_compensation', { p_member_id: memberId }))
+                    );
+                    compensationResults.forEach(({ data, error }, index) => {
+                        if (!error && data) {
+                            rateByMember.set(String(memberIds[index]), Number(data.hourly_rate || 0));
+                        }
+                    });
+                }
+
+                const combined = attendanceRows.map(row => ({
+                    ...row,
+                    _hourly_rate: rateByMember.get(String(row.member_id)) || 0,
+                }));
 
                 // Sort by date desc
                 combined.sort((a, b) => new Date(b.date) - new Date(a.date));
