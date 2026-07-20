@@ -42,6 +42,47 @@ const sanitizePathSegment = (value) => String(value || '')
   .replace(/^-+|-+$/g, '')
   .slice(0, 90) || 'item';
 
+const sanitizeReadableFileName = (value, fallback = 'soubor') => {
+  const rawName = String(value || '').trim();
+  const extensionMatch = rawName.match(/(\.[^.]+)$/);
+  const extension = extensionMatch?.[1] || '';
+  const baseName = extension ? rawName.slice(0, -extension.length) : rawName;
+  const safeBaseName = baseName
+    .replace(/[~"#%&*:<>?/\\{|}]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '')
+    .trim();
+  const safeExtension = extension
+    .replace(/[~"#%&*:<>?/\\{|}\s]+/g, '')
+    .slice(0, 20);
+  const availableBaseLength = Math.max(1, 180 - safeExtension.length);
+  const result = `${safeBaseName.slice(0, availableBaseLength)}${safeExtension}`;
+  return result || fallback;
+};
+
+const addReferencePrefix = (fileName, reference) => {
+  const readableFileName = sanitizeReadableFileName(fileName);
+  const readableReference = String(reference || '')
+    .replace(/[~"#%&*:<>?/\\{|}]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '')
+    .trim()
+    .slice(0, 50);
+
+  if (!readableReference) return readableFileName;
+  const normalizedFileName = readableFileName.toLocaleLowerCase('cs-CZ');
+  const normalizedReference = readableReference.toLocaleLowerCase('cs-CZ');
+  if (
+    normalizedFileName === normalizedReference ||
+    normalizedFileName.startsWith(`${normalizedReference} - `) ||
+    normalizedFileName.startsWith(`${normalizedReference}_`)
+  ) {
+    return readableFileName;
+  }
+
+  return sanitizeReadableFileName(`${readableReference} - ${readableFileName}`);
+};
+
 const sanitizeRelativeFolderPath = (value, fallback) => String(value || fallback || '')
   .split('/')
   .map((segment) => sanitizePathSegment(segment))
@@ -191,11 +232,10 @@ export const uploadProjectDocument = async ({ file, project, documentName }) => 
     name: project.name,
     connection,
   });
+  const storedFileName = addReferencePrefix(file.name, project.code);
 
   if (connection.provider === 'supabase') {
-    const fileExt = file.name.split('.').pop();
-    const safeName = sanitizePathSegment(documentName || file.name);
-    const filePath = `${project.id}/${folder.folderPath}/${safeName}_${Date.now()}.${fileExt}`;
+    const filePath = `${project.id}/${folder.folderPath}/${storedFileName}`;
     const { error } = await supabase.storage.from(PROJECT_BUCKET).upload(filePath, file);
 
     if (error) throw error;
@@ -208,7 +248,13 @@ export const uploadProjectDocument = async ({ file, project, documentName }) => 
       storageFields: {
         storage_provider: 'supabase',
         storage_connection_id: connection.id,
-        storage_metadata: { bucket: PROJECT_BUCKET, folderPath: folder.folderPath },
+        storage_metadata: {
+          bucket: PROJECT_BUCKET,
+          folderPath: folder.folderPath,
+          originalFileName: file.name,
+          storedFileName,
+          documentName: documentName || null,
+        },
       },
       cleanup: async () => supabase.storage.from(PROJECT_BUCKET).remove([filePath]),
     };
@@ -230,7 +276,7 @@ export const uploadProjectDocument = async ({ file, project, documentName }) => 
       entityId: project.id,
       folderId: folder.externalFolderId,
       folderPath: folder.folderPath,
-      fileName: file.name,
+      fileName: storedFileName,
       contentType: file.type || 'application/octet-stream',
       fileBase64,
     },
@@ -270,14 +316,8 @@ export const uploadProjectCostInvoice = async ({ file, project, costId, createCe
     name: project.name,
     connection,
   });
-  const now = new Date();
-  const uploadDate = [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, '0'),
-    String(now.getDate()).padStart(2, '0'),
-  ].join('-');
-  const projectReference = sanitizePathSegment(project.code || project.id);
-  const storedFileName = `${uploadDate}_${projectReference}_${sanitizePathSegment(costId)}_${sanitizePathSegment(file.name)}`;
+  const projectReference = String(project.code || '').trim();
+  const storedFileName = addReferencePrefix(file.name, projectReference);
   const invoiceFolderPath = `${buildEntityFolderPath({
     entityType: 'project',
     entityId: project.id,
@@ -336,13 +376,13 @@ export const uploadProjectCostInvoice = async ({ file, project, costId, createCe
     try {
       const shortcut = new File(
         [`[InternetShortcut]\r\nURL=${data.webUrl}\r\n`],
-        `Odkaz-${projectReference}-${sanitizePathSegment(file.name)}.url`,
+        `Odkaz - ${storedFileName}.url`,
         { type: 'application/internet-shortcut' },
       );
       centralLink = await uploadInvoiceDocument({
         file: shortcut,
         recordId: costId,
-        projectReference: project.code || project.id,
+        projectReference: project.code || null,
         category: 'odkaz-projektovy-naklad',
         connection,
       });
@@ -590,11 +630,11 @@ export const uploadInvoiceDocument = async ({
     String(now.getDate()).padStart(2, '0'),
   ].join('-');
   const safeRecordId = sanitizePathSegment(recordId);
-  const safeProjectReference = sanitizePathSegment(projectReference || recordId);
-  const safeFileName = sanitizePathSegment(file.name);
+  const readableFileName = sanitizeReadableFileName(file.name);
   const folderPath = '';
-  const recordSuffix = safeRecordId === safeProjectReference ? '' : `_${safeRecordId}`;
-  const storedFileName = `${uploadDate}_${safeProjectReference}${recordSuffix}_${safeFileName}`;
+  const storedFileName = projectReference
+    ? addReferencePrefix(readableFileName, projectReference)
+    : `${uploadDate}_${safeRecordId}_${readableFileName}`;
 
   if (connection.provider === 'supabase') {
     const filePath = storedFileName;

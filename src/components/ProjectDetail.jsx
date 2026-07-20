@@ -934,7 +934,7 @@ const ProjectDetail = () => {
                             { label: 'Dostupné pro výplatu', value: financials.availableForPayout, barClassName: 'bg-emerald-500' },
                         ]} />
                         <FinanceDefinitionNote>Nerozdělený budget je týmový základ po nákladech a naplánovaných odměnách; není totožný s limitem dostupným pro výplatu, který navíc zohledňuje rezervované žádosti. Režie je samostatná plánovaná rezerva a její detail je uveden pouze v přehledu připsaných režií níže.</FinanceDefinitionNote>
-                        <BillingTracker entityType="project" entityId={projectId} enableContractAnalysis={isAdmin} showFinancialSummary={false} />
+                        <BillingTracker entityType="project" entityId={projectId} entityCode={project.code} enableContractAnalysis={isAdmin} showFinancialSummary={false} />
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 h-4 mr-2" />Přidat náklad</Button>}>
                             <Table className="finance-table">
                                 <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Odečíst z</TableHead><TableHead>Částka</TableHead><TableHead>Faktura</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>

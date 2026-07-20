@@ -68,7 +68,7 @@ const emptyMilestoneForm = {
   percent_of_contract: '', note: '',
 };
 
-const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractAnalysis = false, showFinancialSummary = true }) => {
+const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, enableContractAnalysis = false, showFinancialSummary = true }) => {
   const { toast } = useToast();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -279,7 +279,7 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
         storedDocument = await uploadInvoiceDocument({
           file: invoiceFile,
           recordId: editingInvoiceId || globalThis.crypto.randomUUID(),
-          projectReference: `${entityType}-${entityId}`,
+          projectReference: entityCode || null,
           category: 'odberatelska-faktura',
         });
       }

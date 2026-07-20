@@ -66,6 +66,7 @@ const RealizaceDetail = () => {
   // Hourly costs state (calculated)
   const [hourlyCostsTotal, setHourlyCostsTotal] = useState(0);
   const [linkedProjectId, setLinkedProjectId] = useState(null);
+  const [linkedProjectCode, setLinkedProjectCode] = useState(null);
   const [hourlyLoading, setHourlyLoading] = useState(false);
 
   // UI States
@@ -168,6 +169,17 @@ const RealizaceDetail = () => {
     }
     setRealization(realData);
     setLinkedProjectId(realData.linked_project_id);
+
+    if (realData.linked_project_id) {
+      const { data: linkedProject } = await supabase
+        .from('projects')
+        .select('code')
+        .eq('id', realData.linked_project_id)
+        .maybeSingle();
+      setLinkedProjectCode(linkedProject?.code || null);
+    } else {
+      setLinkedProjectCode(null);
+    }
 
     const shouldLoadFinancialSummary = canViewAmounts || canViewCosts || canViewProfit;
     const costsPromise = canViewCosts
@@ -290,7 +302,7 @@ const RealizaceDetail = () => {
         uploadedInvoice = await uploadInvoiceDocument({
           file,
           recordId: editingCost?.id || realizaceId,
-          projectReference: realization?.project_code || realization?.linked_project_code || linkedProjectId || realizaceId,
+          projectReference: linkedProjectCode || null,
           category: 'naklady-realizaci',
         });
         fileUrl = uploadedInvoice.dbUrl;
@@ -469,7 +481,7 @@ const RealizaceDetail = () => {
                     </CardContent>
                   </Card>
                 )}
-                {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} enableContractAnalysis showFinancialSummary={false} />}
+                {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} entityCode={linkedProjectCode} enableContractAnalysis showFinancialSummary={false} />}
                 <RealizaceExtraCosts
                   realizaceId={realizaceId}
                   extraCosts={extraCosts}
