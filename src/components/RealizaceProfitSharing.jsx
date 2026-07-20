@@ -12,6 +12,7 @@ import { formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialValueGuard from './FinancialValueGuard';
+import { calculateRealizationRewardAllocation } from '@/domain/financials';
 
 const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, sponsorDeductions = [] }) => {
     const { toast } = useToast();
@@ -78,27 +79,7 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
         setShares(newShares);
     };
 
-    const calculateTotals = () => {
-        let percentTotal = 0;
-        let fixedTotal = 0;
-        let distributedProfit = 0;
-
-        shares.forEach(s => {
-            const val = parseFloat(s.share_value) || 0;
-            if (s.share_type === 'percent') {
-                percentTotal += val;
-                distributedProfit += (distributionAmount * val) / 100;
-            } else if (s.share_type === 'fixed') {
-                fixedTotal += val;
-                distributedProfit += val;
-            }
-        });
-
-        return { percentTotal, fixedTotal, distributedProfit };
-    };
-
-    const { distributedProfit } = calculateTotals();
-    const remainingProfit = distributionAmount - distributedProfit;
+    const { distributedBudget: distributedProfit, unallocatedBudget: remainingProfit } = calculateRealizationRewardAllocation(shares, distributionAmount);
     const sponsorDeductionByMember = new Map(
         (Array.isArray(sponsorDeductions) ? sponsorDeductions : []).map((entry) => [
             String(entry.sponsor_member_id),

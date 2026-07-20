@@ -576,6 +576,7 @@ const ProjectDetail = () => {
         const costsBeforePaidPayouts = toAmount(summary.costs_before_paid_payouts);
         const costsAfterPaidPayouts = toAmount(summary.costs_after_paid_payouts);
         const teamBudgetAfterPaidPayouts = toAmount(summary.team_budget_after_paid_payouts) + laborReplacementAdjustment;
+        const unallocatedBudget = teamBudgetAfterPaidPayouts - teamRewards;
 
         return {
             ...fallbackFinancials,
@@ -588,7 +589,9 @@ const ProjectDetail = () => {
             totalSubcontractorPrice: toAmount(summary.subcontractor_costs),
             teamBudget,
             teamRewards,
-            remainingTeamBudget: teamBudget - teamRewards,
+            rewardBaseBudget: teamBudgetAfterPaidPayouts,
+            unallocatedBudget,
+            remainingTeamBudget: unallocatedBudget,
             totalCosts,
             unassignedCosts,
             assignedMemberCosts,
@@ -914,10 +917,12 @@ const ProjectDetail = () => {
                     <TabsContent value="contacts"><ProjectContacts projectId={projectId} /></TabsContent>
 
                     {canViewFinance && <TabsContent value="finance" className="space-y-6">
-                        <FinanceMetricStrip metrics={[
+                        <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
                             { label: 'Evidovaná hodnota zakázky', value: <FinanceAmount value={financials.price ?? project.price} />, detail: 'Základ projektového rozpočtu', tone: 'neutral', icon: DollarSign },
                             { label: 'Plánovaný projektový budget', value: <FinanceAmount value={financials.totalBudget} />, detail: `${project.budget_percentage}% z hodnoty`, tone: 'plan', icon: Wallet },
                             { label: 'Skutečné náklady', value: <FinanceAmount value={financials.costsAfterPaidPayouts} />, detail: 'Včetně vyplacených odměn', tone: 'neutral', icon: ClipboardList },
+                            { label: 'Nerozdělený budget', value: <FinanceAmount value={financials.unallocatedBudget} />, detail: 'Po nákladech a plánovaných odměnách', tone: Number(financials.unallocatedBudget || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
+                            { label: 'Režie projektu', value: <FinanceAmount value={financials.overheadBudget} />, detail: `Zbývá ${formatCurrency(financials.remainingOverheadBudget)} po alokaci`, tone: Number(financials.remainingOverheadBudget || 0) < 0 ? 'negative' : 'warning', icon: ClipboardList },
                             { label: 'Rezervované výplaty', value: <FinanceAmount value={financials.reservedPayouts} />, detail: 'Závazek, zatím ne náklad', tone: Number(financials.reservedPayouts || 0) ? 'warning' : 'neutral', icon: Clock },
                             { label: 'Dostupné pro výplatu', value: <FinanceAmount value={financials.availableForPayout} />, detail: 'Po kontrolách a rezervacích', tone: Number(financials.availableForPayout || 0) < 0 ? 'negative' : 'positive', icon: Users },
                             { label: 'Plánovaná marže', value: <FinanceAmount value={financials.plannedMargin ?? financials.projectProfit} />, detail: 'Hodnota minus plánovaný budget', tone: Number(financials.plannedMargin || 0) < 0 ? 'negative' : 'positive', icon: DollarSign },
@@ -928,7 +933,7 @@ const ProjectDetail = () => {
                             { label: 'Skutečné náklady', value: financials.costsAfterPaidPayouts, barClassName: 'bg-amber-500' },
                             { label: 'Dostupné pro výplatu', value: financials.availableForPayout, barClassName: 'bg-emerald-500' },
                         ]} />
-                        <FinanceDefinitionNote>Rezervovaná výplata snižuje dostupný limit, ale do skutečných nákladů vstoupí až po označení jako vyplacená. Náklady přiřazené konkrétnímu členovi snižují jeho odměnu a nesmí být započtené podruhé.</FinanceDefinitionNote>
+                        <FinanceDefinitionNote>Nerozdělený budget je týmový základ po nákladech a naplánovaných odměnách; není totožný s limitem dostupným pro výplatu, který navíc zohledňuje rezervované žádosti. Režie je samostatná plánovaná rezerva a její detail je uveden pouze v přehledu připsaných režií níže.</FinanceDefinitionNote>
                         <BillingTracker entityType="project" entityId={projectId} enableContractAnalysis={isAdmin} showFinancialSummary={false} />
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 h-4 mr-2" />Přidat náklad</Button>}>
                             <Table className="finance-table">

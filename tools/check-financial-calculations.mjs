@@ -10,7 +10,9 @@ import {
   calculateLaborFunding,
   calculateMemberRewardAfterLabor,
   calculateCostAdjustedTeamBudget,
+  calculateProjectFinancials,
   calculateProjectMemberReward,
+  calculateRealizationRewardAllocation,
   calculateRealizationMemberShare,
 } from '../src/domain/financials.js';
 
@@ -115,6 +117,17 @@ assertMoney(adjusted.costAdjustedTeamBudget, 24000, 'cost adjusted team budget')
 assertMoney(calculateProjectMemberReward({ reward_type: 'percentage', reward_percentage: 50 }, adjusted.costAdjustedTeamBudget), 12000, 'percentage reward after costs');
 assertMoney(calculateProjectMemberReward({ reward_type: 'fixed', reward_amount: 30000 }, adjusted.costAdjustedTeamBudget), 24000, 'fixed reward is capped by adjusted budget');
 
+const projectAllocation = calculateProjectFinancials({
+  project,
+  subcontractors,
+  costs: [{ amount: 15000 }],
+  overheadCosts: [{ amount: 5000 }],
+  members: [{ reward_type: 'percentage', reward_percentage: 50 }],
+});
+assertMoney(projectAllocation.rewardBaseBudget, 24000, 'project reward base follows costs and allocated overhead');
+assertMoney(projectAllocation.teamRewards, 12000, 'project planned rewards use the shared reward base');
+assertMoney(projectAllocation.unallocatedBudget, 12000, 'project unallocated budget excludes planned rewards');
+
 const exhausted = calculateCostAdjustedTeamBudget({
   project,
   subcontractors,
@@ -160,6 +173,13 @@ assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 
 assertMoney(calculateRealizationMemberShare({ share_type: 'percent', share_value: 25 }, 12000), 3000, 'percentage realization share uses non-negative team budget');
 assertMoney(calculateRealizationMemberShare({ share_type: 'fixed', share_value: 50000 }, -1000), 0, 'fixed realization share is zero when team budget is exhausted');
 assertMoney(calculateRealizationMemberShare({ share_type: 'percent', share_value: 100 }, 12000), 12000, '100 percent realization share equals available budget');
+
+const realizationAllocation = calculateRealizationRewardAllocation([
+  { share_type: 'percent', share_value: 25 },
+  { share_type: 'fixed', share_value: 5000 },
+], 40000);
+assertMoney(realizationAllocation.distributedBudget, 15000, 'realization allocation combines percent and fixed shares');
+assertMoney(realizationAllocation.unallocatedBudget, 25000, 'realization unallocated budget uses the same shared calculation');
 
 assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: -1000, availableAmount: 0 }).status, 'loss');
 assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 20000, availableAmount: 10000, committedAmount: 25000 }).status, 'overallocated');

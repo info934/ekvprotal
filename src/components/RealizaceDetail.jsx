@@ -5,7 +5,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs";
-import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen, GanttChart, Wallet } from 'lucide-react';
+import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen, GanttChart, Wallet, FileText } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -32,6 +32,7 @@ import PlanningBoard from '@/components/PlanningBoard';
 import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
 import { RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
 import EkvLoader from '@/components/ui/ekv-loader';
+import { calculateRealizationRewardAllocation } from '@/domain/financials';
 
 const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
 const toNumber = (value) => {
@@ -266,6 +267,11 @@ const RealizaceDetail = () => {
     );
   }, [realization, totalRevenue, grandTotalCosts]);
 
+  const rewardAllocation = useMemo(() => calculateRealizationRewardAllocation(
+    financialSummary?.member_shares || [],
+    calculatedFinancials.teamBudget
+  ), [financialSummary?.member_shares, calculatedFinancials.teamBudget]);
+
   // --- Cost Handlers ---
   const handleSaveCost = async (costData) => {
     try {
@@ -420,9 +426,11 @@ const RealizaceDetail = () => {
 
           {canViewCosts && (
             <TabsContent value="finance" className="space-y-6">
-                <FinanceMetricStrip metrics={[
+                <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
                   { label: 'Výnos zakázky', value: <FinanceAmount value={totalRevenue} />, detail: 'Smlouva a schválené vícepráce', tone: 'neutral', icon: DollarSign },
                   { label: 'Skutečné náklady', value: <FinanceAmount value={grandTotalCosts} />, detail: 'Včetně vyplacených odměn', tone: 'neutral', icon: Download },
+                  { label: 'Nerozdělený budget', value: <FinanceAmount value={rewardAllocation.unallocatedBudget} />, detail: 'Po nákladech a naplánovaných podílech', tone: Number(rewardAllocation.unallocatedBudget || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
+                  { label: 'Režie realizace', value: <FinanceAmount value={calculatedFinancials.overheadAmount} />, detail: `${Number(realization.overhead_percent || 0).toLocaleString('cs-CZ')} % z výnosu`, tone: 'warning', icon: FileText },
                   { label: 'Rezervované výplaty', value: <FinanceAmount value={reservedPayouts} />, detail: 'Závazek, zatím ne náklad', tone: Number(reservedPayouts || 0) ? 'warning' : 'neutral', icon: Clock },
                   { label: 'Vyplacené odměny', value: <FinanceAmount value={paidPayoutCosts} />, detail: 'Součást skutečných nákladů', tone: 'neutral', icon: DollarSign },
                   { label: 'Plánovaná marže', value: <FinanceAmount value={calculatedFinancials.profitAmount} />, detail: `${Number(realization.profit_margin_percent || 0).toLocaleString('cs-CZ')} % z výnosu`, tone: Number(calculatedFinancials.profitAmount || 0) < 0 ? 'negative' : 'positive', icon: PieChart },
@@ -434,7 +442,7 @@ const RealizaceDetail = () => {
                   { label: 'Skutečné náklady', value: grandTotalCosts, barClassName: 'bg-amber-500' },
                   { label: 'Provozní zůstatek', value: profitAvailable, barClassName: Number(profitAvailable || 0) < 0 ? 'bg-red-500' : 'bg-emerald-500' },
                 ]} />
-                <FinanceDefinitionNote>Rezervované výplaty snižují dostupný limit. Ve skutečných nákladech jsou zahrnuté až po uzavření výplaty jako vyplacené.</FinanceDefinitionNote>
+                <FinanceDefinitionNote>Nerozdělený budget je týmový základ po skutečných nákladech a naplánovaných podílech. Režie zůstává oddělenou rezervou firmy; rezervované výplaty snižují dostupný limit, ale do skutečných nákladů vstoupí až po vyplacení.</FinanceDefinitionNote>
                 {canViewProfit && (
                   <Card>
                     <CardHeader className="pb-3">

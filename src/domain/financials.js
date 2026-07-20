@@ -92,6 +92,7 @@ export const calculateProjectFinancials = ({
   const totalAllocatedOverhead = sumByAmount(overheadCosts, (cost) => cost?.amount);
   const rewardBaseBudget = budget.teamBudget - unassignedCosts - totalAllocatedOverhead;
   const teamRewards = sumByAmount(members, (member) => calculateProjectMemberNetReward(member, rewardBaseBudget, costs));
+  const unallocatedBudget = rewardBaseBudget - teamRewards;
   const plannedMargin = budget.price - budget.totalBudget;
   const remainingAfterCosts = budget.teamBudget - unassignedCosts - totalAllocatedOverhead;
   const remainingOverheadBudget = budget.overheadBudget - totalAllocatedOverhead;
@@ -100,7 +101,9 @@ export const calculateProjectFinancials = ({
     ...budget,
     totalSubcontractorPrice: budget.subcontractorCosts,
     teamRewards,
-    remainingTeamBudget: budget.teamBudget - teamRewards,
+    rewardBaseBudget,
+    unallocatedBudget,
+    remainingTeamBudget: unallocatedBudget,
     totalCosts,
     unassignedCosts,
     assignedMemberCosts,
@@ -110,6 +113,24 @@ export const calculateProjectFinancials = ({
     totalAllocatedOverhead,
     remainingOverheadBudget,
     paidOutAmount: toAmount(paidOutAmount),
+  };
+};
+
+export const calculateRealizationRewardAllocation = (shares = [], teamBudget = 0) => {
+  const distributionBudget = toAmount(teamBudget);
+  const distributedBudget = sumByAmount(shares, (share) => {
+    const value = toAmount(share?.share_value);
+    return share?.share_type === 'percent'
+      ? distributionBudget * (value / 100)
+      : share?.share_type === 'fixed'
+        ? value
+        : 0;
+  });
+
+  return {
+    distributionBudget,
+    distributedBudget,
+    unallocatedBudget: distributionBudget - distributedBudget,
   };
 };
 
