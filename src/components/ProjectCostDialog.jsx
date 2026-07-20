@@ -164,7 +164,7 @@ const ProjectCostDialog = ({ isOpen, onClose, onSave, costData, projectId, membe
               }}
             />
             <p className="text-xs text-muted-foreground">
-              Originál se uloží do projektové složky 04_Fakturace. V centrálních fakturách vznikne pouze odkaz.
+              Originál se uloží do projektové složky nastavené administrátorem. V centrálních fakturách vznikne pouze odkaz.
             </p>
           </div>
           

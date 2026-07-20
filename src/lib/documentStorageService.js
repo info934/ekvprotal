@@ -42,6 +42,12 @@ const sanitizePathSegment = (value) => String(value || '')
   .replace(/^-+|-+$/g, '')
   .slice(0, 90) || 'item';
 
+const sanitizeRelativeFolderPath = (value, fallback) => String(value || fallback || '')
+  .split('/')
+  .map((segment) => sanitizePathSegment(segment))
+  .filter(Boolean)
+  .join('/');
+
 export const getDefaultStorageConnection = async () => {
   if (defaultConnectionCache && defaultConnectionCache.expiresAt > Date.now()) {
     return defaultConnectionCache.value;
@@ -253,6 +259,10 @@ export const uploadProjectDocument = async ({ file, project, documentName }) => 
 
 export const uploadProjectCostInvoice = async ({ file, project, costId, createCentralLink = true }) => {
   const connection = await getDefaultStorageConnection();
+  const configuredInvoiceFolder = sanitizeRelativeFolderPath(
+    connection.config?.targets?.project?.costInvoiceFolderPath,
+    '04_Fakturace',
+  );
   await ensureEntityFolder({
     entityType: 'project',
     entityId: project.id,
@@ -273,10 +283,10 @@ export const uploadProjectCostInvoice = async ({ file, project, costId, createCe
     entityId: project.id,
     code: project.code,
     name: project.name,
-  })}/04_Fakturace`;
+  })}/${configuredInvoiceFolder}`;
 
   if (connection.provider === 'supabase') {
-    const filePath = `${project.id}/04_Fakturace/${storedFileName}`;
+    const filePath = `${project.id}/${configuredInvoiceFolder}/${storedFileName}`;
     const { error } = await supabase.storage
       .from(PROJECT_BUCKET)
       .upload(filePath, file, { cacheControl: '3600', upsert: false });

@@ -31,11 +31,22 @@ const DEFAULT_STRUCTURES = {
   invoice: [],
 };
 
-const emptyTarget = { siteId: '', driveId: '', rootFolderId: '', rootFolderPath: '', structure: [] };
+const emptyTarget = {
+  siteId: '',
+  driveId: '',
+  rootFolderId: '',
+  rootFolderPath: '',
+  structure: [],
+  costInvoiceFolderPath: '',
+};
 
 const createDefaultTargets = () => Object.fromEntries(TARGETS.map(({ key }) => [
   key,
-  { ...emptyTarget, structure: [...(DEFAULT_STRUCTURES[key] || [])] },
+  {
+    ...emptyTarget,
+    structure: [...(DEFAULT_STRUCTURES[key] || [])],
+    costInvoiceFolderPath: key === 'project' ? '04_Fakturace' : '',
+  },
 ]));
 
 const defaultForm = {
@@ -66,6 +77,9 @@ const toForm = (connection) => {
       {
         ...emptyTarget,
         ...(config.targets?.[key] || {}),
+        costInvoiceFolderPath: key === 'project'
+          ? (config.targets?.[key]?.costInvoiceFolderPath || '04_Fakturace')
+          : '',
         structure: Array.isArray(config.targets?.[key]?.structure)
           ? config.targets[key].structure
           : [...(DEFAULT_STRUCTURES[key] || [])],
@@ -192,6 +206,9 @@ const SettingsStorage = () => {
       rootFolderId: form.targets[key].rootFolderId.trim(),
       rootFolderPath: form.targets[key].rootFolderPath.trim(),
       structure: form.targets[key].structure || [],
+      costInvoiceFolderPath: key === 'project'
+        ? String(form.targets[key].costInvoiceFolderPath || '04_Fakturace').trim().replace(/^\/+|\/+$/g, '')
+        : '',
     }]));
     targets.product = { ...targets.project, rootFolderPath: 'EKVPortal' };
 
@@ -367,6 +384,20 @@ const SettingsStorage = () => {
                           />
                           <p className="text-xs text-muted-foreground">
                             Jedna složka na řádek. Lomítkem vytvoříte podsložku. Změna se použije při přípravě nových projektů a realizací; existující složky se nemažou.
+                          </p>
+                        </div>
+                      )}
+                      {target.key === 'project' && (
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`${target.key}-cost-invoices`}>Cílová složka nákladových faktur</Label>
+                          <Input
+                            id={`${target.key}-cost-invoices`}
+                            value={form.targets[target.key].costInvoiceFolderPath || ''}
+                            onChange={(event) => updateTarget(target.key, 'costInvoiceFolderPath', event.target.value)}
+                            placeholder="04_Fakturace/Nakladove"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Relativní cesta uvnitř složky projektu. Chybějící podsložky se vytvoří při prvním nahrání faktury.
                           </p>
                         </div>
                       )}
