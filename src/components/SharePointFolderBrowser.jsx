@@ -58,7 +58,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
     return String(left.name || '').localeCompare(String(right.name || ''), 'cs');
   }), [items]);
 
-  const loadFolder = useCallback(async (folder, activeConnection) => {
+  const loadFolder = useCallback(async (folder, activeConnection, forceRefresh = false) => {
     if (!folder?.id || !activeConnection) return;
     setLoading(true);
     setError('');
@@ -67,6 +67,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
         entityType,
         folderId: folder.id,
         connection: activeConnection,
+        forceRefresh,
       });
       if (!result.supported) {
         setError('Procházení struktury je dostupné po připojení SharePointu.');
@@ -213,7 +214,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {currentFolder && (
-            <Button variant="outline" size="sm" onClick={() => loadFolder(currentFolder, connection)} disabled={loading}>
+            <Button variant="outline" size="sm" onClick={() => loadFolder(currentFolder, connection, true)} disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               <span className="sr-only">Obnovit</span>
             </Button>

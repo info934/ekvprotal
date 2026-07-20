@@ -3,6 +3,13 @@ import { supabase } from '@/lib/customSupabaseClient';
 const PROJECT_BUCKET = 'project-files';
 const INVOICE_BUCKET = 'invoices';
 const PRODUCT_DATASHEET_FOLDER = 'product-datasheets';
+const DEFAULT_CONNECTION_CACHE_TTL = 5 * 60 * 1000;
+const FOLDER_LIST_CACHE_TTL = 60 * 1000;
+
+let defaultConnectionCache = null;
+let defaultConnectionPromise = null;
+const folderListCache = new Map();
+const folderListRequests = new Map();
 
 const MISSING_STORAGE_CONFIG_CODES = new Set(['42P01', '42703', 'PGRST116', 'PGRST204', 'PGRST205']);
 
@@ -36,18 +43,35 @@ const sanitizePathSegment = (value) => String(value || '')
   .slice(0, 90) || 'item';
 
 export const getDefaultStorageConnection = async () => {
-  const { data, error } = await supabase
-    .from('document_storage_connections')
-    .select('*')
-    .eq('is_default', true)
-    .maybeSingle();
-
-  if (error) {
-    if (isStorageConfigMissingError(error)) return fallbackConnection;
-    throw error;
+  if (defaultConnectionCache && defaultConnectionCache.expiresAt > Date.now()) {
+    return defaultConnectionCache.value;
   }
 
-  return data || fallbackConnection;
+  if (!defaultConnectionPromise) {
+    defaultConnectionPromise = supabase
+      .from('document_storage_connections')
+      .select('*')
+      .eq('is_default', true)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error && !isStorageConfigMissingError(error)) throw error;
+        const value = data || fallbackConnection;
+        defaultConnectionCache = {
+          value,
+          expiresAt: Date.now() + DEFAULT_CONNECTION_CACHE_TTL,
+        };
+        return value;
+      })
+      .finally(() => {
+        defaultConnectionPromise = null;
+      });
+  }
+
+  return defaultConnectionPromise;
+};
+
+export const invalidateStorageConnectionCache = () => {
+  defaultConnectionCache = null;
 };
 
 export const buildEntityFolderPath = ({ entityType, entityId, code, name }) => {
@@ -365,7 +389,14 @@ export const getEntityStorageFolder = async ({ entityType, entityId }) => {
   return data ? { ...data, connection } : null;
 };
 
-export const listEntityStorageFolder = async ({ entityType, folderId, connection }) => {
+const getFolderCacheKey = ({ entityType, folderId, connection }) =>
+  `${connection?.id || connection?.provider || 'storage'}:${entityType}:${folderId}`;
+
+export const invalidateEntityStorageFolderCache = ({ entityType, folderId, connection }) => {
+  folderListCache.delete(getFolderCacheKey({ entityType, folderId, connection }));
+};
+
+const listEntityStorageFolderUncached = async ({ entityType, folderId, connection }) => {
   if (!connection || connection.provider === 'supabase') {
     return { items: [], provider: connection?.provider || 'supabase', supported: false };
   }
@@ -383,6 +414,25 @@ export const listEntityStorageFolder = async ({ entityType, folderId, connection
   if (error) throw error;
   if (data?.success === false) throw new Error(data.error || 'Obsah složky se nepodařilo načíst.');
   return { items: data.items || [], provider: connection.provider, supported: true };
+};
+
+export const listEntityStorageFolder = async ({ entityType, folderId, connection, forceRefresh = false }) => {
+  const cacheKey = getFolderCacheKey({ entityType, folderId, connection });
+  const cached = folderListCache.get(cacheKey);
+  if (!forceRefresh && cached?.expiresAt > Date.now()) return cached.value;
+  if (!forceRefresh && folderListRequests.has(cacheKey)) return folderListRequests.get(cacheKey);
+
+  const request = listEntityStorageFolderUncached({ entityType, folderId, connection })
+    .then((value) => {
+      folderListCache.set(cacheKey, { value, expiresAt: Date.now() + FOLDER_LIST_CACHE_TTL });
+      return value;
+    })
+    .finally(() => {
+      folderListRequests.delete(cacheKey);
+    });
+
+  folderListRequests.set(cacheKey, request);
+  return request;
 };
 
 export const uploadEntityStorageFile = async ({ entityType, entityId, folderId, file, connection }) => {
@@ -407,6 +457,7 @@ export const uploadEntityStorageFile = async ({ entityType, entityId, folderId, 
 
   if (error) throw error;
   if (data?.success === false) throw new Error(data.error || 'Soubor se nepodařilo nahrát.');
+  invalidateEntityStorageFolderCache({ entityType, folderId, connection });
   return data;
 };
 

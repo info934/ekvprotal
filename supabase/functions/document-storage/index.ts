@@ -28,6 +28,9 @@ type StorageConnection = {
 };
 
 const GRAPH_ROOT = 'https://graph.microsoft.com/v1.0';
+const GRAPH_TOKEN_EXPIRY_BUFFER_MS = 60_000;
+let graphTokenCache: { token: string; expiresAt: number } | null = null;
+let graphTokenRequest: Promise<string> | null = null;
 const ALLOWED_ENTITY_TYPES = new Set<EntityType>(['project', 'realizace', 'product', 'invoice']);
 const ENTITY_PERMISSION_MODULES: Record<EntityType, string[]> = {
   project: ['projects', 'documents'],
@@ -63,6 +66,11 @@ const graphError = async (response: Response) => {
 };
 
 const getGraphToken = async () => {
+  if (graphTokenCache && graphTokenCache.expiresAt > Date.now() + GRAPH_TOKEN_EXPIRY_BUFFER_MS) {
+    return graphTokenCache.token;
+  }
+  if (graphTokenRequest) return graphTokenRequest;
+
   const tenantId = Deno.env.get('MS_GRAPH_TENANT_ID');
   const clientId = Deno.env.get('MS_GRAPH_CLIENT_ID');
   const clientSecret = Deno.env.get('MS_GRAPH_CLIENT_SECRET');
@@ -71,20 +79,31 @@ const getGraphToken = async () => {
     throw new Error('SharePoint credentials are not configured in Supabase secrets.');
   }
 
-  const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      grant_type: 'client_credentials',
-      scope: 'https://graph.microsoft.com/.default',
-    }),
+  graphTokenRequest = (async () => {
+    const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials',
+        scope: 'https://graph.microsoft.com/.default',
+      }),
+    });
+
+    if (!response.ok) throw await graphError(response);
+    const data = await response.json();
+    const token = String(data.access_token);
+    graphTokenCache = {
+      token,
+      expiresAt: Date.now() + Math.max(Number(data.expires_in || 3600) * 1000, 60_000),
+    };
+    return token;
+  })().finally(() => {
+    graphTokenRequest = null;
   });
 
-  if (!response.ok) throw await graphError(response);
-  const data = await response.json();
-  return String(data.access_token);
+  return graphTokenRequest;
 };
 
 const graphFetch = async (token: string, path: string, init: RequestInit = {}) => {

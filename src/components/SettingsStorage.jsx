@@ -12,7 +12,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
-import { isStorageConfigMissingError, storageProviderLabels } from '@/lib/documentStorageService';
+import {
+  invalidateStorageConnectionCache,
+  isStorageConfigMissingError,
+  storageProviderLabels,
+} from '@/lib/documentStorageService';
 import { getGoogleDriveAuthorizationUrl, getGoogleDriveEsignStatus } from '@/lib/googleDriveEsignService';
 
 const TARGETS = [
@@ -201,6 +205,7 @@ const SettingsStorage = () => {
     }
 
     toast({ title: 'Nastavení SharePointu bylo uloženo' });
+    invalidateStorageConnectionCache();
     setSelectedId(data.id);
     await fetchConnections();
     setSaving(false);
