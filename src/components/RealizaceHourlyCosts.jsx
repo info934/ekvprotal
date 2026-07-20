@@ -31,7 +31,10 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
             if (!realizaceId) return;
             setLoading(true);
             try {
-                const memberSelect = 'members(name)';
+                // Attendance has both member_id and sponsor_member_id_snapshot
+                // foreign keys to members. Select the worker relationship
+                // explicitly so PostgREST does not reject the embed as ambiguous.
+                const memberSelect = 'members:members!attendance_member_id_fkey(name)';
                 // 1. Fetch direct attendance on this Realization
                 const { data: directData, error: directError } = await supabase
                     .from('attendance')
