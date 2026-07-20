@@ -183,33 +183,46 @@ const ensurePath = async (token: string, target: StorageTarget, folderPath: stri
 };
 
 const ensureStructure = async (token: string, target: StorageTarget, baseFolderId: string) => {
-  const created: Array<{ id: string; name: string; webUrl?: string }> = [];
-  for (const folderName of target.structure || []) {
-    let item = await getChildByName(token, String(target.driveId), baseFolderId, folderName);
+  const created: Array<{ id: string; name: string; path: string; webUrl?: string }> = [];
+  const knownFolders = new Map<string, { id: string; name: string; webUrl?: string }>();
 
-    if (!item) {
-      try {
-        item = await graphFetch(
-          token,
-          `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(baseFolderId)}/children`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: safeSegment(folderName),
-              folder: {},
-              '@microsoft.graph.conflictBehavior': 'fail',
-            }),
-          },
-        );
-      } catch (error) {
-        if ((error as { status?: number }).status !== 409) throw error;
-        item = await getChildByName(token, String(target.driveId), baseFolderId, folderName);
-        if (!item) throw error;
+  for (const configuredPath of target.structure || []) {
+    const segments = String(configuredPath).split('/').map(safeSegment).filter(Boolean);
+    let parentId = baseFolderId;
+    let currentPath = '';
+    let item: { id: string; name: string; webUrl?: string } | null = null;
+
+    for (const segment of segments) {
+      currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+      item = knownFolders.get(currentPath) || await getChildByName(token, String(target.driveId), parentId, segment);
+
+      if (!item) {
+        try {
+          item = await graphFetch(
+            token,
+            `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(parentId)}/children`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: segment,
+                folder: {},
+                '@microsoft.graph.conflictBehavior': 'fail',
+              }),
+            },
+          );
+        } catch (error) {
+          if ((error as { status?: number }).status !== 409) throw error;
+          item = await getChildByName(token, String(target.driveId), parentId, segment);
+          if (!item) throw error;
+        }
       }
+
+      knownFolders.set(currentPath, item);
+      parentId = item.id;
     }
 
-    created.push({ id: item.id, name: item.name, webUrl: item.webUrl });
+    if (item) created.push({ id: item.id, name: item.name, path: currentPath, webUrl: item.webUrl });
   }
   return created;
 };
@@ -299,7 +312,7 @@ Deno.serve(async (req: Request) => {
         externalFolderId: result.item.id,
         folderPath: result.folderPath,
         webUrl: result.item.webUrl,
-        metadata: { driveId: target.driveId, siteId: target.siteId, structure, structureVersion: 1 },
+        metadata: { driveId: target.driveId, siteId: target.siteId, structure, structureVersion: 2 },
       });
     }
 

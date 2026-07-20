@@ -25,7 +25,18 @@ const TARGETS = [
   { key: 'invoice', label: 'Faktury', description: 'Centrální účetní složka faktur' },
 ];
 
-const emptyTarget = { siteId: '', driveId: '', rootFolderId: '', rootFolderPath: '' };
+const DEFAULT_STRUCTURES = {
+  project: ['00_Admin', '01_Smlouvy', '02_Dokumentace', '03_Predani', '04_Fakturace'],
+  realizace: ['00_Admin', '01_Objednavky', '02_Naklady', '03_Fotodokumentace', '04_Predani', '05_Fakturace'],
+  invoice: [],
+};
+
+const emptyTarget = { siteId: '', driveId: '', rootFolderId: '', rootFolderPath: '', structure: [] };
+
+const createDefaultTargets = () => Object.fromEntries(TARGETS.map(({ key }) => [
+  key,
+  { ...emptyTarget, structure: [...(DEFAULT_STRUCTURES[key] || [])] },
+]));
 
 const defaultForm = {
   provider: 'sharepoint',
@@ -33,7 +44,7 @@ const defaultForm = {
   status: 'active',
   tenantId: '',
   notes: '',
-  targets: Object.fromEntries(TARGETS.map(({ key }) => [key, { ...emptyTarget }])),
+  targets: createDefaultTargets(),
 };
 
 const providerHelp = {
@@ -52,7 +63,13 @@ const toForm = (connection) => {
     notes: config.notes || '',
     targets: Object.fromEntries(TARGETS.map(({ key }) => [
       key,
-      { ...emptyTarget, ...(config.targets?.[key] || {}) },
+      {
+        ...emptyTarget,
+        ...(config.targets?.[key] || {}),
+        structure: Array.isArray(config.targets?.[key]?.structure)
+          ? config.targets[key].structure
+          : [...(DEFAULT_STRUCTURES[key] || [])],
+      },
     ])),
   };
 };
@@ -156,22 +173,25 @@ const SettingsStorage = () => {
     },
   }));
 
+  const updateTargetStructure = (targetKey, value) => {
+    const structure = value
+      .split('\n')
+      .map((folder) => folder.trim().replace(/^\/+|\/+$/g, ''))
+      .filter((folder, index, folders) => folder && folders.indexOf(folder) === index);
+    updateTarget(targetKey, 'structure', structure);
+  };
+
   const saveConnection = async () => {
     if (!hasPermission('settings', 'can_admin')) return;
     setSaving(true);
 
-    const structures = {
-      project: ['00_Admin', '01_Smlouvy', '02_Dokumentace', '03_Predani', '04_Fakturace'],
-      realizace: ['00_Admin', '01_Objednavky', '02_Naklady', '03_Fotodokumentace', '04_Predani', '05_Fakturace'],
-      invoice: [],
-    };
     const targets = Object.fromEntries(TARGETS.map(({ key }) => [key, {
       ...form.targets[key],
       siteId: form.targets[key].siteId.trim(),
       driveId: form.targets[key].driveId.trim(),
       rootFolderId: form.targets[key].rootFolderId.trim(),
       rootFolderPath: form.targets[key].rootFolderPath.trim(),
-      structure: structures[key],
+      structure: form.targets[key].structure || [],
     }]));
     targets.product = { ...targets.project, rootFolderPath: 'EKVPortal' };
 
@@ -334,6 +354,22 @@ const SettingsStorage = () => {
                         <Label htmlFor={`${target.key}-root`}>Kořenová cesta</Label>
                         <Input id={`${target.key}-root`} value={form.targets[target.key].rootFolderPath} onChange={(event) => updateTarget(target.key, 'rootFolderPath', event.target.value)} placeholder="EKVPortal" />
                       </div>
+                      {target.key !== 'invoice' && (
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`${target.key}-structure`}>Struktura nových složek</Label>
+                          <Textarea
+                            id={`${target.key}-structure`}
+                            rows={7}
+                            value={(form.targets[target.key].structure || []).join('\n')}
+                            onChange={(event) => updateTargetStructure(target.key, event.target.value)}
+                            placeholder={'00_Admin\n01_Smlouvy\n02_Dokumentace/01_Vstupy'}
+                            className="font-mono text-xs"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Jedna složka na řádek. Lomítkem vytvoříte podsložku. Změna se použije při přípravě nových projektů a realizací; existující složky se nemažou.
+                          </p>
+                        </div>
+                      )}
                       <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => testConnection(target.key)} disabled={testingTarget === target.key || selectedId === 'new'}>
                         <TestTube2 className="mr-2 h-4 w-4" />
                         {testingTarget === target.key ? 'Ověřuji...' : 'Otestovat přístup'}
