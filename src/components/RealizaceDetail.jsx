@@ -17,6 +17,7 @@ import RealizaceOrdersTab from './RealizaceOrdersTab';
 import RealizaceHourlyCosts from './RealizaceHourlyCosts';
 import RealizaceProfitSharing from './RealizaceProfitSharing';
 import RealizaceExtraCosts from './RealizaceExtraCosts';
+import EditablePercentageField from './EditablePercentageField';
 import HandoverProtocolsTab from './HandoverProtocolsTab';
 import SharePointFolderBrowser from '@/components/SharePointFolderBrowser';
 import { RealizaceCostDialog } from './RealizaceFinancials';
@@ -78,12 +79,10 @@ const RealizaceDetail = () => {
     'overview',
     'plan',
     ...(canViewCosts ? ['finance'] : []),
-    'hourly',
     'orders',
     'documents',
     'handover',
-    ...(canViewProfit ? ['profit'] : []),
-  ], [canViewCosts, canViewProfit]);
+  ], [canViewCosts]);
   const requestedTab = location.hash.substring(1);
   const activeTab = availableTabs.includes(requestedTab) ? requestedTab : 'overview';
   const setActiveTab = useCallback((value) => navigate(`#${value}`, { replace: true }), [navigate]);
@@ -380,62 +379,30 @@ const RealizaceDetail = () => {
       />
 
       <div className="app-page-wide">
-        {canViewAmounts && (
-          <div className="mb-4">
-            <FinancialHealthAlert
-              baseAmount={totalRevenue}
-              remainingAmount={calculatedFinancials.teamBudget}
-              availableAmount={financialSummary
-                ? toNumber(financialSummary.available_for_payout) + paidHourlyPayouts - toNumber(laborFinancialSummary?.direct_project_cost)
-                : calculatedFinancials.teamBudget}
-            />
-          </div>
-        )}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
           <RecordWorkspaceTabsList>
             <TabsTrigger value="overview" className="flex items-center gap-2"><LayoutDashboard className="w-4 h-4" /> Přehled</TabsTrigger>
             <TabsTrigger value="plan" className="flex items-center gap-2"><GanttChart className="w-4 h-4" /> Plán</TabsTrigger>
-            {canViewCosts && <TabsTrigger value="finance" className="flex items-center gap-2"><DollarSign className="w-4 h-4" /> Náklady & Finance</TabsTrigger>}
-            <TabsTrigger value="hourly" className="flex items-center gap-2"><Clock className="w-4 h-4" /> Hodinové náklady</TabsTrigger>
+            {canViewCosts && <TabsTrigger value="finance" className="flex items-center gap-2"><DollarSign className="w-4 h-4" /> Finance</TabsTrigger>}
             <TabsTrigger value="orders" className="flex items-center gap-2"><ShoppingCart className="w-4 h-4" /> Objednávky</TabsTrigger>
             <TabsTrigger value="documents" className="flex items-center gap-2"><FolderOpen className="w-4 h-4" /> Dokumenty</TabsTrigger>
             <TabsTrigger value="handover" className="flex items-center gap-2"><FileSignature className="w-4 h-4" /> Předání</TabsTrigger>
-            {canViewProfit && (
-              <TabsTrigger value="profit" className="flex items-center gap-2"><PieChart className="w-4 h-4" /> Zisk</TabsTrigger>
-            )}
           </RecordWorkspaceTabsList>
 
           <TabsContent value="overview">
             <div className="space-y-6">
+              {canViewAmounts && (
+                <FinancialHealthAlert
+                  baseAmount={totalRevenue}
+                  remainingAmount={calculatedFinancials.teamBudget}
+                  availableAmount={financialSummary
+                    ? toNumber(financialSummary.available_for_payout) + paidHourlyPayouts - toNumber(laborFinancialSummary?.direct_project_cost)
+                    : calculatedFinancials.teamBudget}
+                />
+              )}
               <RealizaceOverview
                 realization={realization}
-                costStats={{
-                totalRecordedCosts: totalManualCosts,
-                hourlyCosts: effectiveHourlyCostsTotal,
-                extraCosts: totalExtraCostsCost,
-                grandTotal: grandTotalCosts,
-                costsBeforePaidPayouts,
-                paidPayoutCosts,
-                reservedPayouts,
-                costCount: costs.length,
-                extraCostsSale: totalExtraCostsSale
-              }}
-              financialSnapshot={{
-                baseContractAmount: contractAmountBase,
-                contractAmount: totalRevenue,
-                actualCost: grandTotalCosts,
-                profitAvailable: profitAvailable, // Legacy
-                profitPercentage: totalRevenue > 0 ? (profitAvailable / totalRevenue) * 100 : 0,
-                // New financial model data
-                teamBudget: calculatedFinancials.teamBudget,
-                profitAmount: calculatedFinancials.profitAmount,
-                overheadAmount: calculatedFinancials.overheadAmount,
-                totalCosts: calculatedFinancials.totalCosts,
-                paidPayoutCosts,
-                reservedPayouts
-              }}
-                loading={hourlyLoading}
-                onRealizationUpdate={handleRealizationUpdate}
+                financialSnapshot={{ teamBudget: calculatedFinancials.teamBudget }}
               />
               {userRole === 'admin' && (
                 <BillingOverviewSummary
@@ -468,7 +435,33 @@ const RealizaceDetail = () => {
                   { label: 'Provozní zůstatek', value: profitAvailable, barClassName: Number(profitAvailable || 0) < 0 ? 'bg-red-500' : 'bg-emerald-500' },
                 ]} />
                 <FinanceDefinitionNote>Rezervované výplaty snižují dostupný limit. Ve skutečných nákladech jsou zahrnuté až po uzavření výplaty jako vyplacené.</FinanceDefinitionNote>
-                {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} enableContractAnalysis />}
+                {canViewProfit && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Nastavení finančního modelu</CardTitle>
+                      <CardDescription>Parametry se nastavují pouze zde a promítají se do souhrnu i rozdělení odměn.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 md:grid-cols-2">
+                      <EditablePercentageField
+                        realizaceId={realizaceId}
+                        fieldName="profit_margin_percent"
+                        currentValue={realization.profit_margin_percent || 0}
+                        onUpdate={(value) => handleRealizationUpdate({ ...realization, profit_margin_percent: value })}
+                        label="Plánovaná marže"
+                        canEdit={canEdit}
+                      />
+                      <EditablePercentageField
+                        realizaceId={realizaceId}
+                        fieldName="overhead_percent"
+                        currentValue={realization.overhead_percent || 0}
+                        onUpdate={(value) => handleRealizationUpdate({ ...realization, overhead_percent: value })}
+                        label="Režie firmy"
+                        canEdit={canEdit}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+                {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} enableContractAnalysis showFinancialSummary={false} />}
                 <RealizaceExtraCosts
                   realizaceId={realizaceId}
                   extraCosts={extraCosts}
@@ -488,7 +481,7 @@ const RealizaceDetail = () => {
                     )}
                   </CardHeader>
                   <CardContent>
-                    <div className="flex flex-col md:flex-row md:items-center mb-4 gap-4">
+                    <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
                       <div className="relative w-full max-w-sm">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
@@ -498,27 +491,9 @@ const RealizaceDetail = () => {
                           onChange={e => setCostSearch(e.target.value)}
                         />
                       </div>
-                      <div className="md:ml-auto flex items-center gap-4 text-sm flex-wrap">
-                        <div className="bg-slate-100 px-3 py-1 rounded">
-                          <span className="text-muted-foreground">Manuální:</span> <span className="font-bold">{formatCurrency(totalManualCosts)}</span>
-                        </div>
-                        <div className="bg-orange-50 px-3 py-1 rounded text-orange-700">
-                          <span className="text-muted-foreground">Vícenáklady:</span> <span className="font-bold">{formatCurrency(totalExtraCostsCost)}</span>
-                        </div>
-                        <div className="bg-blue-50 px-3 py-1 rounded text-blue-700">
-                          <span className="text-muted-foreground">Hodinová mzda evid.:</span> <span className="font-bold">{hourlyLoading && !hasFinancialSummary ? '...' : formatCurrency(effectiveHourlyCostsTotal)}</span>
-                        </div>
-                        <div className="bg-amber-50 px-3 py-1 rounded text-amber-700">
-                          <span className="text-muted-foreground">Rezervováno:</span> <span className="font-bold">{formatCurrency(reservedPayouts)}</span>
-                        </div>
-                        <div className="bg-rose-50 px-3 py-1 rounded text-rose-700">
-                          <span className="text-muted-foreground">Paid výplaty:</span> <span className="font-bold">{formatCurrency(paidPayoutCosts)}</span>
-                          <span className="ml-2 text-xs text-rose-600">úkolové {formatCurrency(paidTaskPayouts)} / hodinové {formatCurrency(paidHourlyPayouts)}</span>
-                        </div>
-                        <div className="bg-green-50 px-3 py-1 rounded text-green-700 border border-green-200">
-                          <span className="font-medium mr-1">NÁKLADY PO PAID:</span>
-                          <span className="font-bold text-lg">{hourlyLoading && !hasFinancialSummary ? '...' : formatCurrency(grandTotalCosts)}</span>
-                        </div>
+                      <div className="flex items-center gap-3 text-xs text-slate-500 md:ml-auto">
+                        <span>{filteredCosts.length} záznamů</span>
+                        <span className="font-semibold text-slate-900">Manuální náklady {formatCurrency(totalManualCosts)}</span>
                       </div>
                     </div>
 
@@ -585,6 +560,34 @@ const RealizaceDetail = () => {
                   </CardContent>
                 </Card>
 
+                <section className="space-y-4 border-t border-slate-200 pt-5">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-950">Hodinové náklady</h3>
+                    <p className="mt-1 text-sm text-slate-500">Detail odpracovaného času je součástí nákladů realizace a již nemá samostatnou hlavní záložku.</p>
+                  </div>
+                  <RealizaceHourlyCosts
+                    realizaceId={realizaceId}
+                    linkedProjectId={linkedProjectId}
+                    onLinkProject={handleLinkProjectUpdate}
+                    distributionAmount={calculatedFinancials.teamBudget}
+                  />
+                </section>
+
+                {canViewProfit && (
+                  <section className="space-y-4 border-t border-slate-200 pt-5">
+                    <div>
+                      <h3 className="text-base font-semibold text-slate-950">Rozdělení výsledku a odměn</h3>
+                      <p className="mt-1 text-sm text-slate-500">Administrační detail odměn navazuje na stejný finanční základ jako souhrn výše.</p>
+                    </div>
+                    <RealizaceProfitSharing
+                      realizaceId={realizaceId}
+                      distributionAmount={calculatedFinancials.teamBudget}
+                      sponsorDeductions={laborFinancialSummary?.sponsor_deductions || []}
+                      isCompleted={realization.status === 'Dokončeno'}
+                    />
+                  </section>
+                )}
+
                 <RealizaceCostDialog
                   isOpen={isCostDialogOpen}
                   onClose={() => setIsCostDialogOpen(false)}
@@ -593,15 +596,6 @@ const RealizaceDetail = () => {
                 />
             </TabsContent>
           )}
-
-          <TabsContent value="hourly">
-            <RealizaceHourlyCosts
-              realizaceId={realizaceId}
-              linkedProjectId={linkedProjectId}
-              onLinkProject={handleLinkProjectUpdate}
-              distributionAmount={calculatedFinancials.teamBudget}
-            />
-          </TabsContent>
 
           <TabsContent value="orders">
             <RealizaceOrdersTab
@@ -628,16 +622,6 @@ const RealizaceDetail = () => {
             />
           </TabsContent>
 
-          {canViewProfit && (
-            <TabsContent value="profit">
-              <RealizaceProfitSharing
-                realizaceId={realizaceId}
-                distributionAmount={calculatedFinancials.teamBudget}
-                sponsorDeductions={laborFinancialSummary?.sponsor_deductions || []}
-                isCompleted={realization.status === 'Dokončeno'}
-              />
-            </TabsContent>
-          )}
         </Tabs>
       </div>
     </div>

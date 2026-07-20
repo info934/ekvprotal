@@ -68,7 +68,7 @@ const emptyMilestoneForm = {
   percent_of_contract: '', note: '',
 };
 
-const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractAnalysis = false }) => {
+const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractAnalysis = false, showFinancialSummary = true }) => {
   const { toast } = useToast();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -396,20 +396,24 @@ const BillingTracker = ({ entityType, entityId, onSummaryChange, enableContractA
         </Alert>
       )}
 
-      <FinanceMetricStrip metrics={[
-        { label: 'Hodnota zakázky s DPH', value: money(summary?.contract_amount), tone: 'neutral' },
-        { label: 'Plán fakturace s DPH', value: money(summary?.planned_amount), detail: planDiff === 0 ? 'Plán odpovídá zakázce' : `Odchylka ${money(planDiff)}`, tone: planDiff === 0 ? 'plan' : 'warning' },
-        { label: 'Vystaveno s DPH', value: money(summary?.invoiced_amount), detail: percent(summary?.invoice_coverage_percent), tone: 'plan' },
-        { label: 'Uhrazeno', value: money(summary?.paid_amount), detail: percent(summary?.payment_coverage_percent), tone: 'positive' },
-        { label: 'Zbývá uhradit', value: money(Math.max(0, Number(summary?.contract_amount || 0) - Number(summary?.paid_amount || 0))), tone: Number(summary?.overdue_milestone_count || 0) ? 'warning' : 'neutral' },
-      ]} className="2xl:grid-cols-5" />
+      {showFinancialSummary && (
+        <>
+          <FinanceMetricStrip metrics={[
+            { label: 'Hodnota zakázky s DPH', value: money(summary?.contract_amount), tone: 'neutral' },
+            { label: 'Plán fakturace s DPH', value: money(summary?.planned_amount), detail: planDiff === 0 ? 'Plán odpovídá zakázce' : `Odchylka ${money(planDiff)}`, tone: planDiff === 0 ? 'plan' : 'warning' },
+            { label: 'Vystaveno s DPH', value: money(summary?.invoiced_amount), detail: percent(summary?.invoice_coverage_percent), tone: 'plan' },
+            { label: 'Uhrazeno', value: money(summary?.paid_amount), detail: percent(summary?.payment_coverage_percent), tone: 'positive' },
+            { label: 'Zbývá uhradit', value: money(Math.max(0, Number(summary?.contract_amount || 0) - Number(summary?.paid_amount || 0))), tone: Number(summary?.overdue_milestone_count || 0) ? 'warning' : 'neutral' },
+          ]} className="2xl:grid-cols-5" />
 
-      <FinanceStageFlow stages={[
-        { label: 'Hodnota zakázky', value: summary?.contract_amount, barClassName: 'bg-slate-500' },
-        { label: 'Naplánováno', value: summary?.planned_amount, barClassName: 'bg-blue-500' },
-        { label: 'Vystaveno', value: summary?.invoiced_amount, barClassName: 'bg-indigo-500' },
-        { label: 'Uhrazeno', value: summary?.paid_amount, barClassName: 'bg-emerald-500' },
-      ]} />
+          <FinanceStageFlow stages={[
+            { label: 'Hodnota zakázky', value: summary?.contract_amount, barClassName: 'bg-slate-500' },
+            { label: 'Naplánováno', value: summary?.planned_amount, barClassName: 'bg-blue-500' },
+            { label: 'Vystaveno', value: summary?.invoiced_amount, barClassName: 'bg-indigo-500' },
+            { label: 'Uhrazeno', value: summary?.paid_amount, barClassName: 'bg-emerald-500' },
+          ]} />
+        </>
+      )}
       <FinanceDefinitionNote>Dostupnost výplat se počítá ze skutečně uhrazených faktur. Plánovaná ani pouze vystavená částka sama o sobě nezvyšuje limit pro výplatu.</FinanceDefinitionNote>
 
       <Tabs defaultValue="milestones" className="space-y-3">

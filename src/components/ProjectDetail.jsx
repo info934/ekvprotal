@@ -43,6 +43,7 @@ import { uploadProjectCostInvoice } from '@/lib/documentStorageService';
 import PlanningBoard from '@/components/PlanningBoard';
 import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
 import { RecordMetricGrid, RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
+import { RecordAttentionList, RecordOverviewGrid, RecordOverviewItem, RecordOverviewPanel } from '@/components/ui/record-overview';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
   const tone = color === 'success' ? 'emerald' : color === 'warning' ? 'amber' : color === 'danger' ? 'rose' : color === 'info' ? 'blue' : 'slate';
@@ -79,127 +80,9 @@ const InfoCard = ({ label, value, subValue, icon: Icon, isLink = false, to = '#'
     </div>
 );
 
-const ProjectDashboardPanel = ({ canViewFinance, financials, project, progress, taskStats, members, subcontractors }) => {
-    const hasCompletionDate = Boolean(project.completion_date);
-    const completionLabel = hasCompletionDate ? format(parseISO(project.completion_date), 'd. M. yyyy') : 'Bez termínu';
-    const taskCompletion = taskStats.total ? Math.round((taskStats.done / taskStats.total) * 100) : 0;
-    const remainingTeamBudget = toAmount(financials?.remainingTeamBudget);
-    const financeTone = remainingTeamBudget < 0 ? 'text-red-700 bg-red-50 border-red-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
-
-    return (
-        <div className="mb-8 grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
-            <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-200 px-5 py-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <h2 className="text-base font-semibold text-slate-950">Projektový dashboard</h2>
-                            <p className="mt-1 text-sm text-slate-500">Rychlý stav úkolů, termínů a obsazení projektu.</p>
-                        </div>
-                        <Badge variant="outline" className="w-fit rounded-full border-slate-200 bg-slate-50 px-3 py-1 text-slate-700">
-                            {project.stage?.name || 'Bez stupně dokumentace'}
-                        </Badge>
-                    </div>
-                </div>
-                <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_260px]">
-                    <div className="space-y-5">
-                        <div>
-                            <div className="mb-2 flex items-center justify-between gap-3">
-                                <span className="text-sm font-semibold text-slate-700">Dokončení úkolů</span>
-                                <span className="text-sm font-bold tabular-nums text-slate-950">{taskCompletion}%</span>
-                            </div>
-                            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                                <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${taskCompletion}%` }} />
-                            </div>
-                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                                <span>{taskStats.done} hotovo</span>
-                                <span>{taskStats.open} otevřeno</span>
-                                <span>{taskStats.overdue} po termínu</span>
-                            </div>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tým</div>
-                                <div className="mt-1 text-xl font-bold text-slate-950">{members.length}</div>
-                                <div className="text-xs text-slate-500">interních členů</div>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Subdodavatelé</div>
-                                <div className="mt-1 text-xl font-bold text-slate-950">{subcontractors.length}</div>
-                                <div className="text-xs text-slate-500">externích partnerů</div>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Termín</div>
-                                <div className="mt-1 text-xl font-bold text-slate-950">{completionLabel}</div>
-                                <div className="text-xs text-slate-500">{hasCompletionDate ? 'plánované dokončení' : 'doplnit v projektu'}</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
-                        <div className="flex items-center gap-2">
-                            <Target className="h-4 w-4 text-blue-600" />
-                            <h3 className="text-sm font-semibold text-slate-950">Rizika a pozornost</h3>
-                        </div>
-                        <div className="mt-4 space-y-3">
-                            <div className="flex items-center justify-between gap-3 text-sm">
-                                <span className="text-slate-500">Úkoly po termínu</span>
-                                <Badge variant="outline" className={cn("rounded-full", taskStats.overdue ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700")}>{taskStats.overdue}</Badge>
-                            </div>
-                            <div className="flex items-center justify-between gap-3 text-sm">
-                                <span className="text-slate-500">Bez termínu</span>
-                                <Badge variant="outline" className="rounded-full border-slate-200 bg-white text-slate-700">{taskStats.withoutDate}</Badge>
-                            </div>
-                            <div className="flex items-center justify-between gap-3 text-sm">
-                                <span className="text-slate-500">Celkový progress</span>
-                                <span className="font-semibold text-slate-950">{progress}%</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex items-center gap-2">
-                    <DollarSign className="h-4 w-4 text-emerald-600" />
-                    <h2 className="text-base font-semibold text-slate-950">Finance projektu</h2>
-                </div>
-                {canViewFinance ? (
-                    <div className="mt-4 space-y-3">
-                        <div className={cn("rounded-lg border p-3", financeTone)}>
-                            <div className="text-xs font-semibold uppercase tracking-wide">Zbývá týmu</div>
-                            <div className="mt-1 text-2xl font-bold tabular-nums">{remainingTeamBudget.toLocaleString('cs-CZ')} Kč</div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                                <div className="text-xs text-slate-500">Budget týmu</div>
-                                <div className="mt-1 font-bold tabular-nums text-slate-950">{toAmount(financials?.teamBudget).toLocaleString('cs-CZ')} Kč</div>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                                <div className="text-xs text-slate-500">Vyplaceno</div>
-                                <div className="mt-1 font-bold tabular-nums text-slate-950">{toAmount(financials?.paidOutAmount).toLocaleString('cs-CZ')} Kč</div>
-                            </div>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                            <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
-                                <span>Rezervováno / vyplaceno</span>
-                                <span>{toAmount(financials?.reservedOrPaidPayouts).toLocaleString('cs-CZ')} Kč</span>
-                            </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-white">
-                                <div
-                                    className="h-full rounded-full bg-emerald-500"
-                                    style={{ width: `${Math.max(0, Math.min(100, toAmount(financials?.teamBudget) ? (toAmount(financials?.reservedOrPaidPayouts) / toAmount(financials?.teamBudget)) * 100 : 0))}%` }}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-                        Finanční souhrny jsou skryté podle oprávnění nebo soukromého režimu.
-                    </div>
-                )}
-            </section>
-        </div>
-    );
-};
+const completedTaskStatuses = new Set(['done', 'completed', 'hotovo', 'dokončeno']);
+const isTaskDone = (task) => completedTaskStatuses.has(String(task?.status || '').toLocaleLowerCase('cs-CZ'));
+const isTaskOverdue = (task) => Boolean(task?.due_date) && new Date(`${task.due_date}T23:59:59`) < new Date() && !isTaskDone(task);
 
 const StatusBadge = ({ status, config }) => (
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors", config?.color || "bg-gray-100 text-gray-800")}>
@@ -859,17 +742,6 @@ const ProjectDetail = () => {
                   </RecordMetricGrid>
                 </motion.div>
 
-                {canViewFinance && (
-                    <div className="mb-4">
-                        <FinancialHealthAlert
-                            baseAmount={financials.teamBudget}
-                            remainingAmount={financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts}
-                            availableAmount={financials.availableForPayout}
-                            committedAmount={financials.teamRewards}
-                        />
-                    </div>
-                )}
-
                 <Tabs value={activeTab} onValueChange={(value) => navigate(`#${value}`, { replace: true })} className="space-y-4">
                     <RecordWorkspaceTabsList>
                         <TabsTrigger value="overview" className="flex items-center gap-2"><FileText className="w-4 h-4" />Přehled</TabsTrigger>
@@ -883,12 +755,47 @@ const ProjectDetail = () => {
                     </RecordWorkspaceTabsList>
 
                     <TabsContent value="overview" className="space-y-6">
+                        {canViewFinance && (
+                            <FinancialHealthAlert
+                                baseAmount={financials.teamBudget}
+                                remainingAmount={financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts}
+                                availableAmount={financials.availableForPayout}
+                                committedAmount={financials.teamRewards}
+                            />
+                        )}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <InfoCard label="Hlavní projektant" value={project.project_manager?.name || 'N/A'} subValue={project.project_manager?.email} icon={UserCheck} isLink={!!project.project_manager} to={`/members/${project.project_manager?.id}`} />
                             <InfoCard label="Investor" value={project.investor?.name || 'N/A'} icon={Users} isLink={!!project.investor} to={`/subjects/${project.investor?.id}`} />
                             <InfoCard label="Zadavatel" value={project.client?.name || 'N/A'} icon={User} isLink={!!project.client} to={`/subjects/${project.client?.id}`} />
                             <InfoCard label="Stupeň dokumentace" value={project.stage?.name || 'N/A'} icon={FileText} />
                         </div>
+                        <RecordOverviewPanel
+                            title="Stav projektu"
+                            description="Provozní souhrn projektu bez opakování detailních finančních údajů."
+                            badge={<Badge variant="outline" className="w-fit border-slate-200 bg-slate-50 text-slate-700">{project.stage?.name || 'Bez stupně dokumentace'}</Badge>}
+                            aside={(
+                                <RecordAttentionList items={[
+                                    {
+                                        label: 'Úkoly po termínu',
+                                        value: tasks.filter(isTaskOverdue).length,
+                                        tone: tasks.some(isTaskOverdue) ? 'warning' : 'neutral',
+                                    },
+                                    {
+                                        label: 'Úkoly bez termínu',
+                                        value: tasks.filter((task) => !task.due_date).length,
+                                        tone: tasks.some((task) => !task.due_date) ? 'warning' : 'neutral',
+                                    },
+                                    { label: 'Celkový postup', value: `${progress} %`, tone: progress < 25 ? 'warning' : 'neutral' },
+                                ]} />
+                            )}
+                        >
+                            <RecordOverviewGrid>
+                                <RecordOverviewItem icon={Target} label="Postup" value={`${progress} %`} detail="Postup projektu" tone={progress >= 80 ? 'positive' : 'info'} />
+                                <RecordOverviewItem icon={ClipboardList} label="Úkoly" value={tasks.length} detail={`${tasks.filter(isTaskDone).length} dokončeno`} />
+                                <RecordOverviewItem icon={Users} label="Obsazení" value={members.length + subcontractors.length} detail={`${members.length} členů, ${subcontractors.length} subdodavatelů`} />
+                                <RecordOverviewItem icon={Calendar} label="Dokončení" value={project.completion_date ? format(parseISO(project.completion_date), 'd. M. yyyy') : 'Bez termínu'} detail="Plánovaný termín" tone={project.completion_date ? 'neutral' : 'warning'} />
+                            </RecordOverviewGrid>
+                        </RecordOverviewPanel>
                         {isAdmin && (
                             <BillingOverviewSummary
                                 entityType="project"
@@ -1007,14 +914,6 @@ const ProjectDetail = () => {
                     <TabsContent value="contacts"><ProjectContacts projectId={projectId} /></TabsContent>
 
                     {canViewFinance && <TabsContent value="finance" className="space-y-6">
-                        <BillingTracker entityType="project" entityId={projectId} enableContractAnalysis={isAdmin} />
-                        <FinancialHealthAlert
-                            baseAmount={financials.price ?? project.price}
-                            remainingAmount={financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts}
-                            availableAmount={financials.availableForPayout}
-                            committedAmount={financials.reservedPayouts}
-                            showHealthy
-                        />
                         <FinanceMetricStrip metrics={[
                             { label: 'Evidovaná hodnota zakázky', value: <FinanceAmount value={financials.price ?? project.price} />, detail: 'Základ projektového rozpočtu', tone: 'neutral', icon: DollarSign },
                             { label: 'Plánovaný projektový budget', value: <FinanceAmount value={financials.totalBudget} />, detail: `${project.budget_percentage}% z hodnoty`, tone: 'plan', icon: Wallet },
@@ -1030,6 +929,7 @@ const ProjectDetail = () => {
                             { label: 'Dostupné pro výplatu', value: financials.availableForPayout, barClassName: 'bg-emerald-500' },
                         ]} />
                         <FinanceDefinitionNote>Rezervovaná výplata snižuje dostupný limit, ale do skutečných nákladů vstoupí až po označení jako vyplacená. Náklady přiřazené konkrétnímu členovi snižují jeho odměnu a nesmí být započtené podruhé.</FinanceDefinitionNote>
+                        <BillingTracker entityType="project" entityId={projectId} enableContractAnalysis={isAdmin} showFinancialSummary={false} />
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 h-4 mr-2" />Přidat náklad</Button>}>
                             <Table className="finance-table">
                                 <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Odečíst z</TableHead><TableHead>Částka</TableHead><TableHead>Faktura</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>
