@@ -224,8 +224,8 @@ function AppContent() {
                   <Route path="/members" element={<PrivateRoute module="members"><Members /></PrivateRoute>} />
                   <Route path="/members/:memberId" element={<PrivateRoute module="members"><MemberDetail /></PrivateRoute>} />
                   
-                  <Route path="/payouts" element={<ProtectedRoute><Payouts /></ProtectedRoute>} />
-                  <Route path="/payouts/new" element={<ProtectedRoute><PayoutFormPage /></ProtectedRoute>} />
+                  <Route path="/payouts" element={<PrivateRoute module="payouts"><Payouts /></PrivateRoute>} />
+                  <Route path="/payouts/new" element={<PrivateRoute module="payouts" level="can_edit"><PayoutFormPage /></PrivateRoute>} />
                   <Route path="/payouts/hourly-admin" element={<PrivateRoute module="payouts" level="can_admin"><div className="p-8"><HourlyPayoutRequestsAdmin /></div></PrivateRoute>} />
 
                   <Route path="/overhead-costs" element={<PrivateRoute module="finance" level="can_admin"><OverheadCosts /></PrivateRoute>} />

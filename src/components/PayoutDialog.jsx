@@ -50,15 +50,17 @@ const projectStatusConfig = {
   closed: { label: "Uzavřeno", color: "text-purple-600" },
 };
 
+const financialValueOrNull = (value) => (value === null || value === undefined ? null : toAmount(value));
+
 const mapRealizationForSelection = (realization, currentAmount = 0) => ({
   realization_id: realization.id,
   realization_name: realization.name,
   realization_status: realization.status,
   available_share: (realization.available_share || 0) + toAmount(currentAmount),
   total_share: realization.total_share || 0,
-  team_budget: realization.team_budget || 0,
-  total_costs: realization.total_costs || 0,
-  total_revenue: realization.total_revenue || 0,
+  team_budget: financialValueOrNull(realization.team_budget),
+  total_costs: financialValueOrNull(realization.total_costs),
+  total_revenue: financialValueOrNull(realization.total_revenue),
   reserved_payouts: realization.reserved_payouts || 0,
   paid_payout_costs: realization.paid_payout_costs || realization.paid_amount || 0,
   reserved_or_paid_amount: realization.reserved_or_paid_amount || 0,
@@ -143,6 +145,11 @@ const RealizationPayoutInput = ({ realization, amount, onAmountChange, onRemove,
   const recommended = toAmount(realization.recommended_available_share ?? available);
   const overBudget = requested > available + 0.01;
   const overCoverage = Boolean(realization.billing_configured) && requested > recommended + 0.01;
+  const showFinancialBreakdown = [
+    realization.total_revenue,
+    realization.total_costs,
+    realization.team_budget,
+  ].some((value) => value !== null && value !== undefined);
 
   return (
     <motion.div layout initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -20 }} className={cn('space-y-3 rounded-lg border p-4', overBudget ? 'border-red-200 bg-red-50' : overCoverage ? 'border-amber-200 bg-amber-50' : 'bg-slate-50')}>
@@ -150,12 +157,17 @@ const RealizationPayoutInput = ({ realization, amount, onAmountChange, onRemove,
         <div><p className="font-semibold">{realization.realization_name}</p><p className="text-xs text-muted-foreground uppercase">Realizace</p></div>
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onRemove(realization.realization_id)} disabled={disabled}><Trash2 className="w-4 h-4 text-red-500" /></Button>
       </div>
-      <div className="grid grid-cols-2 gap-2 rounded-md bg-white/70 p-3 text-xs md:grid-cols-5">
-        <div><div className="text-muted-foreground">Výnos</div><div className="font-mono font-semibold">{toAmount(realization.total_revenue).toLocaleString('cs-CZ')} Kč</div></div>
-        <div><div className="text-muted-foreground">Náklady</div><div className="font-mono font-semibold">{toAmount(realization.total_costs).toLocaleString('cs-CZ')} Kč</div></div>
-        <div><div className="text-muted-foreground">Týmový rozpočet</div><div className="font-mono font-semibold">{toAmount(realization.team_budget).toLocaleString('cs-CZ')} Kč</div></div>
+      <div className={cn('grid grid-cols-2 gap-2 rounded-md bg-white/70 p-3 text-xs', showFinancialBreakdown ? 'md:grid-cols-5' : 'md:grid-cols-3')}>
+        {showFinancialBreakdown && (
+          <>
+            <div><div className="text-muted-foreground">Výnos</div><div className="font-mono font-semibold">{toAmount(realization.total_revenue).toLocaleString('cs-CZ')} Kč</div></div>
+            <div><div className="text-muted-foreground">Náklady</div><div className="font-mono font-semibold">{toAmount(realization.total_costs).toLocaleString('cs-CZ')} Kč</div></div>
+            <div><div className="text-muted-foreground">Týmový rozpočet</div><div className="font-mono font-semibold">{toAmount(realization.team_budget).toLocaleString('cs-CZ')} Kč</div></div>
+          </>
+        )}
         <div><div className="text-muted-foreground">Rezervováno</div><div className="font-mono font-semibold">{toAmount(realization.reserved_payouts).toLocaleString('cs-CZ')} Kč</div></div>
         <div><div className="text-muted-foreground">Vyplaceno</div><div className="font-mono font-semibold">{toAmount(realization.paid_payout_costs).toLocaleString('cs-CZ')} Kč</div></div>
+        {!showFinancialBreakdown && <div><div className="text-muted-foreground">Vlastní nárok</div><div className="font-mono font-semibold">{toAmount(realization.total_share).toLocaleString('cs-CZ')} Kč</div></div>}
       </div>
       <div className="flex items-end gap-4">
         <div className="flex-1">
@@ -263,7 +275,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
             return {
               ...projectData,
               project_id: item.project_id, project_name: item.projects?.name || projectData?.project_name || 'N/A', project_code: item.projects?.code || projectData?.project_code || 'N/A',
-              available_balance: projectData?.available_balance || 0, project_status: projectData?.project_status || 'unknown',
+              available_balance: projectData?.available_balance ?? 0, project_status: projectData?.project_status || 'unknown',
             };
           }));
           setSelectedRealizations(realizaceItems.map(item => {
@@ -295,7 +307,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
       }
     };
     if (isOpen) fetchProjects();
-  }, [memberId, payout, isOpen, toast, isSuperUser]);
+  }, [memberId, payout, isOpen, toast]);
 
   const handleAmountChange = (projectId, amount) => setPayoutAmounts(prev => ({ ...prev, [projectId]: amount }));
   const handleFillProjectMax = useCallback((projectId, maxAmount) => setPayoutAmounts(prev => ({ ...prev, [projectId]: String(maxAmount) })), []);
@@ -398,8 +410,6 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
           return;
         }
       }
-
-      console.log('[PayoutDialog] Submitting payout data:', dataToValidate);
 
       // Call the onSave callback with the validated data
       const savedPayout = await onSave(dataToValidate, isEditMode, payout?.id);

@@ -40,7 +40,7 @@ import { getFinanceErrorMessage } from '@/lib/financePresentation';
 
 const Payouts = () => {
   const { toast } = useToast();
-  const { memberId, hasPermission, user, isAdmin } = useAuth();
+  const { memberId, hasPermission, user } = useAuth();
   const navigate = useNavigate();
   
   const [payouts, setPayouts] = useState([]);
@@ -58,9 +58,9 @@ const Payouts = () => {
   const [withoutInvoiceFilter, setWithoutInvoiceFilter] = useState('all');
   const [loading, setLoading] = useState(false);
 
-  const canAdmin = isAdmin;
+  const canAdmin = hasPermission('payouts', 'can_admin');
   const canEditOwn = hasPermission('payouts', 'can_edit');
-  const canCreateOwnPayout = canAdmin || Boolean(memberId);
+  const canCreateOwnPayout = canAdmin || canEditOwn;
 
   useEffect(() => {
     if (!memberId) return;
