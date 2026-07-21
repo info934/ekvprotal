@@ -23,14 +23,12 @@ import {
   ListTodo,
   LogOut,
   Menu,
-  Moon,
   Package,
   Plus,
   Search,
   Settings,
   Shield,
   Star,
-  Sun,
   Target,
   UserCog,
   Users,
@@ -51,32 +49,6 @@ import { WORKSPACES, canAccessWorkspace, getWorkspaceFromPathname } from '@/lib/
 const FAVORITES_KEY = 'ekv-sidebar-favorites';
 const COLLAPSED_KEY = 'ekv-sidebar-collapsed';
 const DEFAULT_FAVORITES = ['/dashboard', '/projects', '/realizace'];
-
-const DarkModeContext = React.createContext();
-
-const DarkModeProvider = ({ children }) => {
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('darkMode');
-    return saved ? JSON.parse(saved) : false;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
-    document.documentElement.classList.toggle('dark', isDarkMode);
-  }, [isDarkMode]);
-
-  return (
-    <DarkModeContext.Provider value={{ isDarkMode, setIsDarkMode }}>
-      {children}
-    </DarkModeContext.Provider>
-  );
-};
-
-const useDarkMode = () => {
-  const context = React.useContext(DarkModeContext);
-  if (!context) throw new Error('useDarkMode must be used within DarkModeProvider');
-  return context;
-};
 
 const NAV_GROUPS = [
   {
@@ -254,7 +226,6 @@ const filterGroupsForWorkspace = (groups, workspace) => groups
 
 const UserProfile = React.memo(({ isCollapsed }) => {
   const { user, isPrivateMode, togglePrivateMode, isAdmin } = useAuth();
-  const { isDarkMode, setIsDarkMode } = useDarkMode();
   const [isPrivateDialogOpen, setIsPrivateDialogOpen] = useState(false);
 
   if (!user) return null;
@@ -300,16 +271,11 @@ const UserProfile = React.memo(({ isCollapsed }) => {
                 <Badge variant={isPrivateMode ? 'destructive' : 'success'} className="h-5 text-[10px]">
                   {isPrivateMode ? 'Privátní' : 'Aktivní'}
                 </Badge>
-                <div className="flex items-center gap-1">
-                  {isAdmin && (
-                    <Button variant="ghost" size="icon" onClick={handlePrivateToggle} className="h-6 w-6" title="Privátní režim">
-                      <EyeOff className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="icon" onClick={() => setIsDarkMode(!isDarkMode)} className="h-6 w-6" title="Přepnout vzhled">
-                    {isDarkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+                {isAdmin && (
+                  <Button variant="ghost" size="icon" onClick={handlePrivateToggle} className="h-6 w-6" title="Privátní režim" aria-label="Přepnout privátní režim">
+                    <EyeOff className="h-3.5 w-3.5" />
                   </Button>
-                </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -448,41 +414,44 @@ const NavRow = ({ item, isCollapsed, isFavorite, onToggleFavorite, onLinkClick, 
   const hasChildren = item.children?.length > 0;
 
   return (
-    <NavLink
-      to={item.path}
-      end={Boolean(item.exact)}
-      onClick={onLinkClick}
-      title={isCollapsed ? item.label : undefined}
-      className={({ isActive }) => cn(
-        'group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-semibold transition-all',
-        isCollapsed && 'h-10 justify-center px-0',
-        depth > 0 && !isCollapsed && 'ml-7 py-1.5 pl-2.5 text-xs font-medium',
-        isActive
-          ? 'bg-blue-50 text-primary ring-1 ring-blue-100 before:absolute before:bottom-1.5 before:left-0 before:top-1.5 before:w-0.5 before:rounded-full before:bg-primary dark:bg-gray-800 dark:text-white dark:ring-gray-700'
-          : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
-      )}
-    >
-      <Icon className={cn('shrink-0', isCollapsed ? 'h-5 w-5' : 'h-4 w-4')} />
+    <div className={cn('group relative flex min-w-0 items-center', depth > 0 && !isCollapsed && 'ml-7')}>
+      <NavLink
+        to={item.path}
+        end={Boolean(item.exact)}
+        onClick={onLinkClick}
+        title={isCollapsed ? item.label : undefined}
+        className={({ isActive }) => cn(
+          'relative flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-semibold transition-all',
+          isCollapsed && 'h-10 justify-center px-0',
+          depth > 0 && !isCollapsed && 'py-1.5 pl-2.5 pr-8 text-xs font-medium',
+          isActive
+            ? 'bg-blue-50 text-primary ring-1 ring-blue-100 before:absolute before:bottom-1.5 before:left-0 before:top-1.5 before:w-0.5 before:rounded-full before:bg-primary dark:bg-gray-800 dark:text-white dark:ring-gray-700'
+            : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+        )}
+      >
+        <Icon className={cn('shrink-0', isCollapsed ? 'h-5 w-5' : 'h-4 w-4')} />
+        {!isCollapsed && (
+          <>
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            {hasChildren && depth === 0 && <ChevronDown className="mr-5 h-4 w-4 text-slate-400" />}
+          </>
+        )}
+      </NavLink>
       {!isCollapsed && (
-        <>
-          <span className="min-w-0 flex-1 truncate">{item.label}</span>
-          {hasChildren && depth === 0 && <ChevronDown className="h-4 w-4 text-slate-400" />}
-          <button
-            type="button"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onToggleFavorite(item.path);
-            }}
-            className={cn('rounded p-0.5 opacity-0 transition group-hover:opacity-100', isFavorite && 'opacity-100')}
-            title={isFavorite ? 'Odebrat z oblíbených' : 'Přidat do oblíbených'}
-            aria-label={isFavorite ? `Odebrat ${item.label} z oblíbených` : `Přidat ${item.label} do oblíbených`}
-          >
-            <Star className={cn('h-3.5 w-3.5', isFavorite ? 'fill-amber-400 text-amber-500' : 'text-slate-400')} />
-          </button>
-        </>
+        <button
+          type="button"
+          onClick={() => onToggleFavorite(item.path)}
+          className={cn(
+            'absolute right-1.5 rounded p-1 opacity-0 transition hover:bg-white focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary group-hover:opacity-100',
+            isFavorite && 'opacity-100'
+          )}
+          title={isFavorite ? 'Odebrat z oblíbených' : 'Přidat do oblíbených'}
+          aria-label={isFavorite ? `Odebrat ${item.label} z oblíbených` : `Přidat ${item.label} do oblíbených`}
+        >
+          <Star className={cn('h-3.5 w-3.5', isFavorite ? 'fill-amber-400 text-amber-500' : 'text-slate-400')} />
+        </button>
       )}
-    </NavLink>
+    </div>
   );
 };
 
@@ -839,10 +808,10 @@ const MobileSidebar = () => {
 };
 
 const Sidebar = () => (
-  <DarkModeProvider>
+  <>
     <DesktopSidebar />
     <MobileSidebar />
-  </DarkModeProvider>
+  </>
 );
 
 export default Sidebar;

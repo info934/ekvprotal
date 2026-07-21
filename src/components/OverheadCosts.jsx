@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/customSupabaseClient';
+import { formatMoney } from '@/lib/financePresentation';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
@@ -51,8 +52,7 @@ import OverheadCostForm from '@/components/OverheadCostForm';
 import MonthlyAllocation from '@/components/MonthlyAllocation';
 import PageHeader from '@/components/ui/page-header';
 
-const formatCurrency = (value = 0) =>
-    new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
+const formatCurrency = formatMoney;
 
 const StatsCard = ({ title, value, description, icon: Icon, tone = 'blue' }) => {
     const toneClass = {

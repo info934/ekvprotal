@@ -59,6 +59,13 @@ const ProjectTemplatesSettings = lazy(() => import('@/components/ProjectTemplate
 const ProjectTemplatesPage = lazy(() => import('@/components/ProjectTemplatesPage'));
 const BackupMaintenance = lazy(() => import('@/components/BackupMaintenance'));
 const PlanningBoard = lazy(() => import('@/components/PlanningBoard'));
+const NotFound = lazy(() => import('@/components/NotFound'));
+
+const clearSupabaseSessionStorage = () => {
+  Object.keys(localStorage)
+    .filter((key) => key.startsWith('sb-') || key.includes('supabase.auth'))
+    .forEach((key) => localStorage.removeItem(key));
+};
 
 const PortalLoaderCard = ({ title = 'Načítání modulu', description = 'Připravujeme data a rozhraní portálu.', showActions = false, onResetSession }) => (
   <div className="w-full max-w-[440px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.10)]">
@@ -129,47 +136,10 @@ function AppContent() {
           showActions={loadingTimeout}
           onResetSession={async () => {
             await supabase.auth.signOut();
-            localStorage.clear();
+            clearSupabaseSessionStorage();
             window.location.href = '/login';
           }}
         />
-      </div>
-    );
-  }
-
-  if (false && loading) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <div className="max-w-md rounded-lg border border-slate-200/90 bg-white px-8 py-7 text-center shadow-[0_16px_42px_rgba(15,23,42,0.10)]">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-b-primary"></div>
-          <p className="text-xl font-semibold text-foreground">Načítání...</p>
-          <p className="text-muted-foreground">Chvilku strpení, připravujeme portál.</p>
-          {loadingTimeout && (
-            <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm animate-in fade-in slide-in-from-bottom-4">
-              <p className="text-sm text-yellow-800 font-medium mb-3">
-                Načítání trvá déle než obvykle. Pokud problém přetrvává, může být zaseknutá relace.
-              </p>
-              <div className="flex gap-2 justify-center">
-                <button
-                  onClick={() => window.location.reload()}
-                  className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors text-sm font-medium"
-                >
-                  Obnovit stránku
-                </button>
-                <button
-                  onClick={async () => {
-                     await supabase.auth.signOut();
-                     localStorage.clear();
-                     window.location.href = '/login';
-                  }}
-                  className="px-4 py-2 bg-white border border-yellow-600 text-yellow-700 rounded hover:bg-yellow-50 transition-colors text-sm font-medium"
-                >
-                  Odhlásit a resetovat
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
     );
   }
@@ -179,7 +149,7 @@ function AppContent() {
       {session ? (
         <>
           <Sidebar />
-          <main className="min-w-0 flex-1 overflow-x-hidden transition-all duration-300 lg:ml-[var(--sidebar-width,16rem)] print:ml-0 print:p-0">
+          <main className="min-w-0 flex-1 overflow-x-hidden pt-16 transition-all duration-300 lg:ml-[var(--sidebar-width,16rem)] lg:pt-0 print:ml-0 print:p-0">
             <ErrorBoundary>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
@@ -226,7 +196,7 @@ function AppContent() {
                   
                   <Route path="/payouts" element={<PrivateRoute module="payouts"><Payouts /></PrivateRoute>} />
                   <Route path="/payouts/new" element={<PrivateRoute module="payouts" level="can_edit"><PayoutFormPage /></PrivateRoute>} />
-                  <Route path="/payouts/hourly-admin" element={<PrivateRoute module="payouts" level="can_admin"><div className="p-8"><HourlyPayoutRequestsAdmin /></div></PrivateRoute>} />
+                  <Route path="/payouts/hourly-admin" element={<PrivateRoute module="payouts" level="can_admin"><div className="app-page"><HourlyPayoutRequestsAdmin /></div></PrivateRoute>} />
 
                   <Route path="/overhead-costs" element={<PrivateRoute module="finance" level="can_admin"><OverheadCosts /></PrivateRoute>} />
                   <Route path="/overhead-costs/:tab" element={<PrivateRoute module="finance" level="can_admin"><OverheadCosts /></PrivateRoute>} />
@@ -251,6 +221,7 @@ function AppContent() {
                   <Route path="/login" element={<Navigate to="/" />} />
                   <Route path="/statements" element={<Navigate to="/engineering" />} />
                   <Route path="/authorities" element={<Navigate to="/engineering" />} />
+                  <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
             </ErrorBoundary>

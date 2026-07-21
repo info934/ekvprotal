@@ -43,6 +43,7 @@ import { deleteStoredFile, uploadProjectCostInvoice } from '@/lib/documentStorag
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import PlanningBoard from '@/components/PlanningBoard';
 import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
+import { formatMoney } from '@/lib/financePresentation';
 import { RecordMetricGrid, RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
 import { RecordAttentionList, RecordOverviewGrid, RecordOverviewItem, RecordOverviewPanel } from '@/components/ui/record-overview';
 
@@ -382,7 +383,10 @@ const ProjectDetail = () => {
             result = await query;
         }
         const { error } = result;
-        if (error) toast({ title: `Chyba při ukládání`, variant: 'destructive', description: error.message });
+        if (error) {
+            toast({ title: `Chyba při ukládání`, variant: 'destructive', description: error.message });
+            return false;
+        }
         else {
             toast({ title: '✅ Uloženo' });
             if (shouldLogRewards) {
@@ -392,6 +396,7 @@ const ProjectDetail = () => {
             if (dialogSetter) dialogSetter(false);
             if (editingState) editingState(null);
             refreshData();
+            return true;
         }
     };
 
@@ -554,7 +559,7 @@ const ProjectDetail = () => {
     };
 
     const formatCurrency = useCallback((value) => {
-        return `${toAmount(value).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč`;
+        return formatMoney(toAmount(value), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }, []);
 
     const getMemberReward = useCallback((member, teamBudget) => {

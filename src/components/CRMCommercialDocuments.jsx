@@ -24,6 +24,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { allocateCrmNumber, DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmOpportunityPath, findCrmRecordByRef, getCrmRecordRef } from '@/lib/crmRoutes';
+import { formatMoney, formatPercent } from '@/lib/financePresentation';
 import {
   buildCrmDocumentItemPayload,
   buildCrmOpportunityItemPayload,
@@ -64,18 +65,12 @@ const documentStatuses = [
   { value: 'closed', label: 'Uzavřeno' },
 ];
 
-const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
-  style: 'currency',
-  currency: 'CZK',
-  maximumFractionDigits: 0,
-}).format(Number(value || 0));
+const formatCurrency = formatMoney;
 
 const formatDate = (value) => {
   if (!value) return '-';
   return new Intl.DateTimeFormat('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
 };
-
-const formatPercent = (value) => `${Number(value || 0).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`;
 
 const formatCommercialDocumentTitle = (title) => (
   title
@@ -525,7 +520,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         priority: 'medium',
         value: Number(createOpportunityValue || 0),
         probability: 25,
-        description: 'Vytvoreno automaticky pri zalozeni dokumentu ' + config.singular.toLowerCase() + '.',
+        description: 'Vytvořeno automaticky při založení dokumentu ' + config.singular.toLowerCase() + '.',
       })
       .select('id, number, title, value, subject_id, subject:subject_id(id, name)')
       .single();
@@ -608,7 +603,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         shouldInsertDocumentRows = true;
       } else if (replaceError) {
         setSaving(false);
-        toast({ title: 'Polozky se nepodarilo synchronizovat', description: replaceError.message, variant: 'destructive' });
+        toast({ title: 'Položky se nepodařilo synchronizovat', description: replaceError.message, variant: 'destructive' });
         return;
       }
     }
@@ -861,7 +856,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           <DialogHeader>
             <DialogTitle>Zmenit OP / kopirovat dokument</DialogTitle>
             <DialogDescription>
-              Nabidku nebo objednavku muzete prepnout na jiny obchodni pripad, nebo vytvorit kopii pro dalsi OP.
+              Nabídku nebo objednávku můžete přepnout na jiný obchodní případ nebo vytvořit kopii pro další OP.
             </DialogDescription>
           </DialogHeader>
 
@@ -880,7 +875,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                 onClick={() => setRelationAction('copy')}
                 className={cn('rounded-lg border p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50', relationAction === 'copy' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white')}
               >
-                <div className="flex items-center gap-2 font-semibold text-slate-950"><Copy className="h-4 w-4" />Vytvorit kopii</div>
+                <div className="flex items-center gap-2 font-semibold text-slate-950"><Copy className="h-4 w-4" />Vytvořit kopii</div>
                 <div className="mt-1 text-sm text-slate-500">Puvodni dokument zustane beze zmeny a vznikne novy zaznam.</div>
               </button>
             </div>
@@ -907,7 +902,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {copyCurrentItems ? 'Dokument bude mit vlastni snapshot polozek a nebude se dal automaticky menit podle OP.' : 'Dokument zustane synchronizovany s cilovym OP. Upravy polozek se budou ridit polozkami OP.'}
+                {copyCurrentItems ? 'Dokument bude mít vlastní snapshot položek a nebude se dál automaticky měnit podle OP.' : 'Dokument zůstane synchronizovaný s cílovým OP. Úpravy položek se budou řídit položkami OP.'}
               </p>
             </div>
 
@@ -919,9 +914,9 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setRelationDialogOpen(false)} disabled={saving}>Zrusit</Button>
+            <Button type="button" variant="outline" onClick={() => setRelationDialogOpen(false)} disabled={saving}>Zrušit</Button>
             <Button type="button" onClick={handleApplyDocumentRelation} disabled={saving || !relationTargetOpportunityId || sameOpportunity}>
-              {saving ? 'Ukladam...' : (relationAction === 'copy' ? 'Vytvorit kopii' : 'Prepnout OP')}
+              {saving ? 'Ukládám…' : (relationAction === 'copy' ? 'Vytvořit kopii' : 'Přepnout OP')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -953,7 +948,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={closeLifecycleAction} disabled={saving}>Zrusit</Button>
+            <Button type="button" variant="outline" onClick={closeLifecycleAction} disabled={saving}>Zrušit</Button>
             <Button type="button" variant={isDelete ? 'destructive' : 'default'} onClick={handleConfirmDocumentLifecycleAction} disabled={saving || !lifecycleReason.trim()}>
               {saving ? 'Ukladam...' : (isDelete ? 'Odstranit' : 'Stornovat')}
             </Button>
@@ -1229,7 +1224,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   createMode === 'new' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white'
                 )}
               >
-                <div className="font-semibold text-slate-950">Vytvorit novy OP</div>
+                <div className="font-semibold text-slate-950">Vytvořit nový OP</div>
                 <div className="mt-1 text-sm text-slate-500">Nejdriv se zalozi novy obchodni pripad a dokument se na nej automaticky napoji.</div>
               </button>
             </div>
@@ -1284,7 +1279,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={saving}>Zrusit</Button>
+            <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={saving}>Zrušit</Button>
             <Button type="button" onClick={handleCreateDocument} disabled={saving || (createMode === 'existing' ? !createOpportunityId : (!createOpportunityTitle.trim() || !createSubjectId))}>
               {saving ? 'Vytvarim...' : config.createLabel}
             </Button>
@@ -1364,7 +1359,19 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                 ) : filteredDocuments.length === 0 ? (
                   <TableRow><TableCell colSpan={visibleListColumns.length} className="h-24 text-center text-muted-foreground">Žádné záznamy.</TableCell></TableRow>
                 ) : filteredDocuments.map((document) => (
-                  <TableRow key={document.id} className="cursor-pointer bg-white hover:bg-blue-50/35" onClick={() => navigate(config.detailPath(document))}>
+                  <TableRow
+                    key={document.id}
+                    className="cursor-pointer bg-white hover:bg-blue-50/35"
+                    onClick={() => navigate(config.detailPath(document))}
+                    role="link"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        navigate(config.detailPath(document));
+                      }
+                    }}
+                  >
                     {visibleListColumns.map((column) => (
                       <TableCell key={column.id} className={listCellClasses[column.id]}>
                         {renderListCell(document, column.id)}

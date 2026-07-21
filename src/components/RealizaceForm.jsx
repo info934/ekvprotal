@@ -22,6 +22,7 @@ import SubjectSelect from '@/components/SubjectSelect';
 import MemberSelect from '@/components/MemberSelect';
 import PageHeader from '@/components/ui/page-header';
 import { ensureEntityFolder } from '@/lib/documentStorageService';
+import { formatMoney } from '@/lib/financePresentation';
 
 const RealizaceForm = () => {
     const { realizaceId } = useParams();
@@ -105,7 +106,7 @@ const RealizaceForm = () => {
     const baseCost = safeActual ?? safeExpected ?? safeBudget ?? 0;
     const availableProfitRaw = safeContract - baseCost;
     const availableProfit = Number.isFinite(availableProfitRaw) ? Math.max(0, availableProfitRaw) : 0;
-    const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
+    const formatCurrency = formatMoney;
 
     // Helpers for switching modes
     const getProfitValue = () => {

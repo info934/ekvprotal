@@ -88,7 +88,9 @@ const addReadableUniqueSuffix = (fileName, seed = '') => {
   const extensionMatch = readableFileName.match(/(\.[^.]+)$/);
   const extension = extensionMatch?.[1] || '';
   const baseName = extension ? readableFileName.slice(0, -extension.length) : readableFileName;
-  const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  // Avoid bracket character classes here: Tailwind's content scanner treats
+  // them as arbitrary utility candidates and emits invalid CSS.
+  const timestamp = new Date().toISOString().replace(/-|:|T|Z|\./g, '').slice(0, 14);
   const entropy = `${seed}-${Math.random().toString(36).slice(2, 8)}`.replace(/[^a-zA-Z0-9_-]+/g, '').slice(-8);
   return sanitizeReadableFileName(`${baseName} - ${timestamp}-${entropy}${extension}`);
 };

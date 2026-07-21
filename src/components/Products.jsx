@@ -7,6 +7,8 @@ import {
   Boxes,
   CalendarClock,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Edit3,
   FileText,
   Link2,
@@ -38,6 +40,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
+import { formatMoney, formatPercent } from '@/lib/financePresentation';
 import { cn } from '@/lib/utils';
 
 const emptyMovement = {
@@ -58,19 +61,11 @@ const movementTypeLabels = {
   adjustment: 'Korekce',
 };
 
-const formatCurrency = (value, currency = 'CZK') => new Intl.NumberFormat('cs-CZ', {
-  style: 'currency',
-  currency: currency || 'CZK',
-  maximumFractionDigits: 0,
-}).format(Number(value || 0));
+const formatCurrency = (value, currency = 'CZK') => formatMoney(value, { currency: currency || 'CZK' });
 
 const formatQty = (value, unit = 'ks') => `${new Intl.NumberFormat('cs-CZ', {
   maximumFractionDigits: 3,
 }).format(Number(value || 0))} ${unit || 'ks'}`;
-
-const formatPercent = (value) => `${new Intl.NumberFormat('cs-CZ', {
-  maximumFractionDigits: 1,
-}).format(Number(value || 0))} %`;
 
 const compactSearchValue = (value) => String(value || '').toLowerCase();
 
@@ -165,6 +160,8 @@ const Products = () => {
   const [productSchemaReady, setProductSchemaReady] = useState(true);
   const [movementDialogOpen, setMovementDialogOpen] = useState(false);
   const [movementForm, setMovementForm] = useState(emptyMovement);
+  const [page, setPage] = useState(1);
+  const pageSize = 100;
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -441,6 +438,20 @@ const Products = () => {
         .some((value) => compactSearchValue(value).includes(query));
     });
   }, [activeFilter, availabilityFilter, brandFilter, categoryFilter, products, search, stockByProduct, supplierFilter, supplierSearchByProduct, supplierSlugsByProduct, typeFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const pagedProducts = useMemo(
+    () => filteredProducts.slice((page - 1) * pageSize, page * pageSize),
+    [filteredProducts, page]
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilter, availabilityFilter, brandFilter, categoryFilter, search, supplierFilter, typeFilter]);
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
 
   const openMovementDialog = (product) => {
     setMovementForm({
@@ -782,7 +793,7 @@ const Products = () => {
                     </TableRow>
                   ) : filteredProducts.length === 0 ? (
                     <TableRow><TableCell colSpan={16} className="h-32 text-center text-muted-foreground">Žádný produkt neodpovídá filtrům.</TableCell></TableRow>
-                  ) : filteredProducts.map((product) => {
+                  ) : pagedProducts.map((product) => {
                     const stock = stockByProduct[product.id] || {};
                     const available = Number(stock.available_qty || 0);
                     const minQty = Number(product.stock_min_qty || 0);
@@ -795,7 +806,19 @@ const Products = () => {
                     const trendAmount = Number(supplierPrice?.price_change_amount || 0);
                     const TrendIcon = trendAmount < 0 ? TrendingDown : trendAmount > 0 ? TrendingUp : Minus;
                     return (
-                      <TableRow key={product.id} className={cn('cursor-pointer bg-white hover:bg-blue-50/40', status.label === 'Archiv' && 'opacity-60')} onClick={() => navigate(`/products/${product.id}/edit`)}>
+                      <TableRow
+                        key={product.id}
+                        className={cn('cursor-pointer bg-white hover:bg-blue-50/40', status.label === 'Archiv' && 'opacity-60')}
+                        onClick={() => navigate(`/products/${product.id}/edit`)}
+                        role="link"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            navigate(`/products/${product.id}/edit`);
+                          }
+                        }}
+                      >
                         <TableCell className="font-mono text-xs font-semibold text-slate-700">{product.sku || product.code || '-'}</TableCell>
                         <TableCell>
                           <div className="flex min-w-0 items-start justify-between gap-2">
@@ -880,14 +903,14 @@ const Products = () => {
                         <TableCell onClick={(event) => event.stopPropagation()}>
                           <div className="flex justify-end gap-1">
                             {product.product_type === 'manufactured' && (
-                              <Button variant="ghost" size="icon" onClick={() => openMovementDialog(product)} disabled={!canEdit} title="Skladový pohyb">
+                              <Button variant="ghost" size="icon" onClick={() => openMovementDialog(product)} disabled={!canEdit} title="Skladový pohyb" aria-label={`Skladový pohyb produktu ${product.name}`}>
                                 <Warehouse className="h-4 w-4" />
                               </Button>
                             )}
-                            <Button variant="ghost" size="icon" onClick={() => navigate(`/products/${product.id}/edit`)} disabled={!canEdit} title="Upravit">
+                            <Button variant="ghost" size="icon" onClick={() => navigate(`/products/${product.id}/edit`)} disabled={!canEdit} title="Upravit" aria-label={`Upravit produkt ${product.name}`}>
                               <Edit3 className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => archiveProduct(product)} disabled={!canEdit || !product.is_active} title="Archivovat">
+                            <Button variant="ghost" size="icon" onClick={() => archiveProduct(product)} disabled={!canEdit || !product.is_active} title="Archivovat" aria-label={`Archivovat produkt ${product.name}`}>
                               <Archive className="h-4 w-4" />
                             </Button>
                           </div>
@@ -898,9 +921,36 @@ const Products = () => {
                 </TableBody>
               </Table>
             </div>
-            <div className="flex flex-col gap-2 border-t bg-slate-50 px-3 py-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-              <span>Zobrazeno {filteredProducts.length} z {products.length} produktů</span>
-              <span>Prodejní ceny jsou snapshotovány do OP/NAB/OBJ při vložení položky.</span>
+            <div className="flex flex-col gap-3 border-t bg-slate-50 px-3 py-2 text-xs text-muted-foreground lg:flex-row lg:items-center lg:justify-between">
+              <span>
+                Zobrazeno {filteredProducts.length ? (page - 1) * pageSize + 1 : 0}–{Math.min(page * pageSize, filteredProducts.length)} z {filteredProducts.length} filtrovaných produktů ({products.length} celkem)
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Prodejní ceny jsou snapshotovány do OP/NAB/OBJ při vložení položky.</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  aria-label="Předchozí stránka produktů"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="min-w-16 text-center font-medium text-slate-700">{page} / {pageCount}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={page >= pageCount}
+                  onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+                  aria-label="Další stránka produktů"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

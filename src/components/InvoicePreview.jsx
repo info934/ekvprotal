@@ -8,11 +8,13 @@ import { logPayoutAction } from '@/lib/payoutLogger';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import { deleteStoredFile } from '@/lib/documentStorageService';
 import { clearHourlyPayoutInvoice } from '@/lib/hourlyPayoutWorkflowService';
+import ConfirmActionDialog from '@/components/ui/confirm-action-dialog';
 
 const InvoicePreview = ({ invoicePath, uploadedAt, status, requestId, storageProvider, storageConnectionId, externalFileId, storageMetadata, onDelete }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [errorLoading, setErrorLoading] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const { toast } = useToast();
 
   const isPdf = invoicePath?.toLowerCase().endsWith('.pdf');
@@ -59,8 +61,6 @@ const InvoicePreview = ({ invoicePath, uploadedAt, status, requestId, storagePro
 
   const handleDelete = async (e) => {
     if (e) e.stopPropagation();
-    if (!window.confirm("Opravdu chcete smazat tuto fakturu?")) return;
-    
     setIsDeleting(true);
     await logPayoutAction('invoice_delete_attempt', requestId, { invoicePath });
     
@@ -89,6 +89,7 @@ const InvoicePreview = ({ invoicePath, uploadedAt, status, requestId, storagePro
 
       await logPayoutAction('invoice_delete_success', requestId, { invoicePath });
       toast({ title: "Smazáno", description: "Faktura byla odstraněna." });
+      setDeleteDialogOpen(false);
       if (onDelete) onDelete();
 
     } catch (error) {
@@ -144,16 +145,29 @@ const InvoicePreview = ({ invoicePath, uploadedAt, status, requestId, storagePro
                 variant="ghost" 
                 size="icon" 
                 className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                onClick={handleDelete}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setDeleteDialogOpen(true);
+                }}
                 disabled={isDeleting}
                 title="Smazat fakturu"
+                aria-label="Smazat fakturu"
             >
                 {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
             </Button>
             )}
         </div>
         </div>
-        
+        <ConfirmActionDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          title="Smazat fakturu?"
+          description="Evidence faktury bude odebrána z žádosti. Soubor bude odstraněn také z připojeného úložiště, pokud to úložiště dovolí."
+          confirmLabel="Smazat fakturu"
+          destructive
+          loading={isDeleting}
+          onConfirm={handleDelete}
+        />
     </div>
   );
 };

@@ -29,6 +29,7 @@ const DocumentDialog = ({ isOpen, onClose, onSave, isMeetingMinutes = false, pay
   
   const [projects, setProjects] = useState([]);
   const [openProjectCombobox, setOpenProjectCombobox] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const onDrop = useCallback((acceptedFiles) => {
     if (acceptedFiles && acceptedFiles[0]) {
@@ -73,7 +74,7 @@ const DocumentDialog = ({ isOpen, onClose, onSave, isMeetingMinutes = false, pay
   }, [isOpen, isMeetingMinutes, payload]);
 
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!file) {
       toast({ title: "Chybí soubor", description: "Prosím, nahrajte soubor.", variant: "destructive" });
@@ -83,8 +84,19 @@ const DocumentDialog = ({ isOpen, onClose, onSave, isMeetingMinutes = false, pay
         toast({ title: "Chybí projekt", description: "Prosím, vyberte projekt.", variant: "destructive" });
         return;
     }
-    onSave({...formData, file});
-    onClose();
+    setIsSaving(true);
+    try {
+      const result = await onSave({ ...formData, file });
+      if (result !== false) onClose();
+    } catch (error) {
+      toast({
+        title: 'Dokument se nepodařilo uložit',
+        description: error?.message || 'Opakujte akci později.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
   
   const isForStructure = !!payload.structureId;
@@ -94,7 +106,7 @@ const DocumentDialog = ({ isOpen, onClose, onSave, isMeetingMinutes = false, pay
   const projectOptions = (projects || []).map(p => ({ value: p.id, label: `(${p.code}) ${p.name}` }));
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && !isSaving && onClose()}>
       <FormDialogContent size="md">
         <FormDialogHeader
           icon={Upload}
@@ -109,7 +121,7 @@ const DocumentDialog = ({ isOpen, onClose, onSave, isMeetingMinutes = false, pay
               <Label htmlFor="project">Projekt *</Label>
               <Popover open={openProjectCombobox} onOpenChange={setOpenProjectCombobox}>
                 <PopoverTrigger asChild>
-                    <Button variant="outline" role="combobox" aria-expanded={openProjectCombobox} className="w-full justify-between">
+                    <Button type="button" variant="outline" role="combobox" aria-expanded={openProjectCombobox} className="w-full justify-between">
                         {formData.project_id ? projectOptions.find(p => p.value === formData.project_id)?.label : "Vyberte projekt..."}
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
@@ -227,11 +239,11 @@ const DocumentDialog = ({ isOpen, onClose, onSave, isMeetingMinutes = false, pay
 
           </FormDialogBody>
           <FormDialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
               Zrušit
             </Button>
-            <Button type="submit" className="bg-gradient-to-r from-purple-600 to-indigo-600">
-              Uložit a nahrát
+            <Button type="submit" className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={isSaving}>
+              {isSaving ? 'Nahrávám…' : 'Uložit a nahrát'}
             </Button>
           </FormDialogFooter>
         </form>

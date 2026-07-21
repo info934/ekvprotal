@@ -5,8 +5,6 @@ const taskStatusConfig = {
   Nové: { color: DATAVIZ_COLORS.primary, label: 'Nové' },
   'V řešení': { color: DATAVIZ_COLORS.amber, label: 'V řešení' },
   Hotovo: { color: DATAVIZ_COLORS.emerald, label: 'Hotovo' },
-  'Nové': { color: DATAVIZ_COLORS.primary, label: 'Nové' },
-  'V řešení': { color: DATAVIZ_COLORS.amber, label: 'V řešení' },
 };
 
 const engineeringStatusConfig = {

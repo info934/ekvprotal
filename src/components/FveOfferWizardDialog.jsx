@@ -10,13 +10,9 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { calculateCrmTotals } from '@/lib/crmItemPayloads';
 import { buildFveOfferItems, chooseFveRuleSet, loadFveOfferRuleSets } from '@/lib/fveOfferRulesService';
-import { VAT_RATE_OPTIONS } from '@/lib/financePresentation';
+import { formatMoney, VAT_RATE_OPTIONS } from '@/lib/financePresentation';
 
-const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
-  style: 'currency',
-  currency: 'CZK',
-  maximumFractionDigits: 0,
-}).format(Number(value || 0));
+const formatCurrency = formatMoney;
 
 const FveOfferWizardDialog = ({ open, onOpenChange, onApply }) => {
   const [loading, setLoading] = useState(false);

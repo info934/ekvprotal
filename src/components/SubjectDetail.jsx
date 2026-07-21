@@ -39,6 +39,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
+import { formatMoney } from '@/lib/financePresentation';
 
 const emptyForm = {
   name: '',
@@ -76,7 +77,7 @@ const orderStatusConfig = {
   expired: { label: 'Vypršelo', icon: AlertTriangle, className: 'bg-slate-50 text-slate-700 border-slate-200' },
 };
 
-const formatCurrency = (value) => `${Number(value || 0).toLocaleString('cs-CZ')} Kč`;
+const formatCurrency = formatMoney;
 
 const formatDate = (value) => {
   if (!value) return '-';

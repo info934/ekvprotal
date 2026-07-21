@@ -20,13 +20,11 @@ import ContractExtractionPanel from '@/components/ContractExtractionPanel';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FinanceMetricStrip, FinanceStageFlow, FinanceDefinitionNote } from '@/components/finance/FinanceWorkspace';
-import { getFinanceErrorMessage, VAT_RATE_OPTIONS } from '@/lib/financePresentation';
+import { formatMoney, formatPercent, getFinanceErrorMessage, VAT_RATE_OPTIONS } from '@/lib/financePresentation';
+import ConfirmActionDialog from '@/components/ui/confirm-action-dialog';
 
-const money = (value) => new Intl.NumberFormat('cs-CZ', {
-  style: 'currency', currency: 'CZK', maximumFractionDigits: 0,
-}).format(Number(value || 0));
-
-const percent = (value) => `${Number(value || 0).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`;
+const money = formatMoney;
+const percent = formatPercent;
 const localDate = (value) => value ? new Date(`${value}T00:00:00`).toLocaleDateString('cs-CZ') : '—';
 const toDateInput = (date) => date.toISOString().slice(0, 10);
 const addDays = (date, days) => {
@@ -73,6 +71,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
   const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
@@ -321,13 +320,17 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
   };
 
   const removeInvoice = async (entry) => {
-    if (!window.confirm(`Odstranit evidenci faktury ${entry.invoice_number || ''}? Změna zůstane v auditní historii.`)) return;
-    const { error } = await supabase.from('entity_billing_entries').delete().eq('id', entry.id);
-    if (error) {
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('entity_billing_entries').delete().eq('id', entry.id);
+      if (error) throw error;
+      await load();
+      setConfirmAction(null);
+    } catch (error) {
       toast({ title: 'Fakturu se nepodařilo odstranit', description: getFinanceErrorMessage(error), variant: 'destructive' });
-      return;
+    } finally {
+      setSaving(false);
     }
-    await load();
   };
 
   const openInvoiceDocument = async (entry) => {
@@ -342,13 +345,17 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
       toast({ title: 'Etapa už má navázanou fakturu', description: 'Nejdříve stornujte nebo odpojte navázanou fakturu.', variant: 'destructive' });
       return;
     }
-    if (!window.confirm(`Odstranit etapu „${milestone.name}“?`)) return;
-    const { error } = await supabase.from('entity_billing_milestones').delete().eq('id', milestone.id);
-    if (error) {
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('entity_billing_milestones').delete().eq('id', milestone.id);
+      if (error) throw error;
+      await load();
+      setConfirmAction(null);
+    } catch (error) {
       toast({ title: 'Etapu se nepodařilo odstranit', description: getFinanceErrorMessage(error), variant: 'destructive' });
-      return;
+    } finally {
+      setSaving(false);
     }
-    await load();
   };
 
   if (loading) return <div className="rounded-lg border bg-white p-5 text-sm text-slate-500">Načítám fakturaci…</div>;
@@ -450,7 +457,14 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
                   <TableCell><div className="flex justify-end gap-1">
                     {!isLinked && milestone.status !== 'cancelled' && <Button variant="ghost" size="icon" title="Vytvořit fakturu" onClick={() => openCreateInvoice(milestone)}><Receipt className="h-4 w-4 text-blue-700" /></Button>}
                     <Button variant="ghost" size="icon" title="Upravit etapu" onClick={() => openEditMilestone(milestone)}><Edit2 className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" title="Odstranit etapu" onClick={() => removeMilestone(milestone)}><Trash2 className="h-4 w-4 text-rose-600" /></Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={linkedMilestoneIds.has(milestone.id) ? 'Etapa má navázanou fakturu' : 'Odstranit etapu'}
+                      aria-label={`Odstranit etapu ${milestone.name}`}
+                      disabled={linkedMilestoneIds.has(milestone.id)}
+                      onClick={() => setConfirmAction({ type: 'milestone', item: milestone })}
+                    ><Trash2 className="h-4 w-4 text-rose-600" /></Button>
                   </div></TableCell>
                 </TableRow>;
               })}
@@ -485,7 +499,11 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
                   <TableCell className="text-right tabular-nums">{money(entry.paid_amount)}</TableCell>
                   <TableCell><div className="flex justify-end gap-1">
                     <Button variant="ghost" size="icon" onClick={() => openEditInvoice(entry)}><Edit2 className="h-4 w-4" /><span className="sr-only">Upravit</span></Button>
-                    <Button variant="ghost" size="icon" onClick={() => removeInvoice(entry)}><Trash2 className="h-4 w-4 text-rose-600" /><span className="sr-only">Odstranit</span></Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setConfirmAction({ type: 'invoice', item: entry })}
+                    ><Trash2 className="h-4 w-4 text-rose-600" /><span className="sr-only">Odstranit</span></Button>
                   </div></TableCell>
                 </TableRow>;
               })}
@@ -555,6 +573,21 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
           <DialogFooter><Button variant="outline" onClick={() => setInvoiceDialogOpen(false)}>Zrušit</Button><Button onClick={saveInvoice} disabled={saving}>{saving ? 'Ukládám…' : <><CheckCircle2 className="mr-2 h-4 w-4" />Uložit fakturu</>}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmActionDialog
+        open={Boolean(confirmAction)}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+        title={confirmAction?.type === 'invoice' ? 'Odstranit evidenci faktury?' : 'Odstranit fakturační etapu?'}
+        description={confirmAction?.type === 'invoice'
+          ? `Faktura ${confirmAction?.item?.invoice_number || 'bez čísla'} bude odebrána. Změna zůstane v auditní historii.`
+          : `Etapa „${confirmAction?.item?.name || ''}“ bude trvale odstraněna.`}
+        confirmLabel="Odstranit"
+        destructive
+        loading={saving}
+        onConfirm={() => {
+          if (confirmAction?.type === 'invoice') removeInvoice(confirmAction.item);
+          if (confirmAction?.type === 'milestone') removeMilestone(confirmAction.item);
+        }}
+      />
     </section>
   );
 };

@@ -748,6 +748,14 @@ const Projects = () => {
                       key={project.id}
                       className="group cursor-pointer bg-white hover:bg-blue-50/35"
                       onClick={() => navigate(`/projects/${project.id}`)}
+                      role="link"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          navigate(`/projects/${project.id}`);
+                        }
+                      }}
                     >
                       {projectVisibleColumns.map((column) => (
                         <TableCell key={column.id} className={projectCellClasses[column.id]} title={column.id === 'name' ? project.name : undefined}>
@@ -867,7 +875,19 @@ const Projects = () => {
 
 const ProjectCard = ({ project, onClick, showFinance, showReward, rewardDisplay }) => {
   return (
-    <Card className="cursor-pointer hover:shadow-md transition-all duration-200 group border-l-4" style={{ borderLeftColor: project.status === 'active' ? '#3b82f6' : 'transparent' }} onClick={onClick}>
+    <Card
+      className="cursor-pointer border-l-4 transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 group"
+      style={{ borderLeftColor: project.status === 'active' ? '#3b82f6' : 'transparent' }}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      role="link"
+      tabIndex={0}
+    >
       <CardHeader className="p-4 pb-2">
         <div className="flex justify-between items-start gap-2">
           <div>

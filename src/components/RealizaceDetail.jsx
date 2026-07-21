@@ -34,8 +34,9 @@ import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageF
 import { RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
 import EkvLoader from '@/components/ui/ekv-loader';
 import { calculateRealizationRewardAllocation } from '@/domain/financials';
+import { formatMoney } from '@/lib/financePresentation';
 
-const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
+const formatCurrency = formatMoney;
 const toNumber = (value) => {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : 0;

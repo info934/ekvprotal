@@ -115,18 +115,18 @@ const Documents = () => {
   };
   
   const handleAddDocument = async (docData) => {
-    if (!hasPermission('documents', 'can_edit')) return;
+    if (!hasPermission('documents', 'can_edit')) return false;
     const { file, project_id, ...restOfDocData } = docData;
 
     if (!file) {
         toast({ title: "🛑 Chybí soubor", variant: "destructive" });
-        return;
+        return false;
     }
     
     const project = projects.find(p => p.id === project_id);
     if (!project) {
         toast({ title: "🛑 Projekt nenalezen", variant: "destructive" });
-        return;
+        return false;
     }
 
     let uploadResult;
@@ -138,7 +138,7 @@ const Documents = () => {
       });
     } catch (uploadError) {
         toast({ title: "🛑 Chyba při nahrávání souboru", description: uploadError.message, variant: "destructive" });
-        return;
+        return false;
     }
 
     const basePayload = {
@@ -159,17 +159,18 @@ const Documents = () => {
           if (!fallbackError) {
             fetchDocuments();
             toast({ title: "Dokument úspěšně nahrán" });
-            return;
+            return true;
           }
         }
 
         toast({ title: "🛑 Chyba při ukládání dokumentu", description: error.message, variant: "destructive" });
         if (uploadResult.cleanup) await uploadResult.cleanup();
-        return;
+        return false;
     }
     
     fetchDocuments();
     toast({ title: "Dokument úspěšně nahrán" });
+    return true;
 };
 
   const openAddDocumentDialog = () => {

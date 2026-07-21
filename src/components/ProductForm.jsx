@@ -16,7 +16,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { uploadProductDatasheet } from '@/lib/documentStorageService';
 import { crmCommercialDocumentPath, crmOpportunityPath } from '@/lib/crmRoutes';
-import { VAT_RATE_OPTIONS } from '@/lib/financePresentation';
+import { formatMoney, formatPercent, VAT_RATE_OPTIONS } from '@/lib/financePresentation';
 
 const emptyProduct = {
   id: null,
@@ -58,13 +58,7 @@ const groupProductFields = (fields = []) => fields.reduce((acc, field) => {
   return { ...acc, [group]: [...(acc[group] || []), field] };
 }, {});
 
-const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
-  style: 'currency',
-  currency: 'CZK',
-  maximumFractionDigits: 0,
-}).format(Number(value || 0));
-
-const formatPercent = (value) => `${new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 1 }).format(Number(value || 0))} %`;
+const formatCurrency = formatMoney;
 
 const productTypeLabels = {
   service: 'Služba',

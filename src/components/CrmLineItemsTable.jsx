@@ -19,6 +19,7 @@ import {
   calculateCrmItemTotals,
   calculateUnitPriceForMargin,
 } from '@/lib/crmItemPayloads';
+import { formatMoney } from '@/lib/financePresentation';
 
 const text = {
   defaultTitle: 'Položkový seznam',
@@ -55,11 +56,7 @@ const text = {
   costs: 'Náklady',
 };
 
-const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
-  style: 'currency',
-  currency: 'CZK',
-  maximumFractionDigits: 0,
-}).format(Number(value || 0));
+const formatCurrency = formatMoney;
 
 const numericFields = new Set([
   'quantity',

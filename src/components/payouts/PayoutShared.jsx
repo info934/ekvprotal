@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Clock, FileText, Upload, XCircle } from 'l
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
+import { formatMoney } from '@/lib/financePresentation';
 
 export const payoutStatusMeta = {
   pending: {
@@ -32,8 +33,7 @@ export const payoutStatusMeta = {
   }
 };
 
-export const formatCurrency = (value) =>
-  `${Number(value || 0).toLocaleString('cs-CZ')} Kč`;
+export const formatCurrency = formatMoney;
 
 export const formatHours = (value) =>
   `${Number(value || 0).toLocaleString('cs-CZ', {

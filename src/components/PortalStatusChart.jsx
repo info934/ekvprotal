@@ -25,8 +25,6 @@ const taskStatusConfig = {
   Nové: { color: DATAVIZ_COLORS.primary, label: 'Nové' },
   'V řešení': { color: DATAVIZ_COLORS.amber, label: 'V řešení' },
   Hotovo: { color: DATAVIZ_COLORS.emerald, label: 'Hotovo' },
-  'Nové': { color: DATAVIZ_COLORS.primary, label: 'Nové' },
-  'V řešení': { color: DATAVIZ_COLORS.amber, label: 'V řešení' },
 };
 
 const processData = (rawData = [], config = {}) => {
@@ -49,11 +47,22 @@ const processData = (rawData = [], config = {}) => {
   };
 };
 
-const PortalStatusChart = () => {
-  const [rawData, setRawData] = useState({ projects: [], engineering: [], tasks: [] });
-  const [loading, setLoading] = useState(true);
+const PortalStatusChart = ({ projects, engineering, tasks }) => {
+  const hasProvidedData = Array.isArray(projects) && Array.isArray(engineering) && Array.isArray(tasks);
+  const [rawData, setRawData] = useState(() => ({
+    projects: projects || [],
+    engineering: engineering || [],
+    tasks: tasks || [],
+  }));
+  const [loading, setLoading] = useState(!hasProvidedData);
 
   useEffect(() => {
+    if (hasProvidedData) {
+      setRawData({ projects, engineering, tasks });
+      setLoading(false);
+      return undefined;
+    }
+
     const fetchData = async () => {
       setLoading(true);
 
@@ -72,7 +81,7 @@ const PortalStatusChart = () => {
     };
 
     fetchData();
-  }, []);
+  }, [engineering, hasProvidedData, projects, tasks]);
 
   const chartData = useMemo(
     () => ({

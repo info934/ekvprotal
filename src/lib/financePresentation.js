@@ -1,9 +1,10 @@
 export const formatMoney = (value, options = {}) => {
-  const { maximumFractionDigits = 0, currency = 'CZK' } = options;
+  const { maximumFractionDigits = 0, minimumFractionDigits = 0, currency = 'CZK' } = options;
   return new Intl.NumberFormat('cs-CZ', {
     style: 'currency',
     currency,
     maximumFractionDigits,
+    minimumFractionDigits,
   }).format(Number(value || 0));
 };
 

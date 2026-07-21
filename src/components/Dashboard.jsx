@@ -47,11 +47,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import PageHeader from '@/components/ui/page-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import PortalStatusChart from '@/components/PortalStatusChart';
-import ProjectStatusChart from '@/components/ProjectStatusChart';
-import ProjectGanttChart from '@/components/ProjectGanttChart';
-import RealizationGanttChart from '@/components/RealizationGanttChart';
-import { PendingApprovalsWidget } from '@/components/DashboardWidgets';
 import { getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -59,6 +54,16 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { crmOpportunityPath } from '@/lib/crmRoutes';
 import { cn, formatCurrency } from '@/lib/utils';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
+
+const PortalStatusChart = React.lazy(() => import('@/components/PortalStatusChart'));
+const ProjectStatusChart = React.lazy(() => import('@/components/ProjectStatusChart'));
+const ProjectGanttChart = React.lazy(() => import('@/components/ProjectGanttChart'));
+const RealizationGanttChart = React.lazy(() => import('@/components/RealizationGanttChart'));
+const PendingApprovalsWidget = React.lazy(() => import('@/components/DashboardWidgets').then((module) => ({ default: module.PendingApprovalsWidget })));
+
+const DashboardModuleFallback = () => (
+  <div className="h-48 animate-pulse rounded-lg border border-slate-200 bg-slate-50" aria-label="Načítám přehled" />
+);
 
 const today = new Date();
 today.setHours(0, 0, 0, 0);
@@ -96,7 +101,18 @@ const pluralizeCs = (count, one, few, many) => {
   return many;
 };
 
-const safeArray = (result) => (result?.error ? [] : (result?.data || []));
+const resultArray = (result, label) => {
+  if (result?.error) {
+    throw new Error(`${label}: ${result.error.message}`);
+  }
+  return result?.data || [];
+};
+
+const withoutKeys = (value, keys) => {
+  const next = { ...value };
+  keys.forEach((key) => delete next[key]);
+  return next;
+};
 
 const stageLabels = {
   lead: 'Přijetí poptávky',
@@ -524,6 +540,7 @@ const Dashboard = () => {
   const { isSuperUser, isAdmin, memberId, isPrivateMode } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [zoom, setZoom] = useState('month');
   const [data, setData] = useState({
     userProjects: [],
@@ -542,6 +559,7 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const canViewCompanyFinance = isAdmin && !isPrivateMode;
       const next = {
@@ -587,6 +605,36 @@ const Dashboard = () => {
         supabase.from('documents').select('id, name, created_at').order('created_at', { ascending: false }).limit(50),
       ];
 
+      const memberQueries = memberId ? [
+        supabase
+          .from('projects')
+          .select('id, name, code, status, start_date, completion_date, created_at')
+          .order('created_at', { ascending: false })
+          .limit(500),
+        supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').eq('member_id', memberId).order('end_date', { ascending: true }).limit(100),
+        supabase.rpc('get_user_activities', { p_member_id: memberId }),
+        supabase.from('realizations').select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, team_members').contains('team_members', [memberId]).order('created_at', { ascending: false }).limit(100),
+      ] : null;
+
+      const companyQueries = canViewCompanyFinance ? [
+        supabase.rpc('list_projects_safe'),
+        supabase.rpc('list_realizations_safe'),
+        supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').order('end_date', { ascending: true }).limit(200),
+        supabase.from('engineering_activities').select('id, subject, status, project_id, end_date, projects(name)').neq('status', 'done').order('end_date', { ascending: true }).limit(12),
+        supabase.rpc('get_company_financials'),
+        supabase.rpc('get_overhead_summary'),
+      ] : null;
+
+      const [
+        commonResults,
+        memberResults,
+        companyResults,
+      ] = await Promise.all([
+        Promise.all(commonQueries),
+        memberQueries ? Promise.all(memberQueries) : Promise.resolve(null),
+        companyQueries ? Promise.all(companyQueries) : Promise.resolve(null),
+      ]);
+
       const [
         payoutsRes,
         attendanceRes,
@@ -594,33 +642,24 @@ const Dashboard = () => {
         commercialDocumentsRes,
         productsRes,
         documentsRes,
-      ] = await Promise.all(commonQueries);
+      ] = commonResults;
 
-      next.payouts = safeArray(payoutsRes);
-      next.attendanceSubmissions = safeArray(attendanceRes);
-      next.opportunities = safeArray(opportunitiesRes);
-      next.commercialDocuments = safeArray(commercialDocumentsRes);
-      next.products = safeArray(productsRes);
-      next.documents = safeArray(documentsRes);
+      next.payouts = resultArray(payoutsRes, 'Výplaty');
+      next.attendanceSubmissions = resultArray(attendanceRes, 'Docházka');
+      next.opportunities = resultArray(opportunitiesRes, 'CRM příležitosti');
+      next.commercialDocuments = resultArray(commercialDocumentsRes, 'CRM dokumenty');
+      next.products = resultArray(productsRes, 'Produkty');
+      next.documents = resultArray(documentsRes, 'Dokumenty');
 
-      if (memberId) {
-        const [userProjectsRes, userTasksRes, userActivitiesRes, userRealizationsRes] = await Promise.all([
-          supabase
-            .from('projects')
-            .select('id, name, code, status, start_date, completion_date, created_at')
-            .order('created_at', { ascending: false })
-            .limit(500),
-          supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').eq('member_id', memberId).order('end_date', { ascending: true }).limit(100),
-          supabase.rpc('get_user_activities', { p_member_id: memberId }),
-          supabase.from('realizations').select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, team_members').contains('team_members', [memberId]).order('created_at', { ascending: false }).limit(100),
-        ]);
-        next.userProjects = safeArray(userProjectsRes);
-        next.tasks = safeArray(userTasksRes);
-        next.engineering = safeArray(userActivitiesRes);
-        next.realizations = safeArray(userRealizationsRes);
+      if (memberResults) {
+        const [userProjectsRes, userTasksRes, userActivitiesRes, userRealizationsRes] = memberResults;
+        next.userProjects = resultArray(userProjectsRes, 'Moje projekty');
+        next.tasks = resultArray(userTasksRes, 'Moje úkoly');
+        next.engineering = resultArray(userActivitiesRes, 'Moje aktivity');
+        next.realizations = resultArray(userRealizationsRes, 'Moje realizace');
       }
 
-      if (canViewCompanyFinance) {
+      if (companyResults) {
         const [
           projectsRes,
           realizationsRes,
@@ -628,22 +667,15 @@ const Dashboard = () => {
           engineeringRes,
           companyFinanceRes,
           overheadRes,
-        ] = await Promise.all([
-          supabase.rpc('list_projects_safe'),
-          supabase.rpc('list_realizations_safe'),
-          supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').order('end_date', { ascending: true }).limit(200),
-          supabase.from('engineering_activities').select('id, subject, status, project_id, end_date, projects(name)').neq('status', 'done').order('end_date', { ascending: true }).limit(12),
-          supabase.rpc('get_company_financials'),
-          supabase.rpc('get_overhead_summary'),
-        ]);
+        ] = companyResults;
 
-        next.projects = safeArray(projectsRes);
-        next.realizations = safeArray(realizationsRes);
-        next.tasks = safeArray(tasksRes);
-        next.engineering = safeArray(engineeringRes);
+        next.projects = resultArray(projectsRes, 'Projekty');
+        next.realizations = resultArray(realizationsRes, 'Realizace');
+        next.tasks = resultArray(tasksRes, 'Úkoly');
+        next.engineering = resultArray(engineeringRes, 'Inženýring');
 
-        const finance = safeArray(companyFinanceRes)[0] || {};
-        const overhead = safeArray(overheadRes)[0] || {};
+        const finance = resultArray(companyFinanceRes, 'Firemní finance')[0] || {};
+        const overhead = resultArray(overheadRes, 'Režie')[0] || {};
         next.companyFinance = {
           realizedProfit: Math.round(finance.realized_profit || 0),
           potentialProfit: Math.round(finance.potential_profit || 0),
@@ -656,6 +688,7 @@ const Dashboard = () => {
 
       setData(next);
     } catch (error) {
+      setLoadError(error.message || 'Data dashboardu nejsou momentálně dostupná.');
       toast({ title: 'Dashboard se nepodařilo načíst', description: error.message, variant: 'destructive' });
     } finally {
       setLoading(false);
@@ -666,6 +699,19 @@ const Dashboard = () => {
     fetchDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, isSuperUser, memberId, isPrivateMode]);
+
+  useEffect(() => {
+    if (!isPrivateMode) return;
+    setData((current) => ({
+      ...current,
+      payouts: current.payouts.map((item) => withoutKeys(item, ['amount'])),
+      opportunities: current.opportunities.map((item) => withoutKeys(item, ['value'])),
+      commercialDocuments: current.commercialDocuments.map((item) => withoutKeys(item, ['total'])),
+      projects: current.projects.map((item) => withoutKeys(item, ['price'])),
+      realizations: current.realizations.map((item) => withoutKeys(item, ['contract_amount'])),
+      companyFinance: emptyCompanyFinance,
+    }));
+  }, [isPrivateMode]);
 
   const summary = useMemo(() => {
     const visibleProjects = isSuperUser ? data.projects : data.userProjects;
@@ -778,7 +824,7 @@ const Dashboard = () => {
       });
 
     return items.slice(0, 8);
-  }, [data.attendanceSubmissions, data.payouts, summary.openOpportunities, summary.overdueEngineering, summary.overdueTasks]);
+  }, [data.attendanceSubmissions, data.payouts, isAdmin, isPrivateMode, summary.openOpportunities, summary.overdueEngineering, summary.overdueTasks]);
 
   const stageSummary = useMemo(() => {
     const counts = summary.openOpportunities.reduce((acc, opportunity) => {
@@ -928,6 +974,21 @@ const Dashboard = () => {
             </div>
           }
         />
+
+        {loadError && (
+          <div role="alert" className="flex items-start justify-between gap-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-red-900">
+            <div className="flex min-w-0 items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold">Část přehledu není aktuální</p>
+                <p className="mt-1 text-xs leading-5">{loadError}</p>
+              </div>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={fetchDashboardData} className="shrink-0 border-red-200 bg-white">
+              Zkusit znovu
+            </Button>
+          </div>
+        )}
 
         {isPrivateMode && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
@@ -1091,7 +1152,9 @@ const Dashboard = () => {
                   />
                 </CardHeader>
                 <CardContent className="p-4">
-                  <ProjectStatusChart projects={summary.visibleProjects} tasks={data.tasks} />
+                  <React.Suspense fallback={<DashboardModuleFallback />}>
+                    <ProjectStatusChart projects={summary.visibleProjects} tasks={data.tasks} />
+                  </React.Suspense>
                 </CardContent>
               </Card>
 
@@ -1133,11 +1196,15 @@ const Dashboard = () => {
                   />
                 </CardHeader>
                 <CardContent className="p-4">
-                  <PortalStatusChart />
+                  <React.Suspense fallback={<DashboardModuleFallback />}>
+                    <PortalStatusChart projects={summary.visibleProjects} engineering={data.engineering} tasks={data.tasks} />
+                  </React.Suspense>
                 </CardContent>
               </Card>
 
-              <PendingApprovalsWidget />
+              <React.Suspense fallback={<DashboardModuleFallback />}>
+                <PendingApprovalsWidget payouts={data.payouts} attendance={data.attendanceSubmissions} />
+              </React.Suspense>
             </div>
           </TabsContent>
 
@@ -1162,7 +1229,9 @@ const Dashboard = () => {
                       </div>
                     </CardContent>
                   </Card>
-                  <PendingApprovalsWidget />
+                  <React.Suspense fallback={<DashboardModuleFallback />}>
+                    <PendingApprovalsWidget payouts={data.payouts} attendance={data.attendanceSubmissions} />
+                  </React.Suspense>
                 </div>
               ) : (
                 <Card className="crm-panel">
@@ -1188,7 +1257,9 @@ const Dashboard = () => {
                   />
                 </CardHeader>
                 <CardContent className="p-4">
-                  <ProjectGanttChart projects={summary.visibleProjects} zoom={zoom} onZoomChange={setZoom} />
+                  <React.Suspense fallback={<DashboardModuleFallback />}>
+                    <ProjectGanttChart projects={summary.visibleProjects} zoom={zoom} onZoomChange={setZoom} />
+                  </React.Suspense>
                 </CardContent>
               </Card>
 
@@ -1201,7 +1272,9 @@ const Dashboard = () => {
                   />
                 </CardHeader>
                 <CardContent className="p-4">
-                  <RealizationGanttChart realizations={data.realizations} zoom={zoom} onZoomChange={setZoom} />
+                  <React.Suspense fallback={<DashboardModuleFallback />}>
+                    <RealizationGanttChart realizations={data.realizations} zoom={zoom} onZoomChange={setZoom} />
+                  </React.Suspense>
                 </CardContent>
               </Card>
             </div>

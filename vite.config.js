@@ -264,8 +264,6 @@ const addTransformIndexHtml = {
 	},
 };
 
-console.warn = () => {};
-
 const logger = createLogger()
 const loggerError = logger.error
 
@@ -306,7 +304,53 @@ export default defineConfig({
 				'@babel/traverse',
 				'@babel/generator',
 				'@babel/types'
-			]
+			],
+			output: {
+				manualChunks(id) {
+					if (!id.includes('node_modules')) return undefined;
+					const moduleId = id.replaceAll('\\', '/');
+
+					if (/\/node_modules\/(react|react-dom|react-router|react-router-dom)\//.test(moduleId)) {
+						return 'vendor-react';
+					}
+
+					if (moduleId.includes('/node_modules/@supabase/')) {
+						return 'vendor-supabase';
+					}
+
+					if (moduleId.includes('/node_modules/docx/')) {
+						return 'vendor-docx';
+					}
+
+					if (
+						moduleId.includes('/node_modules/jspdf/') ||
+						moduleId.includes('/node_modules/html2canvas/')
+					) {
+						return 'vendor-pdf';
+					}
+
+					if (moduleId.includes('/node_modules/dhtmlx-gantt/')) {
+						return 'vendor-gantt';
+					}
+
+					if (
+						moduleId.includes('/node_modules/recharts/') ||
+						moduleId.includes('/node_modules/d3-')
+					) {
+						return 'vendor-charts';
+					}
+
+					if (
+						moduleId.includes('/node_modules/@radix-ui/') ||
+						moduleId.includes('/node_modules/lucide-react/') ||
+						moduleId.includes('/node_modules/framer-motion/')
+					) {
+						return 'vendor-ui';
+					}
+
+					return undefined;
+				},
+			},
 		}
 	}
 });

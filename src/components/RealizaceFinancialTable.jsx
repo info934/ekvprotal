@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { format, parseISO } from 'date-fns';
+import { formatMoney } from '@/lib/financePresentation';
 
 const RealizaceFinancialTable = () => {
     const [financialData, setFinancialData] = useState([]);
@@ -33,7 +34,7 @@ const RealizaceFinancialTable = () => {
         fetchTableData();
     }, [toast]);
 
-    const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK' }).format(value || 0);
+    const formatCurrency = formatMoney;
 
     // Future integration point for Forecast module:
     // This table could be enhanced with a column showing 'Projected vs. Actual' variance

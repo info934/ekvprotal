@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Check, Search, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,9 +24,10 @@ const CustomSelect = ({
   const containerRef = useRef(null);
   const searchInputRef = useRef(null);
   const listRef = useRef(null);
+  const listboxId = useId();
 
   // Theme configuration
-  const themes = {
+  const themes = useMemo(() => ({
     blue: {
       ring: "focus:ring-blue-500",
       selectedBg: "bg-blue-100",
@@ -48,15 +49,15 @@ const CustomSelect = ({
       hoverBg: "hover:bg-gray-50",
       iconColor: "text-gray-600",
     }
-  };
+  }), []);
 
   const currentTheme = themes[themeColor] || themes.blue;
 
   // Filter items
-  const filteredItems = items.filter(item => 
+  const filteredItems = useMemo(() => items.filter(item =>
     item.label?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  ), [items, searchTerm]);
 
   // Selected Item Display
   const selectedItem = items.find(item => item.id === value);
@@ -153,17 +154,23 @@ const CustomSelect = ({
       className={cn("relative w-full text-sm", className)}
       onKeyDown={handleKeyDown}
     >
-      {/* Trigger Button */}
-      <div
+      <button
+        type="button"
         onClick={toggleOpen}
+        disabled={disabled || loading}
+        role="combobox"
+        aria-controls={listboxId}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-activedescendant={isOpen && filteredItems[highlightedIndex] ? `${listboxId}-${filteredItems[highlightedIndex].id}` : undefined}
+        aria-invalid={Boolean(error)}
         className={cn(
           "flex items-center justify-between w-full px-3 py-2 text-left bg-white border rounded-md shadow-sm cursor-pointer transition-all duration-200",
           "hover:border-gray-400 hover:shadow-md",
           isOpen ? `ring-2 ${currentTheme.ring} border-transparent` : "border-input",
-          disabled && "opacity-50 cursor-not-allowed bg-gray-50",
+          (disabled || loading) && "opacity-50 cursor-not-allowed bg-gray-50",
           error && "border-red-500 focus:ring-red-500 ring-1 ring-red-200"
         )}
-        tabIndex={0}
       >
         <span className={cn("truncate", !selectedItem && "text-muted-foreground")}>
           {loading ? (
@@ -179,7 +186,7 @@ const CustomSelect = ({
           )}
         </span>
         <ChevronDown className={cn("w-4 h-4 ml-2 transition-transform duration-200 text-gray-400", isOpen && "transform rotate-180")} />
-      </div>
+      </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
@@ -191,6 +198,11 @@ const CustomSelect = ({
             <input
               ref={searchInputRef}
               type="text"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls={listboxId}
+              aria-expanded={isOpen}
+              aria-activedescendant={filteredItems[highlightedIndex] ? `${listboxId}-${filteredItems[highlightedIndex].id}` : undefined}
               className="w-full bg-transparent border-none focus:outline-none text-sm text-gray-700 placeholder:text-gray-400"
               placeholder={searchPlaceholder}
               value={searchTerm}
@@ -201,8 +213,11 @@ const CustomSelect = ({
               onClick={(e) => e.stopPropagation()}
             />
             {searchTerm && (
-                <button 
+                <button
+                    type="button"
+                    aria-label="Vymazat hledání"
                     onClick={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
                         setSearchTerm("");
                         searchInputRef.current?.focus();
@@ -215,7 +230,10 @@ const CustomSelect = ({
           </div>
 
           {/* Items List */}
-          <ul 
+          <ul
+            id={listboxId}
+            role="listbox"
+            aria-label={placeholder}
             ref={listRef}
             className="max-h-60 overflow-y-auto py-1 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
           >
@@ -231,6 +249,9 @@ const CustomSelect = ({
                 return (
                   <li
                     key={item.id}
+                    id={`${listboxId}-${item.id}`}
+                    role="option"
+                    aria-selected={isSelected}
                     onClick={(e) => {
                         e.stopPropagation();
                         handleSelect(item.id);

@@ -1,5 +1,6 @@
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { formatMoney } from '@/lib/financePresentation';
 
 export function cn(...inputs) {
   return twMerge(clsx(inputs));
@@ -14,14 +15,7 @@ export function cn(...inputs) {
 
 export const formatCurrency = (amount, isPrivateMode = false) => {
   if (isPrivateMode) return '*** *** Kč';
-
-  if (amount === null || amount === undefined) return '0 Kč';
-  return Number(amount).toLocaleString('cs-CZ', {
-    style: 'currency',
-    currency: 'CZK',
-    maximumFractionDigits: 0,
-    minimumFractionDigits: 0
-  });
+  return formatMoney(amount);
 };
 
 export const projectStatusConfig = {

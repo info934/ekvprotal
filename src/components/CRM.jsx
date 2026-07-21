@@ -67,6 +67,7 @@ import {
   isMissingCrmRpcError,
 } from '@/lib/crmItemPayloads';
 import { cn } from '@/lib/utils';
+import { formatMoney } from '@/lib/financePresentation';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const subjectTypeLabels = {
@@ -151,11 +152,7 @@ const isMissingCrmTableError = (error) => {
     message.includes('crm_commercial_document_items');
 };
 
-const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
-  style: 'currency',
-  currency: 'CZK',
-  maximumFractionDigits: 0,
-}).format(Number(value || 0));
+const formatCurrency = formatMoney;
 
 const formatDate = (value) => {
   if (!value) return '-';
@@ -2504,7 +2501,7 @@ const CRM = () => {
         documents: selectedOpportunityDocuments,
       };
       if (format === 'pdf') {
-        downloadOpportunityOverviewPdf(generationInput);
+        await downloadOpportunityOverviewPdf(generationInput);
       } else if (format === 'html') {
         downloadOpportunityOverviewHtml(generationInput);
       } else {

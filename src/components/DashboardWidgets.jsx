@@ -11,15 +11,23 @@ import { cs } from 'date-fns/locale';
 import { formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
-export const PendingApprovalsWidget = () => {
+export const PendingApprovalsWidget = ({ payouts: providedPayouts, attendance: providedAttendance }) => {
+    const hasProvidedData = Array.isArray(providedPayouts) && Array.isArray(providedAttendance);
     const [activeTab, setActiveTab] = useState('payouts');
-    const [payouts, setPayouts] = useState([]);
-    const [attendance, setAttendance] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [payouts, setPayouts] = useState(providedPayouts || []);
+    const [attendance, setAttendance] = useState(providedAttendance || []);
+    const [loading, setLoading] = useState(!hasProvidedData);
     const { isAdmin, isPrivateMode } = useAuth();
     const canViewApprovalAmounts = isAdmin && !isPrivateMode;
 
     useEffect(() => {
+        if (hasProvidedData) {
+            setPayouts(providedPayouts);
+            setAttendance(providedAttendance);
+            setLoading(false);
+            return undefined;
+        }
+
         const fetchData = async () => {
             setLoading(true);
             
@@ -57,7 +65,7 @@ export const PendingApprovalsWidget = () => {
             .subscribe();
 
         return () => supabase.removeChannel(channel);
-    }, [canViewApprovalAmounts]);
+    }, [canViewApprovalAmounts, hasProvidedData, providedAttendance, providedPayouts]);
 
     const renderEmptyState = (message) => (
         <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">

@@ -3,31 +3,37 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useToast } from '@/components/ui/use-toast';
 
-const ProjectLinkDialog = ({ isOpen, onClose, onSave, link, projectId }) => {
+const ProjectLinkDialog = ({ isOpen, onClose, onSave, link, linkData, projectId }) => {
+  const currentLink = link || linkData;
   const [url, setUrl] = useState('');
   const [description, setDescription] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [validationError, setValidationError] = useState('');
+  const { toast } = useToast();
 
   useEffect(() => {
-    if (link) {
-      setUrl(link.url || '');
-      setDescription(link.description || '');
+    if (currentLink) {
+      setUrl(currentLink.url || '');
+      setDescription(currentLink.description || '');
     } else {
       setUrl('');
       setDescription('');
     }
-  }, [link, isOpen]);
+    setValidationError('');
+  }, [currentLink, isOpen]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!url) {
-      alert('Prosím, zadejte URL odkazu.');
+      setValidationError('Prosím, zadejte URL odkazu.');
       return;
     }
 
     try {
       new URL(url);
     } catch (error) {
-      alert('Prosím, zadejte platnou URL.');
+      setValidationError('Prosím, zadejte platnou URL včetně https://.');
       return;
     }
     
@@ -37,20 +43,29 @@ const ProjectLinkDialog = ({ isOpen, onClose, onSave, link, projectId }) => {
       description,
     };
 
-    onSave(linkData);
-    onClose();
+    setValidationError('');
+    setIsSaving(true);
+    try {
+      const result = await onSave(linkData);
+      if (result !== false) onClose();
+    } catch (error) {
+      toast({ title: 'Odkaz se nepodařilo uložit', description: error?.message, variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && !isSaving && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{link ? 'Upravit odkaz' : 'Přidat odkaz'}</DialogTitle>
+          <DialogTitle>{currentLink ? 'Upravit odkaz' : 'Přidat odkaz'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <Label htmlFor="url">URL odkazu *</Label>
             <Input id="url" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" />
+            {validationError && <p role="alert" className="text-sm text-red-600">{validationError}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="description">Popis odkazu</Label>
@@ -58,8 +73,8 @@ const ProjectLinkDialog = ({ isOpen, onClose, onSave, link, projectId }) => {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Zrušit</Button>
-          <Button onClick={handleSave}>Uložit</Button>
+          <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>Zrušit</Button>
+          <Button type="button" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Ukládám…' : 'Uložit'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

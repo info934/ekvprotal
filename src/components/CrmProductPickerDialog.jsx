@@ -27,12 +27,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { formatMoney } from '@/lib/financePresentation';
 
-const formatCurrency = (value) => new Intl.NumberFormat('cs-CZ', {
-  style: 'currency',
-  currency: 'CZK',
-  maximumFractionDigits: 0,
-}).format(Number(value || 0));
+const formatCurrency = formatMoney;
 
 const productKey = (product) => product.id || product.code || product.sku || product.name;
 

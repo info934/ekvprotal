@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { cn } from '@/lib/utils';
+import { formatMoney } from '@/lib/financePresentation';
 
 const emptySetForm = {
   id: null,
@@ -21,11 +22,7 @@ const emptySetForm = {
   is_active: true,
 };
 
-const formatCurrency = (value, currency = 'CZK') => new Intl.NumberFormat('cs-CZ', {
-  style: 'currency',
-  currency: currency || 'CZK',
-  maximumFractionDigits: 0,
-}).format(Number(value || 0));
+const formatCurrency = (value, currency = 'CZK') => formatMoney(value, { currency: currency || 'CZK' });
 
 const productUsageCount = (product) => Number(product?.usage_count ?? product?.total_usage_count ?? product?.metadata?.usage_count ?? 0);
 

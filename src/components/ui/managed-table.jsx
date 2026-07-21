@@ -126,6 +126,7 @@ export const ManagedTableToolbar = ({
               size="icon"
               className="h-7 w-7"
               disabled={index === 0}
+              aria-label={`Posunout sloupec ${column.label} doleva`}
               onClick={(event) => {
                 event.preventDefault();
                 onMoveColumn(column.id, 'up');
@@ -139,6 +140,7 @@ export const ManagedTableToolbar = ({
               size="icon"
               className="h-7 w-7"
               disabled={index === columns.length - 1}
+              aria-label={`Posunout sloupec ${column.label} doprava`}
               onClick={(event) => {
                 event.preventDefault();
                 onMoveColumn(column.id, 'down');
@@ -172,18 +174,15 @@ export const ManagedTableSection = ({
   className,
 }) => (
   <div className={cn('overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.05)]', className)}>
+    <div className="flex min-w-0 items-center gap-2 border-b border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950">
+      <span className="relative min-w-0 truncate pl-3 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-primary">{title}</span>
+      {typeof count !== 'undefined' && (
+        <span className="shrink-0 rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">{count}</span>
+      )}
+      {toolbar && <div className="ml-auto shrink-0">{toolbar}</div>}
+    </div>
     <div className="overflow-x-auto">
-      <div
-        className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950"
-        style={{ minWidth }}
-      >
-        <span className="relative pl-3 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-primary">{title}</span>
-        {typeof count !== 'undefined' && (
-          <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">{count}</span>
-        )}
-        {toolbar && <div className="ml-auto">{toolbar}</div>}
-      </div>
-      <div className="[&>div]:rounded-none [&>div]:border-0 [&>div]:shadow-none">
+      <div className="[&>div]:rounded-none [&>div]:border-0 [&>div]:shadow-none" style={{ minWidth }}>
         {children}
       </div>
     </div>

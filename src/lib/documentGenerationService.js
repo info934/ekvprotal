@@ -1,21 +1,28 @@
-import {
-  AlignmentType,
-  BorderStyle,
-  Document,
-  HeadingLevel,
-  ImageRun,
-  Packer,
-  Paragraph,
-  Table,
-  TableCell,
-  TableRow,
-  TextRun,
-  WidthType,
-} from 'docx';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
 import { sanitizeDocumentTemplateHtml, sanitizeGeneratedDocumentHtml } from '@/lib/htmlSanitizer';
 import { calculateCrmItem, calculateCrmTotals } from '@/lib/crmItemPayloads';
+
+let AlignmentType;
+let BorderStyle;
+let Document;
+let HeadingLevel;
+let ImageRun;
+let Packer;
+let Paragraph;
+let Table;
+let TableCell;
+let TableRow;
+let TextRun;
+let WidthType;
+let docxModulePromise;
+
+const ensureDocxModule = async () => {
+  if (!docxModulePromise) {
+    docxModulePromise = import('docx').then((module) => {
+      ({ AlignmentType, BorderStyle, Document, HeadingLevel, ImageRun, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } = module);
+    });
+  }
+  await docxModulePromise;
+};
 
 const documentTypeLabels = {
   offer: 'Nabídka',
@@ -322,6 +329,7 @@ const createCommercialItemsDocxTable = (items) => new Table({
 const isPremiumOfferTemplate = (template) => /ekv\s+premium|premium.*nab/i.test(`${template?.name || ''} ${template?.description || ''}`);
 
 const createPremiumOfferDocxBlob = async (payload) => {
+  await ensureDocxModule();
   const { document, opportunity, items, totals, generatedAt } = payload;
   const safeTitle = document.title || opportunity.title || 'Nab\u00eddka';
   const doc = new Document({
@@ -764,6 +772,11 @@ const createStyledPdfFromHtml = async (html) => {
     throw new Error('PDF export is available only in the browser.');
   }
 
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ]);
+
   const host = document.createElement('div');
   host.style.position = 'fixed';
   host.style.left = '-10000px';
@@ -846,6 +859,7 @@ const makeCell = (text, options = {}) => new TableCell({
 });
 
 const createTemplateDocxBlob = async (payload, template) => {
+  await ensureDocxModule();
   const itemsTableMarker = '[[EKV_ITEMS_TABLE]]';
   const templateContent = String(template.content || '')
     .replace(/\{\{items_table\}\}/g, itemsTableMarker)
@@ -891,6 +905,7 @@ const createTemplateDocxBlob = async (payload, template) => {
 };
 
 export const createCommercialDocumentDocxBlob = async (payload, template = null) => {
+  await ensureDocxModule();
   if (template?.content && isPremiumOfferTemplate(template)) {
     return createPremiumOfferDocxBlob(payload);
   }
@@ -1142,6 +1157,7 @@ export const downloadOpportunityOverviewHtml = ({ opportunity, documents = [] })
 };
 
 export const downloadOpportunityOverviewDocx = async ({ opportunity, documents = [] }) => {
+  await ensureDocxModule();
   const payload = buildOpportunityOverviewPayload(opportunity, documents);
   const { opportunity: deal, items, totals } = payload;
   const docRows = documents.length > 0 ? documents.map((document) => new TableRow({
@@ -1236,7 +1252,8 @@ export const downloadOpportunityOverviewDocx = async ({ opportunity, documents =
   return payload;
 };
 
-export const downloadOpportunityOverviewPdf = ({ opportunity, documents = [] }) => {
+export const downloadOpportunityOverviewPdf = async ({ opportunity, documents = [] }) => {
+  const { jsPDF } = await import('jspdf');
   const payload = buildOpportunityOverviewPayload(opportunity, documents);
   const { opportunity: deal, items, totals, generatedAt } = payload;
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -1629,6 +1646,7 @@ export const renderHandoverProtocolHtml = (payload, template = null) => {
 };
 
 const createHandoverDocxBlob = async (payload, template = null) => {
+  await ensureDocxModule();
   const html = template?.content ? fillHandoverTemplate(template.content, payload) : renderHandoverProtocolHtml(payload, null);
   const lines = stripHtml(html).split('\n').map((line) => line.trim()).filter(Boolean);
   const doc = new Document({

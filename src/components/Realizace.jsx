@@ -602,7 +602,19 @@ const Realizace = () => {
                                 <TableRow><TableCell colSpan={realizationVisibleColumns.length} className="text-center py-8 text-muted-foreground">Žádné realizace nenalezeny</TableCell></TableRow>
                             ) : (
                                 filteredRealizations.map(r => (
-                                    <TableRow key={r.id} className="cursor-pointer bg-white hover:bg-blue-50/35" onClick={() => navigate(`/realizace/${r.id}`)}>
+                                    <TableRow
+                                      key={r.id}
+                                      className="cursor-pointer bg-white hover:bg-blue-50/35"
+                                      onClick={() => navigate(`/realizace/${r.id}`)}
+                                      role="link"
+                                      tabIndex={0}
+                                      onKeyDown={(event) => {
+                                        if (event.key === 'Enter' || event.key === ' ') {
+                                          event.preventDefault();
+                                          navigate(`/realizace/${r.id}`);
+                                        }
+                                      }}
+                                    >
                                         {realizationVisibleColumns.map((column) => (
                                             <TableCell key={column.id} className={realizationCellClasses[column.id]} title={column.id === 'name' ? r.name : undefined}>
                                                 {renderRealizationTableCell(r, column.id)}
@@ -618,7 +630,19 @@ const Realizace = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredRealizations.map(r => {
                         return (
-                            <Card key={r.id} className="cursor-pointer hover:shadow-md transition-all duration-200 group border-l-4" onClick={() => navigate(`/realizace/${r.id}`)}>
+                            <Card
+                              key={r.id}
+                              className="cursor-pointer border-l-4 transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 group"
+                              onClick={() => navigate(`/realizace/${r.id}`)}
+                              role="link"
+                              tabIndex={0}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  navigate(`/realizace/${r.id}`);
+                                }
+                              }}
+                            >
                                 <CardHeader className="pb-2">
                                     <div className="flex justify-between items-start gap-2 min-w-0">
                                         <CardTitle className="text-base line-clamp-2 group-hover:text-primary transition-colors" title={r.name}>{r.name}</CardTitle>

@@ -16,6 +16,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
+import { formatMoney } from '@/lib/financePresentation';
 
 const labels = {
   back: 'Zp\u011bt na detail projektu',
@@ -88,7 +89,7 @@ const actionMeta = {
   },
 };
 
-const formatCurrency = (value) => `${Number(value || 0).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} K\u010d`;
+const formatCurrency = (value) => formatMoney(value, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formatDateTime = (value) => new Date(value).toLocaleString('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' });
 
 const getRewardChangeRows = (details = {}) => {
