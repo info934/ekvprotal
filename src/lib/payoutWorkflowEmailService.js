@@ -135,6 +135,7 @@ export const sendPayoutCreatedEmail = async (payout) => {
         </p>
       `;
       memberData = await invokeEmailFunction('send-payout-email', {
+        payoutId: payout.id,
         to: memberEmail,
         subject: memberSubject,
         htmlContent: createEmailTemplate(memberSubject, memberContent),
@@ -254,7 +255,7 @@ export const sendPayoutApprovedEmail = async (payout) => {
     
     const htmlContent = createEmailTemplate(subject, content);
     
-    const data = await invokeEmailFunction('send-payout-email', { to: memberEmail, subject, htmlContent });
+    const data = await invokeEmailFunction('send-payout-email', { payoutId: payout.id, to: memberEmail, subject, htmlContent });
     
     console.log('[PayoutEmail] Approval notification sent successfully:', {
       payoutId: payout.id,
@@ -494,7 +495,7 @@ export const sendPayoutPaidEmail = async (payout) => {
     
     const htmlContent = createEmailTemplate(subject, content);
     
-    const data = await invokeEmailFunction('send-payout-email', { to: memberEmail, subject, htmlContent });
+    const data = await invokeEmailFunction('send-payout-email', { payoutId: payout.id, to: memberEmail, subject, htmlContent });
     
     console.log('[PayoutEmail] Payment processed notification sent successfully:', {
       payoutId: payout.id,

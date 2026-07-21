@@ -1,4 +1,5 @@
 import { corsHeaders } from "./cors.ts";
+import { authorizeFunctionRequest } from "../_shared/authorize.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL");
@@ -9,6 +10,7 @@ Deno.serve(async (req) => {
   }
 
   try {
+    await authorizeFunctionRequest(req, { module: "members", level: "edit" });
     const { to, subject, html, fromName } = await req.json();
 
     if (!to || !subject || !html) {
@@ -57,7 +59,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error("Server error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
+      status: error.status || 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

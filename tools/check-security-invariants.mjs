@@ -1,0 +1,51 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
+const failures = [];
+const assert = (condition, message) => {
+  if (!condition) failures.push(message);
+};
+
+const config = read('supabase/config.toml');
+const authContext = read('src/contexts/SupabaseAuthContext.jsx');
+const orderPage = read('src/components/OrderPage.jsx');
+const subcontractorOrderPage = read('src/components/SubcontractorOrderPage.jsx');
+const hardeningMigration = read('supabase/migrations/20260721223000_security_permissions_rls_hardening.sql');
+const documentStorageFunction = read('supabase/functions/document-storage/index.ts');
+const payoutNotificationFunction = read('supabase/functions/send-payout-notification/index.ts');
+const scheduledReportsFunction = read('supabase/functions/send-scheduled-reports/index.ts');
+
+assert(/enable_signup\s*=\s*false/.test(config), 'Public signup must remain disabled.');
+for (const functionName of [
+  'send-message-to-member',
+  'send-email',
+  'send-payout-email',
+  'send-admin-payout-notification',
+  'send-payout-notification',
+]) {
+  const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  assert(
+    new RegExp(`\\[functions\\.${escaped}\\]\\s+verify_jwt\\s*=\\s*true`, 'm').test(config),
+    `${functionName} must require a JWT.`,
+  );
+}
+
+assert(!orderPage.includes(".from('project_orders')"), 'Public project orders must use token RPCs.');
+assert(!subcontractorOrderPage.includes(".from('subcontractor_orders')"), 'Public subcontractor orders must use token RPCs.');
+assert(!authContext.includes('finalPermissions = { ...basicPermissions'), 'Permission failures must not use fail-open defaults.');
+assert(hardeningMigration.includes('revoke all on table public.project_orders from anon'), 'Anonymous project order table access must be revoked.');
+assert(hardeningMigration.includes("return null; end if;"), 'Unauthenticated role lookup must fail closed.');
+assert(documentStorageFunction.includes('body.accessEntityType'), 'External storage actions must validate their concrete access entity.');
+assert(payoutNotificationFunction.includes('{ adminOnly: true }'), 'Legacy payout email diagnostics must remain admin-only.');
+assert(scheduledReportsFunction.includes("req.headers.get('x-cron-secret')"), 'Scheduled reports must require the cron secret.');
+
+if (failures.length) {
+  console.error('Security invariant checks failed:');
+  failures.forEach((failure) => console.error(`- ${failure}`));
+  process.exit(1);
+}
+
+console.log('Security permission and RLS invariants passed');

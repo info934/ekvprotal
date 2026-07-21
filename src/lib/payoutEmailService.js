@@ -70,7 +70,7 @@ export const sendPayoutNotification = async ({
       return { success: false, error: 'Unknown status' };
     }
 
-    const data = await invokeEmailFunction('send-payout-email', { to: member.email, subject, htmlContent });
+    const data = await invokeEmailFunction('send-payout-email', { payoutId, to: member.email, subject, htmlContent });
     return { success: true, data };
   } catch (error) {
     console.error('Error in sendPayoutNotification:', error);

@@ -20,7 +20,8 @@
     "backend:check": "node tools/check-backend-env.mjs",
     "vendor:import-sql": "node tools/import-supplier-price-export.mjs",
     "test:critical": "node tools/check-critical-invariants.mjs",
-    "test": "npm run lint && npm run financial:check && npm run test:critical"
+    "security:check": "node tools/check-security-invariants.mjs",
+    "test": "eslint . --quiet && node tools/check-financial-calculations.mjs && node tools/check-critical-invariants.mjs && node tools/check-security-invariants.mjs"
   },
   "dependencies": {
     "@babel/generator": "^7.26.3",

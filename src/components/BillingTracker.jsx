@@ -281,6 +281,8 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
           recordId: editingInvoiceId || globalThis.crypto.randomUUID(),
           projectReference: entityCode || null,
           category: 'odberatelska-faktura',
+          accessEntityType: entityType,
+          accessEntityId: entityId,
         });
       }
       const payload = {

@@ -72,10 +72,7 @@ const OrderPage = () => {
     useEffect(() => {
         const fetchOrder = async () => {
             const { data, error } = await supabase
-                .from('project_orders')
-                .select('*, projects(id, name, code, brief), members(id, name, email)')
-                .eq('unique_token', token)
-                .single();
+                .rpc('get_public_project_order', { p_token: token });
 
             if (error) {
                 setError('Objednávka nebyla nalezena nebo je neplatná.');
@@ -83,22 +80,7 @@ const OrderPage = () => {
                 return;
             }
 
-            const { data: rewardData, error: rewardError } = await supabase
-                .rpc('get_project_order_reward', { p_token: token })
-                .maybeSingle();
-
-            if (rewardError) {
-                setError('Nepodařilo se načíst detaily odměny.');
-                setLoading(false);
-                return;
-            }
-
-            setRewardAmount(Number(rewardData?.reward_amount || 0));
-
-            if (new Date(data.expires_at) < new Date() && data.status === 'pending') {
-                await supabase.from('project_orders').update({ status: 'expired' }).eq('id', data.id);
-                data.status = 'expired';
-            }
+            setRewardAmount(Number(data?.reward_amount || 0));
 
             setOrder(data);
             setLoading(false);
@@ -107,18 +89,22 @@ const OrderPage = () => {
         fetchOrder();
     }, [token]);
 
-    const handleConfirm = async () => {
+    const handleConfirm = async (confirmed) => {
         setIsConfirming(true);
-        const { error: updateError } = await supabase
-            .from('project_orders')
-            .update({ status: 'confirmed' })
-            .eq('id', order.id);
+        const nextStatus = confirmed ? 'confirmed' : 'rejected';
+        const { data: responseData, error: updateError } = await supabase.rpc('respond_public_project_order', {
+            p_token: token,
+            p_response: nextStatus,
+        });
 
         if (updateError) {
             toast({ title: 'Chyba při potvrzování', description: updateError.message, variant: 'destructive' });
         } else {
-            toast({ title: '✅ Objednávka úspěšně potvrzena!', description: 'Děkujeme za spolupráci.' });
-            setOrder(prev => ({ ...prev, status: 'confirmed' }));
+            toast({
+                title: confirmed ? 'Objednávka byla potvrzena' : 'Objednávka byla odmítnuta',
+                description: 'Odpověď byla bezpečně uložena.',
+            });
+            setOrder(prev => ({ ...prev, status: responseData?.status || nextStatus }));
         }
         setIsConfirming(false);
     };
@@ -165,6 +151,7 @@ const OrderPage = () => {
 
     const isExpired = order.status === 'expired';
     const isConfirmed = order.status === 'confirmed';
+    const isRejected = order.status === 'rejected';
 
     const copyOrderLink = () => {
         navigator.clipboard.writeText(window.location.href);
@@ -221,7 +208,7 @@ const OrderPage = () => {
                         </div>
                     )}
 
-                    {!isConfirmed && !isExpired && (
+                    {!isConfirmed && !isExpired && !isRejected && (
                         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-8 print:mb-6">
                             <div className="flex items-center gap-3">
                                 <Clock className="w-8 h-8 text-yellow-600" />
@@ -296,7 +283,7 @@ const OrderPage = () => {
                             <Printer className="w-4 h-4" />
                             Tisknout
                         </Button>
-                        {!isConfirmed && !isExpired && (
+                        {!isConfirmed && !isExpired && !isRejected && (
                             <>
                                 <Button
                                     variant="outline"

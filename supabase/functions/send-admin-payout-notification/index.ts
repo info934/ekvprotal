@@ -1,5 +1,6 @@
 
 import { corsHeaders } from "./cors.ts";
+import { authorizeFunctionRequest } from "../_shared/authorize.ts";
 
 const jsonResponse = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -29,6 +30,7 @@ Deno.serve(async (req) => {
   }
 
   try {
+    await authorizeFunctionRequest(req, { module: "payouts", level: "read" });
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     if (!resendApiKey) throw new Error("Missing RESEND_API_KEY");
 
@@ -72,6 +74,6 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error("[send-admin-payout-notification]", error);
-    return jsonResponse({ success: false, error: error.message }, 500);
+    return jsonResponse({ success: false, error: error.message }, error.status || 500);
   }
 });

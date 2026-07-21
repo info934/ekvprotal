@@ -398,6 +398,8 @@ export const uploadProjectCostInvoice = async ({ file, project, costId, createCe
         projectReference: project.code || null,
         category: 'odkaz-projektovy-naklad',
         connection,
+        accessEntityType: 'project',
+        accessEntityId: project.id,
       });
     } catch (linkError) {
       centralLinkError = linkError.message || 'Centrální odkaz se nepodařilo vytvořit.';
@@ -635,6 +637,8 @@ export const uploadInvoiceDocument = async ({
   projectReference,
   category = 'ostatni',
   connection: providedConnection,
+  accessEntityType,
+  accessEntityId,
 }) => {
   const connection = providedConnection || await getDefaultStorageConnection();
   const now = new Date();
@@ -674,6 +678,8 @@ export const uploadInvoiceDocument = async ({
       provider: connection.provider,
       entityType: 'invoice',
       entityId: recordId,
+      accessEntityType,
+      accessEntityId,
       folderPath,
       fileName: storedFileName,
       contentType: file.type || 'application/octet-stream',

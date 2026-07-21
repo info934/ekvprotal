@@ -71,10 +71,12 @@ export const sendAttendanceApprovalRequestEmail = async ({ memberName, totalHour
 };
 
 export const sendHourlyPayoutPaidEmail = async ({ email, memberName, amount, hours, paidAt }) => {
-  return await sendPayoutPaidEmail({
-    memberId: null,
-    amount,
-    emailOverride: email,
-    memberNameOverride: memberName
+  return sendEmail({
+    to: email,
+    subject: 'Hodinová odměna byla vyplacena',
+    greeting: `Dobrý den ${memberName || ''},`,
+    content: `<p>Vaše hodinová odměna ve výši <strong>${Number(amount || 0).toLocaleString('cs-CZ')} Kč</strong> za ${Number(hours || 0).toLocaleString('cs-CZ')} hodin byla vyplacena.</p><p>Datum zpracování: ${paidAt ? new Date(paidAt).toLocaleDateString('cs-CZ') : new Date().toLocaleDateString('cs-CZ')}</p>`,
+    cta: { url: `${window.location.origin}/payouts`, text: 'Zobrazit výplaty' },
+    salutation: 'S pozdravem,<br>EKV Portal',
   });
 };

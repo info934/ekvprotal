@@ -276,6 +276,8 @@ const Payouts = () => {
         projectReference: payout.payout_items?.find((item) => item.projects?.code)?.projects?.code
           || payout.payout_items?.find((item) => item.project_id)?.project_id,
         category: 'ukolove-vyplaty',
+        accessEntityType: 'payout',
+        accessEntityId: payout.id,
       });
       const dbUrlPath = storedInvoice.dbUrl;
 

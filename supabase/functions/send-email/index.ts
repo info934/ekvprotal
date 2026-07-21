@@ -1,5 +1,6 @@
 
 import { corsHeaders } from './cors.ts';
+import { authorizeFunctionRequest } from '../_shared/authorize.ts';
 
 // @ts-ignore
 Deno.serve(async (req: Request) => {
@@ -8,6 +9,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    await authorizeFunctionRequest(req, { adminOnly: true });
     const { to, subject, htmlContent, attachments } = await req.json();
 
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
@@ -54,7 +56,7 @@ Deno.serve(async (req: Request) => {
     console.error('Error processing email request:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
+      status: error.status || 500,
     });
   }
 });

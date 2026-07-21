@@ -1,5 +1,6 @@
 
 import { corsHeaders } from "./cors.ts";
+import { authorizeFunctionRequest } from "../_shared/authorize.ts";
 
 /**
  * UNIVERSAL PAYOUT EMAIL NOTIFICATION EDGE FUNCTION
@@ -23,6 +24,7 @@ Deno.serve(async (req) => {
   }
 
   try {
+    await authorizeFunctionRequest(req, { adminOnly: true });
     console.log('[send-payout-notification] Request received');
     
     // Get Resend API key from secrets
@@ -97,7 +99,7 @@ Deno.serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
+        status: error.status || 500
       }
     );
   }

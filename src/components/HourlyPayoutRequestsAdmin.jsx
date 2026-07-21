@@ -195,6 +195,8 @@ const HourlyPayoutRequestsAdmin = () => {
         recordId: request.id,
         projectReference: request.projects?.code || request.project_id,
         category: 'hodinove-vyplaty',
+        accessEntityType: 'hourly_payout',
+        accessEntityId: request.id,
       });
       const dbUrlPath = storedInvoice.dbUrl;
 

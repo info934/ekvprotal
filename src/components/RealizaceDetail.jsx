@@ -304,6 +304,8 @@ const RealizaceDetail = () => {
           recordId: editingCost?.id || realizaceId,
           projectReference: linkedProjectCode || null,
           category: 'naklady-realizaci',
+          accessEntityType: 'realizace',
+          accessEntityId: realizaceId,
         });
         fileUrl = uploadedInvoice.dbUrl;
         fileName = file.name;

@@ -84,6 +84,8 @@ const InvoiceUploadDialog = ({ isOpen, onClose, payout, onSuccess }) => {
         projectReference: payout.payout_items?.find((item) => item.projects?.code)?.projects?.code
           || payout.payout_items?.find((item) => item.project_id)?.project_id,
         category: 'ukolove-vyplaty',
+        accessEntityType: 'payout',
+        accessEntityId: payout.id,
       });
 
       setUploadProgress(95);

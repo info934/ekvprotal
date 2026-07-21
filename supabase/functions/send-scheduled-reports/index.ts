@@ -192,6 +192,15 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const expectedSecret = Deno.env.get('SCHEDULED_REPORT_SECRET');
+    const suppliedSecret = req.headers.get('x-cron-secret');
+    if (!expectedSecret || !suppliedSecret || suppliedSecret !== expectedSecret) {
+      return new Response(JSON.stringify({ error: 'Unauthorized scheduled report request.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      });
+    }
+
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''

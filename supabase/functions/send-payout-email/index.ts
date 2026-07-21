@@ -1,5 +1,7 @@
 
 import { corsHeaders } from "./cors.ts";
+import { authorizeFunctionRequest } from "../_shared/authorize.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const jsonResponse = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -26,11 +28,38 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const actor = await authorizeFunctionRequest(req);
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     if (!resendApiKey) throw new Error("Missing RESEND_API_KEY");
 
-    const { to, subject, htmlContent } = await req.json();
-    const recipients = normalizeRecipients(to);
+    const { payoutId, to, subject, htmlContent } = await req.json();
+    if (!payoutId) throw Object.assign(new Error("payoutId is required"), { status: 400 });
+    const admin = createClient(
+      Deno.env.get("SUPABASE_URL") || "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
+    );
+    const { data: payout } = await admin
+      .from("payouts")
+      .select("id, member_id, members:members!payouts_member_id_fkey(email)")
+      .eq("id", payoutId)
+      .maybeSingle();
+    if (!payout) throw Object.assign(new Error("Payout request was not found"), { status: 404 });
+    if (!actor.isServiceRole && actor.role !== "admin" && actor.memberId !== payout.member_id) {
+      const { data: permission } = await admin
+        .from("role_permissions")
+        .select("can_admin")
+        .eq("role", actor.role)
+        .eq("module", "payouts")
+        .maybeSingle();
+      if (!permission?.can_admin) throw Object.assign(new Error("Permission denied"), { status: 403 });
+    }
+    const memberRecord = Array.isArray(payout.members) ? payout.members[0] : payout.members;
+    const memberEmail = memberRecord?.email;
+    const requestedRecipients = normalizeRecipients(to);
+    if (!memberEmail || requestedRecipients.some((email) => email.toLowerCase() !== memberEmail.toLowerCase())) {
+      throw Object.assign(new Error("Recipient does not match the payout owner"), { status: 403 });
+    }
+    const recipients = [memberEmail];
     if (recipients.length === 0 || !subject || !htmlContent) {
       throw new Error("Missing required fields: to, subject, htmlContent");
     }
@@ -68,6 +97,6 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error("[send-payout-email]", error);
-    return jsonResponse({ success: false, error: error.message }, 500);
+    return jsonResponse({ success: false, error: error.message }, error.status || 500);
   }
 });

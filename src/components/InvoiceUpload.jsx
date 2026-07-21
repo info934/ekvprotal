@@ -47,6 +47,8 @@ const InvoiceUpload = ({ requestId, memberId, projectReference, onUploadSuccess 
             recordId: requestId,
             projectReference,
             category: 'hodinove-vyplaty',
+            accessEntityType: 'hourly_payout',
+            accessEntityId: requestId,
           });
           uploadError = null;
           break;

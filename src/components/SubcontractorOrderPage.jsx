@@ -71,10 +71,7 @@ import React, { useState, useEffect } from 'react';
         useEffect(() => {
             const fetchOrder = async () => {
                 const { data, error: fetchError } = await supabase
-                    .from('subcontractor_orders')
-                    .select('*, projects(id, name, code), subjects(id, name, address, city, postal_code, ico, dic)')
-                    .eq('unique_token', token)
-                    .single();
+                    .rpc('get_public_subcontractor_order', { p_token: token });
 
                 if (fetchError || !data) {
                     setError('Objednávka nebyla nalezena nebo je neplatná.');
@@ -82,24 +79,6 @@ import React, { useState, useEffect } from 'react';
                     return;
                 }
                 
-                const { data: projectSubData, error: projSubError } = await supabase
-                    .from('project_subcontractors')
-                    .select('scope_of_work, price')
-                    .eq('project_id', data.project_id)
-                    .eq('subject_id', data.subject_id)
-                    .single();
-
-                if (projSubError) {
-                    console.error("Error fetching project subcontractor details:", projSubError);
-                }
-
-                if (new Date(data.expires_at) < new Date() && data.status === 'pending') {
-                    await supabase.from('subcontractor_orders').update({ status: 'expired' }).eq('id', data.id);
-                    data.status = 'expired';
-                }
-                
-                data.project_subcontractor_details = projectSubData;
-
                 setOrder(data);
                 setLoading(false);
             };
@@ -120,22 +99,16 @@ import React, { useState, useEffect } from 'react';
 
         const handleConfirm = async () => {
             setIsConfirming(true);
-            const { error: updateError } = await supabase
-                .from('subcontractor_orders')
-                .update({ status: 'confirmed' })
-                .eq('id', order.id);
+            const { data: responseData, error: updateError } = await supabase.rpc('respond_public_subcontractor_order', {
+                p_token: token,
+                p_response: 'confirmed',
+            });
 
             if (updateError) {
                 toast({ title: 'Chyba při potvrzování', description: updateError.message, variant: 'destructive' });
             } else {
-                await supabase
-                    .from('project_subcontractors')
-                    .update({ status: 'Objednáno' })
-                    .eq('project_id', order.project_id)
-                    .eq('subject_id', order.subject_id);
-
                 toast({ title: '✅ Objednávka úspěšně potvrzena!', description: 'Děkujeme za spolupráci.' });
-                setOrder(prev => ({ ...prev, status: 'confirmed' }));
+                setOrder(prev => ({ ...prev, status: responseData?.status || 'confirmed' }));
             }
             setIsConfirming(false);
         };

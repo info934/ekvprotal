@@ -9,7 +9,7 @@ const cache = {
   permissions: new Map(),
   memberData: new Map(),
   timestamp: new Map(),
-  TTL: 5 * 60 * 1000, // 5 minutes
+  TTL: 60 * 1000,
 };
 
 const getCacheKey = (type, id) => `${type}_${id}`;
@@ -286,25 +286,11 @@ export const AuthProvider = ({ children }) => {
              return data;
           });
           
-          const basicPermissions = {
-              dashboard: { can_read: true, can_edit: false, can_admin: false },
-              projects: { can_read: true, can_edit: false, can_admin: false },
-              crm: { can_read: true, can_edit: false, can_admin: false },
-              realizace: { can_read: true, can_edit: true, can_admin: false },
-              tasks: { can_read: true, can_edit: true, can_admin: false },
-          };
-          
-          finalPermissions = { ...basicPermissions, ...(permsData || {}) };
+          finalPermissions = permsData || {};
           
         } catch (err) {
           console.error("Error fetching permissions:", err);
-          finalPermissions = {
-            dashboard: { can_read: true, can_edit: false, can_admin: false },
-            projects: { can_read: true, can_edit: false, can_admin: false },
-            crm: { can_read: true, can_edit: false, can_admin: false },
-            realizace: { can_read: true, can_edit: true, can_admin: false },
-            tasks: { can_read: true, can_edit: true, can_admin: false },
-          };
+          finalPermissions = {};
         }
       }
 
@@ -333,11 +319,7 @@ export const AuthProvider = ({ children }) => {
       
       toast({ title: 'Nastala chyba při načítání dat.', variant: 'destructive'});
       
-      setPermissions({
-        dashboard: { can_read: true, can_edit: false, can_admin: false },
-        projects: { can_read: true, can_edit: false, can_admin: false },
-        realizace: { can_read: true, can_edit: true, can_admin: false },
-      });
+      setPermissions({});
     }
   }, [clearState, toast, signOut, retryOperation]);
 
@@ -398,7 +380,8 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        if (nextUserId === previousUserId && permissionsLoadedUserIdRef.current === nextUserId) {
+        const mustRefreshPermissions = _event === 'TOKEN_REFRESHED' || _event === 'USER_UPDATED';
+        if (!mustRefreshPermissions && nextUserId === previousUserId && permissionsLoadedUserIdRef.current === nextUserId) {
           currentUserIdRef.current = nextUserId;
           setLoading(false);
           return;
@@ -406,6 +389,7 @@ export const AuthProvider = ({ children }) => {
 
         currentUserIdRef.current = nextUserId;
         permissionsLoadedUserIdRef.current = null;
+        if (mustRefreshPermissions) clearCache();
         setLoading(true);
         const runId = authEventRunIdRef.current + 1;
         authEventRunIdRef.current = runId;

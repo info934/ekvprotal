@@ -336,6 +336,10 @@ Deno.serve(async (req: Request) => {
     if (!action || !body.connectionId) return jsonResponse({ success: false, error: 'Missing action or connection.' }, 400);
     if (provider !== 'sharepoint') return jsonResponse({ success: false, error: 'Only SharePoint is implemented by this function.' }, 400);
     if (!ALLOWED_ENTITY_TYPES.has(entityType)) return jsonResponse({ success: false, error: 'Unsupported entity type.' }, 400);
+    const entityId = body.entityId ? String(body.entityId) : '';
+    if (action !== 'testConnection' && !entityId) {
+      return jsonResponse({ success: false, error: 'Entity ID is required for this storage action.' }, 400);
+    }
 
     const { data: member } = await admin
       .from('members')
@@ -357,6 +361,34 @@ Deno.serve(async (req: Request) => {
     });
     if (!hasPermission) return jsonResponse({ success: false, error: 'You do not have permission for this storage action.' }, 403);
 
+    if (action !== 'testConnection') {
+      const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+      if (!anonKey) throw new Error('Missing Supabase anonymous key.');
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const accessEntityType = String(body.accessEntityType || entityType);
+      const accessEntityId = String(body.accessEntityId || entityId);
+      let canAccess = false;
+      if (accessEntityType === 'project') {
+        const { data } = await userClient.rpc('can_access_project', { p_project_id: accessEntityId });
+        canAccess = data === true;
+      } else if (accessEntityType === 'realizace' || accessEntityType === 'realization') {
+        const { data } = await userClient.rpc('can_access_realization', { p_realization_id: accessEntityId });
+        canAccess = data === true;
+      } else if (accessEntityType === 'product') {
+        const { data } = await userClient.from('commercial_item_catalog').select('id').eq('id', accessEntityId).maybeSingle();
+        canAccess = Boolean(data);
+      } else if (accessEntityType === 'payout') {
+        const { data } = await userClient.from('payouts').select('id').eq('id', accessEntityId).maybeSingle();
+        canAccess = Boolean(data);
+      } else if (accessEntityType === 'hourly_payout') {
+        const { data } = await userClient.from('hourly_payout_requests').select('id').eq('id', accessEntityId).maybeSingle();
+        canAccess = Boolean(data);
+      }
+      if (!canAccess) return jsonResponse({ success: false, error: 'You cannot access this entity.' }, 403);
+    }
+
     const { data: connection, error: connectionError } = await admin
       .from('document_storage_connections')
       .select('id, provider, status, config')
@@ -367,7 +399,6 @@ Deno.serve(async (req: Request) => {
 
     const graphToken = await getGraphToken();
     const target = resolveTarget(connection as StorageConnection, entityType);
-    const entityId = body.entityId ? String(body.entityId) : '';
     const requiresEntityScope = action !== 'testConnection' && action !== 'ensureFolder' && entityType !== 'invoice';
     if (requiresEntityScope && !entityId) {
       return jsonResponse({ success: false, error: 'Entity ID is required for this storage action.' }, 400);
