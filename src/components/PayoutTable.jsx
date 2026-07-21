@@ -310,7 +310,7 @@ const PayoutDetailPanel = ({ item, onDownloadInvoice }) => {
                   <span className="font-medium text-slate-900">{item.approved_without_invoice ? 'Bez faktury' : 'S fakturou'}</span>
                 </div>
                 {item.invoice_url ? (
-                  <Button variant="outline" size="sm" onClick={() => onDownloadInvoice?.(item.invoice_url, item.invoice_name)} className="mt-2 w-full justify-center gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100">
+                  <Button variant="outline" size="sm" onClick={() => onDownloadInvoice?.(item)} className="mt-2 w-full justify-center gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100">
                     <Download className="h-3.5 w-3.5" />
                     Stáhnout fakturu
                   </Button>
@@ -430,7 +430,7 @@ const PayoutTable = ({
       render: (item) => (
         <div className="space-y-2">
           {item.invoice_url ? (
-            <Button variant="outline" size="sm" onClick={() => onDownloadInvoice?.(item.invoice_url, item.invoice_name)} className="h-8 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100">
+            <Button variant="outline" size="sm" onClick={() => onDownloadInvoice?.(item)} className="h-8 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100">
               <Download className="h-3.5 w-3.5" />
               Stáhnout
             </Button>

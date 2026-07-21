@@ -55,7 +55,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
-import { DEFAULT_CRM_NUMBERING, formatCrmNumber, incrementCrmNumbering, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
+import { allocateCrmNumber, DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef } from '@/lib/crmRoutes';
 import {
   buildCrmDocumentItemPayload,
@@ -2332,7 +2332,7 @@ const CRM = () => {
 
     setSavingOpportunity(true);
     const isNewOpportunity = !opportunityForm.id;
-    const opportunityNumber = isNewOpportunity ? formatCrmNumber(crmNumbering, 'opportunity') : null;
+    const opportunityNumber = isNewOpportunity ? await allocateCrmNumber(supabase, 'opportunity') : null;
     const payload = {
       ...(opportunityNumber ? { number: opportunityNumber } : {}),
       title: opportunityForm.title.trim(),
@@ -2367,10 +2367,6 @@ const CRM = () => {
       return;
     }
 
-    if (isNewOpportunity) {
-      await incrementCrmNumbering(supabase, 'opportunity', Number(crmNumbering.opportunity?.next_number || 1) + 1);
-    }
-
     setSavingOpportunity(false);
     toast({ title: opportunityForm.id ? 'CRM příležitost aktualizována' : 'CRM příležitost uložena' });
     setOpportunityDialogOpen(false);
@@ -2396,7 +2392,7 @@ const CRM = () => {
     }];
     const totals = calculateCrmTotals(sourceItems);
     const vatRate = 21;
-    const number = formatCrmNumber(crmNumbering, type);
+    const number = await allocateCrmNumber(supabase, type);
 
     const { data: documentData, error: documentError } = await supabase
       .from('crm_commercial_documents')
@@ -2444,8 +2440,6 @@ const CRM = () => {
       });
       return;
     }
-
-    await incrementCrmNumbering(supabase, type, Number(crmNumbering[type]?.next_number || 1) + 1);
 
     setCreatingDocument(false);
     toast({ title: type === 'offer' ? 'Nabídka vytvořena' : 'Objednávka vytvořena' });

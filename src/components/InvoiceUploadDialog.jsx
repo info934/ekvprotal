@@ -16,7 +16,6 @@ import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader }
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/components/ui/use-toast';
-import { supabase } from '@/lib/customSupabaseClient';
 import { uploadInvoice } from '@/lib/payoutWorkflowService';
 import { sendInvoiceUploadedNotification } from '@/lib/payoutWorkflowEmailService';
 import { Upload, File, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
@@ -96,7 +95,7 @@ const InvoiceUploadDialog = ({ isOpen, onClose, payout, onSuccess }) => {
       console.log('[InvoiceUpload] File uploaded, updating payout record...');
 
       // Update payout record with invoice details
-      const result = await uploadInvoice(payout.id, publicUrl, fileName);
+      const result = await uploadInvoice(payout.id, storedInvoice, fileName);
 
       if (!result.success) throw new Error(result.error);
 

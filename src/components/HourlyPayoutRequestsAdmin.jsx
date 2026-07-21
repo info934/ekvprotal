@@ -25,6 +25,7 @@ import {
   getHourlyPayoutDiscrepancies,
   markHourlyPayoutPaid,
   rejectHourlyPayoutRequestWorkflow,
+  uploadHourlyPayoutInvoice,
 } from '@/lib/hourlyPayoutWorkflowService';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -198,25 +199,18 @@ const HourlyPayoutRequestsAdmin = () => {
         accessEntityType: 'hourly_payout',
         accessEntityId: request.id,
       });
-      const dbUrlPath = storedInvoice.dbUrl;
-
-      const uploadedAt = new Date().toISOString();
-      const { error: dbError } = await supabase
-        .from('hourly_payout_requests')
-        .update({
-          invoice_url: dbUrlPath,
-          invoice_uploaded_at: uploadedAt,
-          status: 'invoice_uploaded',
-          updated_at: uploadedAt
-        })
-        .eq('id', request.id);
-
-      if (dbError) {
+      try {
+        await uploadHourlyPayoutInvoice(request.id, storedInvoice);
+      } catch (dbError) {
         if (storedInvoice.cleanup) await storedInvoice.cleanup().catch(console.error);
         throw dbError;
       }
 
-      await logPayoutAction('hourly_admin_invoice_upload_success', request.id, { dbUrlPath });
+      await logPayoutAction('hourly_admin_invoice_upload_success', request.id, {
+        invoiceUrl: storedInvoice.dbUrl,
+        provider: storedInvoice.provider,
+        externalFileId: storedInvoice.fileId || null,
+      });
       await sendAdminPayoutNotification({
         memberName: request.members?.name || 'Pracovnik',
         amount: request.total_amount || 0,

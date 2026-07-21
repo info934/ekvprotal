@@ -152,21 +152,16 @@ const persistFolderMapping = async ({
 }) => {
   if (!connection?.id) return null;
 
-  const { data, error } = await supabase
-    .from('document_storage_folders')
-    .upsert({
-      connection_id: connection.id,
-      entity_type: entityType,
-      entity_id: entityId,
-      folder_path: folderPath,
-      external_folder_id: externalFolderId,
-      external_web_url: externalWebUrl,
-      status,
-      metadata,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'connection_id,entity_type,entity_id' })
-    .select('*')
-    .single();
+  const { data, error } = await supabase.rpc('upsert_document_storage_folder', {
+    p_connection_id: connection.id,
+    p_entity_type: entityType,
+    p_entity_id: entityId,
+    p_folder_path: folderPath,
+    p_external_folder_id: externalFolderId,
+    p_external_web_url: externalWebUrl,
+    p_status: status,
+    p_metadata: metadata,
+  });
 
   if (error) {
     if (isStorageConfigMissingError(error)) return null;
@@ -179,6 +174,17 @@ const persistFolderMapping = async ({
 export const ensureEntityFolder = async ({ entityType, entityId, code, name, connection }) => {
   const activeConnection = connection || await getDefaultStorageConnection();
   const folderPath = buildEntityFolderPath({ entityType, entityId, code, name });
+
+  const { data: existingMapping, error: existingMappingError } = activeConnection.id
+    ? await supabase
+      .from('document_storage_folders')
+      .select('*')
+      .eq('connection_id', activeConnection.id)
+      .eq('entity_type', entityType)
+      .eq('entity_id', entityId)
+      .maybeSingle()
+    : { data: null, error: null };
+  if (existingMappingError && !isStorageConfigMissingError(existingMappingError)) throw existingMappingError;
 
   if (activeConnection.provider === 'supabase') {
     await persistFolderMapping({
@@ -215,17 +221,6 @@ export const ensureEntityFolder = async ({ entityType, entityId, code, name, con
   if (data?.success === false) {
     throw new Error(data.error || 'Externi uloziste neni nakonfigurovane.');
   }
-
-  await persistFolderMapping({
-    connection: activeConnection,
-    entityType,
-    entityId,
-    folderPath,
-    externalFolderId: data.externalFolderId || data.folderId,
-    externalWebUrl: data.webUrl,
-    status: data.status || 'created',
-    metadata: data.metadata || {},
-  });
 
   return {
     connection: activeConnection,
@@ -344,16 +339,14 @@ export const uploadProjectCostInvoice = async ({ file, project, costId, createCe
       .from(PROJECT_BUCKET)
       .upload(filePath, file, { cacheControl: '3600', upsert: false });
     if (error) throw error;
-    const { data: publicData } = supabase.storage.from(PROJECT_BUCKET).getPublicUrl(filePath);
-
     return {
       provider: 'supabase',
       connectionId: connection.id,
-      dbUrl: publicData.publicUrl,
+      dbUrl: `${PROJECT_BUCKET}/${filePath}`,
       filePath,
       fileName: file.name,
       storageFields: {
-        invoice_url: publicData.publicUrl,
+        invoice_url: `${PROJECT_BUCKET}/${filePath}`,
         invoice_name: file.name,
         invoice_storage_provider: 'supabase',
         invoice_storage_connection_id: connection.id,
@@ -708,29 +701,147 @@ export const uploadInvoiceDocument = async ({
   };
 };
 
-export const downloadProjectDocument = async (document) => {
-  if (document.external_web_url && document.storage_provider !== 'supabase') {
-    window.open(document.external_web_url, '_blank', 'noopener,noreferrer');
+export const downloadProjectDocument = async (storedDocument) => {
+  if (storedDocument.external_web_url && storedDocument.storage_provider !== 'supabase') {
+    window.open(storedDocument.external_web_url, '_blank', 'noopener,noreferrer');
     return;
   }
 
-  if (!document.file_path) {
+  if (!storedDocument.file_path) {
     throw new Error('Cesta k souboru neni definovana.');
   }
 
-  const { data, error } = await supabase.storage.from(PROJECT_BUCKET).download(document.file_path);
+  const { data, error } = await supabase.storage.from(PROJECT_BUCKET).download(storedDocument.file_path);
   if (error) throw error;
 
   const blob = new Blob([data]);
   const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = window.document.createElement('a');
   a.style.display = 'none';
   a.href = url;
-  a.download = document.file_name || 'document';
-  document.body.appendChild(a);
+  a.download = storedDocument.file_name || 'document';
+  window.document.body.appendChild(a);
   a.click();
   window.URL.revokeObjectURL(url);
-  document.body.removeChild(a);
+  window.document.body.removeChild(a);
+};
+
+export const deleteExternalStorageFile = async ({ connection, entityType, entityId, fileId, accessEntityType, accessEntityId }) => {
+  if (!connection?.id || !fileId) throw new Error('Chybi identifikace uloziste nebo souboru.');
+  const { data, error } = await supabase.functions.invoke('document-storage', {
+    body: {
+      action: 'deleteFile',
+      connectionId: connection.id,
+      provider: connection.provider,
+      entityType,
+      entityId,
+      fileId,
+      accessEntityType,
+      accessEntityId,
+    },
+  });
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || 'Soubor se nepodarilo odstranit.');
+  return data;
+};
+
+const normalizeBucketPath = (value, bucket) => {
+  const raw = String(value || '').split('?')[0];
+  const publicMarker = `/storage/v1/object/public/${bucket}/`;
+  const signedMarker = `/storage/v1/object/sign/${bucket}/`;
+  if (raw.includes(publicMarker)) return decodeURIComponent(raw.split(publicMarker)[1]);
+  if (raw.includes(signedMarker)) return decodeURIComponent(raw.split(signedMarker)[1]);
+  return raw.startsWith(`${bucket}/`) ? raw.slice(bucket.length + 1) : raw;
+};
+
+const triggerBrowserDownload = (blob, fileName) => {
+  const url = window.URL.createObjectURL(blob);
+  const anchor = window.document.createElement('a');
+  anchor.style.display = 'none';
+  anchor.href = url;
+  anchor.download = fileName || 'document';
+  window.document.body.appendChild(anchor);
+  anchor.click();
+  window.setTimeout(() => {
+    window.document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(url);
+  }, 150);
+};
+
+export const downloadStoredFile = async ({
+  provider = 'supabase',
+  connectionId,
+  bucket,
+  filePath,
+  fileId,
+  fileName,
+  entityType,
+  entityId,
+  accessEntityType,
+  accessEntityId,
+}) => {
+  if (provider === 'supabase' || !connectionId) {
+    const targetBucket = bucket || (entityType === 'invoice' ? INVOICE_BUCKET : PROJECT_BUCKET);
+    const targetPath = normalizeBucketPath(filePath || fileId, targetBucket);
+    if (!targetPath) throw new Error('Cesta k souboru není definována.');
+    const { data, error } = await supabase.storage.from(targetBucket).download(targetPath);
+    if (error) throw error;
+    triggerBrowserDownload(data, fileName || targetPath.split('/').pop());
+    return { success: true };
+  }
+
+  const connection = await getStorageConnectionById(connectionId);
+  if (!connection) throw new Error('Konfigurace externího úložiště nebyla nalezena.');
+  const { data, error } = await supabase.functions.invoke('document-storage', {
+    body: {
+      action: 'downloadUrl',
+      connectionId: connection.id,
+      provider: connection.provider,
+      entityType,
+      entityId,
+      fileId,
+      accessEntityType,
+      accessEntityId,
+    },
+  });
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || 'Soubor se nepodařilo načíst.');
+  const url = data?.downloadUrl || data?.webUrl;
+  if (!url) throw new Error('Úložiště nevrátilo odkaz pro stažení souboru.');
+  window.open(url, '_blank', 'noopener,noreferrer');
+  return { success: true };
+};
+
+export const deleteStoredFile = async ({
+  provider = 'supabase',
+  connectionId,
+  bucket,
+  filePath,
+  fileId,
+  entityType,
+  entityId,
+  accessEntityType,
+  accessEntityId,
+}) => {
+  if (provider === 'supabase' || !connectionId) {
+    const targetBucket = bucket || (entityType === 'invoice' ? INVOICE_BUCKET : PROJECT_BUCKET);
+    const targetPath = normalizeBucketPath(filePath || fileId, targetBucket);
+    if (!targetPath) return { success: true, skipped: true };
+    const { error } = await supabase.storage.from(targetBucket).remove([targetPath]);
+    if (error) throw error;
+    return { success: true };
+  }
+
+  const connection = await getStorageConnectionById(connectionId);
+  if (!connection) throw new Error('Konfigurace externiho uloziste nebyla nalezena.');
+  return deleteExternalStorageFile({
+    connection,
+    entityType,
+    entityId,
+    fileId,
+    accessEntityType,
+    accessEntityId,
+  });
 };
 
 export const storageProviderLabels = {

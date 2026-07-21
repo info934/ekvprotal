@@ -281,7 +281,7 @@ const Payouts = () => {
       });
       const dbUrlPath = storedInvoice.dbUrl;
 
-      const result = await uploadInvoice(payout.id, dbUrlPath, file.name);
+      const result = await uploadInvoice(payout.id, storedInvoice, file.name);
       if (!result.success) {
         if (storedInvoice.cleanup) await storedInvoice.cleanup().catch(console.error);
         throw new Error(result.error);
@@ -301,8 +301,19 @@ const Payouts = () => {
       throw error;
     }
   };
-  const handleDownloadInvoice = async (invoiceUrl) => {
-    const { success, error } = await downloadInvoiceFromStorage(invoiceUrl);
+  const handleDownloadInvoice = async (payout) => {
+    const { success, error } = await downloadInvoiceFromStorage({
+      provider: payout.invoice_storage_provider,
+      connectionId: payout.invoice_storage_connection_id,
+      bucket: payout.invoice_storage_metadata?.bucket || 'invoices',
+      filePath: payout.invoice_url,
+      fileId: payout.invoice_external_file_id,
+      fileName: payout.invoice_name,
+      entityType: 'invoice',
+      entityId: payout.id,
+      accessEntityType: 'payout',
+      accessEntityId: payout.id,
+    });
     if (!success) {
       toast({ title: "Fakturu se nepodařilo stáhnout", description: error, variant: "destructive" });
     }

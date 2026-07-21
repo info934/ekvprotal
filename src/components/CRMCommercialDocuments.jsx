@@ -22,7 +22,7 @@ import CrmLineItemsTable from '@/components/CrmLineItemsTable';
 import CrmProductPickerDialog from '@/components/CrmProductPickerDialog';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
-import { DEFAULT_CRM_NUMBERING, formatCrmNumber, incrementCrmNumbering, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
+import { allocateCrmNumber, DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmOpportunityPath, findCrmRecordByRef, getCrmRecordRef } from '@/lib/crmRoutes';
 import {
   buildCrmDocumentItemPayload,
@@ -183,6 +183,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       };
       return {
         ...document,
+        _persisted_status: document.status,
         opportunity,
         sync_items: document.sync_items ?? true,
         items: [...((document.sync_items ?? true) ? (opportunity?.opportunity_items || fallbackOpportunity?.items || []) : (document.items || []))]
@@ -443,135 +444,54 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
 
 
-  const syncItemsToOpportunityDocuments = async (sourceDocument, itemPayloads) => {
-    if (!sourceDocument.sync_items) return null;
-
-    const targets = documents.filter((document) => (
-      document.opportunity_id === sourceDocument.opportunity_id &&
-      (document.sync_items ?? true)
-    ));
-
-    for (const target of targets) {
-      const clonedItems = itemPayloads.map(({ document_id, ...item }, index) => ({
-        ...item,
-        document_id: target.id,
-        sort_order: (index + 1) * 10,
-      }));
-      const totals = calculateCrmTotals(clonedItems);
-      const { error: deleteError } = await supabase
-        .from('crm_commercial_document_items')
-        .delete()
-        .eq('document_id', target.id);
-      if (deleteError) return deleteError;
-
-      if (clonedItems.length > 0) {
-        const { error: insertError } = await supabase
-          .from('crm_commercial_document_items')
-          .insert(clonedItems);
-        if (insertError) return insertError;
-      }
-
-      const { error: updateError } = await supabase
-        .from('crm_commercial_documents')
-        .update({ ...totals, updated_at: new Date().toISOString() })
-        .eq('id', target.id);
-      if (updateError) return updateError;
-    }
-
-    return null;
-  };
-
   const handleSaveDocument = async () => {
     if (!selectedDocument || !canEdit) return;
+    if (selectedDocument._persisted_status && selectedDocument._persisted_status !== 'draft') {
+      toast({ title: 'Dokument je uzavřený', description: 'Položky a finanční údaje lze měnit pouze u rozpracovaného dokumentu.', variant: 'destructive' });
+      return;
+    }
     setSaving(true);
 
     const items = selectedDocument.items.map((item, index) => buildCrmDocumentItemPayload(item, selectedDocument.id, index));
-    const totals = calculateCrmTotals(items);
-    const { error: docError } = await supabase
-      .from('crm_commercial_documents')
-      .update({
+    const sourceIsOpportunity = selectedDocument.sync_items ?? true;
+    const itemRows = sourceIsOpportunity
+      ? selectedDocument.items.map((item, index) => buildCrmOpportunityItemPayload(item, selectedDocument.opportunity_id, index))
+      : items;
+
+    const rpcPayload = itemRows.map(({ opportunity_id, document_id, ...item }) => item);
+    const nextStatus = selectedDocument.status || 'draft';
+    const { data: updatedDocument, error: docError } = await supabase.rpc('save_crm_commercial_document_draft', {
+      p_document_id: selectedDocument.id,
+      p_document: {
         title: formatCommercialDocumentTitle(selectedDocument.title?.trim()) || config.singular,
-        status: selectedDocument.status || 'draft',
+        status: nextStatus,
         issue_date: selectedDocument.issue_date || new Date().toISOString().slice(0, 10),
         valid_until: selectedDocument.valid_until || null,
         notes: selectedDocument.notes || null,
         subject_id: selectedDocument.subject_id || null,
-        sync_items: selectedDocument.sync_items ?? true,
-        ...totals,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', selectedDocument.id);
+      },
+      p_items: rpcPayload,
+      p_sync_items: sourceIsOpportunity,
+    });
 
     if (docError) {
       setSaving(false);
       toast({ title: 'Dokument se nepodařilo uložit', description: docError.message, variant: 'destructive' });
       return;
     }
-
-    const sourceIsOpportunity = selectedDocument.sync_items ?? true;
-    const itemTable = sourceIsOpportunity ? 'crm_opportunity_items' : 'crm_commercial_document_items';
-    const itemFilterColumn = sourceIsOpportunity ? 'opportunity_id' : 'document_id';
-    const itemFilterValue = sourceIsOpportunity ? selectedDocument.opportunity_id : selectedDocument.id;
-    const itemRows = sourceIsOpportunity
-      ? selectedDocument.items.map((item, index) => buildCrmOpportunityItemPayload(item, selectedDocument.opportunity_id, index))
-      : items;
-
-    const rpcPayload = itemRows.map(({ opportunity_id, document_id, ...item }) => item);
-    const { error: replaceError } = sourceIsOpportunity
-      ? await supabase.rpc('replace_crm_opportunity_items', {
-        p_opportunity_id: selectedDocument.opportunity_id,
-        p_items: rpcPayload,
-        p_sync_documents: true,
-      })
-      : await supabase.rpc('replace_crm_document_items', {
-        p_document_id: selectedDocument.id,
-        p_items: rpcPayload,
+    if (!updatedDocument?.id) {
+      setSaving(false);
+      toast({
+        title: 'Dokument mezitím změnil stav',
+        description: 'Obnovte stránku. Finální dokument nelze přepsat rozpracovanými hodnotami.',
+        variant: 'destructive',
       });
-
-    if (!replaceError) {
-      setSaving(false);
-      toast({ title: selectedDocument.sync_items ? 'Dokument uložen a položky synchronizovány' : 'Dokument uložen' });
-      fetchData();
+      await fetchData();
       return;
     }
 
-    if (!isMissingCrmRpcError(replaceError)) {
-      setSaving(false);
-      toast({ title: 'Položky se nepodařilo uložit', description: replaceError.message, variant: 'destructive' });
-      return;
-    }
-
-    const { error: deleteError } = await supabase
-      .from(itemTable)
-      .delete()
-      .eq(itemFilterColumn, itemFilterValue);
-
-    if (deleteError) {
-      setSaving(false);
-      toast({ title: 'Položky se nepodařilo uložit', description: deleteError.message, variant: 'destructive' });
-      return;
-    }
-
-    if (itemRows.length > 0) {
-      const { error: insertError } = await supabase
-        .from(itemTable)
-        .insert(itemRows);
-      if (insertError) {
-        setSaving(false);
-        toast({ title: 'Položky se nepodařilo uložit', description: insertError.message, variant: 'destructive' });
-        return;
-      }
-    }
-
-    const syncError = sourceIsOpportunity
-      ? await syncItemsToOpportunityDocuments({ ...selectedDocument, ...totals }, items)
-      : null;
     setSaving(false);
-    if (syncError) {
-      toast({ title: 'Dokument uložen, synchronizace položek selhala', description: syncError.message, variant: 'destructive' });
-    } else {
-      toast({ title: selectedDocument.sync_items ? 'Dokument uložen a položky synchronizovány' : 'Dokument uložen' });
-    }
+    toast({ title: selectedDocument.sync_items ? 'Dokument uložen a položky synchronizovány' : 'Dokument uložen' });
     fetchData();
   };
 
@@ -592,7 +512,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       return { error: new Error('Pro novy obchodni pripad doplnte nazev a subjekt.') };
     }
 
-    const opportunityNumber = formatCrmNumber(numbering, 'opportunity');
+    const opportunityNumber = await allocateCrmNumber(supabase, 'opportunity');
     const { data, error } = await supabase
       .from('crm_opportunities')
       .insert({
@@ -609,10 +529,6 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       })
       .select('id, number, title, value, subject_id, subject:subject_id(id, name)')
       .single();
-
-    if (!error) {
-      await incrementCrmNumbering(supabase, 'opportunity', Number(numbering.opportunity?.next_number || 1) + 1);
-    }
 
     return { data: data ? { ...data, items: [] } : null, error };
   };
@@ -640,7 +556,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       opportunity = created.data;
     }
 
-    const number = formatCrmNumber(numbering, type);
+    const number = await allocateCrmNumber(supabase, type);
     const sourceItems = [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
     const fallbackItem = {
       code: 'CRM-001',
@@ -701,8 +617,6 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     if (shouldInsertDocumentRows && documentRows.length > 0) {
       await supabase.from('crm_commercial_document_items').insert(documentRows);
     }
-
-    await incrementCrmNumbering(supabase, type, Number(numbering[type]?.next_number || 1) + 1);
 
     setSaving(false);
     setCreateDialogOpen(false);
@@ -776,7 +690,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     setSaving(true);
 
     if (relationAction === 'copy') {
-      const number = formatCrmNumber(numbering, type);
+      const number = await allocateCrmNumber(supabase, type);
       const { data, error } = await supabase
         .from('crm_commercial_documents')
         .insert({
@@ -810,7 +724,6 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         }
       }
 
-      await incrementCrmNumbering(supabase, type, Number(numbering[type]?.next_number || 1) + 1);
       setSaving(false);
       setRelationDialogOpen(false);
       toast({ title: 'Dokument zkopirovan', description: 'Kopie je napojena na OP ' + (targetOpportunity.number || targetOpportunity.title) + '.' });
@@ -1122,7 +1035,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button onClick={handleSaveDocument} disabled={!canEdit || saving || !selectedDocument}>
+              <Button onClick={handleSaveDocument} disabled={!canEdit || saving || !selectedDocument || selectedDocument._persisted_status !== 'draft'}>
                 <Save className="mr-2 h-4 w-4" />
                 {saving ? 'Ukládám...' : 'Uložit'}
               </Button>
@@ -1158,11 +1071,11 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               <CardContent className="grid gap-4 bg-white p-5 md:grid-cols-2">
                 <div className="space-y-2 md:col-span-2">
                   <Label>Název dokumentu</Label>
-                  <Input value={selectedDocument.title || ''} onChange={(event) => updateSelectedDocument('title', event.target.value)} disabled={!canEdit || saving} />
+                  <Input value={selectedDocument.title || ''} onChange={(event) => updateSelectedDocument('title', event.target.value)} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'} />
                 </div>
                 <div className="space-y-2">
                   <Label>Stav</Label>
-                  <Select value={selectedDocument.status || 'draft'} onValueChange={(value) => updateSelectedDocument('status', value)} disabled={!canEdit || saving}>
+                  <Select value={selectedDocument.status || 'draft'} onValueChange={(value) => updateSelectedDocument('status', value)} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'}>
                     <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {documentStatuses.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}
@@ -1176,20 +1089,20 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                     onChange={(value, subject) => updateSelectedDocumentSubject(value || null, subject)}
                     onCreated={(subject) => updateSelectedDocumentSubject(subject.id, subject)}
                     placeholder="Vyberte nebo vytvořte subjekt"
-                    disabled={!canEdit || saving}
+                    disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Vystaveno</Label>
-                  <Input type="date" value={selectedDocument.issue_date || ''} onChange={(event) => updateSelectedDocument('issue_date', event.target.value)} disabled={!canEdit || saving} />
+                  <Input type="date" value={selectedDocument.issue_date || ''} onChange={(event) => updateSelectedDocument('issue_date', event.target.value)} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'} />
                 </div>
                 <div className="space-y-2">
                   <Label>Platnost do</Label>
-                  <Input type="date" value={selectedDocument.valid_until || ''} onChange={(event) => updateSelectedDocument('valid_until', event.target.value)} disabled={!canEdit || saving} />
+                  <Input type="date" value={selectedDocument.valid_until || ''} onChange={(event) => updateSelectedDocument('valid_until', event.target.value)} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'} />
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Popis / poznámka</Label>
-                  <Textarea value={selectedDocument.notes || ''} onChange={(event) => updateSelectedDocument('notes', event.target.value)} rows={5} disabled={!canEdit || saving} />
+                  <Textarea value={selectedDocument.notes || ''} onChange={(event) => updateSelectedDocument('notes', event.target.value)} rows={5} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'} />
                 </div>
               </CardContent>
             </Card>
@@ -1221,7 +1134,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                 </CardHeader>
                 <CardContent className="flex items-center justify-between gap-4 p-4">
                   <Label htmlFor="sync-items">Synchronizovat s obchodním případem</Label>
-                  <Switch id="sync-items" checked={selectedDocument.sync_items ?? true} onCheckedChange={(checked) => updateSelectedDocument('sync_items', checked)} disabled={!canEdit || saving} />
+                  <Switch id="sync-items" checked={selectedDocument.sync_items ?? true} onCheckedChange={(checked) => updateSelectedDocument('sync_items', checked)} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'} />
                 </CardContent>
               </Card>
             </div>
@@ -1229,7 +1142,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
             <div className="xl:col-span-2 space-y-3">
               {type === 'offer' && (
                 <div className="flex justify-end">
-                  <Button type="button" variant="outline" onClick={() => setFveWizardOpen(true)} disabled={!canEdit || saving}>
+                  <Button type="button" variant="outline" onClick={() => setFveWizardOpen(true)} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'}>
                     <Calculator className="mr-2 h-4 w-4" />Jednoduchá FVE
                   </Button>
                 </div>
@@ -1245,7 +1158,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                 title="Položkový seznam"
                 description="Položky jsou společné pro obchodní případ, pokud u dokumentu nevypnete synchronizaci. Po vypnutí sync jsou vlastní pro tento záznam."
                 items={selectedDocument.items}
-                canEdit={canEdit}
+                canEdit={canEdit && selectedDocument._persisted_status === 'draft'}
                 disabled={saving}
                 onUpdateItem={updateItem}
                 onRemoveItem={removeItem}

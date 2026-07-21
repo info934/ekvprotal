@@ -6,6 +6,7 @@ type CalendarAction = 'checkAvailability' | 'syncItem' | 'testConnection';
 type CompanyCalendarTarget = {
   mailbox: string;
   name: string;
+  calendarId: string | null;
 };
 
 type PlanningItem = {
@@ -112,7 +113,7 @@ const resolveCompanyCalendar = async (admin: ReturnType<typeof createClient>): P
   const { data, error } = await admin
     .from('app_settings')
     .select('key, value')
-    .in('key', ['planning_company_calendar_mailbox', 'planning_company_calendar_name']);
+    .in('key', ['planning_company_calendar_mailbox', 'planning_company_calendar_name', 'planning_company_calendar_id']);
   if (error) throw error;
 
   const settings = Object.fromEntries((data || []).map(({ key, value }) => [key, value]));
@@ -128,8 +129,13 @@ const resolveCompanyCalendar = async (admin: ReturnType<typeof createClient>): P
   return {
     mailbox,
     name: String(settings.planning_company_calendar_name || 'EKV Planning').trim() || 'EKV Planning',
+    calendarId: String(settings.planning_company_calendar_id || '').trim() || null,
   };
 };
+
+const calendarEventsPath = (target: CompanyCalendarTarget) => target.calendarId
+  ? `/users/${encodeURIComponent(target.mailbox)}/calendars/${encodeURIComponent(target.calendarId)}/events`
+  : `/users/${encodeURIComponent(target.mailbox)}/calendar/events`;
 
 const eventWindow = (item: PlanningItem) => item.start_at && item.end_at
   ? (() => {
@@ -211,10 +217,12 @@ Deno.serve(async (req: Request) => {
       }
       const requestedMailbox = String(body.mailbox || '').trim().toLowerCase();
       const target = requestedMailbox
-        ? { mailbox: requestedMailbox, name: 'EKV Planning' }
+        ? { mailbox: requestedMailbox, name: 'EKV Planning', calendarId: String(body.calendarId || '').trim() || null }
         : await resolveCompanyCalendar(admin);
       const mailbox = target.mailbox;
-      const calendar = await graphFetch(graphToken, `/users/${encodeURIComponent(mailbox)}/calendar?$select=id,name`);
+      const calendar = target.calendarId
+        ? await graphFetch(graphToken, `/users/${encodeURIComponent(mailbox)}/calendars/${encodeURIComponent(target.calendarId)}?$select=id,name`)
+        : await graphFetch(graphToken, `/users/${encodeURIComponent(mailbox)}/calendar?$select=id,name`);
       return jsonResponse({ success: true, mailbox, configuredName: target.name, calendar: { id: calendar.id, name: calendar.name }, roles });
     }
 
@@ -281,6 +289,7 @@ Deno.serve(async (req: Request) => {
           item_id: item.id,
           member_id: item.member_id,
           mailbox_address: mailbox,
+          external_calendar_id: existingLink.external_calendar_id || 'calendar',
           external_event_id: null,
           external_change_key: null,
           web_link: null,
@@ -308,9 +317,14 @@ Deno.serve(async (req: Request) => {
     const graphToken = await getGraphToken();
     logContext = { plan_id: item.plan_id, item_id: item.id, member_id: item.member_id, actor_user_id: user.id, mailbox_address: mailbox };
     const payload = eventPayload(planningItem, Deno.env.get('SITE_URL') || 'https://portal.ekvproject.cz', target.name);
+    const externalCalendarId = target.calendarId || 'calendar';
     let event;
     let eventAction = 'create';
-    if (existingLink?.external_event_id && existingLink.mailbox_address === mailbox) {
+    if (
+      existingLink?.external_event_id
+      && existingLink.mailbox_address === mailbox
+      && existingLink.external_calendar_id === externalCalendarId
+    ) {
       eventAction = 'update';
       event = await graphFetch(graphToken, `/users/${encodeURIComponent(mailbox)}/events/${encodeURIComponent(existingLink.external_event_id)}`, {
         method: 'PATCH',
@@ -318,14 +332,18 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify(payload),
       });
     } else {
-      if (existingLink?.external_event_id && existingLink.mailbox_address !== mailbox) {
-        await graphFetch(graphToken, `/users/${encodeURIComponent(existingLink.mailbox_address)}/events/${encodeURIComponent(existingLink.external_event_id)}`, { method: 'DELETE' });
-      }
-      event = await graphFetch(graphToken, `/users/${encodeURIComponent(mailbox)}/calendar/events`, {
+      event = await graphFetch(graphToken, calendarEventsPath(target), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      if (existingLink?.external_event_id) {
+        try {
+          await graphFetch(graphToken, `/users/${encodeURIComponent(existingLink.mailbox_address)}/events/${encodeURIComponent(existingLink.external_event_id)}`, { method: 'DELETE' });
+        } catch (deleteError) {
+          console.error('[planning-calendar] old mailbox event cleanup failed', deleteError);
+        }
+      }
     }
 
     await admin.from('planning_calendar_links').upsert({
@@ -333,6 +351,7 @@ Deno.serve(async (req: Request) => {
       member_id: item.member_id,
       target_scope: 'company',
       mailbox_address: mailbox,
+      external_calendar_id: externalCalendarId,
       external_event_id: event.id,
       external_change_key: event.changeKey || null,
       web_link: event.webLink || null,

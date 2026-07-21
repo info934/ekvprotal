@@ -13,6 +13,7 @@ const SETTING_KEYS = [
   'accounting_email',
   'planning_company_calendar_mailbox',
   'planning_company_calendar_name',
+  'planning_company_calendar_id',
 ];
 
 const SettingsPortal = () => {
@@ -21,6 +22,7 @@ const SettingsPortal = () => {
   const [accountingEmail, setAccountingEmail] = useState('');
   const [calendarMailbox, setCalendarMailbox] = useState('');
   const [calendarName, setCalendarName] = useState('EKV Plánování');
+  const [calendarId, setCalendarId] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingCalendar, setTestingCalendar] = useState(false);
@@ -45,6 +47,7 @@ const SettingsPortal = () => {
         setAccountingEmail(values.accounting_email || '');
         setCalendarMailbox(values.planning_company_calendar_mailbox || '');
         setCalendarName(values.planning_company_calendar_name || 'EKV Plánování');
+        setCalendarId(values.planning_company_calendar_id || '');
       }
       setLoading(false);
     };
@@ -93,6 +96,7 @@ const SettingsPortal = () => {
     if (await saveSettings([
       { key: 'planning_company_calendar_mailbox', value: mailbox },
       { key: 'planning_company_calendar_name', value: name },
+      { key: 'planning_company_calendar_id', value: calendarId.trim() },
     ], 'Firemní kalendář byl uložen')) {
       setCalendarMailbox(mailbox);
       setCalendarName(name);
@@ -106,7 +110,11 @@ const SettingsPortal = () => {
     }
     setTestingCalendar(true);
     const { data, error } = await supabase.functions.invoke('planning-calendar', {
-      body: { action: 'testConnection', mailbox: calendarMailbox.trim().toLowerCase() },
+      body: {
+        action: 'testConnection',
+        mailbox: calendarMailbox.trim().toLowerCase(),
+        calendarId: calendarId.trim() || null,
+      },
     });
     setTestingCalendar(false);
     if (error || !data?.success) {
@@ -169,6 +177,11 @@ const SettingsPortal = () => {
               <div className="space-y-2">
                 <Label htmlFor="calendarMailbox">Sdílený mailbox</Label>
                 <Input id="calendarMailbox" type="email" placeholder="planovani@ekvproject.cz" value={calendarMailbox} onChange={(event) => setCalendarMailbox(event.target.value)} disabled={loading || saving} />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="calendarId">ID konkretniho kalendare (volitelne)</Label>
+                <Input id="calendarId" placeholder="AAMkAG..." value={calendarId} onChange={(event) => setCalendarId(event.target.value)} disabled={loading || saving} />
+                <p className="text-xs text-muted-foreground">Bez ID se pouzije vychozi kalendar mailboxu. ID zamezi zapisu do nespravneho kalendare.</p>
               </div>
             </div>
             <p className="text-xs text-muted-foreground">

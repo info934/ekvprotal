@@ -13,7 +13,11 @@ export const listPlanningPlans = async (entityType = null) => {
   return throwIfError(await supabase.rpc('list_planning_plans_safe', params));
 };
 
-export const ensurePlanningPlan = async (entityType, entityId) => {
+export const ensurePlanningPlan = async (entityType, entityId, { createIfMissing = true } = {}) => {
+  const existingPlans = await listPlanningPlans(entityType);
+  const existing = existingPlans.find((plan) => plan.entity_id === entityId);
+  if (existing || !createIfMissing) return existing || null;
+
   const planId = throwIfError(await supabase.rpc('ensure_planning_plan', {
     p_entity_type: entityType,
     p_entity_id: entityId,
@@ -115,20 +119,13 @@ export const loadPlanningData = async (planId) => {
 };
 
 export const savePlanningItem = async (planId, item) => {
-  const startAt = toIsoDateTime(item.start_at || `${item.start_date}T08:00`);
-  const endAt = item.item_type === 'milestone'
-    ? startAt
-    : toIsoDateTime(item.end_at || `${item.end_date}T17:00`);
+  const startAt = item.start_at || `${item.start_date}T08:00`;
+  const endAt = item.item_type === 'milestone' ? startAt : (item.end_at || `${item.end_date}T17:00`);
   const payload = {
-    plan_id: planId,
     parent_id: item.parent_id || null,
     item_type: item.item_type || 'task',
     name: item.name.trim(),
     description: item.description?.trim() || null,
-    start_date: toDateOnly(item.start_at, item.start_date),
-    end_date: item.item_type === 'milestone'
-      ? toDateOnly(item.start_at, item.start_date)
-      : toDateOnly(item.end_at, item.end_date),
     start_at: startAt,
     end_at: endAt,
     progress: Math.max(0, Math.min(1, Number(item.progress) || 0)),
@@ -138,30 +135,18 @@ export const savePlanningItem = async (planId, item) => {
     sort_order: Number(item.sort_order) || 0,
   };
 
-  let saved;
-  if (item.id) {
-    saved = throwIfError(await supabase
-      .from('planning_items')
-      .update(payload)
-      .eq('id', item.id)
-      .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
-      .single());
-  } else {
-    saved = throwIfError(await supabase
-      .from('planning_items')
-      .insert(payload)
-      .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
-      .single());
-  }
-
-  throwIfError(await supabase.rpc('replace_planning_item_resources', {
-    p_item_id: saved.id,
-    p_primary_member_id: item.member_id || null,
+  const savedId = throwIfError(await supabase.rpc('save_planning_item_with_resources', {
+    p_plan_id: planId,
+    p_item_id: item.id || null,
+    p_item: payload,
     p_member_assignments: item.assignments || [],
     p_subcontractor_assignments: item.subcontractor_assignments || [],
   }));
-
-  return saved;
+  return throwIfError(await supabase
+    .from('planning_items')
+    .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
+    .eq('id', savedId)
+    .single());
 };
 
 export const updatePlanningItemDates = async (id, values) => {

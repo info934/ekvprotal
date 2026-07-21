@@ -91,3 +91,11 @@ export const incrementCrmNumbering = async (supabase, type, nextNumber) => (
     .update({ next_number: Number(nextNumber || 1), updated_at: new Date().toISOString() })
     .eq('document_type', type)
 );
+
+export const allocateCrmNumber = async (supabase, type) => {
+  const { data, error } = await supabase.rpc('allocate_crm_number', {
+    p_document_type: type,
+  });
+  if (error) throw error;
+  return data;
+};

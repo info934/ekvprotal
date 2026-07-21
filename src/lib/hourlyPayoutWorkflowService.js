@@ -40,12 +40,24 @@ export const rejectHourlyPayoutRequestWorkflow = async (requestId, reason) => {
   return data;
 };
 
-export const uploadHourlyPayoutInvoice = async (requestId, invoiceUrl) => {
-  const { data, error } = await supabase.rpc('upload_hourly_payout_invoice', {
+export const uploadHourlyPayoutInvoice = async (requestId, storedInvoice) => {
+  const { data, error } = await supabase.rpc('upload_hourly_payout_invoice_v2', {
     p_request_id: requestId,
-    p_invoice_url: invoiceUrl,
+    p_invoice_url: storedInvoice.dbUrl,
+    p_storage_provider: storedInvoice.provider || 'supabase',
+    p_storage_connection_id: storedInvoice.connectionId || null,
+    p_external_file_id: storedInvoice.fileId || storedInvoice.filePath || null,
+    p_storage_metadata: storedInvoice.metadata || {},
   });
 
+  if (error) throw error;
+  return data;
+};
+
+export const clearHourlyPayoutInvoice = async (requestId) => {
+  const { data, error } = await supabase.rpc('clear_hourly_payout_invoice', {
+    p_request_id: requestId,
+  });
   if (error) throw error;
   return data;
 };

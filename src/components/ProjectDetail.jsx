@@ -39,7 +39,8 @@ import EkvLoader from '@/components/ui/ekv-loader';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 import BillingTracker from '@/components/BillingTracker';
 import BillingOverviewSummary from '@/components/finance/BillingOverviewSummary';
-import { uploadProjectCostInvoice } from '@/lib/documentStorageService';
+import { deleteStoredFile, uploadProjectCostInvoice } from '@/lib/documentStorageService';
+import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import PlanningBoard from '@/components/PlanningBoard';
 import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
 import { RecordMetricGrid, RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
@@ -394,6 +395,33 @@ const ProjectDetail = () => {
         }
     };
 
+    const deleteProjectCostStorage = async (cost) => {
+        if (!cost?.invoice_url) return;
+        const deletions = [deleteStoredFile({
+            provider: cost.invoice_storage_provider,
+            connectionId: cost.invoice_storage_connection_id,
+            bucket: cost.invoice_storage_metadata?.bucket || 'project-files',
+            filePath: cost.invoice_url,
+            fileId: cost.invoice_external_file_id,
+            entityType: 'project',
+            entityId: projectId,
+        })];
+        if (cost.invoice_storage_metadata?.centralLinkFileId) {
+            deletions.push(deleteStoredFile({
+                provider: cost.invoice_storage_provider,
+                connectionId: cost.invoice_storage_connection_id,
+                fileId: cost.invoice_storage_metadata.centralLinkFileId,
+                entityType: 'invoice',
+                entityId: cost.id,
+                accessEntityType: 'project',
+                accessEntityId: projectId,
+            }));
+        }
+        const results = await Promise.allSettled(deletions);
+        const failures = results.filter((result) => result.status === 'rejected');
+        if (failures.length) throw new Error(failures.map((result) => result.reason?.message).filter(Boolean).join('; '));
+    };
+
     const handleSaveProjectCost = async (costData) => {
         const {
             invoiceFile,
@@ -404,6 +432,7 @@ const ProjectDetail = () => {
         const costId = editingCost?.id || crypto.randomUUID();
         const rewardSnapshotBefore = buildRewardSnapshot();
         let uploadedInvoice = null;
+        const previousInvoice = (invoiceFile || removeInvoice) && editingCost?.invoice_url ? editingCost : null;
         const payload = {
             ...financialData,
             id: costId,
@@ -441,6 +470,18 @@ const ProjectDetail = () => {
             const { error } = await query;
             if (error) throw error;
 
+            if (previousInvoice) {
+                try {
+                    await deleteProjectCostStorage(previousInvoice);
+                } catch (storageError) {
+                    toast({
+                        title: 'Nova faktura je ulozena, stary soubor zustal v ulozisti',
+                        description: storageError.message,
+                        variant: 'warning',
+                    });
+                }
+            }
+
             await logRewardSnapshot({
                 action: editingCost ? 'update' : 'create',
                 table: 'project_costs',
@@ -471,6 +512,10 @@ const ProjectDetail = () => {
         const { table, id } = itemToDelete;
         const shouldLogRewards = ['project_members', 'project_subcontractors', 'project_costs'].includes(table);
         const rewardSnapshotBefore = shouldLogRewards ? buildRewardSnapshot() : null;
+        const cost = table === 'project_costs'
+            ? costs.find((entry) => entry.id === id)
+            : null;
+        const invoiceToDelete = cost?.invoice_url ? cost : null;
         let result;
         if (table === 'project_members') {
             result = await supabase.rpc('delete_project_member_safe', {
@@ -488,6 +533,17 @@ const ProjectDetail = () => {
         const { error } = result;
         if (error) toast({ title: `Chyba při mazání`, variant: 'destructive', description: error.message });
         else {
+            if (invoiceToDelete) {
+                try {
+                    await deleteProjectCostStorage(invoiceToDelete);
+                } catch (storageError) {
+                    toast({
+                        title: 'Náklad byl smazán, soubor faktury zůstal v úložišti',
+                        description: storageError.message,
+                        variant: 'warning',
+                    });
+                }
+            }
             toast({ title: '🗑️ Smazáno' });
             if (shouldLogRewards) {
                 await logRewardSnapshot({ action: 'delete', table, itemId: id, before: rewardSnapshotBefore });
@@ -960,10 +1016,22 @@ const ProjectDetail = () => {
                                                     <TableCell>{(cost.amount || 0).toLocaleString('cs-CZ')} Kč</TableCell>
                                                     <TableCell>
                                                         {cost.invoice_url ? (
-                                                            <a href={cost.invoice_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:underline">
+                                                            <button type="button" onClick={async () => {
+                                                                const result = await downloadInvoiceFromStorage({
+                                                                    provider: cost.invoice_storage_provider,
+                                                                    connectionId: cost.invoice_storage_connection_id,
+                                                                    bucket: cost.invoice_storage_metadata?.bucket || 'project-files',
+                                                                    filePath: cost.invoice_url,
+                                                                    fileId: cost.invoice_external_file_id,
+                                                                    fileName: cost.invoice_name,
+                                                                    entityType: 'project',
+                                                                    entityId: projectId,
+                                                                });
+                                                                if (!result.success) toast({ title: 'Fakturu se nepodarilo stahnout', description: result.error, variant: 'destructive' });
+                                                            }} className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:underline">
                                                                 <FileText className="h-4 w-4" />
                                                                 {cost.invoice_name || 'Otevřít'}
-                                                            </a>
+                                                            </button>
                                                         ) : '—'}
                                                     </TableCell>
                                                     <TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => { setEditingCost(cost); setIsCostDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => requestDeleteCost(cost)}><Trash2 className="h-4 w-4 text-red-500" /></Button></TableCell>

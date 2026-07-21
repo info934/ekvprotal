@@ -1,85 +1,47 @@
-import { supabase } from '@/lib/customSupabaseClient';
+import { downloadStoredFile } from '@/lib/documentStorageService';
 
 /**
- * Utility function to download an invoice from Supabase Storage
- * @param {string} invoiceUrl - The full URL or relative path to the file
- * @returns {Promise<{success: boolean, error?: string}>}
+ * Downloads a financial document without exposing a permanent public URL.
+ * Accepts a legacy URL/path or a complete storage descriptor.
  */
-export const downloadInvoiceFromStorage = async (invoiceUrl) => {
-    console.log('[downloadInvoiceFromStorage] 1. Initial Input URL:', invoiceUrl);
-    
-    if (!invoiceUrl) {
-        console.warn('[downloadInvoiceFromStorage] Error: No invoice URL provided');
-        return { success: false, error: 'Chybí cesta k souboru faktury.' };
+export const downloadInvoiceFromStorage = async (invoice) => {
+  const descriptor = typeof invoice === 'string'
+    ? { filePath: invoice }
+    : (invoice || {});
+  const filePath = descriptor.filePath || descriptor.invoice_url;
+
+  if (!filePath && !descriptor.fileId) {
+    return { success: false, error: 'Chybí cesta k souboru faktury.' };
+  }
+
+  try {
+    if (
+      typeof filePath === 'string'
+      && /^https?:\/\//i.test(filePath)
+      && !filePath.includes('/storage/v1/object/')
+      && (!descriptor.provider || descriptor.provider === 'supabase')
+    ) {
+      window.open(filePath, '_blank', 'noopener,noreferrer');
+      return { success: true };
     }
 
-    try {
-        if (/^https?:\/\//i.test(invoiceUrl) && !invoiceUrl.includes('/storage/v1/object/')) {
-            window.open(invoiceUrl, '_blank', 'noopener,noreferrer');
-            return { success: true };
-        }
-
-        let filePath = invoiceUrl;
-        let bucket = 'invoices';
-
-        // 1. Strip out full URL domains if present
-        if (filePath.includes('/storage/v1/object/public/')) {
-            filePath = filePath.split('/storage/v1/object/public/')[1];
-        } else if (filePath.includes('/storage/v1/object/sign/')) {
-            filePath = filePath.split('/storage/v1/object/sign/')[1];
-            // Remove query params from signed URL
-            filePath = filePath.split('?')[0]; 
-        }
-
-        // 2. Extract bucket from path if it's explicitly there
-        // Format might be "invoices/2026/03/filename.pdf"
-        if (filePath.startsWith('invoices/')) {
-            filePath = filePath.replace('invoices/', '');
-            bucket = 'invoices';
-        }
-
-        console.log(`[downloadInvoiceFromStorage] 2. Parsed Bucket: "${bucket}", Parsed Path: "${filePath}"`);
-
-        // 3. Download from Supabase
-        console.log(`[downloadInvoiceFromStorage] 3. Calling supabase.storage.from('${bucket}').download('${filePath}')`);
-        const { data, error } = await supabase.storage
-            .from(bucket)
-            .download(filePath);
-
-        if (error) {
-            console.error('[downloadInvoiceFromStorage] 4. Supabase storage error:', error);
-            throw error;
-        }
-
-        if (!data) {
-            console.error('[downloadInvoiceFromStorage] 4. No data received from storage.');
-            throw new Error("Ze serveru nebyla přijata žádná data.");
-        }
-
-        // 4. Extract filename for the download link
-        const cleanPath = filePath.split('?')[0] || '';
-        const fileName = cleanPath.split('/').pop() || 'faktura';
-        
-        console.log(`[downloadInvoiceFromStorage] 5. Creating blob for filename: ${fileName}, size: ${data.size} bytes`);
-
-        // 5. Trigger browser download
-        const blobUrl = window.URL.createObjectURL(data);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        
-        // Cleanup safely
-        setTimeout(() => {
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(blobUrl);
-            console.log('[downloadInvoiceFromStorage] 6. Cleanup completed.');
-        }, 150);
-
-        return { success: true };
-    } catch (error) {
-        console.error('[downloadInvoiceFromStorage] Caught Exception:', error);
-        return { success: false, error: error.message || 'Nepodařilo se stáhnout soubor. Zkontrolujte, zda existuje.' };
-    }
+    await downloadStoredFile({
+      provider: descriptor.provider || descriptor.invoice_storage_provider || 'supabase',
+      connectionId: descriptor.connectionId || descriptor.invoice_storage_connection_id,
+      bucket: descriptor.bucket || descriptor.storageMetadata?.bucket || descriptor.invoice_storage_metadata?.bucket,
+      filePath,
+      fileId: descriptor.fileId || descriptor.invoice_external_file_id,
+      fileName: descriptor.fileName || descriptor.invoice_name,
+      entityType: descriptor.entityType || 'invoice',
+      entityId: descriptor.entityId,
+      accessEntityType: descriptor.accessEntityType,
+      accessEntityId: descriptor.accessEntityId,
+    });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message || 'Nepodařilo se stáhnout soubor. Zkontrolujte, zda existuje.',
+    };
+  }
 };

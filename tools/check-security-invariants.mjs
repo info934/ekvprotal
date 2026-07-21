@@ -15,6 +15,11 @@ const orderPage = read('src/components/OrderPage.jsx');
 const subcontractorOrderPage = read('src/components/SubcontractorOrderPage.jsx');
 const hardeningMigration = read('supabase/migrations/20260721223000_security_permissions_rls_hardening.sql');
 const documentStorageFunction = read('supabase/functions/document-storage/index.ts');
+const documentStorageMigration = read('supabase/migrations/20260721220000_secure_document_storage_authority.sql');
+const hourlyInvoiceMigration = read('supabase/migrations/20260721220500_hourly_payout_invoice_storage_metadata.sql');
+const taskInvoiceMigration = read('supabase/migrations/20260721220700_task_payout_invoice_storage_metadata.sql');
+const crmIntegrityMigration = read('supabase/migrations/20260721221500_crm_supplier_and_document_integrity.sql');
+const planningWriteMigration = read('supabase/migrations/20260721222000_atomic_planning_writes.sql');
 const payoutNotificationFunction = read('supabase/functions/send-payout-notification/index.ts');
 const scheduledReportsFunction = read('supabase/functions/send-scheduled-reports/index.ts');
 
@@ -39,6 +44,14 @@ assert(!authContext.includes('finalPermissions = { ...basicPermissions'), 'Permi
 assert(hardeningMigration.includes('revoke all on table public.project_orders from anon'), 'Anonymous project order table access must be revoked.');
 assert(hardeningMigration.includes("return null; end if;"), 'Unauthenticated role lookup must fail closed.');
 assert(documentStorageFunction.includes('body.accessEntityType'), 'External storage actions must validate their concrete access entity.');
+assert(documentStorageFunction.includes("action === 'deleteFile'"), 'External storage deletion must remain server-authorized.');
+assert(documentStorageFunction.includes(".from('document_storage_files')"), 'External file access must use the ownership registry.');
+assert(documentStorageMigration.includes("where id in ('project-files', 'invoices')"), 'Financial storage buckets must remain private.');
+assert(documentStorageMigration.includes('document_storage_files'), 'External storage ownership registry migration is required.');
+assert(hourlyInvoiceMigration.includes('upload_hourly_payout_invoice_v2'), 'Hourly payout invoice metadata must be persisted atomically.');
+assert(taskInvoiceMigration.includes('upload_payout_invoice_v2'), 'Task payout invoice metadata must be persisted atomically.');
+assert(crmIntegrityMigration.includes('save_crm_commercial_document_draft'), 'CRM document header and items must be saved atomically.');
+assert(planningWriteMigration.includes('save_planning_item_with_resources'), 'Planning items and resources must be saved atomically.');
 assert(payoutNotificationFunction.includes('{ adminOnly: true }'), 'Legacy payout email diagnostics must remain admin-only.');
 assert(scheduledReportsFunction.includes("req.headers.get('x-cron-secret')"), 'Scheduled reports must require the cron secret.');
 

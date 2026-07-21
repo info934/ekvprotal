@@ -482,7 +482,8 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
   const [accommodationDialog, setAccommodationDialog] = useState({ open: false, value: null });
 
   const selectedPlan = plans.find((plan) => plan.plan_id === selectedPlanId);
-  const canEdit = canEditOverride ?? (selectedPlan?.entity_type === 'realization'
+  const permissionEntityType = selectedPlan?.entity_type || entityType;
+  const canEdit = canEditOverride ?? (permissionEntityType === 'realization'
     ? hasPermission('realizace', 'can_edit')
     : hasPermission('projects', 'can_edit'));
 
@@ -491,9 +492,9 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
     setError('');
     try {
       if (entityType && entityId) {
-        const plan = await ensurePlanningPlan(entityType, entityId);
-        setPlans([plan]);
-        setSelectedPlanId(plan.plan_id);
+        const plan = await ensurePlanningPlan(entityType, entityId, { createIfMissing: canEdit });
+        setPlans(plan ? [plan] : []);
+        setSelectedPlanId(plan?.plan_id || '');
       } else {
         const availablePlans = await listPlanningPlans();
         setPlans(availablePlans || []);
@@ -505,7 +506,7 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
     } finally {
       setLoading(false);
     }
-  }, [entityId, entityType, toast]);
+  }, [canEdit, entityId, entityType, toast]);
 
   const loadData = useCallback(async () => {
     if (!selectedPlanId) return;
@@ -604,7 +605,9 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
       const currentItem = data.items.find((item) => item.id === id);
       if (getCalendarLink(currentItem)?.external_event_id) {
         await savePlanningItem(selectedPlanId, { ...currentItem, calendar_sync_enabled: false });
-        await syncCalendarBestEffort(id);
+        // Keep the portal record when Outlook deletion fails so the orphan can
+        // still be retried and reconciled from the UI.
+        await syncPlanningItemCalendar(id);
       }
       await deletePlanningItem(id);
     }, 'Položka plánu byla smazána');

@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.30.0';
 import { corsHeaders } from '../_shared/cors.ts';
 
-type StorageAction = 'testConnection' | 'ensureFolder' | 'uploadFile' | 'downloadUrl' | 'listFiles';
+type StorageAction = 'testConnection' | 'ensureFolder' | 'uploadFile' | 'downloadUrl' | 'listFiles' | 'deleteFile';
 type EntityType = 'project' | 'realizace' | 'product' | 'invoice';
 
 type StorageTarget = {
@@ -34,7 +34,7 @@ let graphTokenRequest: Promise<string> | null = null;
 const ALLOWED_ENTITY_TYPES = new Set<EntityType>(['project', 'realizace', 'product', 'invoice']);
 const ENTITY_PERMISSION_MODULES: Record<EntityType, string[]> = {
   project: ['projects', 'documents'],
-  realizace: ['projects', 'documents'],
+  realizace: ['realizace', 'projects', 'documents'],
   product: ['crm'],
   invoice: ['payouts', 'projects'],
 };
@@ -48,10 +48,11 @@ const safeSegment = (value: unknown) => String(value || '')
   .trim()
   .replace(/[~"#%&*:<>?/\\{|}]+/g, '-')
   .replace(/[. ]+$/g, '')
-  .slice(0, 120) || 'item';
+  .slice(0, 120);
 
 const normalizePath = (...parts: Array<string | undefined>) => parts
   .flatMap((part) => String(part || '').split('/'))
+  .filter((part) => part.trim().length > 0)
   .map(safeSegment)
   .filter(Boolean)
   .join('/');
@@ -124,6 +125,24 @@ const graphFetch = async (token: string, path: string, init: RequestInit = {}) =
   return response.json();
 };
 
+const graphFetchAbsolute = async (token: string, url: string) => {
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw await graphError(response);
+  return response.json();
+};
+
+const collectGraphPages = async (token: string, firstPath: string) => {
+  const values: Array<Record<string, unknown>> = [];
+  let page = await graphFetch(token, firstPath);
+  for (;;) {
+    values.push(...(page?.value || []));
+    const nextLink = page?.['@odata.nextLink'];
+    if (!nextLink) break;
+    page = await graphFetchAbsolute(token, String(nextLink));
+  }
+  return values;
+};
+
 const resolveTarget = (connection: StorageConnection, entityType: EntityType): StorageTarget => {
   const config = connection.config || {};
   const configured = config.targets?.[entityType];
@@ -146,11 +165,11 @@ const resolveTarget = (connection: StorageConnection, entityType: EntityType): S
 };
 
 const getChildByName = async (token: string, driveId: string, parentId: string, name: string) => {
-  const result = await graphFetch(
+  const values = await collectGraphPages(
     token,
-    `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(parentId)}/children?$select=id,name,webUrl,folder&$top=999`,
+    `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(parentId)}/children?$select=id,name,webUrl,folder&$top=200`,
   );
-  return (result.value || []).find((item: { name?: string }) => item.name?.localeCompare(name, undefined, { sensitivity: 'accent' }) === 0) || null;
+  return values.find((item: { name?: unknown }) => String(item.name || '').localeCompare(name, undefined, { sensitivity: 'accent' }) === 0) || null;
 };
 
 const ensurePath = async (token: string, target: StorageTarget, folderPath: string) => {
@@ -313,6 +332,36 @@ const assertItemBelongsToEntityFolder = async (
   }
 };
 
+const getServerEntityFolderPath = async (
+  admin: ReturnType<typeof createClient>,
+  entityType: EntityType,
+  entityId: string,
+) => {
+  if (entityType === 'invoice') return '';
+  const table = entityType === 'project'
+    ? 'projects'
+    : entityType === 'realizace'
+      ? 'realizations'
+      : 'commercial_item_catalog';
+  const { data, error } = await admin.from(table).select('id, code, name').eq('id', entityId).maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    const notFound = new Error('Storage entity was not found.') as Error & { status?: number };
+    notFound.status = 404;
+    throw notFound;
+  }
+  const root = entityType === 'project' ? 'projects' : entityType === 'realizace' ? 'realizace' : 'products';
+  return normalizePath(root, [data.code, data.name].filter(Boolean).join(' - ') || data.id);
+};
+
+const assertInvoiceAccessLink = (entityId: string, accessEntityType: string, accessEntityId: string) => {
+  if (['payout', 'hourly_payout'].includes(accessEntityType) && entityId !== accessEntityId) {
+    const error = new Error('Invoice owner does not match the authorized payout.') as Error & { status?: number };
+    error.status = 403;
+    throw error;
+  }
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -369,6 +418,10 @@ Deno.serve(async (req: Request) => {
       });
       const accessEntityType = String(body.accessEntityType || entityType);
       const accessEntityId = String(body.accessEntityId || entityId);
+      if (entityType !== 'invoice' && (accessEntityType !== entityType || accessEntityId !== entityId)) {
+        return jsonResponse({ success: false, error: 'Storage access scope does not match the target entity.' }, 403);
+      }
+      if (entityType === 'invoice') assertInvoiceAccessLink(entityId, accessEntityType, accessEntityId);
       let canAccess = false;
       if (accessEntityType === 'project') {
         const { data } = await userClient.rpc('can_access_project', { p_project_id: accessEntityId });
@@ -418,10 +471,43 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === 'ensureFolder') {
-      const requestedPath = String(body.folderPath || '');
-      if (!requestedPath) return jsonResponse({ success: false, error: 'Folder path is required.' }, 400);
+      const existingMapping = await getEntityFolderMapping(admin, String(connection.id), entityType, entityId);
+      if (existingMapping?.external_folder_id) {
+        const existingItem = await graphFetch(
+          graphToken,
+          `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(existingMapping.external_folder_id)}`,
+        );
+        const structure = await ensureStructure(graphToken, target, existingMapping.external_folder_id);
+        return jsonResponse({
+          success: true,
+          provider,
+          status: 'created',
+          folderId: existingMapping.external_folder_id,
+          externalFolderId: existingMapping.external_folder_id,
+          folderPath: existingMapping.folder_path,
+          webUrl: existingItem.webUrl,
+          metadata: { driveId: target.driveId, siteId: target.siteId, structure, structureVersion: 2, reusedMapping: true },
+        });
+      }
+
+      const requestedPath = await getServerEntityFolderPath(admin, entityType, entityId);
       const result = await ensurePath(graphToken, target, requestedPath);
       const structure = await ensureStructure(graphToken, target, result.item.id);
+      const mappingPayload = {
+        connection_id: connection.id,
+        entity_type: entityType,
+        entity_id: entityId,
+        folder_path: result.folderPath,
+        external_folder_id: result.item.id,
+        external_web_url: result.item.webUrl,
+        status: 'created',
+        metadata: { driveId: target.driveId, siteId: target.siteId, structure, structureVersion: 2 },
+        updated_at: new Date().toISOString(),
+      };
+      const { error: mappingError } = await admin
+        .from('document_storage_folders')
+        .upsert(mappingPayload, { onConflict: 'connection_id,entity_type,entity_id' });
+      if (mappingError) throw mappingError;
       return jsonResponse({
         success: true,
         provider,
@@ -430,7 +516,7 @@ Deno.serve(async (req: Request) => {
         externalFolderId: result.item.id,
         folderPath: result.folderPath,
         webUrl: result.item.webUrl,
-        metadata: { driveId: target.driveId, siteId: target.siteId, structure, structureVersion: 2 },
+        metadata: mappingPayload.metadata,
       });
     }
 
@@ -461,6 +547,30 @@ Deno.serve(async (req: Request) => {
         },
       );
 
+      const ownerType = entityType === 'invoice' ? String(body.accessEntityType || 'invoice') : entityType;
+      const ownerId = entityType === 'invoice' ? String(body.accessEntityId || entityId) : entityId;
+      const { error: registryError } = await admin.from('document_storage_files').insert({
+        connection_id: connection.id,
+        entity_type: entityType,
+        entity_id: entityId,
+        owner_type: ownerType,
+        owner_id: ownerId,
+        external_file_id: uploaded.id,
+        external_parent_id: folderId,
+        file_name: fileName,
+        external_web_url: uploaded.webUrl,
+        metadata: body.metadata || {},
+        uploaded_by: user.id,
+      });
+      if (registryError) {
+        await graphFetch(
+          graphToken,
+          `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(String(uploaded.id))}`,
+          { method: 'DELETE' },
+        ).catch(() => null);
+        throw registryError;
+      }
+
       return jsonResponse({
         success: true,
         provider,
@@ -480,6 +590,15 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'downloadUrl') {
       if (!body.fileId) return jsonResponse({ success: false, error: 'File ID is required.' }, 400);
+      const { data: registeredFile } = await admin
+        .from('document_storage_files')
+        .select('external_file_id')
+        .eq('connection_id', connection.id)
+        .eq('entity_type', entityType)
+        .eq('entity_id', entityId)
+        .eq('external_file_id', String(body.fileId))
+        .maybeSingle();
+      if (!registeredFile) return jsonResponse({ success: false, error: 'File is not registered for this entity.' }, 403);
       const item = await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(String(body.fileId))}`);
       if (entityFolderMapping) {
         await assertItemBelongsToEntityFolder(graphToken, target, String(body.fileId), entityFolderMapping);
@@ -488,12 +607,38 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === 'listFiles') {
+      if (entityType === 'invoice') {
+        return jsonResponse({ success: false, error: 'Listing the shared invoice folder is not allowed.' }, 403);
+      }
       if (!body.folderId) return jsonResponse({ success: false, error: 'Folder ID is required.' }, 400);
       if (entityFolderMapping) {
         await assertItemBelongsToEntityFolder(graphToken, target, String(body.folderId), entityFolderMapping);
       }
-      const result = await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(String(body.folderId))}/children?$select=id,name,size,webUrl,lastModifiedDateTime,file,folder`);
-      return jsonResponse({ success: true, items: result.value || [] });
+      const items = await collectGraphPages(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(String(body.folderId))}/children?$select=id,name,size,webUrl,lastModifiedDateTime,file,folder&$top=200`);
+      return jsonResponse({ success: true, items });
+    }
+
+    if (action === 'deleteFile') {
+      if (!body.fileId) return jsonResponse({ success: false, error: 'File ID is required.' }, 400);
+      const fileId = String(body.fileId);
+      const { data: registeredFile } = await admin
+        .from('document_storage_files')
+        .select('id, external_file_id')
+        .eq('connection_id', connection.id)
+        .eq('entity_type', entityType)
+        .eq('entity_id', entityId)
+        .eq('external_file_id', fileId)
+        .maybeSingle();
+      if (!registeredFile) return jsonResponse({ success: false, error: 'File is not registered for this entity.' }, 403);
+      if (entityFolderMapping) await assertItemBelongsToEntityFolder(graphToken, target, fileId, entityFolderMapping);
+      try {
+        await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+      } catch (deleteError) {
+        if ((deleteError as { status?: number }).status !== 404) throw deleteError;
+      }
+      const { error: registryDeleteError } = await admin.from('document_storage_files').delete().eq('id', registeredFile.id);
+      if (registryDeleteError) throw registryDeleteError;
+      return jsonResponse({ success: true, deleted: true, fileId });
     }
 
     return jsonResponse({ success: false, error: 'Unsupported action.' }, 400);

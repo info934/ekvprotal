@@ -64,7 +64,7 @@ const InvoiceUpload = ({ requestId, memberId, projectReference, onUploadSuccess 
 
       let dbData;
       try {
-        dbData = await uploadHourlyPayoutInvoice(requestId, dbUrlPath);
+        dbData = await uploadHourlyPayoutInvoice(requestId, storedInvoice);
       } catch (dbError) {
         console.error("[InvoiceUpload] Database update error:", dbError);
         if (storedInvoice.cleanup) await storedInvoice.cleanup().catch(console.error);

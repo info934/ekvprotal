@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/customSupabaseClient';
 import { FileText, Download, Trash2, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
@@ -7,8 +6,10 @@ import { cs } from 'date-fns/locale';
 import { useToast } from '@/components/ui/use-toast';
 import { logPayoutAction } from '@/lib/payoutLogger';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
+import { deleteStoredFile } from '@/lib/documentStorageService';
+import { clearHourlyPayoutInvoice } from '@/lib/hourlyPayoutWorkflowService';
 
-const InvoicePreview = ({ invoicePath, uploadedAt, status, requestId, onDelete }) => {
+const InvoicePreview = ({ invoicePath, uploadedAt, status, requestId, storageProvider, storageConnectionId, externalFileId, storageMetadata, onDelete }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [errorLoading, setErrorLoading] = useState(false);
@@ -19,7 +20,6 @@ const InvoicePreview = ({ invoicePath, uploadedAt, status, requestId, onDelete }
   const fileName = cleanPath.split('/').pop() || 'faktura';
 
   useEffect(() => {
-    console.log('[InvoicePreview] Mounted with raw invoice_url:', invoicePath);
     if (!invoicePath) {
       setErrorLoading(true);
     }
@@ -29,16 +29,24 @@ const InvoicePreview = ({ invoicePath, uploadedAt, status, requestId, onDelete }
     if (e) e.stopPropagation();
     if (!invoicePath || isDownloading) return;
     
-    console.log('[InvoicePreview] User clicked download. Calling downloadInvoiceFromStorage with:', invoicePath);
     setIsDownloading(true);
     
-    const { success, error } = await downloadInvoiceFromStorage(invoicePath);
+    const { success, error } = await downloadInvoiceFromStorage({
+      provider: storageProvider,
+      connectionId: storageConnectionId,
+      bucket: storageMetadata?.bucket || 'invoices',
+      filePath: invoicePath,
+      fileId: externalFileId,
+      fileName,
+      entityType: 'invoice',
+      entityId: requestId,
+      accessEntityType: 'hourly_payout',
+      accessEntityId: requestId,
+    });
     
     if (success) {
-        console.log('[InvoicePreview] Download successful.');
         toast({ title: "Staženo", description: "Soubor byl úspěšně stažen." });
     } else {
-        console.error('[InvoicePreview] Download failed:', error);
         toast({ 
             title: "Chyba stahování", 
             description: error || "Nepodařilo se stáhnout soubor.", 
@@ -57,35 +65,27 @@ const InvoicePreview = ({ invoicePath, uploadedAt, status, requestId, onDelete }
     await logPayoutAction('invoice_delete_attempt', requestId, { invoicePath });
     
     try {
-      // Determine bucket and path for deletion
-      let pathToDelete = invoicePath;
-      let bucket = 'invoices';
-      
-      if (pathToDelete.startsWith('invoices/')) {
-          pathToDelete = pathToDelete.replace('invoices/', '');
-      } else if (pathToDelete.includes('/storage/v1/object/public/invoices/')) {
-          pathToDelete = pathToDelete.split('/storage/v1/object/public/invoices/')[1];
+      await clearHourlyPayoutInvoice(requestId);
+      try {
+        await deleteStoredFile({
+        provider: storageProvider,
+        connectionId: storageConnectionId,
+        bucket: storageMetadata?.bucket || 'invoices',
+        filePath: invoicePath,
+        fileId: externalFileId,
+        entityType: 'invoice',
+        entityId: requestId,
+        accessEntityType: 'hourly_payout',
+        accessEntityId: requestId,
+        });
+      } catch (storageError) {
+        await logPayoutAction('invoice_storage_cleanup_failure', requestId, { error: storageError.message });
+        toast({
+          title: 'Faktura byla odebrána, soubor zůstal v úložišti',
+          description: storageError.message,
+          variant: 'warning',
+        });
       }
-
-      console.log(`[InvoicePreview] Deleting from bucket "${bucket}", path: "${pathToDelete}"`);
-
-      const { error: storageError } = await supabase.storage
-        .from(bucket)
-        .remove([pathToDelete]);
-
-      if (storageError) {
-          console.error("[InvoicePreview] Storage delete error:", storageError);
-      }
-
-      const { error: dbError } = await supabase
-        .from('hourly_payout_requests')
-        .update({ 
-            invoice_url: null, 
-            invoice_uploaded_at: null 
-        })
-        .eq('id', requestId);
-
-      if (dbError) throw dbError;
 
       await logPayoutAction('invoice_delete_success', requestId, { invoicePath });
       toast({ title: "Smazáno", description: "Faktura byla odstraněna." });
@@ -154,9 +154,6 @@ const InvoicePreview = ({ invoicePath, uploadedAt, status, requestId, onDelete }
         </div>
         </div>
         
-        <div className="text-[10px] text-slate-400 font-mono pl-1 break-all">
-            Debug path: {invoicePath}
-        </div>
     </div>
   );
 };

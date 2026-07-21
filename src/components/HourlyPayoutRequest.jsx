@@ -333,6 +333,10 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
                       uploadedAt={request.invoice_uploaded_at}
                       status={request.status}
                       requestId={request.id}
+                      storageProvider={request.invoice_storage_provider}
+                      storageConnectionId={request.invoice_storage_connection_id}
+                      externalFileId={request.invoice_external_file_id}
+                      storageMetadata={request.invoice_storage_metadata}
                       onDelete={() => fetchBaseData()}
                     />
                   )}

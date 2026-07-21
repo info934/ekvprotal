@@ -1,12 +1,6 @@
 
 import { supabase } from '@/lib/customSupabaseClient';
-import {
-  DEFAULT_CRM_NUMBERING,
-  formatCrmNumber,
-  incrementCrmNumbering,
-  normalizeCrmNumbering,
-  selectCrmNumberingSettings,
-} from '@/lib/crmNumbering';
+import { allocateCrmNumber } from '@/lib/crmNumbering';
 
 export const handoverProtocolTypeLabels = {
   handover_full: 'Celkový předávací protokol',
@@ -91,12 +85,7 @@ export const loadHandoverTemplates = async (documentType) => {
 };
 
 const getNextProtocolNumber = async (documentType) => {
-  const settingsResult = await selectCrmNumberingSettings(supabase);
-  const settings = normalizeCrmNumbering(settingsResult.error ? Object.values(DEFAULT_CRM_NUMBERING) : settingsResult.data);
-  const number = formatCrmNumber(settings, documentType);
-  const nextNumber = Number(settings[documentType]?.next_number || 1) + 1;
-  await incrementCrmNumbering(supabase, documentType, nextNumber);
-  return number;
+  return allocateCrmNumber(supabase, documentType);
 };
 
 export const createHandoverProtocol = async ({

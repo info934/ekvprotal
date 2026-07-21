@@ -46,14 +46,19 @@ export const approvePayout = async (payoutId, adminId, adminNote = null, approve
  * Sets invoice_url and invoice_uploaded_at
  * Changes status to invoice_uploaded if currently approved
  */
-export const uploadInvoice = async (payoutId, invoiceUrl, invoiceName) => {
+export const uploadInvoice = async (payoutId, storedInvoice, invoiceName) => {
   try {
-    console.log('[PayoutWorkflow] Uploading invoice:', { payoutId, invoiceUrl, invoiceName });
+    const invoiceUrl = typeof storedInvoice === 'string' ? storedInvoice : storedInvoice?.dbUrl;
+    console.log('[PayoutWorkflow] Uploading invoice:', { payoutId, invoiceName });
 
-    const { data, error } = await supabase.rpc('upload_payout_invoice', {
+    const { data, error } = await supabase.rpc('upload_payout_invoice_v2', {
       p_payout_id: payoutId,
       p_invoice_url: invoiceUrl,
-      p_invoice_name: invoiceName
+      p_invoice_name: invoiceName,
+      p_storage_provider: storedInvoice?.provider || 'supabase',
+      p_storage_connection_id: storedInvoice?.connectionId || null,
+      p_external_file_id: storedInvoice?.fileId || null,
+      p_storage_metadata: storedInvoice?.metadata || {},
     });
 
     if (error) throw error;

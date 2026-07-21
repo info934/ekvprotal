@@ -27,7 +27,8 @@ import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 import BillingTracker from '@/components/BillingTracker';
 import BillingOverviewSummary from '@/components/finance/BillingOverviewSummary';
-import { uploadInvoiceDocument } from '@/lib/documentStorageService';
+import { deleteStoredFile, uploadInvoiceDocument } from '@/lib/documentStorageService';
+import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import PlanningBoard from '@/components/PlanningBoard';
 import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
 import { RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
@@ -287,21 +288,42 @@ const RealizaceDetail = () => {
   // --- Cost Handlers ---
   const handleSaveCost = async (costData) => {
     try {
+      const costId = editingCost?.id || crypto.randomUUID();
       let fileUrl = costData.existingInvoice?.url || null;
       let fileName = costData.existingInvoice?.name || null;
       let invoiceStorageFields = {};
       let uploadedInvoice = null;
+      const previousInvoice = (costData.invoiceFile || costData.removeInvoice) && editingCost?.invoice_url
+        ? {
+            provider: editingCost.invoice_storage_provider,
+            connectionId: editingCost.invoice_storage_connection_id,
+            bucket: editingCost.invoice_storage_metadata?.bucket || 'project-files',
+            filePath: editingCost.invoice_url,
+            fileId: editingCost.invoice_external_file_id,
+            entityType: 'invoice',
+            entityId: editingCost.id,
+            accessEntityType: 'realizace',
+            accessEntityId: realizaceId,
+          }
+        : null;
 
       if (costData.removeInvoice) {
         fileUrl = null;
         fileName = null;
+        invoiceStorageFields = {
+          invoice_storage_provider: null,
+          invoice_storage_connection_id: null,
+          invoice_external_file_id: null,
+          invoice_external_web_url: null,
+          invoice_storage_metadata: {},
+        };
       }
 
       if (costData.invoiceFile) {
         const file = costData.invoiceFile;
         uploadedInvoice = await uploadInvoiceDocument({
           file,
-          recordId: editingCost?.id || realizaceId,
+          recordId: costId,
           projectReference: linkedProjectCode || null,
           category: 'naklady-realizaci',
           accessEntityType: 'realizace',
@@ -319,6 +341,7 @@ const RealizaceDetail = () => {
       }
 
       const payload = {
+        id: costId,
         realizace_id: realizaceId,
         description: costData.description,
         amount: costData.amount,
@@ -346,6 +369,18 @@ const RealizaceDetail = () => {
         toast({ title: 'Náklad přidán' });
       }
 
+      if (previousInvoice) {
+        try {
+          await deleteStoredFile(previousInvoice);
+        } catch (storageError) {
+          toast({
+            title: 'Náklad je uložen, původní soubor zůstal v úložišti',
+            description: storageError.message,
+            variant: 'warning',
+          });
+        }
+      }
+
       setIsCostDialogOpen(false);
       setEditingCost(null);
       fetchData();
@@ -356,10 +391,32 @@ const RealizaceDetail = () => {
   };
 
   const handleDeleteCost = async (id) => {
+    const cost = costs.find((entry) => entry.id === id);
     const { error } = await supabase.from('realizace_costs').delete().eq('id', id);
     if (error) {
       toast({ title: 'Chyba při mazání', description: error.message, variant: 'destructive' });
     } else {
+      if (cost?.invoice_url) {
+        try {
+          await deleteStoredFile({
+            provider: cost.invoice_storage_provider,
+            connectionId: cost.invoice_storage_connection_id,
+            bucket: cost.invoice_storage_metadata?.bucket || 'project-files',
+            filePath: cost.invoice_url,
+            fileId: cost.invoice_external_file_id,
+            entityType: 'invoice',
+            entityId: cost.id,
+            accessEntityType: 'realizace',
+            accessEntityId: realizaceId,
+          });
+        } catch (storageError) {
+          toast({
+            title: 'Náklad byl smazán, soubor faktury zůstal v úložišti',
+            description: storageError.message,
+            variant: 'warning',
+          });
+        }
+      }
       toast({ title: 'Náklad smazán' });
       fetchData();
     }
@@ -543,9 +600,31 @@ const RealizaceDetail = () => {
                                 <TableCell className="text-right font-bold">{formatCurrency(cost.amount)}</TableCell>
                                 <TableCell className="text-right">
                                   {cost.invoice_url && (
-                                    <a href={cost.invoice_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-blue-600 hover:underline">
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center text-blue-600 hover:underline"
+                                      onClick={async () => {
+                                        try {
+                                          const result = await downloadInvoiceFromStorage({
+                                            provider: cost.invoice_storage_provider,
+                                            connectionId: cost.invoice_storage_connection_id,
+                                            bucket: cost.invoice_storage_metadata?.bucket || 'project-files',
+                                            filePath: cost.invoice_url,
+                                            fileId: cost.invoice_external_file_id,
+                                            fileName: cost.invoice_name,
+                                            entityType: 'invoice',
+                                            entityId: cost.id,
+                                            accessEntityType: 'realizace',
+                                            accessEntityId: realizaceId,
+                                          });
+                                          if (!result.success) throw new Error(result.error);
+                                        } catch (error) {
+                                          toast({ title: 'Fakturu se nepodařilo stáhnout', description: error.message, variant: 'destructive' });
+                                        }
+                                      }}
+                                    >
                                       <Download className="w-3 h-3 mr-1" /> {cost.invoice_name || 'Stáhnout'}
-                                    </a>
+                                    </button>
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right">
