@@ -15,26 +15,23 @@ const formatDate = (value) => value ? new Date(`${value}T12:00:00`).toLocaleDate
 const RealizaceOverview = ({ realization, financialSnapshot }) => {
   const { userRole, memberId } = useAuth();
   const { canViewAmounts } = getFinancialVisibility(userRole);
-  const [myShare, setMyShare] = useState(null);
+  const [myReward, setMyReward] = useState(null);
   const [shareLoading, setShareLoading] = useState(false);
 
   useEffect(() => {
     if (canViewAmounts || !memberId || !realization?.id) {
-      setMyShare(null);
+      setMyReward(null);
       return;
     }
 
     let active = true;
     const fetchShare = async () => {
       setShareLoading(true);
-      const { data } = await supabase
-        .from('realization_profit_shares')
-        .select('share_type, share_value')
-        .eq('realizace_id', realization.id)
-        .eq('member_id', memberId)
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('get_my_realization_reward', {
+        p_realization_id: realization.id,
+      });
       if (active) {
-        setMyShare(data || null);
+        setMyReward(error ? null : data || null);
         setShareLoading(false);
       }
     };
@@ -45,9 +42,8 @@ const RealizaceOverview = ({ realization, financialSnapshot }) => {
   if (!realization) return null;
 
   const teamBudget = Number(financialSnapshot?.teamBudget || 0);
-  const myRewardAmount = myShare?.share_type === 'fixed'
-    ? Number(myShare.share_value || 0)
-    : Math.max(0, teamBudget * Number(myShare?.share_value || 0) / 100);
+  const myRewardAmount = Number(myReward?.net_reward || 0);
+  const sponsoredDeduction = Number(myReward?.sponsored_labor_deduction || 0);
   const missingEndDate = !realization.planned_end_date;
   const missingLead = !realization.lead_person?.id && !realization.lead_person_id;
 
@@ -65,7 +61,9 @@ const RealizaceOverview = ({ realization, financialSnapshot }) => {
               {shareLoading ? 'Načítám…' : <FinancialValueGuard value={formatCurrency(myRewardAmount)} />}
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              {myShare ? (myShare.share_type === 'percent' ? `Podíl ${myShare.share_value} %` : 'Fixní odměna') : 'Odměna zatím nebyla stanovena.'}
+              {myReward?.has_reward
+                ? `${myReward.share_type === 'percent' ? `Podíl ${myReward.share_value} %` : 'Fixní odměna'}${sponsoredDeduction ? `, po odpočtu práce ${formatCurrency(sponsoredDeduction)}` : ''}`
+                : 'Odměna zatím nebyla stanovena.'}
             </p>
           </CardContent>
         </Card>

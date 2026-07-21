@@ -106,6 +106,11 @@ const getGraphToken = async () => {
   return graphTokenRequest;
 };
 
+type StorageFolderMapping = {
+  external_folder_id: string | null;
+  folder_path: string | null;
+};
+
 const graphFetch = async (token: string, path: string, init: RequestInit = {}) => {
   const response = await fetch(`${GRAPH_ROOT}${path}`, {
     ...init,
@@ -234,6 +239,80 @@ const base64ToBytes = (base64: string) => {
   return bytes;
 };
 
+const getEntityFolderMapping = async (
+  admin: ReturnType<typeof createClient>,
+  connectionId: string,
+  entityType: EntityType,
+  entityId: string,
+) => {
+  const { data, error } = await admin
+    .from('document_storage_folders')
+    .select('external_folder_id, folder_path')
+    .eq('connection_id', connectionId)
+    .eq('entity_type', entityType)
+    .eq('entity_id', entityId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as StorageFolderMapping | null;
+};
+
+const assertFolderPathBelongsToEntity = (
+  folderPath: string,
+  mapping: StorageFolderMapping | null,
+  target: StorageTarget,
+) => {
+  if (!mapping?.folder_path) return;
+  const normalizedRequested = normalizePath(target.rootFolderPath, folderPath);
+  const normalizedRoot = normalizePath(mapping.folder_path);
+  if (normalizedRequested !== normalizedRoot && !normalizedRequested.startsWith(`${normalizedRoot}/`)) {
+    const error = new Error('Requested folder is outside the mapped entity folder.') as Error & { status?: number };
+    error.status = 403;
+    throw error;
+  }
+};
+
+const isItemAtOrBelowFolder = async (
+  token: string,
+  driveId: string,
+  itemId: string,
+  allowedFolderId: string,
+) => {
+  let currentId = itemId;
+  for (let depth = 0; depth < 40 && currentId; depth += 1) {
+    if (currentId === allowedFolderId) return true;
+    const item = await graphFetch(
+      token,
+      `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(currentId)}?$select=id,parentReference`,
+    );
+    const parentId = item?.parentReference?.id;
+    if (!parentId || parentId === currentId) return false;
+    currentId = parentId;
+  }
+  return false;
+};
+
+const assertItemBelongsToEntityFolder = async (
+  token: string,
+  target: StorageTarget,
+  itemId: string,
+  mapping: StorageFolderMapping | null,
+) => {
+  const allowedFolderId = mapping?.external_folder_id;
+  if (!allowedFolderId) {
+    const error = new Error('Entity folder mapping was not found.') as Error & { status?: number };
+    error.status = 404;
+    throw error;
+  }
+
+  const allowed = await isItemAtOrBelowFolder(token, String(target.driveId), itemId, allowedFolderId);
+  if (!allowed) {
+    const error = new Error('Requested SharePoint item is outside the mapped entity folder.') as Error & { status?: number };
+    error.status = 403;
+    throw error;
+  }
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -288,6 +367,14 @@ Deno.serve(async (req: Request) => {
 
     const graphToken = await getGraphToken();
     const target = resolveTarget(connection as StorageConnection, entityType);
+    const entityId = body.entityId ? String(body.entityId) : '';
+    const requiresEntityScope = action !== 'testConnection' && action !== 'ensureFolder' && entityType !== 'invoice';
+    if (requiresEntityScope && !entityId) {
+      return jsonResponse({ success: false, error: 'Entity ID is required for this storage action.' }, 400);
+    }
+    const entityFolderMapping = requiresEntityScope
+      ? await getEntityFolderMapping(admin, String(connection.id), entityType, entityId)
+      : null;
 
     if (action === 'testConnection') {
       const drive = await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}`);
@@ -324,14 +411,18 @@ Deno.serve(async (req: Request) => {
       let folderId = body.folderId ? String(body.folderId) : '';
       let folderPath = String(body.folderPath || '');
       if (!folderId) {
+        assertFolderPathBelongsToEntity(folderPath, entityFolderMapping, target);
         const result = await ensurePath(graphToken, target, folderPath);
         folderId = result.item.id;
         folderPath = result.folderPath;
       }
+      if (entityFolderMapping) {
+        await assertItemBelongsToEntityFolder(graphToken, target, folderId, entityFolderMapping);
+      }
 
       const uploaded = await graphFetch(
         graphToken,
-        `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(folderId)}:/${encodeURIComponent(fileName)}:/content`,
+        `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(folderId)}:/${encodeURIComponent(fileName)}:/content?@microsoft.graph.conflictBehavior=rename`,
         {
           method: 'PUT',
           headers: { 'Content-Type': String(body.contentType || 'application/octet-stream') },
@@ -359,11 +450,17 @@ Deno.serve(async (req: Request) => {
     if (action === 'downloadUrl') {
       if (!body.fileId) return jsonResponse({ success: false, error: 'File ID is required.' }, 400);
       const item = await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(String(body.fileId))}`);
+      if (entityFolderMapping) {
+        await assertItemBelongsToEntityFolder(graphToken, target, String(body.fileId), entityFolderMapping);
+      }
       return jsonResponse({ success: true, webUrl: item.webUrl, downloadUrl: item['@microsoft.graph.downloadUrl'] || null });
     }
 
     if (action === 'listFiles') {
       if (!body.folderId) return jsonResponse({ success: false, error: 'Folder ID is required.' }, 400);
+      if (entityFolderMapping) {
+        await assertItemBelongsToEntityFolder(graphToken, target, String(body.folderId), entityFolderMapping);
+      }
       const result = await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(String(body.folderId))}/children?$select=id,name,size,webUrl,lastModifiedDateTime,file,folder`);
       return jsonResponse({ success: true, items: result.value || [] });
     }

@@ -65,6 +65,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
     try {
       const result = await listEntityStorageFolder({
         entityType,
+        entityId: entity?.id,
         folderId: folder.id,
         connection: activeConnection,
         forceRefresh,
@@ -81,7 +82,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
     } finally {
       setLoading(false);
     }
-  }, [entityType]);
+  }, [entity?.id, entityType]);
 
   const initialize = useCallback(async () => {
     if (!entity?.id) return;

@@ -212,28 +212,21 @@ const SettingsStorage = () => {
     }]));
     targets.product = { ...targets.project, rootFolderPath: 'EKVPortal' };
 
-    await supabase
-      .from('document_storage_connections')
-      .update({ is_default: false })
-      .neq('id', '00000000-0000-0000-0000-000000000000');
-
     const payload = {
       provider: form.provider,
       name: form.name.trim() || storageProviderLabels[form.provider],
       status: form.status,
-      is_default: true,
       config: {
         tenantId: form.tenantId.trim(),
         targets,
         notes: form.notes.trim(),
       },
-      updated_at: new Date().toISOString(),
     };
 
-    const request = selectedId === 'new'
-      ? supabase.from('document_storage_connections').insert(payload).select('*').single()
-      : supabase.from('document_storage_connections').update(payload).eq('id', selectedId).select('*').single();
-    const { data, error } = await request;
+    const { data, error } = await supabase.rpc('save_default_document_storage_connection', {
+      p_connection_id: selectedId === 'new' ? null : selectedId,
+      p_payload: payload,
+    });
 
     if (error) {
       toast({ title: 'Chyba při ukládání úložiště', description: error.message, variant: 'destructive' });

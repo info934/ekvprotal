@@ -83,6 +83,19 @@ const addReferencePrefix = (fileName, reference) => {
   return sanitizeReadableFileName(`${readableReference} - ${readableFileName}`);
 };
 
+const addReadableUniqueSuffix = (fileName, seed = '') => {
+  const readableFileName = sanitizeReadableFileName(fileName);
+  const extensionMatch = readableFileName.match(/(\.[^.]+)$/);
+  const extension = extensionMatch?.[1] || '';
+  const baseName = extension ? readableFileName.slice(0, -extension.length) : readableFileName;
+  const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const entropy = `${seed}-${Math.random().toString(36).slice(2, 8)}`.replace(/[^a-zA-Z0-9_-]+/g, '').slice(-8);
+  return sanitizeReadableFileName(`${baseName} - ${timestamp}-${entropy}${extension}`);
+};
+
+const buildStoredFileName = (fileName, reference, seed = '') =>
+  addReadableUniqueSuffix(addReferencePrefix(fileName, reference), seed);
+
 const sanitizeRelativeFolderPath = (value, fallback) => String(value || fallback || '')
   .split('/')
   .map((segment) => sanitizePathSegment(segment))
@@ -232,7 +245,7 @@ export const uploadProjectDocument = async ({ file, project, documentName }) => 
     name: project.name,
     connection,
   });
-  const storedFileName = addReferencePrefix(file.name, project.code);
+  const storedFileName = buildStoredFileName(file.name, project.code, project.id);
 
   if (connection.provider === 'supabase') {
     const filePath = `${project.id}/${folder.folderPath}/${storedFileName}`;
@@ -317,7 +330,7 @@ export const uploadProjectCostInvoice = async ({ file, project, costId, createCe
     connection,
   });
   const projectReference = String(project.code || '').trim();
-  const storedFileName = addReferencePrefix(file.name, projectReference);
+  const storedFileName = buildStoredFileName(file.name, projectReference, costId);
   const invoiceFolderPath = `${buildEntityFolderPath({
     entityType: 'project',
     entityId: project.id,
@@ -439,14 +452,14 @@ export const getEntityStorageFolder = async ({ entityType, entityId }) => {
   return data ? { ...data, connection } : null;
 };
 
-const getFolderCacheKey = ({ entityType, folderId, connection }) =>
-  `${connection?.id || connection?.provider || 'storage'}:${entityType}:${folderId}`;
+const getFolderCacheKey = ({ entityType, entityId, folderId, connection }) =>
+  `${connection?.id || connection?.provider || 'storage'}:${entityType}:${entityId || 'entity'}:${folderId}`;
 
-export const invalidateEntityStorageFolderCache = ({ entityType, folderId, connection }) => {
-  folderListCache.delete(getFolderCacheKey({ entityType, folderId, connection }));
+export const invalidateEntityStorageFolderCache = ({ entityType, entityId, folderId, connection }) => {
+  folderListCache.delete(getFolderCacheKey({ entityType, entityId, folderId, connection }));
 };
 
-const listEntityStorageFolderUncached = async ({ entityType, folderId, connection }) => {
+const listEntityStorageFolderUncached = async ({ entityType, entityId, folderId, connection }) => {
   if (!connection || connection.provider === 'supabase') {
     return { items: [], provider: connection?.provider || 'supabase', supported: false };
   }
@@ -457,6 +470,7 @@ const listEntityStorageFolderUncached = async ({ entityType, folderId, connectio
       connectionId: connection.id,
       provider: connection.provider,
       entityType,
+      entityId,
       folderId,
     },
   });
@@ -466,13 +480,13 @@ const listEntityStorageFolderUncached = async ({ entityType, folderId, connectio
   return { items: data.items || [], provider: connection.provider, supported: true };
 };
 
-export const listEntityStorageFolder = async ({ entityType, folderId, connection, forceRefresh = false }) => {
-  const cacheKey = getFolderCacheKey({ entityType, folderId, connection });
+export const listEntityStorageFolder = async ({ entityType, entityId, folderId, connection, forceRefresh = false }) => {
+  const cacheKey = getFolderCacheKey({ entityType, entityId, folderId, connection });
   const cached = folderListCache.get(cacheKey);
   if (!forceRefresh && cached?.expiresAt > Date.now()) return cached.value;
   if (!forceRefresh && folderListRequests.has(cacheKey)) return folderListRequests.get(cacheKey);
 
-  const request = listEntityStorageFolderUncached({ entityType, folderId, connection })
+  const request = listEntityStorageFolderUncached({ entityType, entityId, folderId, connection })
     .then((value) => {
       folderListCache.set(cacheKey, { value, expiresAt: Date.now() + FOLDER_LIST_CACHE_TTL });
       return value;
@@ -507,7 +521,7 @@ export const uploadEntityStorageFile = async ({ entityType, entityId, folderId, 
 
   if (error) throw error;
   if (data?.success === false) throw new Error(data.error || 'Soubor se nepodařilo nahrát.');
-  invalidateEntityStorageFolderCache({ entityType, folderId, connection });
+  invalidateEntityStorageFolderCache({ entityType, entityId, folderId, connection });
   return data;
 };
 
@@ -633,7 +647,7 @@ export const uploadInvoiceDocument = async ({
   const readableFileName = sanitizeReadableFileName(file.name);
   const folderPath = '';
   const storedFileName = projectReference
-    ? addReferencePrefix(readableFileName, projectReference)
+    ? buildStoredFileName(readableFileName, projectReference, recordId)
     : `${uploadDate}_${safeRecordId}_${readableFileName}`;
 
   if (connection.provider === 'supabase') {
