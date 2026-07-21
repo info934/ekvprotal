@@ -1,6 +1,8 @@
 -- Security hardening: fail closed for anonymous users, narrow public token
 -- workflows, and keep financial administration restricted to global admins.
 
+begin;
+
 create or replace function public.get_user_role()
 returns text
 language plpgsql stable security definer set search_path = ''
@@ -281,3 +283,5 @@ with check (public.get_user_role() = 'admin' or exists (
 alter default privileges for role postgres in schema public revoke all on tables from anon, authenticated;
 alter default privileges for role postgres in schema public revoke all on sequences from anon, authenticated;
 alter default privileges for role postgres in schema public revoke execute on functions from public, anon, authenticated;
+
+commit;
