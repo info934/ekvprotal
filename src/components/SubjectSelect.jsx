@@ -15,6 +15,7 @@ const SubjectSelect = ({
   disabled = false,
   excludeIds = [],
   onCreated,
+  initialSubject = null,
 }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -51,7 +52,16 @@ const SubjectSelect = ({
           : (item.subject_kind === 'person' ? 'Fyzicka osoba' : (item.address || 'Subjekt')),
       }));
 
-      setItems(formattedItems);
+      setItems((current) => {
+        const fallback = initialSubject?.id ? [{
+          id: initialSubject.id,
+          label: initialSubject.name || initialSubject.label || 'Vybraný subjekt',
+          subject: initialSubject,
+          description: initialSubject.ico ? `IČO: ${initialSubject.ico}` : (initialSubject.address || 'Subjekt'),
+        }] : [];
+        const merged = new Map([...fallback, ...current, ...formattedItems].map((item) => [item.id, item]));
+        return Array.from(merged.values()).sort((a, b) => a.label.localeCompare(b.label, 'cs'));
+      });
     } catch (err) {
       setError('Chyba nacitani');
       toast({
@@ -67,6 +77,19 @@ const SubjectSelect = ({
   useEffect(() => {
     fetchSubjects();
   }, []);
+
+  useEffect(() => {
+    if (!initialSubject?.id) return;
+    setItems((current) => {
+      if (current.some((item) => item.id === initialSubject.id)) return current;
+      return [...current, {
+        id: initialSubject.id,
+        label: initialSubject.name || initialSubject.label || 'Vybraný subjekt',
+        subject: initialSubject,
+        description: initialSubject.ico ? `IČO: ${initialSubject.ico}` : (initialSubject.address || 'Subjekt'),
+      }].sort((a, b) => a.label.localeCompare(b.label, 'cs'));
+    });
+  }, [initialSubject]);
 
   const handleSaveSubject = async (formData) => {
     try {

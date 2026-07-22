@@ -17,7 +17,6 @@ import RealizaceOrdersTab from './RealizaceOrdersTab';
 import RealizaceHourlyCosts from './RealizaceHourlyCosts';
 import RealizaceProfitSharing from './RealizaceProfitSharing';
 import RealizaceExtraCosts from './RealizaceExtraCosts';
-import EditablePercentageField from './EditablePercentageField';
 import HandoverProtocolsTab from './HandoverProtocolsTab';
 import SharePointFolderBrowser from '@/components/SharePointFolderBrowser';
 import { RealizaceCostDialog } from './RealizaceFinancials';
@@ -35,6 +34,7 @@ import { RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/
 import EkvLoader from '@/components/ui/ekv-loader';
 import { calculateRealizationRewardAllocation } from '@/domain/financials';
 import { formatMoney } from '@/lib/financePresentation';
+import FinancialSettingsCard from '@/components/finance/FinancialSettingsCard';
 
 const formatCurrency = formatMoney;
 const toNumber = (value) => {
@@ -450,10 +450,6 @@ const RealizaceDetail = () => {
     setLinkedProjectId(newProjectId);
   };
 
-  const handleRealizationUpdate = (updatedRealization) => {
-    setRealization(updatedRealization);
-  };
-
   if (loading) return (
     <EkvLoader title="Načítám detail realizace" description="Připravuji průběh zakázky, tým, dokumenty a finance." />
   );
@@ -544,31 +540,14 @@ const RealizaceDetail = () => {
                   { label: 'Provozní zůstatek', value: profitAvailable, barClassName: Number(profitAvailable || 0) < 0 ? 'bg-red-500' : 'bg-emerald-500' },
                 ]} />
                 <FinanceDefinitionNote>Nerozdělený budget je týmový základ po skutečných nákladech a naplánovaných podílech. Režie zůstává oddělenou rezervou firmy; rezervované výplaty snižují dostupný limit, ale do skutečných nákladů vstoupí až po vyplacení.</FinanceDefinitionNote>
-                {canViewProfit && (
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Nastavení finančního modelu</CardTitle>
-                      <CardDescription>Parametry se nastavují pouze zde a promítají se do souhrnu i rozdělení odměn.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="grid gap-4 md:grid-cols-2">
-                      <EditablePercentageField
-                        realizaceId={realizaceId}
-                        fieldName="profit_margin_percent"
-                        currentValue={realization.profit_margin_percent || 0}
-                        onUpdate={(value) => handleRealizationUpdate({ ...realization, profit_margin_percent: value })}
-                        label="Plánovaná marže"
-                        canEdit={canEdit && !financeLoadError}
-                      />
-                      <EditablePercentageField
-                        realizaceId={realizaceId}
-                        fieldName="overhead_percent"
-                        currentValue={realization.overhead_percent || 0}
-                        onUpdate={(value) => handleRealizationUpdate({ ...realization, overhead_percent: value })}
-                        label="Režie firmy"
-                        canEdit={canEdit && !financeLoadError}
-                      />
-                    </CardContent>
-                  </Card>
+                {userRole === 'admin' && (
+                  <FinancialSettingsCard
+                    entityType="realization"
+                    entityId={realizaceId}
+                    values={realization}
+                    disabled={!!financeLoadError}
+                    onSaved={fetchData}
+                  />
                 )}
                 {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} entityCode={linkedProjectCode} enableContractAnalysis showFinancialSummary={false} />}
                 <RealizaceExtraCosts

@@ -15,7 +15,7 @@ export const MemberSchema = z.object({
 });
 
 // --- PROJECT SCHEMA ---
-export const ProjectSchema = z.object({
+const ProjectSchemaFields = {
   name: z.string().min(1, 'Název projektu je povinný'),
   code: z.string().min(1, 'Kód projektu je povinný'),
   status: z.enum(['nabidka', 'active', 'ready_for_delivery', 'delivered', 'closed']),
@@ -30,6 +30,13 @@ export const ProjectSchema = z.object({
   investor_id: z.string().uuid('Investor je povinný'),
   client_id: z.string().uuid('Zadavatel je povinný'),
   is_priority: z.boolean().optional(),
+};
+
+export const createProjectSchema = ({ requireFinance = true } = {}) => z.object({
+  ...ProjectSchemaFields,
+  price: requireFinance ? ProjectSchemaFields.price : ProjectSchemaFields.price.optional().nullable(),
+  budget_percentage: requireFinance ? ProjectSchemaFields.budget_percentage : ProjectSchemaFields.budget_percentage.optional().nullable(),
+  overhead_percentage: requireFinance ? ProjectSchemaFields.overhead_percentage : ProjectSchemaFields.overhead_percentage.optional().nullable(),
 }).refine((data) => {
   if (data.start_date && data.completion_date) {
     return new Date(data.completion_date) >= new Date(data.start_date);
@@ -40,9 +47,11 @@ export const ProjectSchema = z.object({
   path: ["completion_date"],
 });
 
+export const ProjectSchema = createProjectSchema();
+
 
 // --- REALIZATION SCHEMA ---
-export const RealizationSchema = z.object({
+const RealizationSchemaFields = {
   name: z.string().min(1, 'Název realizace je povinný'),
   status: z.string().min(1, 'Stav je povinný'),
   type: z.string().optional().nullable(),
@@ -58,6 +67,11 @@ export const RealizationSchema = z.object({
   planned_end_date: z.string().optional().nullable(),
   actual_end_date: z.string().optional().nullable(),
   location_address: z.string().optional().nullable(),
+};
+
+export const createRealizationSchema = ({ requireFinance = true } = {}) => z.object({
+  ...RealizationSchemaFields,
+  contract_amount: requireFinance ? RealizationSchemaFields.contract_amount : RealizationSchemaFields.contract_amount.optional().nullable(),
 }).refine((data) => {
   if (data.start_date && data.planned_end_date) {
     return new Date(data.planned_end_date) >= new Date(data.start_date);
@@ -67,6 +81,8 @@ export const RealizationSchema = z.object({
   message: "Plánované dokončení musí být po datu zahájení",
   path: ["planned_end_date"],
 });
+
+export const RealizationSchema = createRealizationSchema();
 
 // --- PAYOUT SCHEMA ---
 export const PayoutItemSchema = z.object({

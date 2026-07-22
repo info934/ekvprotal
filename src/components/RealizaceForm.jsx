@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { RealizationSchema } from '@/lib/validationSchemas';
+import { createRealizationSchema } from '@/lib/validationSchemas';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { crmOpportunityPath } from '@/lib/crmRoutes';
@@ -45,6 +45,8 @@ const RealizaceForm = () => {
     const [loading, setLoading] = useState(true);
     const [teamEntries, setTeamEntries] = useState([{ member_id: '', share_type: '', share_value: '' }]);
     const [profitSharesLoading, setProfitSharesLoading] = useState(false);
+    const [initialInvestor, setInitialInvestor] = useState(null);
+    const [canonicalActualCosts, setCanonicalActualCosts] = useState(null);
 
     // Toggle states for percent/fixed
     const [profitMode, setProfitMode] = useState('percent'); // 'percent' | 'fixed'
@@ -60,11 +62,12 @@ const RealizaceForm = () => {
         register, 
         handleSubmit, 
         control, 
-        setValue, 
+        setValue,
+        reset,
         watch, 
         formState: { errors, isSubmitting } 
     } = useForm({
-        resolver: zodResolver(RealizationSchema),
+        resolver: zodResolver(useMemo(() => createRealizationSchema({ requireFinance: canViewFinance }), [canViewFinance])),
         defaultValues: {
             name: '',
             status: 'Připravuje se',
@@ -100,10 +103,10 @@ const RealizaceForm = () => {
         return Number.isNaN(n) ? 0 : n;
     };
     const safeContract = numberVal(watchContract);
-    const safeActual = numberVal(watchActual);
+    const safeActual = canonicalActualCosts === null ? numberVal(watchActual) : numberVal(canonicalActualCosts);
     const safeExpected = numberVal(watchExpected);
     const safeBudget = numberVal(watchBudget);
-    const baseCost = safeActual ?? safeExpected ?? safeBudget ?? 0;
+    const baseCost = safeActual > 0 ? safeActual : (safeExpected > 0 ? safeExpected : safeBudget);
     const availableProfitRaw = safeContract - baseCost;
     const availableProfit = Number.isFinite(availableProfitRaw) ? Math.max(0, availableProfitRaw) : 0;
     const formatCurrency = formatMoney;
@@ -193,13 +196,25 @@ const RealizaceForm = () => {
                 if (error) throw error;
                 setRealizationData(data);
                 
-                Object.keys(data).forEach(key => {
-                    if ((key.endsWith('_date')) && data[key]) {
-                        setValue(key, format(parseISO(data[key]), 'yyyy-MM-dd'));
-                    } else if (key !== 'id' && key !== 'created_at') {
-                        setValue(key, data[key]);
-                    }
+                reset({
+                    ...data,
+                    start_date: data.start_date ? format(parseISO(data.start_date), 'yyyy-MM-dd') : '',
+                    planned_end_date: data.planned_end_date ? format(parseISO(data.planned_end_date), 'yyyy-MM-dd') : '',
+                    actual_end_date: data.actual_end_date ? format(parseISO(data.actual_end_date), 'yyyy-MM-dd') : '',
+                    contract_amount: canViewFinance ? Number(data.contract_amount || 0) : null,
+                    budget: canViewFinance ? Number(data.budget || 0) : null,
+                    expected_total_cost: canViewFinance ? Number(data.expected_total_cost || 0) : null,
+                    actual_costs: null,
+                    profit_margin_percent: canViewFinance ? Number(data.profit_margin_percent || 0) : null,
+                    overhead_percent: canViewFinance ? Number(data.overhead_percent || 0) : null,
                 });
+                setInitialInvestor(data.investor || null);
+
+                if (canViewFinance) {
+                    const { data: summary, error: summaryError } = await supabase.rpc('realization_financial_summary', { p_realization_id: realizaceId });
+                    if (summaryError) throw summaryError;
+                    setCanonicalActualCosts(Number(summary?.costs_after_paid_payouts ?? summary?.total_costs ?? 0));
+                }
 
                 if (data.team_members && Array.isArray(data.team_members)) {
                     setTeamEntries(data.team_members.map((id) => ({ member_id: id, share_type: '', share_value: '' })));
@@ -233,7 +248,7 @@ const RealizaceForm = () => {
         } finally {
             setLoading(false);
         }
-    }, [realizaceId, isEditing, setValue, toast, loadProfitShares, sourceOpportunityId, canViewFinance]);
+    }, [realizaceId, isEditing, setValue, reset, toast, loadProfitShares, sourceOpportunityId, canViewFinance]);
 
     useEffect(() => {
         fetchData();
@@ -257,9 +272,11 @@ const RealizaceForm = () => {
             if (dataToSave[key] === '') dataToSave[key] = null;
         });
 
-        // Ensure numbers
-        dataToSave.profit_margin_percent = numberVal(dataToSave.profit_margin_percent);
-        dataToSave.overhead_percent = numberVal(dataToSave.overhead_percent);
+        if (canViewFinance) {
+            dataToSave.profit_margin_percent = numberVal(dataToSave.profit_margin_percent);
+            dataToSave.overhead_percent = numberVal(dataToSave.overhead_percent);
+            delete dataToSave.actual_costs;
+        }
 
 
         // Add team members to payload
@@ -479,6 +496,7 @@ const RealizaceForm = () => {
                                             <SubjectSelect
                                                 value={field.value}
                                                 onChange={field.onChange}
+                                                initialSubject={initialInvestor}
                                                 placeholder="Vybrat investora..."
                                             />
                                         )} 
@@ -526,7 +544,7 @@ const RealizaceForm = () => {
                         </CardContent>
                     </Card>
                     
-                    {canViewFinance && <Card className="mt-6">
+                    {canViewFinance && !isEditing && <Card className="mt-6">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2"><DollarSign className="w-5 h-5 text-primary" />Finance a rozpočet</CardTitle>
                         </CardHeader>
@@ -660,18 +678,11 @@ const RealizaceForm = () => {
                                 </div>
                                 <div className="space-y-1">
                                     <Label htmlFor="actual_costs">Aktuální náklady (Kč)</Label>
-                                    <Input 
-                                        id="actual_costs" 
-                                        type="number" 
-                                        step="0.01"
-                                        {...register('actual_costs')} 
-                                        className={errors.actual_costs ? 'border-red-500' : ''}
-                                    />
-                                    {errors.actual_costs && <p className="text-red-500 text-xs">{errors.actual_costs.message}</p>}
+                                    <Input id="actual_costs" type="text" value={formatCurrency(safeActual)} readOnly className="bg-slate-50" />
                                     {safeActual > safeContract && (
                                         <p className="text-orange-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>Pozor: Náklady převyšují smluvní částku.</p>
                                     )}
-                                    <p className="text-xs text-muted-foreground mt-1">Manuální override, pokud nechcete počítat automaticky z objednávek a nákladů.</p>
+                                    <p className="text-xs text-muted-foreground mt-1">Vypočteno z evidovaných nákladů, práce a vyplacených odměn. Hodnotu nelze ručně přepsat.</p>
                                 </div>
                             </div>
                         </CardContent>

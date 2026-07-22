@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ProjectSchema } from '@/lib/validationSchemas';
+import { createProjectSchema } from '@/lib/validationSchemas';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { crmOpportunityPath } from '@/lib/crmRoutes';
@@ -40,10 +40,11 @@ const ProjectForm = () => {
         handleSubmit, 
         control, 
         watch, 
-        setValue, 
+        setValue,
+        reset,
         formState: { errors, isSubmitting } 
     } = useForm({
-        resolver: zodResolver(ProjectSchema),
+        resolver: zodResolver(useMemo(() => createProjectSchema({ requireFinance: isAdmin }), [isAdmin])),
         defaultValues: {
             name: '',
             code: '',
@@ -67,6 +68,8 @@ const ProjectForm = () => {
     const [projectCodePattern, setProjectCodePattern] = useState('');
     const [investorIsClient, setInvestorIsClient] = useState(false);
     const [sourceOpportunity, setSourceOpportunity] = useState(null);
+    const [initialInvestor, setInitialInvestor] = useState(null);
+    const [initialClient, setInitialClient] = useState(null);
     const [loading, setLoading] = useState(true);
     
     // Templates
@@ -125,13 +128,16 @@ const ProjectForm = () => {
                 const { data, error } = await supabase.rpc('get_project_safe', { p_project_id: projectId });
                 if (error) throw error;
                 
-                Object.keys(data).forEach(key => {
-                    if ((key === 'completion_date' || key === 'start_date') && data[key]) {
-                        setValue(key, format(parseISO(data[key]), 'yyyy-MM-dd'));
-                    } else if (key !== 'id' && key !== 'created_at') {
-                        setValue(key, data[key]);
-                    }
+                reset({
+                    ...data,
+                    completion_date: data.completion_date ? format(parseISO(data.completion_date), 'yyyy-MM-dd') : '',
+                    start_date: data.start_date ? format(parseISO(data.start_date), 'yyyy-MM-dd') : '',
+                    price: isAdmin ? Number(data.price || 0) : null,
+                    budget_percentage: isAdmin ? Number(data.budget_percentage ?? 30) : null,
+                    overhead_percentage: isAdmin ? Number(data.overhead_percentage ?? 10) : null,
                 });
+                setInitialInvestor(data.investor || null);
+                setInitialClient(data.client || null);
                 
                 if (data.investor_id && data.investor_id === data.client_id) {
                     setInvestorIsClient(true);
@@ -172,7 +178,7 @@ const ProjectForm = () => {
         } finally {
             setLoading(false);
         }
-    }, [projectId, isEditing, setValue, toast, memberId, fetchTemplates, sourceOpportunityId]);
+    }, [projectId, isEditing, setValue, reset, toast, memberId, fetchTemplates, sourceOpportunityId, isAdmin]);
 
     useEffect(() => {
         fetchData();
@@ -389,7 +395,7 @@ const ProjectForm = () => {
                             <div className="space-y-1.5">
                                 <Label className="text-slate-700">Druh projektu</Label>
                                 <Controller name="type" control={control} render={({ field }) => (
-                                    <Select onValueChange={field.onChange} defaultValue={field.value || undefined}>
+                                    <Select onValueChange={field.onChange} value={field.value || ''}>
                                         <SelectTrigger className="bg-white"><SelectValue placeholder="Vyberte druh" /></SelectTrigger>
                                         <SelectContent>{projectTypes.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}</SelectContent>
                                     </Select>
@@ -463,6 +469,7 @@ const ProjectForm = () => {
                                         label="Konečný Investor"
                                         value={field.value}
                                         onChange={field.onChange}
+                                        initialSubject={initialInvestor}
                                         placeholder="Vyhledat investora..."
                                     />
                                 )} 
@@ -492,6 +499,7 @@ const ProjectForm = () => {
                                                 label="Zadavatel (Klient)"
                                                 value={field.value}
                                                 onChange={field.onChange}
+                                                initialSubject={initialClient}
                                                 placeholder="Vyhledat zadavatele..."
                                             />
                                         )} 
@@ -511,7 +519,7 @@ const ProjectForm = () => {
                          </CardTitle>
                      </CardHeader>
                      <CardContent className="space-y-6 pt-6">
-                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                         {!isEditing && <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                              <div className="space-y-1.5">
                                 <Label className="text-slate-700">Prodejní cena (Kč bez DPH)</Label>
                                 <Input type="number" step="0.01" {...register('price')} className={errors.price ? 'border-red-500 font-medium' : 'font-medium bg-white'} />
@@ -527,11 +535,11 @@ const ProjectForm = () => {
                                 <Input type="number" step="0.1" {...register('overhead_percentage')} className={errors.overhead_percentage ? 'border-red-500 bg-white' : 'bg-white'} />
                                 {errors.overhead_percentage && <p className="text-red-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.overhead_percentage.message}</p>}
                              </div>
-                         </div>
+                         </div>}
                          <div className="w-full md:w-1/3">
                              <Label className="text-slate-700 mb-1.5 block">Stav projektu</Label>
                              <Controller name="status" control={control} render={({ field }) => (
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <Select onValueChange={field.onChange} value={field.value || ''}>
                                     <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="nabidka">Nabídka</SelectItem>

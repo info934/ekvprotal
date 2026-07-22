@@ -46,6 +46,7 @@ import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageF
 import { formatMoney } from '@/lib/financePresentation';
 import { RecordMetricGrid, RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
 import { RecordAttentionList, RecordOverviewGrid, RecordOverviewItem, RecordOverviewPanel } from '@/components/ui/record-overview';
+import FinancialSettingsCard from '@/components/finance/FinancialSettingsCard';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
   const tone = color === 'success' ? 'emerald' : color === 'warning' ? 'amber' : color === 'danger' ? 'rose' : color === 'info' ? 'blue' : 'slate';
@@ -1032,6 +1033,13 @@ const ProjectDetail = () => {
                             { label: 'Dostupné pro výplatu', value: financials.availableForPayout, barClassName: 'bg-emerald-500' },
                         ]} />
                         <FinanceDefinitionNote>Nerozdělený budget je týmový základ po nákladech a naplánovaných odměnách; není totožný s limitem dostupným pro výplatu, který navíc zohledňuje rezervované žádosti. Režie je samostatná plánovaná rezerva a její detail je uveden pouze v přehledu připsaných režií níže.</FinanceDefinitionNote>
+                        <FinancialSettingsCard
+                            entityType="project"
+                            entityId={projectId}
+                            values={project}
+                            disabled={!!financeLoadError}
+                            onSaved={refreshData}
+                        />
                         <BillingTracker entityType="project" entityId={projectId} entityCode={project.code} enableContractAnalysis={isAdmin} showFinancialSummary={false} />
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" disabled={!!financeLoadError} onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat náklad</Button>}>
                             <Table className="finance-table">
