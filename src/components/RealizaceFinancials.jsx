@@ -167,7 +167,8 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
                     </div>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="grid gap-2">
-                            <Label>Částka (Kč) *</Label>
+                            <Label>Částka bez DPH (Kč) *</Label>
+                            <p className="text-xs text-muted-foreground">Do finančního výsledku realizace vstupuje náklad bez DPH.</p>
                             <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
                         </div>
                         <div className="grid gap-2">

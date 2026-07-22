@@ -23,6 +23,7 @@ import { FinanceMetricStrip, FinanceStageFlow, FinanceDefinitionNote } from '@/c
 import { formatMoney, formatPercent, getFinanceErrorMessage, VAT_RATE_OPTIONS } from '@/lib/financePresentation';
 import ConfirmActionDialog from '@/components/ui/confirm-action-dialog';
 import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
+import { getBillingNetAmounts, splitNetAmount } from '@/domain/billingFinancials';
 
 const money = formatMoney;
 const percent = formatPercent;
@@ -219,21 +220,17 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
     const count = Number(planForm.count);
     const interval = Number(planForm.interval_days);
     const vatRate = Number(planForm.vat_rate);
-    const contractGross = Number(summary?.contract_amount || 0);
-    const existingGross = milestones.filter((item) => item.status !== 'cancelled').reduce((sum, item) => sum + Number(item.amount_incl_vat || 0), 0);
-    const remainingGross = Math.max(0, contractGross - existingGross);
-    if (!Number.isInteger(count) || count < 1 || count > 24 || remainingGross <= 0 || !planForm.first_date) {
+    const contractNet = Number(summary?.contract_amount_excl_vat ?? summary?.contract_amount ?? 0);
+    const existingNet = milestones.filter((item) => item.status !== 'cancelled').reduce((sum, item) => sum + Number(item.amount_excl_vat || 0), 0);
+    const remainingNet = Math.max(0, contractNet - existingNet);
+    if (!Number.isInteger(count) || count < 1 || count > 24 || remainingNet <= 0 || !planForm.first_date) {
       toast({ title: 'Zkontrolujte počet etap, první termín a zbývající hodnotu zakázky', variant: 'destructive' });
       return;
     }
     const firstNumber = milestones.reduce((max, item) => Math.max(max, Number(item.installment_number || 0)), 0) + 1;
-    const grossPerPart = remainingGross / count;
-    const netPerPart = grossPerPart / (1 + vatRate / 100);
+    const netParts = splitNetAmount(remainingNet, count);
     const rows = Array.from({ length: count }, (_, index) => {
       const issueDate = addDays(planForm.first_date, interval * index);
-      const isLast = index === count - 1;
-      const priorNet = Number(netPerPart.toFixed(2)) * (count - 1);
-      const lastNet = Math.max(0, remainingGross / (1 + vatRate / 100) - priorNet);
       return {
         entity_type: entityType,
         project_id: entityType === 'project' ? entityId : null,
@@ -244,7 +241,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
         performance_date: issueDate,
         planned_issue_date: issueDate,
         due_date: addDays(issueDate, 14),
-        amount_excl_vat: isLast ? Number(lastNet.toFixed(2)) : Number(netPerPart.toFixed(2)),
+        amount_excl_vat: netParts[index],
         vat_rate: vatRate,
         percent_of_contract: Number((100 / count).toFixed(3)),
       };
@@ -377,6 +374,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
 
   const healthy = summary?.status === 'fully_paid' && !summary?.missing_document_count && !summary?.overdue_milestone_count;
   const planDiff = Number(summary?.plan_variance || 0);
+  const { contractNet, plannedNet, invoicedNet, paidNetEquivalent, outstandingGross } = getBillingNetAmounts(summary);
 
   return (
     <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -423,22 +421,22 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
       {showFinancialSummary && (
         <>
           <FinanceMetricStrip metrics={[
-            { label: 'Hodnota zakázky s DPH', value: money(summary?.contract_amount), tone: 'neutral' },
-            { label: 'Plán fakturace s DPH', value: money(summary?.planned_amount), detail: planDiff === 0 ? 'Plán odpovídá zakázce' : `Odchylka ${money(planDiff)}`, tone: planDiff === 0 ? 'plan' : 'warning' },
-            { label: 'Vystaveno s DPH', value: money(summary?.invoiced_amount), detail: percent(summary?.invoice_coverage_percent), tone: 'plan' },
-            { label: 'Uhrazeno', value: money(summary?.paid_amount), detail: percent(summary?.payment_coverage_percent), tone: 'positive' },
-            { label: 'Zbývá uhradit', value: money(Math.max(0, Number(summary?.contract_amount || 0) - Number(summary?.paid_amount || 0))), tone: Number(summary?.overdue_milestone_count || 0) ? 'warning' : 'neutral' },
+            { label: 'Hodnota zakázky bez DPH', value: money(contractNet), tone: 'neutral' },
+            { label: 'Plán bez DPH', value: money(plannedNet), detail: planDiff === 0 ? 'Plán odpovídá zakázce' : `Odchylka ${money(planDiff)}`, tone: planDiff === 0 ? 'plan' : 'warning' },
+            { label: 'Vystaveno bez DPH', value: money(invoicedNet), detail: percent(summary?.invoice_coverage_percent), tone: 'plan' },
+            { label: 'Uhrazené plnění bez DPH', value: money(paidNetEquivalent), detail: `${percent(summary?.payment_coverage_percent)} zakázky`, tone: 'positive' },
+            { label: 'Neuhrazené faktury s DPH', value: money(outstandingGross), tone: Number(summary?.overdue_milestone_count || 0) ? 'warning' : 'neutral' },
           ]} className="2xl:grid-cols-5" />
 
           <FinanceStageFlow stages={[
-            { label: 'Hodnota zakázky', value: summary?.contract_amount, barClassName: 'bg-slate-500' },
-            { label: 'Naplánováno', value: summary?.planned_amount, barClassName: 'bg-blue-500' },
-            { label: 'Vystaveno', value: summary?.invoiced_amount, barClassName: 'bg-indigo-500' },
-            { label: 'Uhrazeno', value: summary?.paid_amount, barClassName: 'bg-emerald-500' },
+            { label: 'Hodnota bez DPH', value: contractNet, barClassName: 'bg-slate-500' },
+            { label: 'Naplánováno bez DPH', value: plannedNet, barClassName: 'bg-blue-500' },
+            { label: 'Vystaveno bez DPH', value: invoicedNet, barClassName: 'bg-indigo-500' },
+            { label: 'Uhrazené plnění bez DPH', value: paidNetEquivalent, barClassName: 'bg-emerald-500' },
           ]} />
         </>
       )}
-      <FinanceDefinitionNote>Dostupnost výplat se počítá ze skutečně uhrazených faktur. Plánovaná ani pouze vystavená částka sama o sobě nezvyšuje limit pro výplatu.</FinanceDefinitionNote>
+      <FinanceDefinitionNote>Hodnota zakázky, plán, vystavené plnění a krytí výplat se porovnávají bez DPH. Peněžní úhrady a neuhrazené pohledávky se evidují s DPH. Plánovaná ani pouze vystavená částka sama o sobě nezvyšuje limit pro výplatu.</FinanceDefinitionNote>
 
       <Tabs defaultValue="milestones" className="space-y-3">
         <TabsList className="h-9 w-full justify-start rounded-md bg-slate-100 p-1 sm:w-auto">
@@ -454,7 +452,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
             <TableHeader><TableRow>
               <TableHead className="w-16">#</TableHead><TableHead>Etapa</TableHead><TableHead>Termín plnění</TableHead>
               <TableHead>Plán vystavení</TableHead><TableHead>Splatnost</TableHead><TableHead>Stav</TableHead>
-              <TableHead className="text-right">Podíl</TableHead><TableHead className="text-right">Celkem</TableHead><TableHead className="w-32 text-right">Akce</TableHead>
+              <TableHead className="text-right">Podíl</TableHead><TableHead className="text-right">Celkem s DPH</TableHead><TableHead className="w-32 text-right">Akce</TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {milestones.length === 0 ? (
@@ -495,7 +493,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
             <TableHeader><TableRow>
               <TableHead>Číslo</TableHead><TableHead>Etapa</TableHead><TableHead>Typ</TableHead><TableHead>Plnění</TableHead>
               <TableHead>Vystaveno</TableHead><TableHead>Splatnost</TableHead><TableHead>Doklad</TableHead><TableHead>Stav</TableHead>
-              <TableHead className="text-right">Celkem</TableHead><TableHead className="text-right">Uhrazeno</TableHead><TableHead className="w-24 text-right">Akce</TableHead>
+              <TableHead className="text-right">Celkem s DPH</TableHead><TableHead className="text-right">Uhrazeno s DPH</TableHead><TableHead className="w-24 text-right">Akce</TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {entries.length === 0 ? (
@@ -536,7 +534,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
             <div className="space-y-2"><Label>První termín plnění</Label><Input type="date" value={planForm.first_date} onChange={(e) => setPlanForm((p) => ({ ...p, first_date: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Rozestup etap (dnů)</Label><Input type="number" min="1" value={planForm.interval_days} onChange={(e) => setPlanForm((p) => ({ ...p, interval_days: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Sazba DPH</Label><Select value={planForm.vat_rate} onValueChange={(v) => setPlanForm((p) => ({ ...p, vat_rate: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{VAT_RATE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>
-            <div className="rounded-md border bg-slate-50 p-3 sm:col-span-2"><div className="text-xs text-slate-500">Zbývá naplánovat</div><div className="text-lg font-semibold">{money(Math.max(0, Number(summary?.contract_amount || 0) - Number(summary?.planned_amount || 0)))}</div></div>
+            <div className="rounded-md border bg-slate-50 p-3 sm:col-span-2"><div className="text-xs text-slate-500">Zbývá naplánovat bez DPH</div><div className="text-lg font-semibold">{money(Math.max(0, contractNet - plannedNet))}</div></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setPlanDialogOpen(false)}>Zrušit</Button><Button onClick={createEqualPlan} disabled={saving}>{saving ? 'Vytvářím…' : 'Vytvořit etapy'}</Button></DialogFooter>
         </DialogContent>

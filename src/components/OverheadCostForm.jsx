@@ -130,7 +130,7 @@ const OverheadCostForm = ({ isOpen, onClose, onSave, cost, allCategories }) => {
           )}
 
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="amount" className="text-right">Částka (Kč)</Label>
+            <Label htmlFor="amount" className="text-right">Částka bez DPH (Kč)</Label>
             <Input id="amount" type="number" step="0.01" {...register('amount', { required: 'Částka je povinná', valueAsNumber: true })} className="col-span-3" />
             {errors.amount && <p className="col-span-4 text-red-500 text-sm text-right">{errors.amount.message}</p>}
           </div>

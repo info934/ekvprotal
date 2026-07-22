@@ -774,7 +774,7 @@ const ProjectDetail = () => {
             name: 'náklad',
             displayName: cost.description || 'Projektový náklad',
             severity: 'high',
-            amountLabel: 'Částka nákladu',
+            amountLabel: 'Částka nákladu bez DPH',
             amount: cost.amount,
             summary: 'Smazáním nákladu se okamžitě změní finanční přehled projektu.',
             details: [
@@ -1043,7 +1043,7 @@ const ProjectDetail = () => {
                         <BillingTracker entityType="project" entityId={projectId} entityCode={project.code} enableContractAnalysis={isAdmin} showFinancialSummary={false} />
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" disabled={!!financeLoadError} onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat náklad</Button>}>
                             <Table className="finance-table">
-                                <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Odečíst z</TableHead><TableHead>Částka</TableHead><TableHead>Faktura</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>
+                                <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Odečíst z</TableHead><TableHead>Částka bez DPH</TableHead><TableHead>Faktura</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>
                                 <TableBody>
                                     {(costs.length === 0 && financeDerivedRows.length === 0) ? (
                                         <TableRow><TableCell colSpan={5} className="text-center">Žádné náklady nebyly zadány.</TableCell></TableRow>
@@ -1100,7 +1100,7 @@ const ProjectDetail = () => {
                         </CollapsibleSection>
                         <CollapsibleSection title="Připsané režijní náklady" icon={ClipboardList}>
                             <Table className="finance-table">
-                                <TableHeader><TableRow><TableHead>Název</TableHead><TableHead>Kategorie</TableHead><TableHead>Částka</TableHead><TableHead>Měsíc</TableHead></TableRow></TableHeader>
+                                <TableHeader><TableRow><TableHead>Název</TableHead><TableHead>Kategorie</TableHead><TableHead>Částka bez DPH</TableHead><TableHead>Měsíc</TableHead></TableRow></TableHeader>
                                 <TableBody>
                                     {overheadCosts.length > 0 ? overheadCosts.map(cost => (
                                         <TableRow key={cost.id}><TableCell>{cost.overhead_allocation_items?.overhead_costs?.name || 'N/A'}</TableCell><TableCell>{cost.overhead_allocation_items?.overhead_costs?.category || 'N/A'}</TableCell><TableCell>{(cost.amount || 0).toLocaleString('cs-CZ')} Kč</TableCell><TableCell>{cost.month}</TableCell></TableRow>

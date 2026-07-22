@@ -16,12 +16,29 @@ import {
   calculateRealizationRewardAllocation,
   calculateRealizationMemberShare,
 } from '../src/domain/financials.js';
+import { getBillingNetAmounts, splitNetAmount } from '../src/domain/billingFinancials.js';
 
 const round = (value) => Math.round(value * 100) / 100;
 
 const assertMoney = (actual, expected, label) => {
   assert.equal(round(actual), expected, label);
 };
+
+const netParts = splitNetAmount(100000, 3);
+assert.deepEqual(netParts, [33333.33, 33333.33, 33333.34], 'net billing plan preserves the exact contract value');
+assertMoney(netParts.reduce((sum, value) => sum + value, 0), 100000, 'net billing plan has no VAT rounding drift');
+
+const explicitBillingAmounts = getBillingNetAmounts({
+  contract_amount: 121000,
+  contract_amount_excl_vat: 100000,
+  planned_amount_excl_vat: 60000,
+  invoiced_amount_excl_vat: 40000,
+  paid_amount_excl_vat_equivalent: 20000,
+  outstanding_amount_incl_vat: 24200,
+});
+assertMoney(explicitBillingAmounts.contractNet, 100000, 'explicit net contract value wins over a legacy value');
+assertMoney(explicitBillingAmounts.paidNetEquivalent, 20000, 'paid coverage uses the net equivalent');
+assertMoney(explicitBillingAmounts.outstandingGross, 24200, 'receivable remains gross');
 
 const crmCases = [
   {

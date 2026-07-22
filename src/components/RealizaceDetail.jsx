@@ -593,7 +593,7 @@ const RealizaceDetail = () => {
                             <TableHead>Popis</TableHead>
                             <TableHead>Dodavatel</TableHead>
                             <TableHead>VS</TableHead>
-                            <TableHead className="text-right">Částka</TableHead>
+                            <TableHead className="text-right">Částka bez DPH</TableHead>
                             <TableHead className="text-right">Faktura</TableHead>
                             <TableHead className="text-right">Akce</TableHead>
                           </TableRow>

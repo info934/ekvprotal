@@ -111,16 +111,16 @@ const BillingOverviewSummary = ({ entityType, entityId, onOpenDetails, className
 
       <FinanceMetricStrip metrics={[
         { label: 'Fakturační etapy', value: Number(summary?.plan_count || 0), detail: `${activeMilestones.length} zbývá dokončit`, tone: activeMilestones.length ? 'plan' : 'neutral', icon: CalendarClock },
-        { label: 'Vyfakturováno', value: formatPercent(summary?.invoice_coverage_percent), detail: formatMoney(summary?.invoiced_amount), tone: 'plan', icon: Receipt },
-        { label: 'Uhrazeno', value: formatPercent(summary?.payment_coverage_percent), detail: formatMoney(summary?.paid_amount), tone: 'positive', icon: CheckCircle2 },
+        { label: 'Vyfakturováno bez DPH', value: formatPercent(summary?.invoice_coverage_percent), detail: formatMoney(summary?.invoiced_amount_excl_vat ?? summary?.invoiced_amount), tone: 'plan', icon: Receipt },
+        { label: 'Uhrazené plnění bez DPH', value: formatPercent(summary?.payment_coverage_percent), detail: formatMoney(summary?.paid_amount_excl_vat_equivalent), tone: 'positive', icon: CheckCircle2 },
         { label: 'Nejbližší etapa', value: nextMilestone ? formatDate(dateValue(nextMilestone)) : 'Žádná', detail: nextMilestone?.name || 'Bez otevřené etapy', tone: Number(summary?.overdue_milestone_count || 0) ? 'warning' : 'neutral', icon: CalendarClock },
       ]} className="2xl:grid-cols-4" />
 
       <FinanceStageFlow stages={[
-        { label: 'Hodnota zakázky', value: summary?.contract_amount, barClassName: 'bg-slate-500' },
-        { label: 'Naplánováno', value: summary?.planned_amount, barClassName: 'bg-blue-500' },
-        { label: 'Vystaveno', value: summary?.invoiced_amount, barClassName: 'bg-indigo-500' },
-        { label: 'Uhrazeno', value: summary?.paid_amount, barClassName: 'bg-emerald-500' },
+        { label: 'Hodnota bez DPH', value: summary?.contract_amount_excl_vat ?? summary?.contract_amount, barClassName: 'bg-slate-500' },
+        { label: 'Naplánováno bez DPH', value: summary?.planned_amount_excl_vat ?? summary?.planned_amount, barClassName: 'bg-blue-500' },
+        { label: 'Vystaveno bez DPH', value: summary?.invoiced_amount_excl_vat ?? summary?.invoiced_amount, barClassName: 'bg-indigo-500' },
+        { label: 'Uhrazené plnění bez DPH', value: summary?.paid_amount_excl_vat_equivalent, barClassName: 'bg-emerald-500' },
       ]} />
 
       {activeMilestones.length > 0 && (

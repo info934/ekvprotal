@@ -551,7 +551,7 @@ const RealizaceForm = () => {
                         <CardContent className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-1">
-                                    <Label htmlFor="contract_amount">Celková částka zakázky (Kč)</Label>
+                                    <Label htmlFor="contract_amount">Celková částka zakázky bez DPH (Kč)</Label>
                                     <Input 
                                         id="contract_amount" 
                                         type="number" 
@@ -560,7 +560,7 @@ const RealizaceForm = () => {
                                         className={errors.contract_amount ? 'border-red-500' : ''}
                                     />
                                     {errors.contract_amount && <p className="text-red-500 text-xs">{errors.contract_amount.message}</p>}
-                                    <p className="text-xs text-muted-foreground mt-1">Smluvní hodnota/zakázková cena, ze které se počítá zisk.</p>
+                                    <p className="text-xs text-muted-foreground mt-1">Smluvní hodnota bez DPH, ze které se počítá zisk.</p>
                                 </div>
                                 <div className="space-y-1">
                                     <Label htmlFor="budget">Plánovaný rozpočet (Kč)</Label>

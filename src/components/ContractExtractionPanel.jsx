@@ -70,20 +70,22 @@ const ContractExtractionPanel = ({ entityType, entityId, onApplied }) => {
     const extractedVat = [0, 12, 21].includes(Number(extracted.vat_rate))
       ? String(Number(extracted.vat_rate))
       : '';
-    const extractedGross = Number(extracted.contract_value_incl_vat || 0);
     const extractedNet = Number(extracted.contract_value_excl_vat || 0);
     setReviewedVatRate(extractedVat);
-    setReviewedContractValue(extractedGross > 0
-      ? String(extractedGross)
-      : extractedNet > 0 && extractedVat !== ''
-        ? String(Math.round(extractedNet * (1 + Number(extractedVat) / 100) * 100) / 100)
+    const extractedGross = Number(extracted.contract_value_incl_vat || 0);
+    setReviewedContractValue(extractedNet > 0
+      ? String(extractedNet)
+      : extractedGross > 0 && extractedVat !== ''
+        ? String(Math.round(extractedGross / (1 + Number(extractedVat) / 100) * 100) / 100)
         : '');
   }, [latest?.id, extracted.contract_value_excl_vat, extracted.contract_value_incl_vat, extracted.vat_rate]);
 
   const changeReviewedVatRate = (value) => {
     setReviewedVatRate(value);
     const net = Number(extracted.contract_value_excl_vat || 0);
-    if (net > 0) setReviewedContractValue(String(Math.round(net * (1 + Number(value) / 100) * 100) / 100));
+    const gross = Number(extracted.contract_value_incl_vat || 0);
+    if (net > 0) setReviewedContractValue(String(net));
+    else if (gross > 0) setReviewedContractValue(String(Math.round(gross / (1 + Number(value) / 100) * 100) / 100));
   };
 
   const analyze = async () => {
@@ -128,7 +130,7 @@ const ContractExtractionPanel = ({ entityType, entityId, onApplied }) => {
       return;
     }
     if (updateContractValue && Number(reviewedContractValue) <= 0) {
-      toast({ title: 'Doplňte hodnotu zakázky', description: 'Pro aktualizaci projektu je nutná potvrzená hodnota s DPH.', variant: 'destructive' });
+      toast({ title: 'Doplňte hodnotu zakázky', description: 'Pro aktualizaci projektu je nutná potvrzená hodnota bez DPH.', variant: 'destructive' });
       return;
     }
     try {
@@ -269,7 +271,7 @@ const ContractExtractionPanel = ({ entityType, entityId, onApplied }) => {
                     </Select>
                   </div>}
                   {updateContractValue && <div className="w-52 space-y-1">
-                    <Label htmlFor="reviewed-contract-value" className="text-[11px] text-slate-600">Hodnota zakázky s DPH</Label>
+                    <Label htmlFor="reviewed-contract-value" className="text-[11px] text-slate-600">Hodnota zakázky bez DPH</Label>
                     <Input
                       id="reviewed-contract-value"
                       className="h-9 bg-white text-right text-xs tabular-nums"

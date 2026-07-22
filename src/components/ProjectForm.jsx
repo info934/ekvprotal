@@ -198,7 +198,9 @@ const ProjectForm = () => {
 
     const onSubmit = async (formData) => {
         let dataToSave = { ...formData };
-        if (!isAdmin) {
+        // Financial settings are edited only through the audited RPC on the
+        // Finance tab. Never let hidden form defaults overwrite them here.
+        if (!isAdmin || isEditing) {
             delete dataToSave.price;
             delete dataToSave.budget_percentage;
             delete dataToSave.overhead_percentage;
@@ -515,7 +517,7 @@ const ProjectForm = () => {
                 {isAdmin && <Card className="shadow-sm border-slate-200">
                      <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
                          <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
-                            <DollarSign className="w-5 h-5 text-slate-500" />Finance a nastavení
+                            <DollarSign className="w-5 h-5 text-slate-500" />{isEditing ? 'Stav projektu' : 'Finance a nastavení'}
                          </CardTitle>
                      </CardHeader>
                      <CardContent className="space-y-6 pt-6">

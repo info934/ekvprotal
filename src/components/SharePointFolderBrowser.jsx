@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useDropzone } from 'react-dropzone';
 import {
   ChevronRight,
   ExternalLink,
@@ -10,6 +11,7 @@ import {
   Loader2,
   RefreshCw,
   Upload,
+  UploadCloud,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -39,7 +41,6 @@ const getMappedFolderName = (mapping, entity) => {
 
 const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
   const { toast } = useToast();
-  const inputRef = useRef(null);
   const [rootFolder, setRootFolder] = useState(null);
   const [connection, setConnection] = useState(null);
   const [breadcrumbs, setBreadcrumbs] = useState([]);
@@ -47,6 +48,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [folderMissing, setFolderMissing] = useState(false);
   const [mappingMetadata, setMappingMetadata] = useState({});
   const [error, setError] = useState('');
@@ -162,31 +164,91 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
     }
   };
 
-  const handleUpload = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || !currentFolder?.id) return;
+  const uploadFiles = useCallback(async (files) => {
+    const selectedFiles = Array.from(files || []).filter((file) => file instanceof File);
+    if (selectedFiles.length === 0 || !currentFolder?.id || uploading) return;
 
+    let uploadedCount = 0;
+    const failedFiles = [];
     setUploading(true);
     try {
-      await uploadEntityStorageFile({
-        entityType,
-        entityId: entity.id,
-        folderId: currentFolder.id,
-        file,
-        connection,
-      });
-      toast({ title: 'Soubor nahrán', description: `Soubor ${file.name} je uložen ve složce ${currentFolder.name}.` });
+      // Sequential uploads avoid throttling large SharePoint batches.
+      for (let index = 0; index < selectedFiles.length; index += 1) {
+        const file = selectedFiles[index];
+        setUploadProgress({ current: index + 1, total: selectedFiles.length, fileName: file.name });
+        try {
+          await uploadEntityStorageFile({
+            entityType,
+            entityId: entity.id,
+            folderId: currentFolder.id,
+            file,
+            connection,
+          });
+          uploadedCount += 1;
+        } catch (uploadError) {
+          failedFiles.push({ name: file.name, message: uploadError.message });
+        }
+      }
+
       await loadFolder(currentFolder, connection);
-    } catch (uploadError) {
-      toast({ title: 'Nahrání se nepodařilo', description: uploadError.message, variant: 'destructive' });
+
+      if (uploadedCount > 0) {
+        toast({
+          title: uploadedCount === 1 ? 'Soubor nahrán' : `${uploadedCount} souborů nahráno`,
+          description: `Soubory jsou uložené ve složce ${currentFolder.name}.`,
+        });
+      }
+      if (failedFiles.length > 0) {
+        toast({
+          title: `${failedFiles.length} souborů se nepodařilo nahrát`,
+          description: failedFiles.map((file) => file.name).join(', '),
+          variant: 'destructive',
+        });
+      }
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
-  };
+  }, [connection, currentFolder, entity?.id, entityType, loadFolder, toast, uploading]);
+
+  const onDrop = useCallback((acceptedFiles, rejectedFiles) => {
+    if (rejectedFiles.length > 0) {
+      toast({
+        title: 'Některé soubory nelze nahrát',
+        description: rejectedFiles.map(({ file }) => file.name).join(', '),
+        variant: 'destructive',
+      });
+    }
+    uploadFiles(acceptedFiles);
+  }, [toast, uploadFiles]);
+
+  const dropzoneDisabled = !canEdit || !currentFolder?.id || uploading;
+  const {
+    getRootProps,
+    getInputProps,
+    isDragActive,
+    isDragReject,
+    open: openFilePicker,
+  } = useDropzone({
+    onDrop,
+    disabled: dropzoneDisabled,
+    multiple: true,
+    noClick: true,
+    noKeyboard: true,
+  });
 
   return (
-    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <section
+      {...getRootProps()}
+      className={`relative overflow-hidden rounded-lg border bg-white transition-colors ${
+        isDragReject
+          ? 'border-rose-400 bg-rose-50/40'
+          : isDragActive
+            ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-200'
+            : 'border-slate-200'
+      }`}
+    >
+      <input {...getInputProps()} />
       <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
@@ -227,16 +289,44 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
             </Button>
           )}
           {canEdit && currentFolder && (
-            <>
-              <input ref={inputRef} type="file" className="hidden" onChange={handleUpload} />
-              <Button size="sm" onClick={() => inputRef.current?.click()} disabled={uploading || !currentFolder}>
-                {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                Nahrát sem
-              </Button>
-            </>
+            <Button type="button" size="sm" onClick={openFilePicker} disabled={dropzoneDisabled}>
+              {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+              {uploading ? `${uploadProgress?.current || 1}/${uploadProgress?.total || 1}` : 'Vybrat soubory'}
+            </Button>
           )}
         </div>
       </div>
+
+      {canEdit && currentFolder && (
+        <div
+          className={`mx-4 mt-3 flex min-h-14 items-center justify-center gap-3 rounded-md border border-dashed px-4 py-2.5 text-center transition-colors ${
+            isDragReject
+              ? 'border-rose-400 bg-rose-50 text-rose-700'
+              : isDragActive
+                ? 'border-blue-500 bg-blue-100/70 text-blue-800'
+                : 'border-slate-300 bg-slate-50/70 text-slate-600'
+          }`}
+          aria-live="polite"
+        >
+          {uploading ? (
+            <Loader2 className="h-5 w-5 shrink-0 animate-spin text-blue-600" />
+          ) : (
+            <UploadCloud className="h-5 w-5 shrink-0 text-blue-600" />
+          )}
+          <div className="min-w-0 text-sm">
+            <span className="font-medium text-slate-800">
+              {uploading
+                ? `Nahrávám ${uploadProgress?.current || 1} z ${uploadProgress?.total || 1}`
+                : isDragActive
+                  ? 'Pusťte soubory pro nahrání'
+                  : 'Přetáhněte soubory do této složky'}
+            </span>
+            <span className="ml-1 text-xs text-slate-500">
+              {uploading && uploadProgress?.fileName ? uploadProgress.fileName : 'nebo použijte tlačítko Vybrat soubory'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {folderMissing ? (
         <div className="flex flex-col items-center px-4 py-10 text-center">

@@ -171,9 +171,10 @@ const ProjectCostDialog = ({ isOpen, onClose, onSave, costData, projectId, membe
           <div className="space-y-2">
             <Label htmlFor="amount" className="flex items-center gap-2 text-sm font-medium">
               <DollarSign className="h-4 w-4 text-muted-foreground" />
-              Částka (Kč)
+              Částka bez DPH (Kč)
               <span className="text-red-500">*</span>
             </Label>
+            <p className="text-xs text-muted-foreground">Do finančního výsledku projektu vstupuje náklad bez DPH.</p>
             <Input 
               id="amount" 
               type="number" 

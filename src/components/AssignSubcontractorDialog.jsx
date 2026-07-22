@@ -205,7 +205,8 @@ const AssignSubcontractorDialog = ({ isOpen, onClose, onSave, assignedSubcontrac
             />
           </div>
           <div>
-            <Label htmlFor="price">Cena subdodávky (Kč)</Label>
+            <Label htmlFor="price">Cena subdodávky bez DPH (Kč)</Label>
+            <p className="mb-1 text-xs text-muted-foreground">Částka vstupuje do nákladů projektu bez DPH.</p>
             <Input
               id="price"
               type="number"

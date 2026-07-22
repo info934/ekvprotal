@@ -139,11 +139,11 @@ const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate, canEdit: canEd
                 {/* Summary Stats for Extra Costs */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider">Náklady celkem</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider">Náklady bez DPH</p>
                         <p className="text-lg font-bold text-orange-700">{formatCurrency(totalCost)}</p>
                     </div>
                     <div className="bg-green-50 p-3 rounded-lg border border-green-100">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider">Fakturace klientovi</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider">Fakturace bez DPH</p>
                         <p className="text-lg font-bold text-green-700">{formatCurrency(totalSale)}</p>
                     </div>
                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
@@ -242,11 +242,11 @@ const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate, canEdit: canEd
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="grid gap-2">
-                                <Label>Nákladová cena (Kč) *</Label>
+                                <Label>Nákladová cena bez DPH (Kč) *</Label>
                                 <Input type="number" value={costAmount} onChange={e => setCostAmount(e.target.value)} placeholder="0" min="0" />
                             </div>
                             <div className="grid gap-2">
-                                <Label>Prodejní cena klientovi (Kč)</Label>
+                                <Label>Prodejní cena klientovi bez DPH (Kč)</Label>
                                 <Input type="number" value={saleAmount} onChange={e => setSaleAmount(e.target.value)} placeholder="0" min="0" />
                                 <p className="text-[10px] text-muted-foreground">Pokud se nefakturuje klientovi, nechte 0.</p>
                             </div>
