@@ -6,9 +6,9 @@ import EkvLoader from '@/components/ui/ekv-loader';
 import { ShieldAlert } from 'lucide-react';
 
 const ProtectedRoute = ({ children, requiredRole }) => {
-  const { user, userRole, loading } = useAuth();
+  const { user, userRole, loading, permissionsReady } = useAuth();
 
-  if (loading) {
+  if (loading || (user && !permissionsReady)) {
     return <EkvLoader title="Ověřuji přístup" description="Kontroluji uživatele a oprávnění modulu." className="min-h-screen" />;
   }
 

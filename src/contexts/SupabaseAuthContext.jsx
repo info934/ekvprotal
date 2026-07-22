@@ -62,6 +62,7 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [memberId, setMemberId] = useState(null);
   const [permissions, setPermissions] = useState({});
+  const [permissionsReady, setPermissionsReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState(null);
@@ -81,6 +82,7 @@ export const AuthProvider = ({ children }) => {
     setSession(null);
     setMemberId(null);
     setPermissions({});
+    setPermissionsReady(false);
     setIsAdmin(false);
     setUserRole(null);
     setIsPrivateMode(false);
@@ -187,6 +189,8 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
+    setPermissionsReady(false);
+
     const requestSignal = () => combineAbortSignals(runSignal, AbortSignal.timeout(8000));
     const assertCurrentRun = () => {
       if (runSignal?.aborted || currentUserIdRef.current !== currentUser.id) {
@@ -227,6 +231,7 @@ export const AuthProvider = ({ children }) => {
         setMemberId(cachedData.memberId);
         setPermissions(cachedData.permissions);
         setIsPrivateMode(cachedData.isPrivateMode);
+        setPermissionsReady(true);
         return;
       }
 
@@ -311,6 +316,7 @@ export const AuthProvider = ({ children }) => {
 
       assertCurrentRun();
       setPermissions(finalPermissions);
+      setPermissionsReady(true);
 
       setCache(cacheKey, {
         role,
@@ -337,6 +343,7 @@ export const AuthProvider = ({ children }) => {
       toast({ title: 'Nastala chyba při načítání dat.', variant: 'destructive'});
       
       setPermissions({});
+      setPermissionsReady(true);
     }
   }, [clearState, toast, signOut, retryOperation]);
 
@@ -403,12 +410,14 @@ export const AuthProvider = ({ children }) => {
         const mustRefreshPermissions = _event === 'TOKEN_REFRESHED' || _event === 'USER_UPDATED';
         if (!mustRefreshPermissions && nextUserId === previousUserId && permissionsLoadedUserIdRef.current === nextUserId) {
           currentUserIdRef.current = nextUserId;
+          setPermissionsReady(true);
           setLoading(false);
           return;
         }
 
         currentUserIdRef.current = nextUserId;
         permissionsLoadedUserIdRef.current = null;
+        setPermissionsReady(false);
         if (mustRefreshPermissions) clearCache();
         setLoading(true);
         const runId = authEventRunIdRef.current + 1;
@@ -461,6 +470,7 @@ export const AuthProvider = ({ children }) => {
     user,
     session,
     loading,
+    permissionsReady,
     permissions,
     isAdmin,
     memberId,
@@ -473,7 +483,7 @@ export const AuthProvider = ({ children }) => {
 
     isPrivateMode,
     togglePrivateMode,
-  }), [user, session, loading, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signInWithSso, isPrivateMode, togglePrivateMode]);
+  }), [user, session, loading, permissionsReady, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signInWithSso, isPrivateMode, togglePrivateMode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

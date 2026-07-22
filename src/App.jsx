@@ -94,7 +94,11 @@ const PageLoader = () => (
 );
 
 const PrivateRoute = ({ children, module, level = 'can_read' }) => {
-  const { hasPermission, isAdmin } = useAuth();
+  const { hasPermission, isAdmin, loading, permissionsReady } = useAuth();
+
+  if (loading || !permissionsReady) {
+    return <EkvLoader title="OvÄ›Ĺ™uji pĹ™Ă­stup" description="Kontroluji oprĂˇvnÄ›nĂ­ modulu." className="min-h-[50vh]" />;
+  }
 
   if (isAdmin) {
     return children;

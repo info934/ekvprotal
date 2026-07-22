@@ -3,6 +3,9 @@ export const DEFAULT_FUNCTION_TIMEOUT_MS = 45_000;
 
 export const createTimedAbortController = (timeoutMs = DEFAULT_QUERY_TIMEOUT_MS) => {
   const controller = new AbortController();
+  const abort = controller.abort.bind(controller);
+  controller.abort = (reason = new DOMException('Request cancelled', 'AbortError')) => abort(reason);
+
   const timeoutId = setTimeout(() => {
     controller.abort(new DOMException('Request timed out', 'TimeoutError'));
   }, timeoutMs);
