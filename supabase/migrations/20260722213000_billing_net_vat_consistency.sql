@@ -1,6 +1,8 @@
 -- Keep project profitability and payout coverage on a net-of-VAT basis.
 -- Cash receivables remain gross because they represent actual bank payments.
 
+begin;
+
 create or replace function public.billing_funding_snapshot(p_entity_type text, p_entity_id uuid)
 returns jsonb
 language plpgsql stable security definer set search_path = ''
@@ -259,3 +261,5 @@ comment on column public.realizace_extra_costs.cost_amount is 'Extra realization
 comment on column public.realizace_extra_costs.sale_amount is 'Extra realization sale amount excluding VAT.';
 comment on column public.overhead_costs.amount is 'Overhead cost amount excluding VAT.';
 comment on column public.project_overhead_costs.amount is 'Allocated project overhead amount excluding VAT.';
+
+commit;
