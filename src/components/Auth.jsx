@@ -19,6 +19,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { invokeWithTimeout } from '@/lib/requestControl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -401,7 +402,7 @@ const Auth = () => {
   };
 
   const handlePasswordReset = async (email) => {
-    const { error } = await supabase.functions.invoke('manage-users', {
+    const { error } = await invokeWithTimeout(supabase, 'manage-users', {
       body: {
         action: 'request_password_reset',
         payload: { email },

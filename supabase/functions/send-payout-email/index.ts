@@ -2,6 +2,7 @@
 import { corsHeaders } from "./cors.ts";
 import { authorizeFunctionRequest } from "../_shared/authorize.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { fetchWithTimeout } from "../_shared/fetch.ts";
 
 const jsonResponse = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -64,7 +65,7 @@ Deno.serve(async (req) => {
       throw new Error("Missing required fields: to, subject, htmlContent");
     }
 
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await fetchWithTimeout("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

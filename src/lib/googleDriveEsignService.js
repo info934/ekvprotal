@@ -1,9 +1,10 @@
 import { supabase } from '@/lib/customSupabaseClient';
+import { invokeWithTimeout } from '@/lib/requestControl';
 
 const invoke = async (action, payload = {}) => {
-  const { data, error } = await supabase.functions.invoke('google-drive-esign', {
+  const { data, error } = await invokeWithTimeout(supabase, 'google-drive-esign', {
     body: { action, ...payload },
-  });
+  }, 60_000);
   if (error) {
     let message = error.message;
     const response = error.context;

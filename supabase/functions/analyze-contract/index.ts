@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { corsHeaders } from '../_shared/cors.ts';
+import { fetchWithTimeout } from '../_shared/fetch.ts';
 
 const GRAPH_ROOT = 'https://graph.microsoft.com/v1.0';
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -27,7 +28,7 @@ const getGraphToken = async () => {
   const clientSecret = Deno.env.get('MS_GRAPH_CLIENT_SECRET');
   if (!tenantId || !clientId || !clientSecret) throw new Error('SharePoint credentials are not configured.');
 
-  const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+  const response = await fetchWithTimeout(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -36,7 +37,7 @@ const getGraphToken = async () => {
       grant_type: 'client_credentials',
       scope: 'https://graph.microsoft.com/.default',
     }),
-  });
+  }, GRAPH_TIMEOUT_MS);
   if (!response.ok) throw new Error(`Microsoft Graph authentication failed (${response.status}).`);
   return String((await response.json()).access_token);
 };
@@ -50,9 +51,10 @@ const downloadSharePointFile = async (connection: Record<string, any>, entityTyp
   const driveId = resolveDriveId(connection.config || {}, entityType);
   if (!driveId) throw new Error('SharePoint drive is not configured for this record type.');
   const token = await getGraphToken();
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${GRAPH_ROOT}/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(fileId)}/content`,
-    { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS) },
+    { headers: { Authorization: `Bearer ${token}` } },
+    GRAPH_TIMEOUT_MS,
   );
   if (!response.ok) throw new Error(`Contract download from SharePoint failed (${response.status}).`);
   return new Uint8Array(await response.arrayBuffer());
@@ -163,10 +165,9 @@ const analyzeWithGemini = async ({
   bytes: Uint8Array;
   mimeType: string;
 }) => {
-  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+  const response = await fetchWithTimeout('https://generativelanguage.googleapis.com/v1beta/interactions', {
     method: 'POST',
     headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     body: JSON.stringify({
       model,
       input: [
@@ -179,7 +180,7 @@ const analyzeWithGemini = async ({
         schema,
       },
     }),
-  });
+  }, AI_TIMEOUT_MS);
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`Gemini contract analysis failed (${response.status}): ${detail.slice(0, 500)}`);
@@ -204,10 +205,9 @@ const analyzeWithOpenAI = async ({
   const fileInput = mimeType.startsWith('image/')
     ? { type: 'input_image', image_url: encodedFile, detail: 'high' }
     : { type: 'input_file', filename: fileName, file_data: encodedFile };
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  const response = await fetchWithTimeout('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     body: JSON.stringify({
       model,
       store: false,
@@ -218,7 +218,7 @@ const analyzeWithOpenAI = async ({
       }],
       text: { format: { type: 'json_schema', name: 'contract_finance_extraction', strict: true, schema } },
     }),
-  });
+  }, AI_TIMEOUT_MS);
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`OpenAI contract analysis failed (${response.status}): ${detail.slice(0, 500)}`);

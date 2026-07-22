@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { combineAbortSignals, createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
 
 const AuthContext = createContext(undefined);
 
@@ -68,6 +69,8 @@ export const AuthProvider = ({ children }) => {
   const currentUserIdRef = useRef(null);
   const authEventRunIdRef = useRef(0);
   const permissionsLoadedUserIdRef = useRef(null);
+  const permissionAbortRef = useRef(null);
+  const authEventTimerRef = useRef(null);
 
   const isSuperUser = useMemo(() => userRole === 'admin' || userRole === 'super_manager', [userRole]);
 
@@ -171,17 +174,25 @@ export const AuthProvider = ({ children }) => {
       try {
         return await operation();
       } catch (err) {
+        if (isRequestAbortError(err)) throw err;
         if (attempt === maxRetries - 1) throw err;
         await new Promise(resolve => setTimeout(resolve, delay * (attempt + 1)));
       }
     }
   }, []);
 
-  const fetchPermissions = useCallback(async (currentUser) => {
+  const fetchPermissions = useCallback(async (currentUser, runSignal = null) => {
     if (!currentUser) {
       clearState();
       return;
     }
+
+    const requestSignal = () => combineAbortSignals(runSignal, AbortSignal.timeout(8000));
+    const assertCurrentRun = () => {
+      if (runSignal?.aborted || currentUserIdRef.current !== currentUser.id) {
+        throw new DOMException('Permission request is no longer current', 'AbortError');
+      }
+    };
 
     try {
       const { data: accountStatus, error: accountStatusError } = await supabase
@@ -189,7 +200,8 @@ export const AuthProvider = ({ children }) => {
         .select('status, reason')
         .eq('auth_user_id', currentUser.id)
         .maybeSingle()
-        .abortSignal(AbortSignal.timeout(8000));
+        .abortSignal(requestSignal());
+      assertCurrentRun();
 
       if (accountStatusError && accountStatusError.code !== 'PGRST116' && accountStatusError.code !== '42P01') {
         throw accountStatusError;
@@ -209,6 +221,7 @@ export const AuthProvider = ({ children }) => {
       const cachedData = getCache(cacheKey);
       
       if (cachedData) {
+        assertCurrentRun();
         setUserRole(cachedData.role);
         setIsAdmin(cachedData.isAdmin);
         setMemberId(cachedData.memberId);
@@ -220,13 +233,14 @@ export const AuthProvider = ({ children }) => {
       // Fetch user role with actual abort capability
       const userRoleData = await retryOperation(async () => {
         const { data, error } = await supabase.rpc('get_user_role')
-          .abortSignal(AbortSignal.timeout(8000));
+          .abortSignal(requestSignal());
           
         if (error) throw error;
         return data;
       });
 
       const role = userRoleData;
+      assertCurrentRun();
       setUserRole(role);
       
       const adminStatus = role === 'admin';
@@ -240,7 +254,7 @@ export const AuthProvider = ({ children }) => {
             .select('id, notification_preferences')
             .eq('auth_user_id', currentUser.id)
             .single()
-            .abortSignal(AbortSignal.timeout(8000));
+            .abortSignal(requestSignal());
             
           if (error && error.code !== 'PGRST116') throw error;
           return data;
@@ -250,6 +264,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (memberData) {
+        assertCurrentRun();
         setMemberId(memberData.id);
         const prefs = memberData.notification_preferences || {};
         setIsPrivateMode(!!prefs.private_mode);
@@ -280,7 +295,7 @@ export const AuthProvider = ({ children }) => {
         try {
           const permsData = await retryOperation(async () => {
              const { data, error } = await supabase.rpc('get_permissions', { p_role: role })
-               .abortSignal(AbortSignal.timeout(8000));
+               .abortSignal(requestSignal());
                
              if (error) throw error;
              return data;
@@ -294,6 +309,7 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
+      assertCurrentRun();
       setPermissions(finalPermissions);
 
       setCache(cacheKey, {
@@ -305,6 +321,7 @@ export const AuthProvider = ({ children }) => {
       });
 
     } catch(error) {
+      if (runSignal?.aborted || isRequestAbortError(error)) throw error;
       console.error("An unexpected error occurred during permission fetch:", error);
       
       if (error.message?.includes('JWT') || error.message?.includes('token') || error.message?.includes('timeout') || error.name === 'TimeoutError') {
@@ -342,11 +359,14 @@ export const AuthProvider = ({ children }) => {
           setUser(currentUser);
           
           if (currentUser) {
-            await withTimeout(
-              fetchPermissions(currentUser),
-              20000,
-              'Permission loading'
-            );
+            const permissionRequest = createTimedAbortController(20_000);
+            permissionAbortRef.current?.abort();
+            permissionAbortRef.current = permissionRequest.controller;
+            try {
+              await fetchPermissions(currentUser, permissionRequest.signal);
+            } finally {
+              permissionRequest.dispose();
+            }
             permissionsLoadedUserIdRef.current = currentUser.id;
           }
         }
@@ -393,16 +413,18 @@ export const AuthProvider = ({ children }) => {
         setLoading(true);
         const runId = authEventRunIdRef.current + 1;
         authEventRunIdRef.current = runId;
+        permissionAbortRef.current?.abort();
+        if (authEventTimerRef.current) clearTimeout(authEventTimerRef.current);
+        const permissionRequest = createTimedAbortController(20_000);
+        permissionAbortRef.current = permissionRequest.controller;
 
-        setTimeout(async () => {
+        authEventTimerRef.current = setTimeout(async () => {
           try {
-            await withTimeout(
-              fetchPermissions(newCurrentUser),
-              20000,
-              'Permission loading'
-            );
+            await fetchPermissions(newCurrentUser, permissionRequest.signal);
+            if (!isMounted || authEventRunIdRef.current !== runId) return;
             permissionsLoadedUserIdRef.current = newCurrentUser.id;
           } catch (error) {
+            if (isRequestAbortError(error) || !isMounted || authEventRunIdRef.current !== runId) return;
             console.error("Error loading auth permissions:", error);
             toast({
               title: 'Načítání oprávnění selhalo',
@@ -410,6 +432,7 @@ export const AuthProvider = ({ children }) => {
               variant: 'destructive',
             });
           } finally {
+            permissionRequest.dispose();
             if (isMounted && authEventRunIdRef.current === runId) {
               setLoading(false);
             }
@@ -420,6 +443,8 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       isMounted = false;
+      permissionAbortRef.current?.abort();
+      if (authEventTimerRef.current) clearTimeout(authEventTimerRef.current);
       subscription?.unsubscribe();
     };
   }, []);

@@ -18,6 +18,7 @@ import {
   storageProviderLabels,
 } from '@/lib/documentStorageService';
 import { getGoogleDriveAuthorizationUrl, getGoogleDriveEsignStatus } from '@/lib/googleDriveEsignService';
+import { invokeWithTimeout } from '@/lib/requestControl';
 
 const TARGETS = [
   { key: 'project', label: 'Projekty', description: 'Projektová dokumentace a předání' },
@@ -247,17 +248,23 @@ const SettingsStorage = () => {
       return;
     }
     setTestingTarget(entityType);
-    const { data, error } = await supabase.functions.invoke('document-storage', {
-      body: { action: 'testConnection', provider: form.provider, connectionId: selectedId, entityType },
-    });
-    const success = !error && data?.success;
-    setTestResults((current) => ({ ...current, [entityType]: success ? 'success' : 'error' }));
-    toast({
-      title: success ? 'Spojení funguje' : 'Spojení se nezdařilo',
-      description: success ? `${data.drive?.name || 'SharePoint'} je dostupný.` : (data?.error || error?.message),
-      variant: success ? 'default' : 'destructive',
-    });
-    setTestingTarget(null);
+    try {
+      const { data, error } = await invokeWithTimeout(supabase, 'document-storage', {
+        body: { action: 'testConnection', provider: form.provider, connectionId: selectedId, entityType },
+      });
+      const success = !error && data?.success;
+      setTestResults((current) => ({ ...current, [entityType]: success ? 'success' : 'error' }));
+      toast({
+        title: success ? 'Spojení funguje' : 'Spojení se nezdařilo',
+        description: success ? `${data.drive?.name || 'SharePoint'} je dostupný.` : (data?.error || error?.message),
+        variant: success ? 'default' : 'destructive',
+      });
+    } catch (error) {
+      setTestResults((current) => ({ ...current, [entityType]: 'error' }));
+      toast({ title: 'Spojení se nezdařilo', description: error.message, variant: 'destructive' });
+    } finally {
+      setTestingTarget(null);
+    }
   };
 
   return (

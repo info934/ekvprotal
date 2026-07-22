@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.30.0'
 import { corsHeaders } from './cors.ts'
+import { fetchWithTimeout } from '../_shared/fetch.ts'
 
 const jsonResponse = (body: Record<string, unknown>, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -51,7 +52,7 @@ const sendBrandedEmailDirect = async (to: string, subject: string, htmlContent: 
     throw new Error('Email server is not configured.')
   }
 
-  const response = await fetch('https://api.resend.com/emails', {
+  const response = await fetchWithTimeout('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

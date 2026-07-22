@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Ban, Calculator, Copy, FileText, Link2, MoreHorizontal, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
@@ -35,6 +35,7 @@ import {
   isMissingCrmRpcError,
 } from '@/lib/crmItemPayloads';
 import { cn } from '@/lib/utils';
+import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
 
 const documentTypeConfig = {
   offer: {
@@ -137,35 +138,49 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [relationTargetOpportunityId, setRelationTargetOpportunityId] = useState('');
   const [relationAction, setRelationAction] = useState('move');
   const [relationItemMode, setRelationItemMode] = useState('target-sync');
+  const fetchRequestRef = useRef({ id: 0, controller: null });
 
   const fetchData = useCallback(async () => {
+    fetchRequestRef.current.controller?.abort();
+    const requestId = fetchRequestRef.current.id + 1;
+    const request = createTimedAbortController(20_000);
+    fetchRequestRef.current = { id: requestId, controller: request.controller };
     setLoading(true);
-    const [documentsRes, opportunitiesRes, numberingRes, templatesRes] = await Promise.all([
-      supabase
+    try {
+      const documentItemsSelect = documentId
+        ? 'id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot'
+        : 'id';
+      let documentsQuery = supabase
         .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, gross_subtotal, subtotal, discount_total, tax_total, total, total_with_tax, cost_total, total_cost, margin_total, margin_value, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, notes, sync_items, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code), opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)), items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, gross_subtotal, subtotal, discount_total, tax_total, total, total_with_tax, cost_total, total_cost, margin_total, margin_value, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, notes, sync_items, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code)${documentId ? ', opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)' : ''}), items:crm_commercial_document_items(${documentItemsSelect})`)
         .eq('type', type)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false });
+      documentsQuery = documentId
+        ? documentsQuery.or(`id.eq.${documentId},number.eq.${documentId}`).limit(1)
+        : documentsQuery.limit(500);
+
+      const [documentsRes, opportunitiesRes, numberingRes, templatesRes] = await Promise.all([
+        documentsQuery.abortSignal(request.signal),
       supabase
         .from('crm_opportunities')
-        .select('id, number, title, value, subject_id, deleted_at, subject:subject_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
+        .select('id, number, title, value, subject_id, deleted_at, subject:subject_id(id, name)')
         .is('deleted_at', null)
-        .order('created_at', { ascending: false }),
-      selectCrmNumberingSettings(supabase),
+        .order('created_at', { ascending: false })
+        .limit(500)
+        .abortSignal(request.signal),
+      selectCrmNumberingSettings(supabase, request.signal),
       supabase
         .from('order_templates')
         .select('id, name, content')
         .eq('is_active', true)
-        .order('name'),
-    ]);
+        .order('name')
+        .abortSignal(request.signal),
+      ]);
+      if (requestId !== fetchRequestRef.current.id) return;
 
-    const error = documentsRes.error || opportunitiesRes.error;
-    if (error) {
-      toast({ title: `${config.title} se nepodařilo načíst`, description: error.message, variant: 'destructive' });
-      setLoading(false);
-      return;
-    }
+      const error = documentsRes.error || opportunitiesRes.error;
+      if (error) throw error;
 
     const opportunities = opportunitiesRes.data || [];
     const opportunityById = new Map(opportunities.map((opportunity) => [opportunity.id, opportunity]));
@@ -178,6 +193,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       };
       return {
         ...document,
+        _item_count: (document.items || []).length,
         _persisted_status: document.status,
         opportunity,
         sync_items: document.sync_items ?? true,
@@ -191,19 +207,34 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     setNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
     setSelectedDocument(documentId ? findCrmRecordByRef(normalizedDocuments, documentId) : null);
 
-    const [catalogRes, stockRes, usageRes] = await Promise.all([
-      supabase
+      if (!documentId) {
+        setCatalogProducts([]);
+        return;
+      }
+
+    const catalogRes = await supabase
         .from('commercial_item_catalog')
         .select('id, code, sku, name, description, category, unit, default_unit_price, default_vat_rate, purchase_price, preferred_supplier_offer_id, product_type, is_active, metadata')
         .eq('is_active', true)
-        .order('name', { ascending: true }),
-      supabase
+        .order('name', { ascending: true })
+        .limit(1_000)
+        .abortSignal(request.signal);
+    if (catalogRes.error) throw catalogRes.error;
+    const catalogIds = (catalogRes.data || []).map((product) => product.id);
+    const emptyCatalogResult = Promise.resolve({ data: [], error: null });
+    const [stockRes, usageRes] = await Promise.all([
+      catalogIds.length ? supabase
         .from('product_stock_status')
-        .select('catalog_item_id, available_qty'),
-      supabase
+        .select('catalog_item_id, available_qty')
+        .in('catalog_item_id', catalogIds)
+        .abortSignal(request.signal) : emptyCatalogResult,
+      catalogIds.length ? supabase
         .from('product_usage_stats')
-        .select('catalog_item_id, total_usage_count, last_used_at'),
+        .select('catalog_item_id, total_usage_count, last_used_at')
+        .in('catalog_item_id', catalogIds)
+        .abortSignal(request.signal) : emptyCatalogResult,
     ]);
+    if (requestId !== fetchRequestRef.current.id) return;
     const stockByProductId = new Map((stockRes.data || []).map((row) => [row.catalog_item_id, row]));
     const usageByProductId = new Map((usageRes.data || []).map((row) => [row.catalog_item_id, row]));
     setCatalogProducts(catalogRes.error ? [] : (catalogRes.data || []).map((product) => {
@@ -216,11 +247,25 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       };
     }));
 
-    setLoading(false);
+    } catch (error) {
+      if (requestId !== fetchRequestRef.current.id) return;
+      setDocuments([]);
+      setOpportunities([]);
+      setSelectedDocument(null);
+      toast({
+        title: `${config.title} se nepodařilo načíst`,
+        description: isRequestAbortError(error) ? 'Načítání překročilo časový limit.' : error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      request.dispose();
+      if (requestId === fetchRequestRef.current.id) setLoading(false);
+    }
   }, [config.title, documentId, toast, type]);
 
   useEffect(() => {
     fetchData();
+    return () => fetchRequestRef.current.controller?.abort();
   }, [fetchData]);
 
   const filteredDocuments = useMemo(() => {
@@ -242,7 +287,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       const isDraft = document.status === 'draft';
       const isSent = document.status === 'sent';
       const isExpired = Boolean(document.valid_until && document.valid_until < today && !['accepted', 'closed', 'rejected', 'cancelled', 'deleted'].includes(document.status));
-      const hasItems = (document.items || []).length > 0;
+      const hasItems = Number(document._item_count || 0) > 0 || (document.items || []).length > 0;
       const totals = calculateCrmTotals(document.items || []);
       return {
         total: acc.total + 1,
@@ -541,6 +586,17 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         toast({ title: 'Vyberte obchodni pripad', description: 'Dokument musi byt napojeny na existujici nebo novy OP.', variant: 'destructive' });
         return;
       }
+      const { data: opportunityItems, error: opportunityItemsError } = await supabase
+        .from('crm_opportunity_items')
+        .select('id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot')
+        .eq('opportunity_id', opportunity.id)
+        .order('sort_order', { ascending: true });
+      if (opportunityItemsError) {
+        setSaving(false);
+        toast({ title: 'Položky OP se nepodařilo načíst', description: opportunityItemsError.message, variant: 'destructive' });
+        return;
+      }
+      opportunity = { ...opportunity, items: opportunityItems || [] };
     } else {
       const created = await createOpportunityForDocument();
       if (created.error) {

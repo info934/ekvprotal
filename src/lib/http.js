@@ -10,39 +10,23 @@
  */
 export const fetchWithTimeout = async (input, init = {}, { timeoutMs = 8000 } = {}) => {
   const { signal: initSignal, ...restInit } = init;
-  
-  let signal;
-
-  // Use AbortSignal.any to combine user signal with timeout signal if available (Node 20+)
-  if (initSignal) {
-    try {
-      signal = AbortSignal.any([initSignal, AbortSignal.timeout(timeoutMs)]);
-    } catch (e) {
-      // Fallback if .any is not supported (though Node 20 should support it)
-      const controller = new AbortController();
-      signal = controller.signal;
-      
-      const timeoutId = setTimeout(() => controller.abort(new Error('Request timeout')), timeoutMs);
-      
-      initSignal.addEventListener('abort', () => {
-        clearTimeout(timeoutId);
-        controller.abort(initSignal.reason);
-      });
-      
-      // We don't have a perfect way to clean up the listener here without wrapping fetch, 
-      // but this branch shouldn't be hit in the specified environment.
-    }
-  } else {
-    signal = AbortSignal.timeout(timeoutMs);
-  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(new DOMException('Request timeout', 'TimeoutError'));
+  }, timeoutMs);
+  const abortFromInit = () => controller.abort(initSignal?.reason);
+  initSignal?.addEventListener('abort', abortFromInit, { once: true });
 
   try {
-    return await fetch(input, { ...restInit, signal });
+    return await fetch(input, { ...restInit, signal: controller.signal });
   } catch (error) {
-    if (error.name === 'TimeoutError' || (error.name === 'AbortError' && signal.aborted && !initSignal?.aborted)) {
+    if (error.name === 'TimeoutError' || (error.name === 'AbortError' && controller.signal.aborted && !initSignal?.aborted)) {
       throw new Error('Request timeout');
     }
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    initSignal?.removeEventListener('abort', abortFromInit);
   }
 };
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, CheckCircle2, Edit2, ExternalLink, FileText,
   Link2, MoreHorizontal, Plus, Receipt, Trash2, Upload,
@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FinanceMetricStrip, FinanceStageFlow, FinanceDefinitionNote } from '@/components/finance/FinanceWorkspace';
 import { formatMoney, formatPercent, getFinanceErrorMessage, VAT_RATE_OPTIONS } from '@/lib/financePresentation';
 import ConfirmActionDialog from '@/components/ui/confirm-action-dialog';
+import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
 
 const money = formatMoney;
 const percent = formatPercent;
@@ -81,25 +82,39 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
   const [invoiceForm, setInvoiceForm] = useState(emptyInvoiceForm);
   const [milestoneForm, setMilestoneForm] = useState(emptyMilestoneForm);
   const [planForm, setPlanForm] = useState({ count: '3', first_date: toDateInput(new Date()), interval_days: '30', vat_rate: '21' });
+  const loadRequestRef = useRef({ id: 0, controller: null });
 
   const load = useCallback(async () => {
     if (!entityId) return;
+    loadRequestRef.current.controller?.abort();
+    const requestId = loadRequestRef.current.id + 1;
+    const request = createTimedAbortController();
+    loadRequestRef.current = { id: requestId, controller: request.controller };
     setLoading(true);
-    const { data, error } = await supabase.rpc('get_entity_billing_summary', {
-      p_entity_type: entityType,
-      p_entity_id: entityId,
-    });
-    if (error) {
+    setSummary(null);
+    try {
+      const { data, error } = await supabase.rpc('get_entity_billing_summary', {
+        p_entity_type: entityType,
+        p_entity_id: entityId,
+      }).abortSignal(request.signal);
+      if (requestId !== loadRequestRef.current.id) return;
+      if (error) throw error;
+      setSummary(data);
+      onSummaryChange?.(data);
+    } catch (error) {
+      if (requestId !== loadRequestRef.current.id || (request.signal.aborted && isRequestAbortError(error))) return;
+      setSummary(null);
       toast({ title: 'Fakturaci se nepodařilo načíst', description: getFinanceErrorMessage(error), variant: 'destructive' });
-      setLoading(false);
-      return;
+    } finally {
+      request.dispose();
+      if (requestId === loadRequestRef.current.id) setLoading(false);
     }
-    setSummary(data);
-    onSummaryChange?.(data);
-    setLoading(false);
   }, [entityId, entityType, onSummaryChange, toast]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => loadRequestRef.current.controller?.abort();
+  }, [load]);
 
   const entries = useMemo(() => summary?.entries || [], [summary]);
   const milestones = useMemo(() => summary?.milestones || [], [summary]);

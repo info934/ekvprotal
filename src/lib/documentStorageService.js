@@ -1,10 +1,14 @@
 import { supabase } from '@/lib/customSupabaseClient';
+import { fetchWithTimeout } from '@/lib/http';
+import { invokeWithTimeout } from '@/lib/requestControl';
 
 const PROJECT_BUCKET = 'project-files';
 const INVOICE_BUCKET = 'invoices';
 const PRODUCT_DATASHEET_FOLDER = 'product-datasheets';
 const DEFAULT_CONNECTION_CACHE_TTL = 5 * 60 * 1000;
 const FOLDER_LIST_CACHE_TTL = 60 * 1000;
+const SIMPLE_EXTERNAL_UPLOAD_LIMIT = 3 * 1024 * 1024;
+const GRAPH_UPLOAD_CHUNK_SIZE = 10 * 320 * 1024;
 
 let defaultConnectionCache = null;
 let defaultConnectionPromise = null;
@@ -12,6 +16,52 @@ const folderListCache = new Map();
 const folderListRequests = new Map();
 
 const MISSING_STORAGE_CONFIG_CODES = new Set(['42P01', '42703', 'PGRST116', 'PGRST204', 'PGRST205']);
+
+const invokeDocumentStorage = (options, timeoutMs = 60_000) => (
+  invokeWithTimeout(supabase, 'document-storage', options, timeoutMs)
+);
+
+const uploadExternalFile = async ({ file, body }) => {
+  if (file.size <= SIMPLE_EXTERNAL_UPLOAD_LIMIT) {
+    return invokeDocumentStorage({
+      body: { ...body, action: 'uploadFile', fileBase64: await fileToBase64(file) },
+    });
+  }
+
+  const { data: session, error: sessionError } = await invokeDocumentStorage({
+    body: { ...body, action: 'createUploadSession' },
+  });
+  if (sessionError) throw sessionError;
+  if (!session?.success || !session.uploadUrl) throw new Error(session?.error || 'Upload session could not be created.');
+
+  let uploadedItem = null;
+  for (let start = 0; start < file.size; start += GRAPH_UPLOAD_CHUNK_SIZE) {
+    const endExclusive = Math.min(file.size, start + GRAPH_UPLOAD_CHUNK_SIZE);
+    const response = await fetchWithTimeout(session.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Length': String(endExclusive - start),
+        'Content-Range': `bytes ${start}-${endExclusive - 1}/${file.size}`,
+      },
+      body: file.slice(start, endExclusive),
+    }, { timeoutMs: 120_000 });
+    if (!response.ok) throw new Error(`Chunk upload failed (${response.status}).`);
+    const payload = await response.json();
+    if (response.status === 200 || response.status === 201) uploadedItem = payload;
+  }
+  if (!uploadedItem?.id) throw new Error('External storage did not confirm the uploaded file.');
+
+  return invokeDocumentStorage({
+    body: {
+      ...body,
+      action: 'registerUploadedFile',
+      fileId: uploadedItem.id,
+      folderId: session.folderId,
+      folderPath: session.folderPath,
+      fileName: uploadedItem.name || body.fileName,
+    },
+  });
+};
 
 export const isStorageConfigMissingError = (error) => {
   if (!error) return false;
@@ -206,7 +256,7 @@ export const ensureEntityFolder = async ({ entityType, entityId, code, name, con
     };
   }
 
-  const { data, error } = await supabase.functions.invoke('document-storage', {
+  const { data, error } = await invokeDocumentStorage({
     body: {
       action: 'ensureFolder',
       connectionId: activeConnection.id,
@@ -270,16 +320,9 @@ export const uploadProjectDocument = async ({ file, project, documentName }) => 
     };
   }
 
-  const fileBase64 = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(',')[1]);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-
-  const { data, error } = await supabase.functions.invoke('document-storage', {
+  const { data, error } = await uploadExternalFile({
+    file,
     body: {
-      action: 'uploadFile',
       connectionId: connection.id,
       provider: connection.provider,
       entityType: 'project',
@@ -288,7 +331,6 @@ export const uploadProjectDocument = async ({ file, project, documentName }) => 
       folderPath: folder.folderPath,
       fileName: storedFileName,
       contentType: file.type || 'application/octet-stream',
-      fileBase64,
     },
   });
 
@@ -360,9 +402,9 @@ export const uploadProjectCostInvoice = async ({ file, project, costId, createCe
     };
   }
 
-  const { data, error } = await supabase.functions.invoke('document-storage', {
+  const { data, error } = await uploadExternalFile({
+    file,
     body: {
-      action: 'uploadFile',
       connectionId: connection.id,
       provider: connection.provider,
       entityType: 'project',
@@ -370,7 +412,6 @@ export const uploadProjectCostInvoice = async ({ file, project, costId, createCe
       folderPath: invoiceFolderPath,
       fileName: storedFileName,
       contentType: file.type || 'application/octet-stream',
-      fileBase64: await fileToBase64(file),
       metadata: { documentKind: 'project_cost_invoice', costId, originalFileName: file.name },
     },
   });
@@ -461,7 +502,7 @@ const listEntityStorageFolderUncached = async ({ entityType, entityId, folderId,
     return { items: [], provider: connection?.provider || 'supabase', supported: false };
   }
 
-  const { data, error } = await supabase.functions.invoke('document-storage', {
+  const { data, error } = await invokeDocumentStorage({
     body: {
       action: 'listFiles',
       connectionId: connection.id,
@@ -501,9 +542,9 @@ export const uploadEntityStorageFile = async ({ entityType, entityId, folderId, 
     throw new Error('Procházení složek je dostupné pouze pro externí úložiště.');
   }
 
-  const { data, error } = await supabase.functions.invoke('document-storage', {
+  const { data, error } = await uploadExternalFile({
+    file,
     body: {
-      action: 'uploadFile',
       connectionId: connection.id,
       provider: connection.provider,
       entityType,
@@ -511,7 +552,6 @@ export const uploadEntityStorageFile = async ({ entityType, entityId, folderId, 
       folderId,
       fileName: file.name,
       contentType: file.type || 'application/octet-stream',
-      fileBase64: await fileToBase64(file),
       metadata: { originalFileName: file.name },
     },
   });
@@ -586,9 +626,9 @@ export const uploadProductDatasheet = async ({ file, product, connectionId }) =>
     };
   }
 
-  const { data, error } = await supabase.functions.invoke('document-storage', {
+  const { data, error } = await uploadExternalFile({
+    file,
     body: {
-      action: 'uploadFile',
       connectionId: connection.id,
       provider: connection.provider,
       entityType: 'product',
@@ -597,7 +637,6 @@ export const uploadProductDatasheet = async ({ file, product, connectionId }) =>
       folderPath: folder.folderPath,
       fileName: file.name,
       contentType: file.type || 'application/octet-stream',
-      fileBase64: await fileToBase64(file),
       metadata: {
         productCode: product.sku || product.code,
         productName: product.name,
@@ -666,9 +705,9 @@ export const uploadInvoiceDocument = async ({
     };
   }
 
-  const { data, error } = await supabase.functions.invoke('document-storage', {
+  const { data, error } = await uploadExternalFile({
+    file,
     body: {
-      action: 'uploadFile',
       connectionId: connection.id,
       provider: connection.provider,
       entityType: 'invoice',
@@ -678,7 +717,6 @@ export const uploadInvoiceDocument = async ({
       folderPath,
       fileName: storedFileName,
       contentType: file.type || 'application/octet-stream',
-      fileBase64: await fileToBase64(file),
       metadata: {
         category,
         originalFileName: file.name,
@@ -730,7 +768,7 @@ export const downloadProjectDocument = async (storedDocument) => {
 
 export const deleteExternalStorageFile = async ({ connection, entityType, entityId, fileId, accessEntityType, accessEntityId }) => {
   if (!connection?.id || !fileId) throw new Error('Chybi identifikace uloziste nebo souboru.');
-  const { data, error } = await supabase.functions.invoke('document-storage', {
+  const { data, error } = await invokeDocumentStorage({
     body: {
       action: 'deleteFile',
       connectionId: connection.id,
@@ -794,7 +832,7 @@ export const downloadStoredFile = async ({
 
   const connection = await getStorageConnectionById(connectionId);
   if (!connection) throw new Error('Konfigurace externího úložiště nebyla nalezena.');
-  const { data, error } = await supabase.functions.invoke('document-storage', {
+  const { data, error } = await invokeDocumentStorage({
     body: {
       action: 'downloadUrl',
       connectionId: connection.id,

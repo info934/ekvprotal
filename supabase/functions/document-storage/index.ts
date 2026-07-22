@@ -1,7 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.30.0';
 import { corsHeaders } from '../_shared/cors.ts';
+import { fetchWithTimeout } from '../_shared/fetch.ts';
 
-type StorageAction = 'testConnection' | 'ensureFolder' | 'uploadFile' | 'downloadUrl' | 'listFiles' | 'deleteFile';
+type StorageAction = 'testConnection' | 'ensureFolder' | 'createUploadSession' | 'registerUploadedFile' | 'uploadFile' | 'downloadUrl' | 'listFiles' | 'deleteFile';
 type EntityType = 'project' | 'realizace' | 'product' | 'invoice';
 
 type StorageTarget = {
@@ -81,7 +82,7 @@ const getGraphToken = async () => {
   }
 
   graphTokenRequest = (async () => {
-    const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+    const response = await fetchWithTimeout(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -113,7 +114,7 @@ type StorageFolderMapping = {
 };
 
 const graphFetch = async (token: string, path: string, init: RequestInit = {}) => {
-  const response = await fetch(`${GRAPH_ROOT}${path}`, {
+  const response = await fetchWithTimeout(`${GRAPH_ROOT}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -126,18 +127,22 @@ const graphFetch = async (token: string, path: string, init: RequestInit = {}) =
 };
 
 const graphFetchAbsolute = async (token: string, url: string) => {
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const response = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!response.ok) throw await graphError(response);
   return response.json();
 };
 
 const collectGraphPages = async (token: string, firstPath: string) => {
   const values: Array<Record<string, unknown>> = [];
+  const visited = new Set<string>();
   let page = await graphFetch(token, firstPath);
-  for (;;) {
+  for (let pageNumber = 0; pageNumber < 25; pageNumber += 1) {
     values.push(...(page?.value || []));
+    if (values.length >= 2_000) return values.slice(0, 2_000);
     const nextLink = page?.['@odata.nextLink'];
     if (!nextLink) break;
+    if (visited.has(String(nextLink))) throw new Error('Microsoft Graph pagination returned a repeated page.');
+    visited.add(String(nextLink));
     page = await graphFetchAbsolute(token, String(nextLink));
   }
   return values;
@@ -517,6 +522,69 @@ Deno.serve(async (req: Request) => {
         folderPath: result.folderPath,
         webUrl: result.item.webUrl,
         metadata: mappingPayload.metadata,
+      });
+    }
+
+    if (action === 'createUploadSession') {
+      const fileName = safeSegment(body.fileName);
+      let folderId = body.folderId ? String(body.folderId) : '';
+      let folderPath = String(body.folderPath || '');
+      if (!folderId) {
+        assertFolderPathBelongsToEntity(folderPath, entityFolderMapping, target);
+        const result = await ensurePath(graphToken, target, folderPath);
+        folderId = result.item.id;
+        folderPath = result.folderPath;
+      }
+      if (entityFolderMapping) {
+        await assertItemBelongsToEntityFolder(graphToken, target, folderId, entityFolderMapping);
+      }
+      const session = await graphFetch(
+        graphToken,
+        `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(folderId)}:/${encodeURIComponent(fileName)}:/createUploadSession`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'rename', name: fileName } }),
+        },
+      );
+      return jsonResponse({ success: true, uploadUrl: session.uploadUrl, folderId, folderPath, fileName });
+    }
+
+    if (action === 'registerUploadedFile') {
+      const fileId = String(body.fileId || '');
+      const folderId = String(body.folderId || '');
+      if (!fileId || !folderId) return jsonResponse({ success: false, error: 'Uploaded file and folder IDs are required.' }, 400);
+      if (entityFolderMapping) {
+        await assertItemBelongsToEntityFolder(graphToken, target, fileId, entityFolderMapping);
+      }
+      const uploaded = await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(fileId)}`);
+      if (String(uploaded?.parentReference?.id || '') !== folderId) {
+        return jsonResponse({ success: false, error: 'Uploaded file does not belong to the requested folder.' }, 403);
+      }
+      const ownerType = entityType === 'invoice' ? String(body.accessEntityType || 'invoice') : entityType;
+      const ownerId = entityType === 'invoice' ? String(body.accessEntityId || entityId) : entityId;
+      const { error: registryError } = await admin.from('document_storage_files').upsert({
+        connection_id: connection.id,
+        entity_type: entityType,
+        entity_id: entityId,
+        owner_type: ownerType,
+        owner_id: ownerId,
+        external_file_id: uploaded.id,
+        external_parent_id: folderId,
+        file_name: uploaded.name || safeSegment(body.fileName),
+        external_web_url: uploaded.webUrl,
+        metadata: body.metadata || {},
+        uploaded_by: user.id,
+      }, { onConflict: 'connection_id,external_file_id' });
+      if (registryError) throw registryError;
+      return jsonResponse({
+        success: true,
+        provider,
+        fileId: uploaded.id,
+        parentId: folderId,
+        filePath: normalizePath(String(body.folderPath || ''), uploaded.name || safeSegment(body.fileName)),
+        webUrl: uploaded.webUrl,
+        metadata: { driveId: target.driveId, siteId: target.siteId, size: uploaded.size, eTag: uploaded.eTag, mimeType: uploaded.file?.mimeType },
       });
     }
 

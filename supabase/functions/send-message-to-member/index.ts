@@ -1,5 +1,6 @@
 import { corsHeaders } from "./cors.ts";
 import { authorizeFunctionRequest } from "../_shared/authorize.ts";
+import { fetchWithTimeout } from "../_shared/fetch.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL");
@@ -29,7 +30,7 @@ Deno.serve(async (req) => {
 
     const fromHeader = fromName ? `${fromName} <${FROM_EMAIL}>` : FROM_EMAIL;
 
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await fetchWithTimeout("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

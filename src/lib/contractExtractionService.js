@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/customSupabaseClient';
+import { invokeWithTimeout } from '@/lib/requestControl';
 import { getEntityStorageFolder, uploadEntityStorageFile } from '@/lib/documentStorageService';
 
 const storageEntityType = (entityType) => entityType === 'realization' ? 'realizace' : entityType;
@@ -61,7 +62,7 @@ export const uploadAndAnalyzeContract = async ({ entityType, entityId, file }) =
     connection: folder.connection,
   });
 
-  const { data, error } = await supabase.functions.invoke('analyze-contract', {
+  const { data, error } = await invokeWithTimeout(supabase, 'analyze-contract', {
     body: {
       entityType,
       entityId,
@@ -71,7 +72,7 @@ export const uploadAndAnalyzeContract = async ({ entityType, entityId, file }) =
       mimeType,
       webUrl: uploaded.webUrl || null,
     },
-  });
+  }, 120_000);
   if (error) throw error;
   if (data?.success === false) throw new Error(data.error || 'Smlouvu se nepodařilo analyzovat.');
   return data;

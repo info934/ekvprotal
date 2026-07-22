@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.30.0';
 import { corsHeaders } from '../_shared/cors.ts';
+import { fetchWithTimeout } from '../_shared/fetch.ts';
 
 type CalendarAction = 'checkAvailability' | 'syncItem' | 'testConnection';
 
@@ -52,7 +53,7 @@ const getGraphToken = async () => {
   const clientSecret = Deno.env.get('MS_GRAPH_CLIENT_SECRET');
   if (!tenantId || !clientId || !clientSecret) throw new Error('Microsoft Graph credentials are not configured.');
 
-  const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+  const response = await fetchWithTimeout(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -79,7 +80,7 @@ const getTokenRoles = (token: string) => {
 };
 
 const graphFetch = async (token: string, path: string, init: RequestInit = {}) => {
-  const response = await fetch(`${GRAPH_ROOT}${path}`, {
+  const response = await fetchWithTimeout(`${GRAPH_ROOT}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, ...init.headers },
   });

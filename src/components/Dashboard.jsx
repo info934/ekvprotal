@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Activity,
@@ -54,6 +54,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { crmOpportunityPath } from '@/lib/crmRoutes';
 import { cn, formatCurrency } from '@/lib/utils';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
+import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
 
 const PortalStatusChart = React.lazy(() => import('@/components/PortalStatusChart'));
 const ProjectStatusChart = React.lazy(() => import('@/components/ProjectStatusChart'));
@@ -63,6 +64,40 @@ const PendingApprovalsWidget = React.lazy(() => import('@/components/DashboardWi
 
 const DashboardModuleFallback = () => (
   <div className="h-48 animate-pulse rounded-lg border border-slate-200 bg-slate-50" aria-label="Načítám přehled" />
+);
+
+class DashboardSectionBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.error('Dashboard section failed to load:', error);
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="flex min-h-48 flex-col items-center justify-center rounded-lg border border-amber-200 bg-amber-50 p-5 text-center">
+        <AlertTriangle className="h-6 w-6 text-amber-700" />
+        <p className="mt-2 text-sm font-semibold text-amber-950">Tato část přehledu se nenačetla.</p>
+        <Button type="button" variant="outline" size="sm" className="mt-3 bg-white" onClick={() => window.location.reload()}>
+          <RefreshCw className="mr-2 h-4 w-4" />Načíst znovu
+        </Button>
+      </div>
+    );
+  }
+}
+
+const DashboardLazySection = ({ children }) => (
+  <DashboardSectionBoundary>
+    <React.Suspense fallback={<DashboardModuleFallback />}>{children}</React.Suspense>
+  </DashboardSectionBoundary>
 );
 
 const today = new Date();
@@ -101,9 +136,11 @@ const pluralizeCs = (count, one, few, many) => {
   return many;
 };
 
-const resultArray = (result, label) => {
+const resultArray = (result, label, errors = null) => {
   if (result?.error) {
-    throw new Error(`${label}: ${result.error.message}`);
+    console.warn(`${label}: ${result.error.message}`);
+    errors?.push(`${label}: ${result.error.message}`);
+    return [];
   }
   return result?.data || [];
 };
@@ -542,6 +579,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [zoom, setZoom] = useState('month');
+  const dashboardRequestIdRef = useRef(0);
+  const dashboardAbortRef = useRef(null);
   const [data, setData] = useState({
     userProjects: [],
     projects: [],
@@ -552,12 +591,16 @@ const Dashboard = () => {
     attendanceSubmissions: [],
     opportunities: [],
     commercialDocuments: [],
-    products: [],
+    productCount: 0,
     documents: [],
     companyFinance: emptyCompanyFinance,
   });
 
   const fetchDashboardData = async () => {
+    dashboardAbortRef.current?.abort();
+    const requestId = ++dashboardRequestIdRef.current;
+    const request = createTimedAbortController(20_000);
+    dashboardAbortRef.current = request.controller;
     setLoading(true);
     setLoadError('');
     try {
@@ -572,10 +615,11 @@ const Dashboard = () => {
         attendanceSubmissions: [],
         opportunities: [],
         commercialDocuments: [],
-        products: [],
+        productCount: 0,
         documents: [],
-        companyFinance: canViewCompanyFinance ? data.companyFinance : emptyCompanyFinance,
+        companyFinance: emptyCompanyFinance,
       };
+      const sectionErrors = [];
 
       const commonQueries = [
         supabase.from('payouts')
@@ -601,11 +645,11 @@ const Dashboard = () => {
           )
           .order('created_at', { ascending: false })
           .limit(100),
-        supabase.from('commercial_item_catalog').select('id, code, name, category, is_active').limit(500),
+        supabase.from('commercial_item_catalog').select('id', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('documents').select('id, name, created_at').order('created_at', { ascending: false }).limit(50),
-      ];
+      ].map((query) => query.abortSignal(request.signal));
 
-      const memberQueries = memberId ? [
+      const memberQueries = memberId && !isSuperUser ? [
         supabase
           .from('projects')
           .select('id, name, code, status, start_date, completion_date, created_at')
@@ -614,16 +658,16 @@ const Dashboard = () => {
         supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').eq('member_id', memberId).order('end_date', { ascending: true }).limit(100),
         supabase.rpc('get_user_activities', { p_member_id: memberId }),
         supabase.from('realizations').select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, team_members').contains('team_members', [memberId]).order('created_at', { ascending: false }).limit(100),
-      ] : null;
+      ].map((query) => query.abortSignal(request.signal)) : null;
 
       const companyQueries = canViewCompanyFinance ? [
-        supabase.rpc('list_projects_safe'),
-        supabase.rpc('list_realizations_safe'),
+        supabase.rpc('list_projects_safe').limit(500),
+        supabase.rpc('list_realizations_safe').limit(500),
         supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').order('end_date', { ascending: true }).limit(200),
         supabase.from('engineering_activities').select('id, subject, status, project_id, end_date, projects(name)').neq('status', 'done').order('end_date', { ascending: true }).limit(12),
         supabase.rpc('get_company_financials'),
         supabase.rpc('get_overhead_summary'),
-      ] : null;
+      ].map((query) => query.abortSignal(request.signal)) : null;
 
       const [
         commonResults,
@@ -644,19 +688,24 @@ const Dashboard = () => {
         documentsRes,
       ] = commonResults;
 
-      next.payouts = resultArray(payoutsRes, 'Výplaty');
-      next.attendanceSubmissions = resultArray(attendanceRes, 'Docházka');
-      next.opportunities = resultArray(opportunitiesRes, 'CRM příležitosti');
-      next.commercialDocuments = resultArray(commercialDocumentsRes, 'CRM dokumenty');
-      next.products = resultArray(productsRes, 'Produkty');
-      next.documents = resultArray(documentsRes, 'Dokumenty');
+      next.payouts = resultArray(payoutsRes, 'Výplaty', sectionErrors);
+      next.attendanceSubmissions = resultArray(attendanceRes, 'Docházka', sectionErrors);
+      next.opportunities = resultArray(opportunitiesRes, 'CRM příležitosti', sectionErrors);
+      next.commercialDocuments = resultArray(commercialDocumentsRes, 'CRM dokumenty', sectionErrors);
+      if (productsRes.error) {
+        console.warn(`Produkty: ${productsRes.error.message}`);
+        sectionErrors.push(`Produkty: ${productsRes.error.message}`);
+      } else {
+        next.productCount = productsRes.count || 0;
+      }
+      next.documents = resultArray(documentsRes, 'Dokumenty', sectionErrors);
 
       if (memberResults) {
         const [userProjectsRes, userTasksRes, userActivitiesRes, userRealizationsRes] = memberResults;
-        next.userProjects = resultArray(userProjectsRes, 'Moje projekty');
-        next.tasks = resultArray(userTasksRes, 'Moje úkoly');
-        next.engineering = resultArray(userActivitiesRes, 'Moje aktivity');
-        next.realizations = resultArray(userRealizationsRes, 'Moje realizace');
+        next.userProjects = resultArray(userProjectsRes, 'Moje projekty', sectionErrors);
+        next.tasks = resultArray(userTasksRes, 'Moje úkoly', sectionErrors);
+        next.engineering = resultArray(userActivitiesRes, 'Moje aktivity', sectionErrors);
+        next.realizations = resultArray(userRealizationsRes, 'Moje realizace', sectionErrors);
       }
 
       if (companyResults) {
@@ -669,13 +718,15 @@ const Dashboard = () => {
           overheadRes,
         ] = companyResults;
 
-        next.projects = resultArray(projectsRes, 'Projekty');
-        next.realizations = resultArray(realizationsRes, 'Realizace');
-        next.tasks = resultArray(tasksRes, 'Úkoly');
-        next.engineering = resultArray(engineeringRes, 'Inženýring');
+        next.projects = resultArray(projectsRes, 'Projekty', sectionErrors);
+        next.realizations = resultArray(realizationsRes, 'Realizace', sectionErrors);
+        next.tasks = resultArray(tasksRes, 'Úkoly', sectionErrors);
+        next.engineering = resultArray(engineeringRes, 'Inženýring', sectionErrors);
 
-        const finance = resultArray(companyFinanceRes, 'Firemní finance')[0] || {};
-        const overhead = resultArray(overheadRes, 'Režie')[0] || {};
+        if (companyFinanceRes.error) throw new Error(`Firemní finance: ${companyFinanceRes.error.message}`);
+        if (overheadRes.error) throw new Error(`Režie: ${overheadRes.error.message}`);
+        const finance = companyFinanceRes.data?.[0] || {};
+        const overhead = overheadRes.data?.[0] || {};
         next.companyFinance = {
           realizedProfit: Math.round(finance.realized_profit || 0),
           potentialProfit: Math.round(finance.potential_profit || 0),
@@ -686,17 +737,42 @@ const Dashboard = () => {
         };
       }
 
+      if (requestId !== dashboardRequestIdRef.current) return;
       setData(next);
+      setLoadError(sectionErrors.join(' · '));
     } catch (error) {
-      setLoadError(error.message || 'Data dashboardu nejsou momentálně dostupná.');
-      toast({ title: 'Dashboard se nepodařilo načíst', description: error.message, variant: 'destructive' });
+      if (requestId !== dashboardRequestIdRef.current) return;
+      if (request.signal.aborted && isRequestAbortError(error)) {
+        setLoadError('Načítání překročilo časový limit. Zkuste přehled obnovit.');
+      } else {
+        setLoadError(error.message || 'Data dashboardu nejsou momentálně dostupná.');
+      }
+      setData((current) => ({
+        ...current,
+        projects: [],
+        realizations: [],
+        payouts: [],
+        opportunities: [],
+        commercialDocuments: [],
+        companyFinance: emptyCompanyFinance,
+      }));
+      if (!isRequestAbortError(error)) {
+        toast({ title: 'Dashboard se nepodařilo načíst', description: error.message, variant: 'destructive' });
+      }
     } finally {
-      setLoading(false);
+      request.dispose();
+      if (requestId === dashboardRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchDashboardData();
+    return () => {
+      dashboardRequestIdRef.current += 1;
+      dashboardAbortRef.current?.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, isSuperUser, memberId, isPrivateMode]);
 
@@ -738,7 +814,6 @@ const Dashboard = () => {
     const wonOpportunities = data.opportunities.filter((opportunity) => String(opportunity.stage || '').toLowerCase() === 'won');
     const wonValue = wonOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
     const pendingApprovals = data.payouts.length + data.attendanceSubmissions.length;
-    const activeProducts = data.products.filter((product) => product.is_active !== false);
 
     return {
       visibleProjects,
@@ -762,7 +837,7 @@ const Dashboard = () => {
       wonOpportunities,
       wonValue,
       pendingApprovals,
-      activeProducts,
+      activeProductCount: data.productCount,
     };
   }, [data, isSuperUser]);
 
@@ -926,7 +1001,7 @@ const Dashboard = () => {
     },
     {
       title: 'Produkty',
-      description: `${summary.activeProducts.length} aktivních položek`,
+      description: `${summary.activeProductCount} aktivních položek`,
       icon: Package,
       to: '/products',
       tone: 'slate',
@@ -1152,9 +1227,9 @@ const Dashboard = () => {
                   />
                 </CardHeader>
                 <CardContent className="p-4">
-                  <React.Suspense fallback={<DashboardModuleFallback />}>
+                  <DashboardLazySection>
                     <ProjectStatusChart projects={summary.visibleProjects} tasks={data.tasks} />
-                  </React.Suspense>
+                  </DashboardLazySection>
                 </CardContent>
               </Card>
 
@@ -1196,15 +1271,15 @@ const Dashboard = () => {
                   />
                 </CardHeader>
                 <CardContent className="p-4">
-                  <React.Suspense fallback={<DashboardModuleFallback />}>
+                  <DashboardLazySection>
                     <PortalStatusChart projects={summary.visibleProjects} engineering={data.engineering} tasks={data.tasks} />
-                  </React.Suspense>
+                  </DashboardLazySection>
                 </CardContent>
               </Card>
 
-              <React.Suspense fallback={<DashboardModuleFallback />}>
+              <DashboardLazySection>
                 <PendingApprovalsWidget payouts={data.payouts} attendance={data.attendanceSubmissions} />
-              </React.Suspense>
+              </DashboardLazySection>
             </div>
           </TabsContent>
 
@@ -1229,9 +1304,9 @@ const Dashboard = () => {
                       </div>
                     </CardContent>
                   </Card>
-                  <React.Suspense fallback={<DashboardModuleFallback />}>
+                  <DashboardLazySection>
                     <PendingApprovalsWidget payouts={data.payouts} attendance={data.attendanceSubmissions} />
-                  </React.Suspense>
+                  </DashboardLazySection>
                 </div>
               ) : (
                 <Card className="crm-panel">
@@ -1257,9 +1332,9 @@ const Dashboard = () => {
                   />
                 </CardHeader>
                 <CardContent className="p-4">
-                  <React.Suspense fallback={<DashboardModuleFallback />}>
+                  <DashboardLazySection>
                     <ProjectGanttChart projects={summary.visibleProjects} zoom={zoom} onZoomChange={setZoom} />
-                  </React.Suspense>
+                  </DashboardLazySection>
                 </CardContent>
               </Card>
 
@@ -1272,9 +1347,9 @@ const Dashboard = () => {
                   />
                 </CardHeader>
                 <CardContent className="p-4">
-                  <React.Suspense fallback={<DashboardModuleFallback />}>
+                  <DashboardLazySection>
                     <RealizationGanttChart realizations={data.realizations} zoom={zoom} onZoomChange={setZoom} />
-                  </React.Suspense>
+                  </DashboardLazySection>
                 </CardContent>
               </Card>
             </div>

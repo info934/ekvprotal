@@ -20,7 +20,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '@/lib/xlsx';
 import EngineeringForm from '@/components/EngineeringForm';
 import EngineeringDetail from '@/components/EngineeringDetail';
 import EngineeringGanttChart from '@/components/EngineeringGanttChart';
@@ -588,7 +588,8 @@ const Engineering = () => {
     setCategoryFilter('all');
   };
 
-  const handleExportDotceny = () => {
+  const handleExportDotceny = async () => {
+    const XLSX = await loadXlsx();
     const dataToExport = activities
       .filter(a => a.category === 'dotceny_stavbou')
       .map(activity => ({
@@ -617,6 +618,7 @@ const Engineering = () => {
   const handleImportDotceny = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
+      const XLSX = await loadXlsx();
       
       const reader = new FileReader();
       reader.onload = async (evt) => {

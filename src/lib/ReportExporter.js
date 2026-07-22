@@ -1,12 +1,14 @@
-import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
-import * as XLSX from "xlsx";
+import { loadXlsx } from '@/lib/xlsx';
 
 export const exportToPDF = async (elementId, title = "Report") => {
   const element = document.getElementById(elementId);
   if (!element) return;
 
   try {
+    const [{ jsPDF }, { default: html2canvas }] = await Promise.all([
+      import('jspdf'),
+      import('html2canvas'),
+    ]);
     const canvas = await html2canvas(element, {
       scale: 2,
       useCORS: true,
@@ -32,8 +34,9 @@ export const exportToPDF = async (elementId, title = "Report") => {
   }
 };
 
-export const exportToExcel = (data, title = "Report") => {
+export const exportToExcel = async (data, title = "Report") => {
   try {
+    const XLSX = await loadXlsx();
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Data");
@@ -44,8 +47,9 @@ export const exportToExcel = (data, title = "Report") => {
   }
 };
 
-export const exportToCSV = (data, title = "Report") => {
+export const exportToCSV = async (data, title = "Report") => {
   try {
+    const XLSX = await loadXlsx();
     const ws = XLSX.utils.json_to_sheet(data);
     const csv = XLSX.utils.sheet_to_csv(ws);
     
@@ -60,6 +64,7 @@ export const exportToCSV = (data, title = "Report") => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   } catch (error) {
     console.error("Export to CSV failed:", error);
     throw new Error("Failed to generate CSV file");

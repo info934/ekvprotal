@@ -19,7 +19,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from '@/lib/utils';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '@/lib/xlsx';
 import PageHeader from '@/components/ui/page-header';
 import { getVatStatusLabel } from '@/lib/ares';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
@@ -594,7 +594,8 @@ const Subjects = () => {
     }
   };
 
-  const exportToXLSX = () => {
+  const exportToXLSX = async () => {
+    const XLSX = await loadXlsx();
     const dataToExport = sortedSubjects.map(s => {
       let row = {};
       const kind = getSubjectKind(s);

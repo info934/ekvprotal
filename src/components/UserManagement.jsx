@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/lib/customSupabaseClient';
+import { invokeWithTimeout } from '@/lib/requestControl';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -88,7 +89,7 @@ const UserManagement = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(false);
 
-  const invokeFunction = useCallback(async (payload) => supabase.functions.invoke('manage-users', { body: payload }), []);
+  const invokeFunction = useCallback(async (payload) => invokeWithTimeout(supabase, 'manage-users', { body: payload }), []);
 
   const fetchMembers = useCallback(async () => {
     const { data, error } = await supabase

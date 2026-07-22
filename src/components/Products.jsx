@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -40,6 +40,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
+import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
 import { formatMoney, formatPercent } from '@/lib/financePresentation';
 import { cn } from '@/lib/utils';
 
@@ -161,23 +162,49 @@ const Products = () => {
   const [movementDialogOpen, setMovementDialogOpen] = useState(false);
   const [movementForm, setMovementForm] = useState(emptyMovement);
   const [page, setPage] = useState(1);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [catalogOverview, setCatalogOverview] = useState(null);
   const pageSize = 100;
+  const deferredSearch = useDeferredValue(search);
+  const fetchRequestRef = useRef({ id: 0, controller: null });
 
   const fetchProducts = useCallback(async () => {
+    fetchRequestRef.current.controller?.abort();
+    const requestId = fetchRequestRef.current.id + 1;
+    const request = createTimedAbortController(20_000);
+    fetchRequestRef.current = { id: requestId, controller: request.controller };
     setLoading(true);
     setSchemaWarning('');
 
     try {
-      let { data: productData, error: productError } = await supabase
+      const useServerPage = brandFilter === 'all' && supplierFilter === 'all' && availabilityFilter === 'all';
+      let productQuery = supabase
         .from('commercial_item_catalog')
-        .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, currency, stock_min_qty, warehouse_location, allow_backorder, valid_from, valid_until, datasheet_external_web_url, datasheet_file_name, datasheet_preview_image_url, image_url, preferred_supplier_offer_id, is_active, archived_at, metadata, created_at, updated_at')
+        .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, currency, stock_min_qty, warehouse_location, allow_backorder, valid_from, valid_until, datasheet_external_web_url, datasheet_file_name, datasheet_preview_image_url, image_url, preferred_supplier_offer_id, is_active, archived_at, metadata, created_at, updated_at', { count: 'exact' })
         .order('name', { ascending: true });
+      if (activeFilter === 'active') productQuery = productQuery.eq('is_active', true).is('archived_at', null);
+      if (activeFilter === 'archived') productQuery = productQuery.or('is_active.eq.false,archived_at.not.is.null');
+      if (typeFilter !== 'all') productQuery = productQuery.eq('product_type', typeFilter);
+      if (categoryFilter !== 'all') productQuery = productQuery.eq('category', categoryFilter);
+      const searchValue = deferredSearch.trim().replace(/[%(),]/g, ' ');
+      if (searchValue) {
+        productQuery = productQuery.or(`sku.ilike.%${searchValue}%,code.ilike.%${searchValue}%,name.ilike.%${searchValue}%,description.ilike.%${searchValue}%,category.ilike.%${searchValue}%`);
+      }
+      productQuery = useServerPage
+        ? productQuery.range((page - 1) * pageSize, page * pageSize - 1)
+        : productQuery.limit(2_000);
+
+      let { data: productData, error: productError, count: productCount } = await productQuery.abortSignal(request.signal);
 
       if (productError) {
-        const fallback = await supabase
+        let fallbackQuery = supabase
           .from('commercial_item_catalog')
-          .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active, metadata, created_at, updated_at')
+          .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active, metadata, created_at, updated_at', { count: 'exact' })
           .order('name', { ascending: true });
+        fallbackQuery = useServerPage
+          ? fallbackQuery.range((page - 1) * pageSize, page * pageSize - 1)
+          : fallbackQuery.limit(2_000);
+        const fallback = await fallbackQuery.abortSignal(request.signal);
 
         if (fallback.error) {
           setProducts([]);
@@ -187,6 +214,7 @@ const Products = () => {
           setSupplierSlugsByProduct({});
           setSupplierSearchByProduct({});
           setProductSchemaReady(false);
+          setCatalogOverview(null);
           setSchemaWarning(fallback.error.message || 'Katalog produktů se nepodařilo načíst.');
           return;
         }
@@ -209,38 +237,57 @@ const Products = () => {
           preferred_supplier_offer_id: null,
           archived_at: null,
         }));
+        productCount = fallback.count;
         setProductSchemaReady(false);
         setSchemaWarning('Online databáze ještě nemá produktovou migraci. Zobrazuji původní katalog bez skladu a rozšířené editace.');
       } else {
         setProductSchemaReady(true);
       }
 
-      const [stockRes, supplierPriceRes, supplierRes, usageRes] = await Promise.all([
-        supabase
+      if (requestId !== fetchRequestRef.current.id) return;
+      setTotalProducts(useServerPage ? Number(productCount || 0) : (productData || []).length);
+      const productIds = (productData || []).map((product) => product.id);
+      const emptyResult = Promise.resolve({ data: [], error: null });
+
+      const [stockRes, supplierPriceRes, supplierRes, usageRes, overviewRes] = await Promise.all([
+        productIds.length ? supabase
           .from('product_stock_status')
-          .select('catalog_item_id, stock_qty, reserved_qty, available_qty'),
-        supabase
+          .select('catalog_item_id, stock_qty, reserved_qty, available_qty')
+          .in('catalog_item_id', productIds)
+          .abortSignal(request.signal) : emptyResult,
+        productIds.length ? supabase
           .from('product_supplier_current_prices')
           .select('catalog_item_id, supplier_offer_id, supplier_name, supplier_slug, supplier_sku, supplier_product_url, price_without_vat, currency, availability_note, scraped_at, price_change_amount, price_change_percent, supplier_offer_count, price_rank')
-          .order('price_rank', { ascending: true }),
+          .in('catalog_item_id', productIds)
+          .order('price_rank', { ascending: true })
+          .abortSignal(request.signal) : emptyResult,
         supabase
           .from('product_suppliers')
           .select('slug, name, is_active')
           .eq('is_active', true)
-          .order('name', { ascending: true }),
-        supabase
+          .order('name', { ascending: true })
+          .abortSignal(request.signal),
+        productIds.length ? supabase
           .from('product_usage_stats')
-          .select('catalog_item_id, total_usage_count, last_used_at'),
+          .select('catalog_item_id, total_usage_count, last_used_at')
+          .in('catalog_item_id', productIds)
+          .abortSignal(request.signal) : emptyResult,
+        supabase
+          .rpc('get_product_catalog_overview')
+          .abortSignal(request.signal),
       ]);
+      if (requestId !== fetchRequestRef.current.id) return;
 
       const warnings = [];
       if (stockRes.error) warnings.push('Skladovy prehled zatim neni dostupny.');
       if (supplierPriceRes.error) warnings.push('Dodavatelske ceny zatim nejsou dostupne.');
       if (supplierRes.error) warnings.push('Dodavatele zatim nejsou dostupni.');
       if (usageRes.error) warnings.push('Statistika pouziti produktu zatim neni dostupna.');
+      if (overviewRes.error) warnings.push('Souhrn katalogu zatim neni dostupny.');
       if (warnings.length) setSchemaWarning(warnings.join(' '));
 
       setSuppliers(supplierRes.error ? [] : (supplierRes.data || []));
+      setCatalogOverview(overviewRes.error ? null : overviewRes.data);
 
       if (supplierPriceRes.error) {
         setSupplierPricesByProduct({});
@@ -288,6 +335,7 @@ const Products = () => {
         [row.catalog_item_id]: row,
       }), {}));
     } catch (error) {
+      if (requestId !== fetchRequestRef.current.id) return;
       console.error('Product catalog failed to load:', error);
       setProducts([]);
       setStockByProduct({});
@@ -296,11 +344,14 @@ const Products = () => {
       setSupplierSlugsByProduct({});
       setSupplierSearchByProduct({});
       setProductSchemaReady(false);
-      setSchemaWarning(error?.message || 'Katalog produktů se nepodařilo načíst.');
+      setTotalProducts(0);
+      setCatalogOverview(null);
+      setSchemaWarning(isRequestAbortError(error) ? 'Načítání katalogu překročilo časový limit.' : error?.message || 'Katalog produktů se nepodařilo načíst.');
     } finally {
-      setLoading(false);
+      request.dispose();
+      if (requestId === fetchRequestRef.current.id) setLoading(false);
     }
-  }, []);
+  }, [activeFilter, availabilityFilter, brandFilter, categoryFilter, deferredSearch, page, supplierFilter, typeFilter]);
 
   const fetchMatchSuggestions = useCallback(async () => {
     const { data, error } = await supabase
@@ -321,6 +372,7 @@ const Products = () => {
   useEffect(() => {
     fetchProducts();
     fetchMatchSuggestions();
+    return () => fetchRequestRef.current.controller?.abort();
   }, [fetchMatchSuggestions, fetchProducts]);
 
   const generateMatchSuggestions = async () => {
@@ -376,13 +428,24 @@ const Products = () => {
     await Promise.all([fetchProducts(), fetchMatchSuggestions()]);
   };
 
-  const categories = useMemo(() => Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'cs')), [products]);
+  const categories = useMemo(() => {
+    const values = catalogOverview?.categories?.length
+      ? catalogOverview.categories
+      : products.map((product) => product.category).filter(Boolean);
+    return Array.from(new Set(values)).sort((a, b) => String(a).localeCompare(String(b), 'cs'));
+  }, [catalogOverview, products]);
   const brands = useMemo(() => (
-    Array.from(new Set(products.map(getProductBrand).filter(Boolean)))
+    Array.from(new Set([
+      ...(catalogOverview?.brands || []),
+      ...products.map(getProductBrand).filter(Boolean),
+    ]))
       .sort((a, b) => String(a).localeCompare(String(b), 'cs'))
-  ), [products]);
+  ), [catalogOverview, products]);
 
   const stats = useMemo(() => {
+    if (catalogOverview?.stats) {
+      return Object.fromEntries(Object.entries(catalogOverview.stats).map(([key, value]) => [key, Number(value || 0)]));
+    }
     return products.reduce((acc, product) => {
       const stock = stockByProduct[product.id];
       const available = Number(stock?.available_qty || 0);
@@ -400,7 +463,7 @@ const Products = () => {
         trackedPrices: acc.trackedPrices + (supplierPricesByProduct[product.id]?.price_without_vat ? 1 : 0),
       };
     }, { total: 0, active: 0, manufactured: 0, lowStock: 0, saleValue: 0, marginValue: 0, trackedPrices: 0 });
-  }, [products, stockByProduct, supplierPricesByProduct]);
+  }, [catalogOverview, products, stockByProduct, supplierPricesByProduct]);
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -439,10 +502,11 @@ const Products = () => {
     });
   }, [activeFilter, availabilityFilter, brandFilter, categoryFilter, products, search, stockByProduct, supplierFilter, supplierSearchByProduct, supplierSlugsByProduct, typeFilter]);
 
-  const pageCount = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const usesServerPage = brandFilter === 'all' && supplierFilter === 'all' && availabilityFilter === 'all';
+  const pageCount = Math.max(1, Math.ceil((usesServerPage ? totalProducts : filteredProducts.length) / pageSize));
   const pagedProducts = useMemo(
-    () => filteredProducts.slice((page - 1) * pageSize, page * pageSize),
-    [filteredProducts, page]
+    () => usesServerPage ? filteredProducts : filteredProducts.slice((page - 1) * pageSize, page * pageSize),
+    [filteredProducts, page, usesServerPage]
   );
 
   useEffect(() => {
@@ -923,7 +987,7 @@ const Products = () => {
             </div>
             <div className="flex flex-col gap-3 border-t bg-slate-50 px-3 py-2 text-xs text-muted-foreground lg:flex-row lg:items-center lg:justify-between">
               <span>
-                Zobrazeno {filteredProducts.length ? (page - 1) * pageSize + 1 : 0}–{Math.min(page * pageSize, filteredProducts.length)} z {filteredProducts.length} filtrovaných produktů ({products.length} celkem)
+                Zobrazeno {filteredProducts.length ? (page - 1) * pageSize + 1 : 0}–{usesServerPage ? Math.min(page * pageSize, totalProducts) : Math.min(page * pageSize, filteredProducts.length)} z {usesServerPage ? totalProducts : filteredProducts.length} produktů
               </span>
               <div className="flex flex-wrap items-center gap-2">
                 <span>Prodejní ceny jsou snapshotovány do OP/NAB/OBJ při vložení položky.</span>

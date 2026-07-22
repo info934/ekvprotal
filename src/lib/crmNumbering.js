@@ -46,10 +46,11 @@ export const formatCrmNumber = (settings, type, sequence = null, date = new Date
   return [config.prefix, year, next].filter(Boolean).join('-');
 };
 
-export const selectCrmNumberingSettings = async (supabase) => {
-  const baseQuery = supabase
+export const selectCrmNumberingSettings = async (supabase, signal = null) => {
+  let baseQuery = supabase
     .from('crm_numbering_settings')
     .select('document_type, prefix, next_number, padding');
+  if (signal) baseQuery = baseQuery.abortSignal(signal);
 
   const baseResult = await baseQuery;
   if (baseResult.error) return baseResult;

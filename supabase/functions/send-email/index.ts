@@ -1,6 +1,7 @@
 
 import { corsHeaders } from './cors.ts';
 import { authorizeFunctionRequest } from '../_shared/authorize.ts';
+import { fetchWithTimeout } from '../_shared/fetch.ts';
 
 // @ts-ignore
 Deno.serve(async (req: Request) => {
@@ -22,7 +23,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const res = await fetch('https://api.resend.com/emails', {
+    const res = await fetchWithTimeout('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

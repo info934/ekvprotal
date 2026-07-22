@@ -1,8 +1,9 @@
 import { supabase } from '@/lib/customSupabaseClient';
+import { invokeWithTimeout } from '@/lib/requestControl';
 import { templates } from './payoutEmailTemplates';
 
 const invokeEmailFunction = async (functionName, body) => {
-  const { data, error } = await supabase.functions.invoke(functionName, { body });
+  const { data, error } = await invokeWithTimeout(supabase, functionName, { body });
   if (error) throw error;
   if (data?.success === false) throw new Error(data.error || `Edge funkce ${functionName} vratila chybu.`);
   return data;

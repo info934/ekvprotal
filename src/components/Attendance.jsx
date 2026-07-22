@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import GlobalAttendanceOptimized from '@/components/GlobalAttendanceOptimized';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '@/lib/xlsx';
 import YearlyAttendanceSummary from '@/components/YearlyAttendanceSummary';
 import AttendanceSubmissionsOptimized from '@/components/AttendanceSubmissionsOptimized';
 import AttendanceReporting from '@/components/AttendanceReporting';
@@ -276,7 +276,8 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
     setIsAttendanceDialogOpen(true);
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    const XLSX = await loadXlsx();
     const totalHours = attendance.reduce((sum, record) => sum + Number(record.hours), 0);
 
     const exportData = attendance.map(record => ({

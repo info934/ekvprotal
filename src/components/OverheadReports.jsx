@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Bar, BarChart as RechartsBarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '@/lib/xlsx';
 import PageHeader from '@/components/ui/page-header';
 import { DataVizCard, DATAVIZ_COLORS, DataVizEmptyState, formatVizCurrency, VizTooltip } from '@/components/ui/data-viz';
 import { FinanceAmount, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
@@ -130,7 +130,8 @@ const OverheadReports = () => {
     variable: sum.variable + item.variable,
   }), { total: 0, regular: 0, variable: 0 }), [reportData.byProject]);
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    const XLSX = await loadXlsx();
     const ws = XLSX.utils.json_to_sheet(
       reportData.byProject.map((project) => ({
         'Kód projektu': project.code,

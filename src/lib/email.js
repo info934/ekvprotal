@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/customSupabaseClient';
+import { invokeWithTimeout } from '@/lib/requestControl';
 import { sendPayoutNotification, sendAdminPayoutNotification } from './payoutEmailService';
 
 /**
@@ -41,7 +42,7 @@ export const sendEmail = async (emailDetails) => {
   const htmlContent = createEmailTemplate(subject, greeting, content, cta, salutation);
 
   try {
-    const { data, error } = await supabase.functions.invoke('send-email', {
+    const { data, error } = await invokeWithTimeout(supabase, 'send-email', {
       body: { to, subject, htmlContent, attachments },
     });
     if (error) throw new Error('Failed to send email via Supabase function.');

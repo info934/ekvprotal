@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '@/lib/customSupabaseClient';
+import { invokeWithTimeout } from '@/lib/requestControl';
 import { 
   sendPayoutCreatedEmail, 
   sendPayoutApprovedEmail, 
@@ -173,7 +174,7 @@ export const verifyEmailConfig = async () => {
   
   // Test edge function access
   try {
-    const { error } = await supabase.functions.invoke('send-payout-notification', {
+    const { error } = await invokeWithTimeout(supabase, 'send-payout-notification', {
       body: { test: true }
     });
     checks.edgeFunctionAccess = !error;

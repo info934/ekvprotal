@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
+import { invokeWithTimeout } from '@/lib/requestControl';
 
 const SETTING_KEYS = [
   'accounting_email',
@@ -109,22 +110,27 @@ const SettingsPortal = () => {
       return;
     }
     setTestingCalendar(true);
-    const { data, error } = await supabase.functions.invoke('planning-calendar', {
-      body: {
-        action: 'testConnection',
-        mailbox: calendarMailbox.trim().toLowerCase(),
-        calendarId: calendarId.trim() || null,
-      },
-    });
-    setTestingCalendar(false);
-    if (error || !data?.success) {
-      toast({ title: 'Kalendář se nepodařilo ověřit', description: data?.error || error?.message, variant: 'destructive' });
-      return;
+    try {
+      const { data, error } = await invokeWithTimeout(supabase, 'planning-calendar', {
+        body: {
+          action: 'testConnection',
+          mailbox: calendarMailbox.trim().toLowerCase(),
+          calendarId: calendarId.trim() || null,
+        },
+      });
+      if (error || !data?.success) {
+        toast({ title: 'Kalendář se nepodařilo ověřit', description: data?.error || error?.message, variant: 'destructive' });
+        return;
+      }
+      toast({
+        title: 'Microsoft 365 kalendář je dostupný',
+        description: `${data.calendar?.name || calendarName} · ${data.mailbox}`,
+      });
+    } catch (error) {
+      toast({ title: 'Kalendář se nepodařilo ověřit', description: error.message, variant: 'destructive' });
+    } finally {
+      setTestingCalendar(false);
     }
-    toast({
-      title: 'Microsoft 365 kalendář je dostupný',
-      description: `${data.calendar?.name || calendarName} · ${data.mailbox}`,
-    });
   };
 
   return (

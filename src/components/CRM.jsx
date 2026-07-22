@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -55,6 +55,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/components/ui/managed-table';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
+import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
 import { allocateCrmNumber, DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
 import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef } from '@/lib/crmRoutes';
 import {
@@ -268,31 +269,42 @@ const DealWorkspace = ({
   updatingOpportunity,
 }) => {
   const [catalogProducts, setCatalogProducts] = useState([]);
-  const [catalogQuery, setCatalogQuery] = useState('');
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
 
   useEffect(() => {
+    if (!catalogPickerOpen || catalogProducts.length) return undefined;
     let active = true;
+    const request = createTimedAbortController(20_000);
 
     const fetchCatalogProducts = async () => {
       setCatalogLoading(true);
-      const [catalogRes, stockRes, usageRes] = await Promise.all([
-        supabase
+      try {
+        const catalogRes = await supabase
           .from('commercial_item_catalog')
           .select('id, code, sku, name, description, category, unit, default_unit_price, default_vat_rate, purchase_price, preferred_supplier_offer_id, product_type, is_active, metadata')
           .eq('is_active', true)
-          .order('name', { ascending: true }),
-        supabase
+          .order('name', { ascending: true })
+          .limit(1_000)
+          .abortSignal(request.signal);
+        if (catalogRes.error) throw catalogRes.error;
+        const productIds = (catalogRes.data || []).map((product) => product.id);
+        const emptyResult = Promise.resolve({ data: [], error: null });
+        const [stockRes, usageRes] = await Promise.all([
+          productIds.length ? supabase
           .from('product_stock_status')
-          .select('catalog_item_id, available_qty'),
-        supabase
+          .select('catalog_item_id, available_qty')
+          .in('catalog_item_id', productIds)
+          .abortSignal(request.signal) : emptyResult,
+          productIds.length ? supabase
           .from('product_usage_stats')
-          .select('catalog_item_id, total_usage_count, last_used_at'),
-      ]);
+          .select('catalog_item_id, total_usage_count, last_used_at')
+          .in('catalog_item_id', productIds)
+          .abortSignal(request.signal) : emptyResult,
+        ]);
 
-      if (active && !catalogRes.error) {
+        if (!active) return;
         const stockByProductId = new Map((stockRes.data || []).map((row) => [row.catalog_item_id, row]));
         const usageByProductId = new Map((usageRes.data || []).map((row) => [row.catalog_item_id, row]));
         setCatalogProducts((catalogRes.data || []).map((product) => {
@@ -304,9 +316,14 @@ const DealWorkspace = ({
             last_used_at: usage.last_used_at || null,
           };
         }));
-      }
-      if (active) {
-        setCatalogLoading(false);
+      } catch (error) {
+        if (active && !isRequestAbortError(error)) {
+          console.error('CRM product catalog failed to load:', error);
+          setCatalogProducts([]);
+        }
+      } finally {
+        request.dispose();
+        if (active) setCatalogLoading(false);
       }
     };
 
@@ -314,8 +331,10 @@ const DealWorkspace = ({
 
     return () => {
       active = false;
+      request.controller.abort();
+      request.dispose();
     };
-  }, []);
+  }, [catalogPickerOpen, catalogProducts.length]);
 
   if (!opportunity) {
     return (
@@ -452,7 +471,6 @@ const DealWorkspace = ({
       id: `new-${timestamp}-${index}-${product.id || product.code}`,
     }));
     onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, ...nextItems]);
-    setCatalogQuery('');
   };
   return (
     <div className="space-y-5">
@@ -1670,6 +1688,8 @@ const CRM = () => {
   const [lossReason, setLossReason] = useState('');
   const [opportunityLifecycleAction, setOpportunityLifecycleAction] = useState(null);
   const [opportunityLifecycleReason, setOpportunityLifecycleReason] = useState('');
+  const crmRequestIdRef = useRef(0);
+  const crmAbortRef = useRef(null);
 
   const canEditCrm = hasPermission('crm', 'can_edit');
   const canAdminCrm = hasPermission('crm', 'can_admin');
@@ -1694,9 +1714,38 @@ const CRM = () => {
   }, [isCreatingOpportunityPage]);
 
   const fetchCrmData = useCallback(async () => {
+    crmAbortRef.current?.abort();
+    const requestId = ++crmRequestIdRef.current;
+    const request = createTimedAbortController(20_000);
+    crmAbortRef.current = request.controller;
     setLoading(true);
 
-    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, notesRes, commercialDocumentsRes, stagesRes, prioritiesRes, templatesRes, numberingRes, productsRes, stockRes] = await Promise.all([
+    try {
+    const opportunityItemsSelect = isOpportunityDetailPage
+      ? ', items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)'
+      : '';
+    const documentItemsSelect = isOpportunityDetailPage
+      ? ', items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)'
+      : '';
+
+    let opportunitiesQuery = supabase
+      .from('crm_opportunities')
+      .select(`id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name)${opportunityItemsSelect}`)
+      .is('deleted_at', null)
+      .order('updated_at', { ascending: false });
+    opportunitiesQuery = isOpportunityDetailPage
+      ? opportunitiesQuery.or(`id.eq.${opportunityId},number.eq.${opportunityId}`).limit(1)
+      : opportunitiesQuery.limit(500);
+
+    const commercialDocumentsQuery = supabase
+      .from('crm_commercial_documents')
+      .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, cancelled_at, cancelled_reason, deleted_at, deleted_reason${isOpportunityDetailPage ? '' : documentItemsSelect}`)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(isOpportunityDetailPage ? 0 : 500);
+
+    const withSignal = (query) => typeof query?.abortSignal === 'function' ? query.abortSignal(request.signal) : query;
+    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, notesRes, initialCommercialDocumentsRes, stagesRes, prioritiesRes, templatesRes, numberingRes, productsRes, stockRes] = await Promise.all([
       supabase
         .from('subjects')
         .select('id, name, ico, email, phone, contact_person, created_at, subject_types(name)')
@@ -1711,11 +1760,7 @@ const CRM = () => {
         .select('id, name, role, email, phone, project_id, projects(id, name, code)')
         .order('name', { ascending: true })
         .limit(60),
-      supabase
-        .from('crm_opportunities')
-        .select('id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name), items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
-        .is('deleted_at', null)
-        .order('updated_at', { ascending: false }),
+      opportunitiesQuery,
       supabase
         .from('crm_activities')
         .select('id, opportunity_id, title, type, status, due_at, completed_at, subject:subject_id(id, name), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
@@ -1726,11 +1771,7 @@ const CRM = () => {
         .select('id, opportunity_id, subject_id, body, created_at, author:author_member_id(id, name)')
         .order('created_at', { ascending: false })
         .limit(100),
-      supabase
-        .from('crm_commercial_documents')
-        .select('id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, cancelled_at, cancelled_reason, deleted_at, deleted_reason, items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false }),
+      commercialDocumentsQuery,
       supabase
         .from('crm_stage_definitions')
         .select('value, label, color, probability, sort_order, is_active, is_closed')
@@ -1745,7 +1786,7 @@ const CRM = () => {
         .from('order_templates')
         .select('id, name, description, content, created_at')
         .order('created_at', { ascending: false }),
-      selectCrmNumberingSettings(supabase),
+      selectCrmNumberingSettings(supabase, request.signal),
       supabase
         .from('commercial_item_catalog')
         .select('id, product_type, is_active, archived_at, stock_min_qty')
@@ -1753,7 +1794,21 @@ const CRM = () => {
       supabase
         .from('product_stock_status')
         .select('catalog_item_id, available_qty'),
-    ]);
+    ].map(withSignal));
+
+    let commercialDocumentsRes = initialCommercialDocumentsRes;
+    const loadedOpportunityId = opportunitiesRes.data?.[0]?.id;
+    if (isOpportunityDetailPage && loadedOpportunityId && !opportunitiesRes.error) {
+      commercialDocumentsRes = await supabase
+        .from('crm_commercial_documents')
+        .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, cancelled_at, cancelled_reason, deleted_at, deleted_reason${documentItemsSelect}`)
+        .eq('opportunity_id', loadedOpportunityId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .abortSignal(request.signal);
+    }
+
+    if (requestId !== crmRequestIdRef.current) return;
 
     const coreError = subjectsRes.error || projectsRes.error || contactsRes.error;
     if (coreError) {
@@ -1778,6 +1833,10 @@ const CRM = () => {
         setCommercialDocuments([]);
       } else {
         setCrmTablesReady(true);
+        setOpportunities([]);
+        setActivities([]);
+        setCrmNotes([]);
+        setCommercialDocuments([]);
         toast({
           title: 'Pipeline CRM se nepodařilo načíst',
           description: crmError.message,
@@ -1796,9 +1855,15 @@ const CRM = () => {
       setActivities(activitiesRes.data || []);
       setCrmNotes(notesRes.error ? [] : (notesRes.data || []));
 
-      const extendedRes = await supabase
-        .from('crm_opportunities')
-        .select('id, category, business_type, currency, version_no, classification_1, classification_2, classification_3, tags, confirmation_status, confirmed_at, confirmed_by, custom_fields');
+      const opportunityIds = (opportunitiesRes.data || []).map((row) => row.id);
+      const extendedRes = opportunityIds.length
+        ? await supabase
+          .from('crm_opportunities')
+          .select('id, category, business_type, currency, version_no, classification_1, classification_2, classification_3, tags, confirmation_status, confirmed_at, confirmed_by, custom_fields')
+          .in('id', opportunityIds)
+          .abortSignal(request.signal)
+        : { data: [], error: null };
+      if (requestId !== crmRequestIdRef.current) return;
       if (!extendedRes.error) {
         const extendedById = new Map((extendedRes.data || []).map((row) => [row.id, row]));
         setOpportunities((current) => current.map((opportunity) => ({ ...opportunity, ...(extendedById.get(opportunity.id) || {}) })));
@@ -1808,7 +1873,9 @@ const CRM = () => {
         .from('crm_custom_field_sections')
         .select('id, business_type, title, description, sort_order, is_active, fields:crm_custom_field_definitions(id, field_key, label, field_type, template_key, options, placeholder, is_required, is_active, sort_order)')
         .eq('is_active', true)
-        .order('sort_order', { ascending: true });
+        .order('sort_order', { ascending: true })
+        .abortSignal(request.signal);
+      if (requestId !== crmRequestIdRef.current) return;
       if (!customFieldsRes.error) {
         setCustomFieldSections((customFieldsRes.data || []).map((section) => ({
           ...section,
@@ -1855,11 +1922,34 @@ const CRM = () => {
       setProductSummary(summary);
     }
 
-    setLoading(false);
-  }, [toast]);
+    } catch (error) {
+      if (requestId === crmRequestIdRef.current) {
+        setOpportunities([]);
+        setActivities([]);
+        setCrmNotes([]);
+        setCommercialDocuments([]);
+        toast({
+          title: 'CRM data se nepodařilo načíst',
+          description: isRequestAbortError(error)
+            ? 'Načítání překročilo časový limit. Zkuste stránku obnovit.'
+            : error?.message || 'Při načítání CRM došlo k neočekávané chybě.',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      request.dispose();
+      if (requestId === crmRequestIdRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [isOpportunityDetailPage, toast]);
 
   useEffect(() => {
     fetchCrmData();
+    return () => {
+      crmRequestIdRef.current += 1;
+      crmAbortRef.current?.abort();
+    };
   }, [fetchCrmData]);
 
   const metrics = useMemo(() => {

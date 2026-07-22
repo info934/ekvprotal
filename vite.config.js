@@ -318,36 +318,8 @@ export default defineConfig({
 						return 'vendor-supabase';
 					}
 
-					if (moduleId.includes('/node_modules/docx/')) {
-						return 'vendor-docx';
-					}
-
-					if (
-						moduleId.includes('/node_modules/jspdf/') ||
-						moduleId.includes('/node_modules/html2canvas/')
-					) {
-						return 'vendor-pdf';
-					}
-
-					if (moduleId.includes('/node_modules/dhtmlx-gantt/')) {
-						return 'vendor-gantt';
-					}
-
-					if (
-						moduleId.includes('/node_modules/recharts/') ||
-						moduleId.includes('/node_modules/d3-')
-					) {
-						return 'vendor-charts';
-					}
-
-					if (
-						moduleId.includes('/node_modules/@radix-ui/') ||
-						moduleId.includes('/node_modules/lucide-react/') ||
-						moduleId.includes('/node_modules/framer-motion/')
-					) {
-						return 'vendor-ui';
-					}
-
+					// Keep feature libraries on Rollup's natural async boundaries. Grouping
+					// PDF, DOCX, charts, Gantt or XLSX can promote lazy chunks into entry.
 					return undefined;
 				},
 			},

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/customSupabaseClient';
+import { invokeWithTimeout } from '@/lib/requestControl';
 
 const throwIfError = (result) => {
   if (result.error) throw result.error;
@@ -168,7 +169,7 @@ export const updatePlanningItemDates = async (id, values) => {
 };
 
 const invokePlanningCalendar = async (action, itemId) => {
-  const { data, error } = await supabase.functions.invoke('planning-calendar', {
+  const { data, error } = await invokeWithTimeout(supabase, 'planning-calendar', {
     body: { action, itemId },
   });
   if (error) throw error;

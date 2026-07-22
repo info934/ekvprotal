@@ -1,6 +1,7 @@
 
 import { corsHeaders } from "./cors.ts";
 import { authorizeFunctionRequest } from "../_shared/authorize.ts";
+import { fetchWithTimeout } from "../_shared/fetch.ts";
 
 /**
  * UNIVERSAL PAYOUT EMAIL NOTIFICATION EDGE FUNCTION
@@ -49,7 +50,7 @@ Deno.serve(async (req) => {
     }
 
     // Send email via Resend
-    const resendResponse = await fetch('https://api.resend.com/emails', {
+    const resendResponse = await fetchWithTimeout('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

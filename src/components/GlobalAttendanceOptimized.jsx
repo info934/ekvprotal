@@ -15,7 +15,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, subMonths } from 'date-fns';
 import { cs } from 'date-fns/locale';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '@/lib/xlsx';
 import AttendanceDialog from './AttendanceDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -263,7 +263,8 @@ const GlobalAttendanceOptimized = () => {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    const XLSX = await loadXlsx();
     const dataToExport = filteredRecords.map(r => ({
       Datum: format(parseISO(r.date), 'd.M.yyyy'),
       Zaměstnanec: r.members?.name,

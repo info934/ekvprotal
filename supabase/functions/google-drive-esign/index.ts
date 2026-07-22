@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { corsHeaders } from '../_shared/cors.ts';
+import { fetchWithTimeout } from '../_shared/fetch.ts';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -93,7 +94,7 @@ const authenticateAdmin = async (req: Request) => {
 };
 
 const exchangeCode = async (code: string) => {
-  const response = await fetch(GOOGLE_TOKEN_URL, {
+  const response = await fetchWithTimeout(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -110,7 +111,7 @@ const exchangeCode = async (code: string) => {
 };
 
 const refreshAccessToken = async (refreshToken: string) => {
-  const response = await fetch(GOOGLE_TOKEN_URL, {
+  const response = await fetchWithTimeout(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -173,7 +174,7 @@ const activeAccessToken = async (db: ReturnType<typeof serviceClient>, userId: s
 };
 
 const driveRequest = async (token: string, path: string, init: RequestInit = {}) => {
-  const response = await fetch(path.startsWith('http') ? path : `${DRIVE_API}${path}`, {
+  const response = await fetchWithTimeout(path.startsWith('http') ? path : `${DRIVE_API}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, ...(init.headers || {}) },
   });
@@ -226,7 +227,7 @@ const callback = async (url: URL) => {
   if (!oauthState) return Response.redirect(`${fallback}?googleDrive=invalid_state`, 302);
   try {
     const tokens = await exchangeCode(code);
-    const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+    const profileResponse = await fetchWithTimeout('https://openidconnect.googleapis.com/v1/userinfo', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     const profile = profileResponse.ok ? await profileResponse.json() : {};

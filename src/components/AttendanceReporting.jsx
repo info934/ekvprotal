@@ -29,7 +29,7 @@ import {
   FileText
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '@/lib/xlsx';
 import { useToast } from '@/components/ui/use-toast';
 import {
   AlertDialog,
@@ -304,7 +304,7 @@ const AttendanceReporting = () => {
     ));
   };
 
-  const buildWorkbook = () => {
+  const buildWorkbook = (XLSX) => {
     const monthLabel = format(currentMonth, 'LLLL yyyy', { locale: cs });
     const workbook = XLSX.utils.book_new();
 
@@ -402,9 +402,10 @@ const AttendanceReporting = () => {
     return workbook;
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    const XLSX = await loadXlsx();
     const fileName = `Reporting_Dochazka_${format(currentMonth, 'MM-yyyy')}.xlsx`;
-    XLSX.writeFile(buildWorkbook(), fileName);
+    XLSX.writeFile(buildWorkbook(XLSX), fileName);
   };
 
   const buildEmailContent = (monthStr) => {
@@ -511,9 +512,10 @@ const AttendanceReporting = () => {
     setSendingEmail(true);
 
     try {
+      const XLSX = await loadXlsx();
       const monthStr = format(currentMonth, 'LLLL yyyy', { locale: cs });
       const fileName = `Reporting_Dochazka_${format(currentMonth, 'MM-yyyy')}.xlsx`;
-      const wbBase64 = XLSX.write(buildWorkbook(), { bookType: 'xlsx', type: 'base64' });
+      const wbBase64 = XLSX.write(buildWorkbook(XLSX), { bookType: 'xlsx', type: 'base64' });
 
       const recipients = parseRecipients(emailToSend);
       for (const recipient of recipients) {

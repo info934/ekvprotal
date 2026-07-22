@@ -19,6 +19,9 @@ const ensureDocxModule = async () => {
   if (!docxModulePromise) {
     docxModulePromise = import('docx').then((module) => {
       ({ AlignmentType, BorderStyle, Document, HeadingLevel, ImageRun, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } = module);
+    }).catch((error) => {
+      docxModulePromise = null;
+      throw error;
     });
   }
   await docxModulePromise;
