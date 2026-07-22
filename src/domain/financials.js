@@ -218,6 +218,24 @@ export const calculateMemberRewardAfterLabor = ({ grossReward = 0, assignedCosts
   };
 };
 
+export const calculateRewardAvailability = ({
+  grossReward = 0,
+  assignedCosts = 0,
+  sponsoredLaborCosts = 0,
+  reservedAmount = 0,
+  paidAmount = 0,
+} = {}) => {
+  const reward = calculateMemberRewardAfterLabor({ grossReward, assignedCosts, sponsoredLaborCosts });
+  const reserved = Math.max(0, toAmount(reservedAmount));
+  const paid = Math.max(0, toAmount(paidAmount));
+  return {
+    ...reward,
+    reservedAmount: reserved,
+    paidAmount: paid,
+    availableReward: Math.max(0, reward.netReward - reserved - paid),
+  };
+};
+
 export const assessFinancialHealth = ({
   baseAmount = 0,
   remainingAmount = 0,

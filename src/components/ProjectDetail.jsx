@@ -129,6 +129,7 @@ const ProjectDetail = () => {
     const [payoutItems, setPayoutItems] = useState([]);
     const [projectFinancialSummary, setProjectFinancialSummary] = useState(null);
     const [projectLaborSummary, setProjectLaborSummary] = useState(null);
+    const [financeLoadError, setFinanceLoadError] = useState(null);
     const [projectLinks, setProjectLinks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [briefContent, setBriefContent] = useState('');
@@ -196,6 +197,7 @@ const ProjectDetail = () => {
 
     const refreshData = useCallback(async () => {
         setLoading(true);
+        setFinanceLoadError(null);
         try {
             const { data: projectData, error: projectError } = await supabase.rpc('get_project_safe', {
                 p_project_id: projectId,
@@ -235,13 +237,15 @@ const ProjectDetail = () => {
             setOverheadCosts(overheadCostsRes.data || []);
             setPayoutItems(payoutItemsRes.data || []);
             if (financialSummaryRes.error) {
-                console.warn('project_financial_summary failed, using local fallback:', financialSummaryRes.error.message);
+                console.error('project_financial_summary failed:', financialSummaryRes.error.message);
+                setFinanceLoadError(financialSummaryRes.error.message);
                 setProjectFinancialSummary(null);
             } else {
                 setProjectFinancialSummary(financialSummaryRes.data || null);
             }
             if (laborSummaryRes.error) {
-                console.warn('project_labor_financial_summary failed, using legacy labor model:', laborSummaryRes.error.message);
+                console.error('project_labor_financial_summary failed:', laborSummaryRes.error.message);
+                setFinanceLoadError((current) => current || laborSummaryRes.error.message);
                 setProjectLaborSummary(null);
             } else {
                 setProjectLaborSummary(laborSummaryRes.data || null);
@@ -285,9 +289,12 @@ const ProjectDetail = () => {
             overheadCosts,
             paidOutAmount,
         });
+        const isCanonicalModel = Number(sourceSummary?.financial_model_version || 0) >= 2;
         const rewardBaseBudget = sourceSummary
-            ? toAmount(sourceSummary.team_budget_after_paid_payouts ?? sourceSummary.remaining_after_costs ?? sourceSummary.team_budget)
-                + (projectLaborSummary ? toAmount(sourceSummary.paid_hourly_payouts) - toAmount(projectLaborSummary.direct_project_cost) : 0)
+            ? isCanonicalModel
+                ? toAmount(sourceSummary.cost_adjusted_team_budget ?? sourceSummary.remaining_after_costs)
+                : toAmount(sourceSummary.team_budget_after_paid_payouts ?? sourceSummary.remaining_after_costs ?? sourceSummary.team_budget)
+                  + (projectLaborSummary ? toAmount(sourceSummary.paid_hourly_payouts) - toAmount(projectLaborSummary.direct_project_cost) : 0)
             : toAmount(fallbackFinancials.remainingAfterCosts) - toAmount(paidOutAmount);
 
         return (sourceMembers || []).map((assignment) => {
@@ -310,17 +317,18 @@ const ProjectDetail = () => {
 
     const fetchBackendRewardSnapshot = useCallback(async () => {
         if (!canViewFinance) return [];
-        const { data, error } = await supabase.rpc('get_member_project_rewards', { p_member_id: null });
+        const { data, error } = await supabase.rpc('project_financial_summary', { p_project_id: projectId });
         if (error) throw error;
-        const rows = (Array.isArray(data) ? data : []).filter((row) => String(row.project_id) === String(projectId));
+        const rows = Array.isArray(data?.member_rewards) ? data.member_rewards : [];
         return rows.map((row) => ({
                 member_id: row.member_id,
                 member_name: members.find((assignment) => String(assignment.member_id) === String(row.member_id))?.member?.name || row.member_id,
                 reward_type: row.reward_type,
                 reward_percentage: toAmount(row.reward_percentage),
-                reward_fixed_amount: toAmount(row.reward_fixed_amount),
-                gross_reward: toAmount(row.total_reward),
-                assigned_costs: 0,
+                reward_fixed_amount: toAmount(row.reward_amount),
+                gross_reward: toAmount(row.gross_reward),
+                assigned_costs: toAmount(row.assigned_costs),
+                sponsored_labor_costs: toAmount(row.sponsored_labor_costs),
                 total_reward: toAmount(row.total_reward),
             }));
     }, [canViewFinance, members, projectId]);
@@ -328,13 +336,7 @@ const ProjectDetail = () => {
     const logRewardSnapshot = useCallback(async ({ action, table, itemId, before }) => {
         if (!canViewFinance || !project) return;
         try {
-            let after = [];
-            try {
-                after = await fetchBackendRewardSnapshot();
-            } catch (error) {
-                console.warn('Backend reward snapshot failed, using current frontend snapshot:', error.message);
-                after = buildRewardSnapshot();
-            }
+            const after = await fetchBackendRewardSnapshot();
 
             await supabase.from('audit_logs').insert({
                 user_id: user?.id || null,
@@ -353,9 +355,14 @@ const ProjectDetail = () => {
         } catch (error) {
             console.warn('Failed to write project reward history:', error.message);
         }
-    }, [buildRewardSnapshot, canViewFinance, fetchBackendRewardSnapshot, project, projectId, user]);
+    }, [canViewFinance, fetchBackendRewardSnapshot, project, projectId, user]);
 
     const handleSaveGeneric = async (table, data, id, dialogSetter, editingState) => {
+        const changesFinancialModel = ['project_members', 'project_subcontractors', 'project_costs'].includes(table);
+        if (financeLoadError && changesFinancialModel) {
+            toast({ title: 'Finanční data nejsou dostupná', description: 'Obnovte autoritativní finanční souhrn před provedením změny.', variant: 'destructive' });
+            return false;
+        }
         const payload = { ...data, project_id: projectId };
         const shouldLogRewards = ['project_members', 'project_subcontractors', 'project_costs'].includes(table);
         const rewardSnapshotBefore = shouldLogRewards ? buildRewardSnapshot() : null;
@@ -428,6 +435,10 @@ const ProjectDetail = () => {
     };
 
     const handleSaveProjectCost = async (costData) => {
+        if (financeLoadError) {
+            toast({ title: 'Finanční data nejsou dostupná', description: 'Obnovte autoritativní finanční souhrn před provedením změny.', variant: 'destructive' });
+            return false;
+        }
         const {
             invoiceFile,
             existingInvoice,
@@ -516,6 +527,11 @@ const ProjectDetail = () => {
         if (!itemToDelete) return;
         const { table, id } = itemToDelete;
         const shouldLogRewards = ['project_members', 'project_subcontractors', 'project_costs'].includes(table);
+        if (financeLoadError && shouldLogRewards) {
+            toast({ title: 'Finanční data nejsou dostupná', description: 'Mazání finančních vazeb je do obnovení souhrnu zablokováno.', variant: 'destructive' });
+            setItemToDelete(null);
+            return;
+        }
         const rewardSnapshotBefore = shouldLogRewards ? buildRewardSnapshot() : null;
         const cost = table === 'project_costs'
             ? costs.find((entry) => entry.id === id)
@@ -575,7 +591,9 @@ const ProjectDetail = () => {
         let teamBudget = 0;
         if (assignment.reward_type === 'percentage') {
             teamBudget = projectFinancialSummary
-                ? toAmount(projectFinancialSummary.team_budget_after_paid_payouts ?? projectFinancialSummary.remaining_after_costs)
+                ? Number(projectFinancialSummary.financial_model_version || 0) >= 2
+                    ? toAmount(projectFinancialSummary.cost_adjusted_team_budget ?? projectFinancialSummary.remaining_after_costs)
+                    : toAmount(projectFinancialSummary.team_budget_after_paid_payouts ?? projectFinancialSummary.remaining_after_costs)
                 : calculateProjectBudget(project, subcontractors).teamBudget;
             if (teamBudget <= 0) { const pct = toAmount(assignment.reward_percentage); return pct > 0 ? `${pct.toFixed(2)} %` : 'N/A'; }
         }
@@ -618,14 +636,22 @@ const ProjectDetail = () => {
         if (!projectFinancialSummary) return fallbackFinancials;
 
         const summary = projectFinancialSummary;
+        const isCanonicalModel = Number(summary.financial_model_version || 0) >= 2;
         const teamBudget = toAmount(summary.team_budget);
-        const laborReplacementAdjustment = projectLaborSummary
+        const laborReplacementAdjustment = !isCanonicalModel && projectLaborSummary
             ? toAmount(summary.paid_hourly_payouts) - toAmount(projectLaborSummary.direct_project_cost)
             : 0;
-        const rewardBaseBudget = toAmount(summary.team_budget_after_paid_payouts ?? summary.remaining_after_costs ?? summary.team_budget) + laborReplacementAdjustment;
-        const teamRewards = members.reduce((sum, member) => (
-            sum + Math.max(0, calculateProjectMemberNetReward(member, rewardBaseBudget, costs) - getSponsoredLaborDeduction(member.member_id))
-        ), 0);
+        const rewardBaseBudget = isCanonicalModel
+            ? toAmount(summary.cost_adjusted_team_budget ?? summary.remaining_after_costs)
+            : toAmount(summary.team_budget_after_paid_payouts ?? summary.remaining_after_costs ?? summary.team_budget) + laborReplacementAdjustment;
+        const authoritativeRewards = isCanonicalModel && Array.isArray(summary.member_rewards)
+            ? summary.member_rewards
+            : null;
+        const teamRewards = authoritativeRewards
+            ? authoritativeRewards.reduce((sum, reward) => sum + toAmount(reward.total_reward), 0)
+            : members.reduce((sum, member) => (
+                sum + Math.max(0, calculateProjectMemberNetReward(member, rewardBaseBudget, costs) - getSponsoredLaborDeduction(member.member_id))
+            ), 0);
         const totalBudget = toAmount(summary.gross_project_budget);
         const totalCosts = toAmount(summary.direct_costs);
         const unassignedCosts = toAmount(summary.unassigned_direct_costs ?? sumUnassignedProjectCosts(costs));
@@ -637,7 +663,7 @@ const ProjectDetail = () => {
         const costsBeforePaidPayouts = toAmount(summary.costs_before_paid_payouts);
         const costsAfterPaidPayouts = toAmount(summary.costs_after_paid_payouts);
         const teamBudgetAfterPaidPayouts = toAmount(summary.team_budget_after_paid_payouts) + laborReplacementAdjustment;
-        const unallocatedBudget = teamBudgetAfterPaidPayouts - teamRewards;
+        const unallocatedBudget = rewardBaseBudget - teamRewards;
 
         return {
             ...fallbackFinancials,
@@ -650,7 +676,7 @@ const ProjectDetail = () => {
             totalSubcontractorPrice: toAmount(summary.subcontractor_costs),
             teamBudget,
             teamRewards,
-            rewardBaseBudget: teamBudgetAfterPaidPayouts,
+            rewardBaseBudget,
             unallocatedBudget,
             remainingTeamBudget: unallocatedBudget,
             totalCosts,
@@ -666,7 +692,9 @@ const ProjectDetail = () => {
             paidPayoutCosts,
             reservedPayouts,
             reservedOrPaidPayouts: toAmount(summary.reserved_or_paid_payouts),
-            remainingAfterCosts: toAmount(summary.remaining_after_costs) - (projectLaborSummary ? toAmount(projectLaborSummary.direct_project_cost) : 0),
+            remainingAfterCosts: isCanonicalModel
+                ? toAmount(summary.remaining_after_costs)
+                : toAmount(summary.remaining_after_costs) - (projectLaborSummary ? toAmount(projectLaborSummary.direct_project_cost) : 0),
             costsBeforePaidPayouts,
             costsAfterPaidPayouts,
             teamBudgetAfterPaidPayouts,
@@ -978,6 +1006,15 @@ const ProjectDetail = () => {
                     <TabsContent value="contacts"><ProjectContacts projectId={projectId} /></TabsContent>
 
                     {canViewFinance && <TabsContent value="finance" className="space-y-6">
+                        {financeLoadError && (
+                            <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert">
+                                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                                <div>
+                                    <p className="font-semibold">Finanční data nejsou autoritativně dostupná</p>
+                                    <p className="mt-1 text-red-700">Výpočty z databáze se nepodařilo načíst. Finanční změny neprovádějte, dokud se data po obnovení nenačtou správně.</p>
+                                </div>
+                            </div>
+                        )}
                         <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
                             { label: 'Evidovaná hodnota zakázky', value: <FinanceAmount value={financials.price ?? project.price} />, detail: 'Základ projektového rozpočtu', tone: 'neutral', icon: DollarSign },
                             { label: 'Plánovaný projektový budget', value: <FinanceAmount value={financials.totalBudget} />, detail: `${project.budget_percentage}% z hodnoty`, tone: 'plan', icon: Wallet },
@@ -996,7 +1033,7 @@ const ProjectDetail = () => {
                         ]} />
                         <FinanceDefinitionNote>Nerozdělený budget je týmový základ po nákladech a naplánovaných odměnách; není totožný s limitem dostupným pro výplatu, který navíc zohledňuje rezervované žádosti. Režie je samostatná plánovaná rezerva a její detail je uveden pouze v přehledu připsaných režií níže.</FinanceDefinitionNote>
                         <BillingTracker entityType="project" entityId={projectId} entityCode={project.code} enableContractAnalysis={isAdmin} showFinancialSummary={false} />
-                        <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 h-4 mr-2" />Přidat náklad</Button>}>
+                        <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" disabled={!!financeLoadError} onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat náklad</Button>}>
                             <Table className="finance-table">
                                 <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Odečíst z</TableHead><TableHead>Částka</TableHead><TableHead>Faktura</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>
                                 <TableBody>

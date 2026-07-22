@@ -14,7 +14,7 @@ import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialValueGuard from './FinancialValueGuard';
 import { calculateRealizationRewardAllocation } from '@/domain/financials';
 
-const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, sponsorDeductions = [] }) => {
+const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, sponsorDeductions = [], canEdit: canEditOverride }) => {
     const { toast } = useToast();
     const { userRole } = useAuth();
     const [shares, setShares] = useState([]);
@@ -25,7 +25,7 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
     const { canViewAmounts } = getFinancialVisibility(userRole);
 
     // Strictly disable edit for 'user' role
-    const canEdit = userRole === 'admin';
+    const canEdit = canEditOverride ?? userRole === 'admin';
 
     const fetchData = useCallback(async () => {
         try {
@@ -64,19 +64,17 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
     }, [fetchData]);
 
     const handleAddShare = () => {
-        setShares([...shares, { id: null, member_id: '', share_type: 'percent', share_value: '', note: '' }]);
+        setShares(current => [...current, { id: null, member_id: '', share_type: 'percent', share_value: '', note: '' }]);
     };
 
     const handleRemoveShare = (index) => {
-        const newShares = [...shares];
-        newShares.splice(index, 1);
-        setShares(newShares);
+        setShares(current => current.filter((_, currentIndex) => currentIndex !== index));
     };
 
     const handleUpdateShare = (index, field, value) => {
-        const newShares = [...shares];
-        newShares[index][field] = value;
-        setShares(newShares);
+        setShares(current => current.map((share, currentIndex) => (
+            currentIndex === index ? { ...share, [field]: value } : share
+        )));
     };
 
     const { distributedBudget: distributedProfit, unallocatedBudget: remainingProfit } = calculateRealizationRewardAllocation(shares, distributionAmount);
@@ -94,6 +92,7 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
     const isBudgetPositive = distributionAmount >= 0;
 
     const handleSave = async () => {
+        if (!canEdit) return;
         if (!isBudgetPositive && shares.length > 0) {
             toast({ title: 'Nelze rozdělit zisk', description: 'Týmový rozpočet je záporný.', variant: 'destructive' });
             return;
@@ -107,6 +106,12 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
         const invalidEntry = shares.find(s => !s.member_id || !s.share_value);
         if (invalidEntry) {
             toast({ title: 'Neúplné údaje', description: 'Vyplňte člena a hodnotu u všech řádků.', variant: 'destructive' });
+            return;
+        }
+
+        const memberIds = shares.map(share => share.member_id);
+        if (new Set(memberIds).size !== memberIds.length) {
+            toast({ title: 'Duplicitní člen týmu', description: 'Každý člen může mít v realizaci pouze jeden podíl.', variant: 'destructive' });
             return;
         }
 
@@ -262,7 +267,15 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
                                                     >
                                                         <SelectTrigger><SelectValue placeholder="Vyberte člena" /></SelectTrigger>
                                                         <SelectContent>
-                                                            {members.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                                                            {members.map(m => (
+                                                                <SelectItem
+                                                                    key={m.id}
+                                                                    value={m.id}
+                                                                    disabled={shares.some((otherShare, otherIndex) => otherIndex !== index && otherShare.member_id === m.id)}
+                                                                >
+                                                                    {m.name}
+                                                                </SelectItem>
+                                                            ))}
                                                         </SelectContent>
                                                     </Select>
                                                 ) : (

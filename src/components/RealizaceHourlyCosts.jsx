@@ -35,50 +35,40 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                 // foreign keys to members. Select the worker relationship
                 // explicitly so PostgREST does not reject the embed as ambiguous.
                 const memberSelect = 'members:members!attendance_member_id_fkey(name)';
-                // 1. Fetch direct attendance on this Realization
-                const { data: directData, error: directError } = await supabase
+                const attendanceQuery = supabase
                     .from('attendance')
                     .select(`*, ${memberSelect}`)
                     .eq('realizace_id', realizaceId)
                     .order('date', { ascending: false });
+                const ledgerQuery = canViewAmounts
+                    ? supabase
+                        .from('labor_cost_ledger')
+                        .select('attendance_id, employer_cost')
+                        .eq('realization_id', realizaceId)
+                        .neq('status', 'reversed')
+                    : Promise.resolve({ data: [], error: null });
+                const [
+                    { data: directData, error: directError },
+                    { data: ledgerData, error: ledgerError },
+                ] = await Promise.all([attendanceQuery, ledgerQuery]);
 
                 if (directError) throw directError;
+                if (ledgerError) throw ledgerError;
 
-                // 2. Fetch linked project attendance if exists
-                let projectData = [];
-                if (linkedProjectId) {
-                     const { data: pData, error: pError } = await supabase
-                        .from('attendance')
-                        .select(`*, ${memberSelect}`)
-                        .eq('project_id', linkedProjectId)
-                        .order('date', { ascending: false });
-                     if (!pError) projectData = pData || [];
-                }
+                const ledgerCostByAttendance = (ledgerData || []).reduce((costs, row) => {
+                    const attendanceId = String(row.attendance_id);
+                    costs.set(attendanceId, (costs.get(attendanceId) || 0) + Number(row.employer_cost || 0));
+                    return costs;
+                }, new Map());
 
-                const attendanceRows = [
-                    ...(directData || []).map(r => ({ ...r, source: 'realization' })),
-                    ...(projectData || []).map(r => ({ ...r, source: 'project' }))
-                ];
-
-                // Compensation is private. Request it only for workers that are
-                // actually present in this realization instead of listing every
-                // member compensation for an otherwise empty detail.
-                const rateByMember = new Map();
-                if (canViewAmounts && attendanceRows.length > 0) {
-                    const memberIds = [...new Set(attendanceRows.map(row => row.member_id).filter(Boolean))];
-                    const compensationResults = await Promise.all(
-                        memberIds.map(memberId => supabase.rpc('get_member_compensation', { p_member_id: memberId }))
-                    );
-                    compensationResults.forEach(({ data, error }, index) => {
-                        if (!error && data) {
-                            rateByMember.set(String(memberIds[index]), Number(data.hourly_rate || 0));
-                        }
-                    });
-                }
-
-                const combined = attendanceRows.map(row => ({
+                // A linked project is contextual only. Its attendance belongs to
+                // the project ledger and must not be charged to the realization.
+                // Historical costs always use immutable approval snapshots.
+                const combined = (directData || []).map(row => ({
                     ...row,
-                    _hourly_rate: rateByMember.get(String(row.member_id)) || 0,
+                    source: 'realization',
+                    _employer_cost: ledgerCostByAttendance.get(String(row.id))
+                        ?? Number(row.employer_cost_snapshot || 0),
                 }));
 
                 // Sort by date desc
@@ -89,8 +79,7 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                 const tHours = combined.reduce((acc, r) => acc + Number(r.hours), 0);
                 const tCost = canViewAmounts
                     ? combined.reduce((acc, r) => {
-                        const rate = Number(r._hourly_rate || 0);
-                        return acc + (Number(r.hours) * rate);
+                        return acc + Number(r._employer_cost || 0);
                     }, 0)
                     : 0;
                 
@@ -105,7 +94,7 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
         };
 
         fetchAttendance();
-    }, [realizaceId, linkedProjectId, canViewAmounts]);
+    }, [realizaceId, canViewAmounts]);
 
     // Fetch projects for linking
     useEffect(() => {
@@ -137,9 +126,8 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
             const name = r.members?.name || 'Neznámý';
             if (!summary[name]) summary[name] = { hours: 0, cost: 0, count: 0 };
             const h = Number(r.hours);
-            const rate = canViewAmounts ? Number(r._hourly_rate || 0) : 0;
             summary[name].hours += h;
-            summary[name].cost += h * rate;
+            summary[name].cost += canViewAmounts ? Number(r._employer_cost || 0) : 0;
             summary[name].count += 1;
         });
         return Object.entries(summary).sort((a,b) => b[1].hours - a[1].hours);
@@ -251,7 +239,7 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                             <AlertCircle className="h-4 w-4 text-blue-600" />
                             <AlertTitle>Informace</AlertTitle>
                             <AlertDescription>
-                                Pokud tato realizace navazuje na projekt, propojte ho výše pro zobrazení hodin odpracovaných ve fázi projektu.
+                                Propojený projekt slouží jako kontext. Jeho docházka zůstává v nákladech projektu a do realizace se znovu nepřičítá.
                             </AlertDescription>
                         </Alert>
                     )}
@@ -290,18 +278,14 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                                                 {record.description || '-'}
                                             </TableCell>
                                             <TableCell>
-                                                {record.source === 'project' ? (
-                                                    <Badge variant="outline" className="text-xs">Z projektu</Badge>
-                                                ) : (
-                                                    <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200 text-xs shadow-none">Přímo</Badge>
-                                                )}
+                                                <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200 text-xs shadow-none">Přímo</Badge>
                                             </TableCell>
                                             <TableCell className="text-right font-bold">
                                                 {Number(record.hours).toFixed(1)}
                                             </TableCell>
                                             {canViewAmounts && (
                                                 <TableCell className="text-right text-muted-foreground">
-                                                    <FinancialValueGuard value={formatCurrency(Number(record.hours) * Number(record._hourly_rate || 0))} />
+                                                    <FinancialValueGuard value={formatCurrency(record._employer_cost)} />
                                                 </TableCell>
                                             )}
                                         </TableRow>

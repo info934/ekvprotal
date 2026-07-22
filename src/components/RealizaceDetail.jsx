@@ -5,7 +5,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs";
-import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen, GanttChart, Wallet, FileText } from 'lucide-react';
+import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen, GanttChart, Wallet, FileText, AlertTriangle } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -64,6 +64,7 @@ const RealizaceDetail = () => {
   const [extraCosts, setExtraCosts] = useState([]);
   const [financialSummary, setFinancialSummary] = useState(null);
   const [laborFinancialSummary, setLaborFinancialSummary] = useState(null);
+  const [financeLoadError, setFinanceLoadError] = useState(null);
 
   // Hourly costs state (calculated)
   const [hourlyCostsTotal, setHourlyCostsTotal] = useState(0);
@@ -160,6 +161,7 @@ const RealizaceDetail = () => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setFinanceLoadError(null);
     const { data: realData, error: realError } = await supabase.rpc('get_realization_safe', {
       p_realization_id: realizaceId,
     });
@@ -213,13 +215,15 @@ const RealizaceDetail = () => {
     }
 
     if (financialSummaryRes.error) {
-      console.warn('realization_financial_summary failed, using local fallback:', financialSummaryRes.error.message);
+      console.error('realization_financial_summary failed:', financialSummaryRes.error.message);
+      setFinanceLoadError(financialSummaryRes.error.message);
       setFinancialSummary(null);
     } else {
       setFinancialSummary(financialSummaryRes.data || null);
     }
     if (laborSummaryRes.error) {
-      console.warn('realization_labor_financial_summary failed, using legacy labor model:', laborSummaryRes.error.message);
+      console.error('realization_labor_financial_summary failed:', laborSummaryRes.error.message);
+      setFinanceLoadError((current) => current || laborSummaryRes.error.message);
       setLaborFinancialSummary(null);
     } else {
       setLaborFinancialSummary(laborSummaryRes.data || null);
@@ -259,9 +263,15 @@ const RealizaceDetail = () => {
   const paidPayoutCosts = hasFinancialSummary ? toNumber(financialSummary.paid_payout_costs) : 0;
   const costsBeforePaidPayouts = hasFinancialSummary ? toNumber(financialSummary.costs_before_paid_payouts) : totalManualCosts + totalExtraCostsCost;
   const legacyGrandTotalCosts = hasFinancialSummary ? toNumber(financialSummary.costs_after_paid_payouts) : totalManualCosts + totalExtraCostsCost;
-  const grandTotalCosts = laborFinancialSummary
+  const isCanonicalFinancialModel = Number(financialSummary?.financial_model_version || 0) >= 2;
+  const grandTotalCosts = isCanonicalFinancialModel
+    ? legacyGrandTotalCosts
+    : laborFinancialSummary
     ? legacyGrandTotalCosts - paidHourlyPayouts + toNumber(laborFinancialSummary.direct_project_cost)
     : legacyGrandTotalCosts;
+  const rewardBaseCosts = isCanonicalFinancialModel
+    ? toNumber(financialSummary.operational_costs)
+    : grandTotalCosts;
   const contractAmountBase = hasFinancialSummary ? toNumber(financialSummary.base_contract_amount) : Number(realization?.contract_amount || 0);
   const totalRevenue = hasFinancialSummary ? toNumber(financialSummary.total_revenue) : contractAmountBase + totalExtraCostsSale;
   
@@ -277,9 +287,9 @@ const RealizaceDetail = () => {
       totalRevenue, // Base calculation on Total Revenue (Contract + Extra Works Sale)
       realization.profit_margin_percent, 
       realization.overhead_percent,
-      grandTotalCosts
+      rewardBaseCosts
     );
-  }, [realization, totalRevenue, grandTotalCosts]);
+  }, [realization, totalRevenue, rewardBaseCosts]);
 
   const rewardAllocation = useMemo(() => calculateRealizationRewardAllocation(
     financialSummary?.member_shares || [],
@@ -288,6 +298,10 @@ const RealizaceDetail = () => {
 
   // --- Cost Handlers ---
   const handleSaveCost = async (costData) => {
+    if (financeLoadError) {
+      toast({ title: 'Finanční data nejsou dostupná', description: 'Obnovte autoritativní finanční souhrn před provedením změny.', variant: 'destructive' });
+      return;
+    }
     try {
       const costId = editingCost?.id || crypto.randomUUID();
       let fileUrl = costData.existingInvoice?.url || null;
@@ -392,6 +406,10 @@ const RealizaceDetail = () => {
   };
 
   const handleDeleteCost = async (id) => {
+    if (financeLoadError) {
+      toast({ title: 'Finanční data nejsou dostupná', description: 'Mazání nákladů je do obnovení souhrnu zablokováno.', variant: 'destructive' });
+      return;
+    }
     const cost = costs.find((entry) => entry.id === id);
     const { error } = await supabase.from('realizace_costs').delete().eq('id', id);
     if (error) {
@@ -474,7 +492,9 @@ const RealizaceDetail = () => {
                   baseAmount={totalRevenue}
                   remainingAmount={calculatedFinancials.teamBudget}
                   availableAmount={financialSummary
-                    ? toNumber(financialSummary.available_for_payout) + paidHourlyPayouts - toNumber(laborFinancialSummary?.direct_project_cost)
+                    ? isCanonicalFinancialModel
+                      ? toNumber(financialSummary.available_for_payout)
+                      : toNumber(financialSummary.available_for_payout) + paidHourlyPayouts - toNumber(laborFinancialSummary?.direct_project_cost)
                     : calculatedFinancials.teamBudget}
                 />
               )}
@@ -498,6 +518,15 @@ const RealizaceDetail = () => {
 
           {canViewCosts && (
             <TabsContent value="finance" className="space-y-6">
+                {financeLoadError && (
+                  <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert">
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                    <div>
+                      <p className="font-semibold">Finanční data nejsou autoritativně dostupná</p>
+                      <p className="mt-1 text-red-700">Výpočty z databáze se nepodařilo načíst. Finanční změny jsou do obnovení dat pozastavené.</p>
+                    </div>
+                  </div>
+                )}
                 <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
                   { label: 'Výnos zakázky', value: <FinanceAmount value={totalRevenue} />, detail: 'Smlouva a schválené vícepráce', tone: 'neutral', icon: DollarSign },
                   { label: 'Skutečné náklady', value: <FinanceAmount value={grandTotalCosts} />, detail: 'Včetně vyplacených odměn', tone: 'neutral', icon: Download },
@@ -528,7 +557,7 @@ const RealizaceDetail = () => {
                         currentValue={realization.profit_margin_percent || 0}
                         onUpdate={(value) => handleRealizationUpdate({ ...realization, profit_margin_percent: value })}
                         label="Plánovaná marže"
-                        canEdit={canEdit}
+                        canEdit={canEdit && !financeLoadError}
                       />
                       <EditablePercentageField
                         realizaceId={realizaceId}
@@ -536,7 +565,7 @@ const RealizaceDetail = () => {
                         currentValue={realization.overhead_percent || 0}
                         onUpdate={(value) => handleRealizationUpdate({ ...realization, overhead_percent: value })}
                         label="Režie firmy"
-                        canEdit={canEdit}
+                        canEdit={canEdit && !financeLoadError}
                       />
                     </CardContent>
                   </Card>
@@ -546,6 +575,7 @@ const RealizaceDetail = () => {
                   realizaceId={realizaceId}
                   extraCosts={extraCosts}
                   onUpdate={fetchData}
+                  canEdit={canEdit && !financeLoadError}
                 />
 
                 <Card>
@@ -555,7 +585,7 @@ const RealizaceDetail = () => {
                       <CardDescription>Evidence faktur, materiálů a ostatních výdajů</CardDescription>
                     </div>
                     {canEdit && (
-                      <Button onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}>
+                      <Button disabled={!!financeLoadError} onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}>
                         <Plus className="w-4 h-4 mr-2" /> Přidat náklad
                       </Button>
                     )}
@@ -686,6 +716,7 @@ const RealizaceDetail = () => {
                       distributionAmount={calculatedFinancials.teamBudget}
                       sponsorDeductions={laborFinancialSummary?.sponsor_deductions || []}
                       isCompleted={realization.status === 'Dokončeno'}
+                      canEdit={canEdit && !financeLoadError}
                     />
                   </section>
                 )}

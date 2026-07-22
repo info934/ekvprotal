@@ -109,4 +109,23 @@ for (const requiredAdminSummaryRule of [
   assert.ok(adminSummaryMigration.toLowerCase().includes(requiredAdminSummaryRule), `missing admin summary rule: ${requiredAdminSummaryRule}`);
 }
 
+const rewardConsistencyMigration = readFileSync(
+  new URL('../supabase/migrations/20260722173000_financial_reward_consistency.sql', import.meta.url),
+  'utf8'
+);
+for (const requiredRewardRule of [
+  'financial_model_version',
+  'realization_profit_shares_realization_member_uidx',
+  'assert_project_reward_allocation',
+  'assert_realization_reward_allocation',
+  'attendance_exactly_one_financial_scope_check',
+  'protect_scope_financial_columns',
+  'validate_project_reward_allocation_on_cost',
+  'validate_realization_reward_allocation_on_cost',
+  'project_cost_impact',
+  'sponsor_reward_deduction',
+]) {
+  assert.ok(rewardConsistencyMigration.includes(requiredRewardRule), `missing canonical reward rule: ${requiredRewardRule}`);
+}
+
 console.log('Critical route and numbering checks passed');

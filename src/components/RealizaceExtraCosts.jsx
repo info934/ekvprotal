@@ -23,14 +23,14 @@ const CATEGORIES = [
     { value: 'other', label: 'Ostatní' }
 ];
 
-const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate }) => {
+const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate, canEdit: canEditOverride }) => {
     const { toast } = useToast();
     const { hasPermission, userRole } = useAuth();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
 
     // Strictly disable edit for 'user' role
-    const canEdit = hasPermission('realizace', 'can_edit') && userRole !== 'user';
+    const canEdit = canEditOverride ?? (hasPermission('realizace', 'can_edit') && userRole !== 'user');
 
     // Form State
     const [description, setDescription] = useState('');
@@ -57,6 +57,7 @@ const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate }) => {
     };
 
     const handleSave = async () => {
+        if (!canEdit) return;
         if (!description || !costAmount) {
             toast({ title: 'Chyba', description: 'Vyplňte popis a nákladovou cenu.', variant: 'destructive' });
             return;
@@ -106,6 +107,7 @@ const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate }) => {
     };
 
     const handleDelete = async (id) => {
+        if (!canEdit) return;
         try {
             const { error } = await supabase.from('realizace_extra_costs').delete().eq('id', id);
             if (error) throw error;
