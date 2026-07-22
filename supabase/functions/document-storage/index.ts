@@ -33,6 +33,14 @@ const GRAPH_TOKEN_EXPIRY_BUFFER_MS = 60_000;
 let graphTokenCache: { token: string; expiresAt: number } | null = null;
 let graphTokenRequest: Promise<string> | null = null;
 const ALLOWED_ENTITY_TYPES = new Set<EntityType>(['project', 'realizace', 'product', 'invoice']);
+const MAX_INVOICE_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_INVOICE_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png'];
+const ALLOWED_INVOICE_CONTENT_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'application/octet-stream',
+]);
 const ENTITY_PERMISSION_MODULES: Record<EntityType, string[]> = {
   project: ['projects', 'documents'],
   realizace: ['realizace', 'projects', 'documents'],
@@ -57,6 +65,27 @@ const normalizePath = (...parts: Array<string | undefined>) => parts
   .map(safeSegment)
   .filter(Boolean)
   .join('/');
+
+const assertInvoiceFile = (fileName: unknown, contentType: unknown, fileSize: unknown) => {
+  const normalizedName = String(fileName || '').trim().toLowerCase();
+  const normalizedContentType = String(contentType || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+  const normalizedSize = Number(fileSize || 0);
+  if (!ALLOWED_INVOICE_EXTENSIONS.some((extension) => normalizedName.endsWith(extension))) {
+    const error = new Error('Invoice must be a PDF, JPG or PNG file.') as Error & { status?: number };
+    error.status = 415;
+    throw error;
+  }
+  if (!ALLOWED_INVOICE_CONTENT_TYPES.has(normalizedContentType)) {
+    const error = new Error('Invoice content type is not allowed.') as Error & { status?: number };
+    error.status = 415;
+    throw error;
+  }
+  if (!Number.isFinite(normalizedSize) || normalizedSize <= 0 || normalizedSize > MAX_INVOICE_FILE_SIZE) {
+    const error = new Error('Invoice file must be between 1 byte and 10 MB.') as Error & { status?: number };
+    error.status = 413;
+    throw error;
+  }
+};
 
 const graphError = async (response: Response) => {
   const payload = await response.json().catch(() => ({}));
@@ -527,6 +556,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'createUploadSession') {
       const fileName = safeSegment(body.fileName);
+      if (entityType === 'invoice') assertInvoiceFile(fileName, body.contentType, body.fileSize);
       let folderId = body.folderId ? String(body.folderId) : '';
       let folderPath = String(body.folderPath || '');
       if (!folderId) {
@@ -558,6 +588,18 @@ Deno.serve(async (req: Request) => {
         await assertItemBelongsToEntityFolder(graphToken, target, fileId, entityFolderMapping);
       }
       const uploaded = await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(fileId)}`);
+      if (entityType === 'invoice') {
+        try {
+          assertInvoiceFile(uploaded.name, uploaded.file?.mimeType, uploaded.size);
+        } catch (validationError) {
+          await graphFetch(
+            graphToken,
+            `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(fileId)}`,
+            { method: 'DELETE' },
+          ).catch(() => null);
+          throw validationError;
+        }
+      }
       if (String(uploaded?.parentReference?.id || '') !== folderId) {
         return jsonResponse({ success: false, error: 'Uploaded file does not belong to the requested folder.' }, 403);
       }
@@ -576,7 +618,14 @@ Deno.serve(async (req: Request) => {
         metadata: body.metadata || {},
         uploaded_by: user.id,
       }, { onConflict: 'connection_id,external_file_id' });
-      if (registryError) throw registryError;
+      if (registryError) {
+        await graphFetch(
+          graphToken,
+          `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(String(uploaded.id))}`,
+          { method: 'DELETE' },
+        ).catch(() => null);
+        throw registryError;
+      }
       return jsonResponse({
         success: true,
         provider,
@@ -592,6 +641,7 @@ Deno.serve(async (req: Request) => {
       const fileName = safeSegment(body.fileName);
       const fileBase64 = String(body.fileBase64 || '');
       if (!fileBase64) return jsonResponse({ success: false, error: 'File content is required.' }, 400);
+      if (entityType === 'invoice') assertInvoiceFile(fileName, body.contentType, body.fileSize);
 
       let folderId = body.folderId ? String(body.folderId) : '';
       let folderPath = String(body.folderPath || '');
@@ -614,6 +664,19 @@ Deno.serve(async (req: Request) => {
           body: base64ToBytes(fileBase64),
         },
       );
+
+      if (entityType === 'invoice') {
+        try {
+          assertInvoiceFile(uploaded.name, uploaded.file?.mimeType, uploaded.size);
+        } catch (validationError) {
+          await graphFetch(
+            graphToken,
+            `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(String(uploaded.id))}`,
+            { method: 'DELETE' },
+          ).catch(() => null);
+          throw validationError;
+        }
+      }
 
       const ownerType = entityType === 'invoice' ? String(body.accessEntityType || 'invoice') : entityType;
       const ownerId = entityType === 'invoice' ? String(body.accessEntityId || entityId) : entityId;

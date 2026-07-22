@@ -22,14 +22,15 @@ const invokeDocumentStorage = (options, timeoutMs = 60_000) => (
 );
 
 const uploadExternalFile = async ({ file, body }) => {
+  const uploadBody = { ...body, fileSize: file.size };
   if (file.size <= SIMPLE_EXTERNAL_UPLOAD_LIMIT) {
     return invokeDocumentStorage({
-      body: { ...body, action: 'uploadFile', fileBase64: await fileToBase64(file) },
+      body: { ...uploadBody, action: 'uploadFile', fileBase64: await fileToBase64(file) },
     });
   }
 
   const { data: session, error: sessionError } = await invokeDocumentStorage({
-    body: { ...body, action: 'createUploadSession' },
+    body: { ...uploadBody, action: 'createUploadSession' },
   });
   if (sessionError) throw sessionError;
   if (!session?.success || !session.uploadUrl) throw new Error(session?.error || 'Upload session could not be created.');
@@ -53,7 +54,7 @@ const uploadExternalFile = async ({ file, body }) => {
 
   return invokeDocumentStorage({
     body: {
-      ...body,
+      ...uploadBody,
       action: 'registerUploadedFile',
       fileId: uploadedItem.id,
       folderId: session.folderId,
@@ -689,7 +690,10 @@ export const uploadInvoiceDocument = async ({
     : `${uploadDate}_${safeRecordId}_${readableFileName}`;
 
   if (connection.provider === 'supabase') {
-    const filePath = storedFileName;
+    if (!['payout', 'hourly_payout'].includes(accessEntityType) || !accessEntityId) {
+      throw new Error('Faktura musi byt navazana na konkretni vyplatu.');
+    }
+    const filePath = `${accessEntityType}/${sanitizePathSegment(accessEntityId)}/${storedFileName}`;
     const { error } = await supabase.storage
       .from(INVOICE_BUCKET)
       .upload(filePath, file, { cacheControl: '3600', upsert: false });
@@ -700,7 +704,14 @@ export const uploadInvoiceDocument = async ({
       connectionId: connection.id,
       dbUrl: `${INVOICE_BUCKET}/${filePath}`,
       filePath,
+      fileId: filePath,
       fileName: file.name,
+      metadata: {
+        bucket: INVOICE_BUCKET,
+        originalFileName: file.name,
+        category,
+        uploadedAt: now.toISOString(),
+      },
       cleanup: async () => supabase.storage.from(INVOICE_BUCKET).remove([filePath]),
     };
   }
@@ -737,7 +748,20 @@ export const uploadInvoiceDocument = async ({
     fileId: data.fileId,
     webUrl: data.webUrl,
     fileName: file.name,
-    metadata: data.metadata || {},
+    metadata: {
+      ...(data.metadata || {}),
+      originalFileName: file.name,
+      category,
+      uploadedAt: now.toISOString(),
+    },
+    cleanup: async () => deleteExternalStorageFile({
+      connection,
+      entityType: 'invoice',
+      entityId: recordId,
+      fileId: data.fileId,
+      accessEntityType,
+      accessEntityId,
+    }),
   };
 };
 

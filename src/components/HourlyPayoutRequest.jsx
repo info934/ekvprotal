@@ -330,6 +330,7 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
                   {request.invoice_url && (
                     <InvoicePreview
                       invoicePath={request.invoice_url}
+                      invoiceName={request.invoice_storage_metadata?.originalFileName}
                       uploadedAt={request.invoice_uploaded_at}
                       status={request.status}
                       requestId={request.id}

@@ -69,15 +69,11 @@ const InvoiceUploadDialog = ({ isOpen, onClose, payout, onSuccess }) => {
     setUploading(true);
     setUploadProgress(0);
     setError(null);
+    let storedInvoice = null;
 
     try {
-      // Simulate upload progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => Math.min(prev + 10, 90));
-      }, 200);
-
-      clearInterval(progressInterval);
-      const storedInvoice = await uploadInvoiceDocument({
+      setUploadProgress(20);
+      storedInvoice = await uploadInvoiceDocument({
         file: selectedFile,
         recordId: payout.id,
         projectReference: payout.payout_items?.find((item) => item.projects?.code)?.projects?.code
@@ -97,7 +93,13 @@ const InvoiceUploadDialog = ({ isOpen, onClose, payout, onSuccess }) => {
       // Update payout record with invoice details
       const result = await uploadInvoice(payout.id, storedInvoice, fileName);
 
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) {
+        await storedInvoice.cleanup?.().catch((cleanupError) => {
+          console.error('[InvoiceUpload] Storage cleanup failed:', cleanupError);
+        });
+        storedInvoice = null;
+        throw new Error(result.error);
+      }
 
       setUploadProgress(100);
 

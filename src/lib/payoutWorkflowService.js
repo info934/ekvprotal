@@ -72,6 +72,19 @@ export const uploadInvoice = async (payoutId, storedInvoice, invoiceName) => {
   }
 };
 
+export const clearPayoutInvoice = async (payoutId) => {
+  try {
+    const { data, error } = await supabase.rpc('clear_payout_invoice', {
+      p_payout_id: payoutId,
+    });
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    console.error('[PayoutWorkflow] Clear invoice error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 /**
  * TASK 3.3: Confirm invoice and mark as paid
  * Changes status from invoice_uploaded → paid

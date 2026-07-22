@@ -46,8 +46,8 @@ import {
 import PayoutRequestsTable from '@/components/payouts/PayoutRequestsTable';
 import ForwardInvoiceDialog from '@/components/payouts/ForwardInvoiceDialog';
 
-const InvoiceLink = ({ url, onDownload, isDownloading }) => {
-  if (!url) {
+const InvoiceLink = ({ request, onDownload, isDownloading }) => {
+  if (!request?.invoice_url) {
     return <span className="text-xs text-slate-400">Faktura zatím není nahraná</span>;
   }
 
@@ -55,7 +55,7 @@ const InvoiceLink = ({ url, onDownload, isDownloading }) => {
     <Button
       variant="outline"
       size="sm"
-      onClick={() => onDownload(url)}
+      onClick={() => onDownload(request)}
       disabled={isDownloading}
       className="h-8 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
     >
@@ -147,11 +147,22 @@ const HourlyPayoutRequestsAdmin = () => {
     });
   }, [requests, searchTerm, statusFilter]);
 
-  const handleDownloadInvoice = async (invoiceUrl) => {
-    if (!invoiceUrl) return;
-    setDownloadingInvoiceUrl(invoiceUrl);
+  const handleDownloadInvoice = async (request) => {
+    if (!request?.invoice_url) return;
+    setDownloadingInvoiceUrl(request.invoice_url);
 
-    const { success, error } = await downloadInvoiceFromStorage(invoiceUrl);
+    const { success, error } = await downloadInvoiceFromStorage({
+      provider: request.invoice_storage_provider,
+      connectionId: request.invoice_storage_connection_id,
+      bucket: request.invoice_storage_metadata?.bucket || 'invoices',
+      filePath: request.invoice_url,
+      fileId: request.invoice_external_file_id,
+      fileName: request.invoice_storage_metadata?.originalFileName || 'faktura',
+      entityType: 'invoice',
+      entityId: request.id,
+      accessEntityType: 'hourly_payout',
+      accessEntityId: request.id,
+    });
     if (success) {
       toast({ title: 'Staženo', description: 'Soubor faktury byl stažen.' });
     } else {
@@ -181,9 +192,9 @@ const HourlyPayoutRequestsAdmin = () => {
     }
 
     const fileExt = file.name.split('.').pop()?.toLowerCase() || 'pdf';
-    const allowedExt = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+    const allowedExt = ['pdf', 'jpg', 'jpeg', 'png'];
     if (!allowedExt.includes(fileExt)) {
-      toast({ title: 'Nepodporovany typ souboru', description: 'Pouzijte PDF, DOC, DOCX, JPG nebo PNG.', variant: 'destructive' });
+      toast({ title: 'Nepodporovaný typ souboru', description: 'Použijte PDF, JPG nebo PNG.', variant: 'destructive' });
       return;
     }
 
@@ -445,7 +456,7 @@ const HourlyPayoutRequestsAdmin = () => {
       render: (request) => (
         <div className="space-y-2">
           <InvoiceLink
-            url={request.invoice_url}
+            request={request}
             onDownload={handleDownloadInvoice}
             isDownloading={downloadingInvoiceUrl === request.invoice_url}
           />
@@ -501,7 +512,7 @@ const HourlyPayoutRequestsAdmin = () => {
               Nahrat fakturu
               <input
                 type="file"
-                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                accept=".pdf,.jpg,.jpeg,.png"
                 className="hidden"
                 disabled={processingId === request.id}
                 onChange={(event) => {

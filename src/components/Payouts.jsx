@@ -27,10 +27,10 @@ import AdminPayoutApprovalDialog from '@/components/AdminPayoutApprovalDialog';
 import { approvePayout } from '@/lib/PayoutApprovalService';
 import { sendPayoutRejectionEmail } from '@/lib/email';
 import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
-import { uploadInvoice, confirmInvoice, approveWithoutInvoice } from '@/lib/payoutWorkflowService';
+import { uploadInvoice, clearPayoutInvoice, confirmInvoice, approveWithoutInvoice } from '@/lib/payoutWorkflowService';
 import { sendInvoiceUploadedNotification, sendPayoutPaidEmail as sendWorkflowPayoutPaidEmail } from '@/lib/payoutWorkflowEmailService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
-import { uploadInvoiceDocument } from '@/lib/documentStorageService';
+import { deleteStoredFile, uploadInvoiceDocument } from '@/lib/documentStorageService';
 import { savePayoutRequest } from '@/lib/payoutRequestService';
 import PageHeader from '@/components/ui/page-header';
 import { PayoutPanel } from '@/components/payouts/PayoutShared';
@@ -263,9 +263,9 @@ const Payouts = () => {
     }
 
     const fileExt = file.name.split('.').pop()?.toLowerCase() || 'pdf';
-    const allowedExt = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+    const allowedExt = ['pdf', 'jpg', 'jpeg', 'png'];
     if (!allowedExt.includes(fileExt)) {
-      toast({ title: "Nepodporovaný typ souboru", description: "Použijte PDF, DOC, DOCX, JPG nebo PNG.", variant: "destructive" });
+      toast({ title: "Nepodporovaný typ souboru", description: "Použijte PDF, JPG nebo PNG.", variant: "destructive" });
       return;
     }
 
@@ -316,6 +316,29 @@ const Payouts = () => {
     });
     if (!success) {
       toast({ title: "Fakturu se nepodařilo stáhnout", description: error, variant: "destructive" });
+    }
+  };
+  const handleRemoveInvoice = async (payout) => {
+    try {
+      await deleteStoredFile({
+        provider: payout.invoice_storage_provider,
+        connectionId: payout.invoice_storage_connection_id,
+        bucket: payout.invoice_storage_metadata?.bucket || 'invoices',
+        filePath: payout.invoice_url,
+        fileId: payout.invoice_external_file_id,
+        fileName: payout.invoice_name,
+        entityType: 'invoice',
+        entityId: payout.id,
+        accessEntityType: 'payout',
+        accessEntityId: payout.id,
+      });
+      const result = await clearPayoutInvoice(payout.id);
+      if (!result.success) throw new Error(result.error);
+      toast({ title: 'Faktura odstraněna', description: 'Výplata je znovu připravena k nahrání správné faktury.' });
+      await fetchPayouts();
+    } catch (error) {
+      console.error('Invoice removal error:', error);
+      toast({ title: 'Fakturu se nepodařilo odstranit', description: getFinanceErrorMessage(error), variant: 'destructive' });
     }
   };
   const handleDelete = async (id) => { 
@@ -505,6 +528,7 @@ const Payouts = () => {
                 onApproveWithDialog={handleApproveWithDialog}
                 onDelete={handleDelete}
                 onDownloadInvoice={handleDownloadInvoice}
+                onRemoveInvoice={handleRemoveInvoice}
                 onEdit={(p) => {
                   setEditingPayout(p);
                   setIsDialogOpen(true);

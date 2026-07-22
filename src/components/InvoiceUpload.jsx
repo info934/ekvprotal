@@ -78,9 +78,9 @@ const InvoiceUpload = ({ requestId, memberId, projectReference, onUploadSuccess 
         : { data: null };
 
       const emailResult = await sendAdminPayoutNotification({
-        memberName: memberData?.name || 'Pracovnik',
+        memberName: memberData?.name || 'Pracovník',
         amount: dbData?.total_amount || 0,
-        action: 'Faktura nahrana k hodinove zadosti'
+        action: 'Faktura nahrána k hodinové žádosti'
       });
 
       if (!emailResult.success) {
@@ -153,7 +153,7 @@ const InvoiceUpload = ({ requestId, memberId, projectReference, onUploadSuccess 
               <p className="font-semibold text-slate-800">
                 {isDragActive ? 'Přetáhněte soubor sem' : 'Klikněte nebo přetáhněte fakturu sem'}
               </p>
-              <p className="text-xs text-slate-500 mt-1">Podporováno: PDF, JPG, PNG (max 10MB)</p>
+              <p className="text-xs text-slate-500 mt-1">Podporováno: PDF, JPG, PNG (max. 10 MB)</p>
             </div>
           </>
         )}

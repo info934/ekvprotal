@@ -47,6 +47,7 @@ const PayoutTableActions = ({
   onApproveWithDialog,
   onDelete,
   onDownloadInvoice,
+  onRemoveInvoice,
   onEdit,
   onUpdateStatus,
   onUploadInvoice
@@ -59,7 +60,8 @@ const PayoutTableActions = ({
   const canMarkPaid = canAdmin && (item.status === 'invoice_uploaded' || (item.status === 'approved' && item.approved_without_invoice));
   const canManagePending = canAdmin && item.status === 'pending';
   const canEditPending = item.status === 'pending' && (canAdmin || isOwner);
-  const canDeleteRequest = canAdmin || (item.status === 'pending' && isOwner);
+  const canDeleteRequest = item.status === 'pending' && (canAdmin || isOwner) && !item.invoice_url;
+  const canRemoveInvoice = item.status === 'invoice_uploaded' && (canAdmin || isOwner) && Boolean(item.invoice_url);
 
   const handleFileChange = async (event) => {
     const file = event.target.files?.[0];
@@ -105,7 +107,7 @@ const PayoutTableActions = ({
             id={fileInputId}
             type="file"
             className="hidden"
-            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+            accept=".pdf,.jpg,.jpeg,.png"
             onChange={handleFileChange}
           />
           <Button
@@ -132,7 +134,7 @@ const PayoutTableActions = ({
         </Button>
       )}
 
-      {(canEditPending || canDeleteRequest) && (
+      {(canEditPending || canDeleteRequest || canRemoveInvoice) && (
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-950" title="Další akce">
@@ -165,6 +167,30 @@ const PayoutTableActions = ({
                     <AlertDialogCancel>Zrušit</AlertDialogCancel>
                     <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={() => onDelete?.(item.id)}>
                       Smazat
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {canRemoveInvoice && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-red-600 hover:bg-red-50 hover:text-red-700">
+                    <Trash2 className="h-4 w-4" />
+                    Odebrat fakturu
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Odebrat nahranou fakturu?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Soubor bude odstraněn z úložiště a výplata se vrátí do stavu po schválení. Potom lze nahrát správnou fakturu.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                    <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={() => onRemoveInvoice?.(item)}>
+                      Odebrat fakturu
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -340,6 +366,7 @@ const PayoutTable = ({
   onApproveWithDialog,
   onDelete,
   onDownloadInvoice,
+  onRemoveInvoice,
   onEdit,
   onUpdateStatus,
   onUploadInvoice
@@ -480,6 +507,7 @@ const PayoutTable = ({
             onApproveWithDialog={onApproveWithDialog}
             onDelete={onDelete}
             onDownloadInvoice={onDownloadInvoice}
+            onRemoveInvoice={onRemoveInvoice}
             onEdit={onEdit}
             onUpdateStatus={onUpdateStatus}
             onUploadInvoice={onUploadInvoice}
