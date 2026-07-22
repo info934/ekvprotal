@@ -11,9 +11,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialValueGuard from './FinancialValueGuard';
+import { useToast } from '@/components/ui/use-toast';
 
 const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, distributionAmount }) => {
     const { hasPermission, userRole } = useAuth();
+    const { toast } = useToast();
     const [records, setRecords] = useState([]);
     const [projects, setProjects] = useState([]); // For linking logic
     const [loading, setLoading] = useState(true);
@@ -43,9 +45,8 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                 const ledgerQuery = canViewAmounts
                     ? supabase
                         .from('labor_cost_ledger')
-                        .select('attendance_id, employer_cost')
+                        .select('attendance_id, employer_cost, status')
                         .eq('realization_id', realizaceId)
-                        .neq('status', 'reversed')
                     : Promise.resolve({ data: [], error: null });
                 const [
                     { data: directData, error: directError },
@@ -55,7 +56,10 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                 if (directError) throw directError;
                 if (ledgerError) throw ledgerError;
 
-                const ledgerCostByAttendance = (ledgerData || []).reduce((costs, row) => {
+                const reversedAttendanceIds = new Set((ledgerData || [])
+                    .filter((row) => row.status === 'reversed')
+                    .map((row) => String(row.attendance_id)));
+                const ledgerCostByAttendance = (ledgerData || []).filter((row) => row.status !== 'reversed').reduce((costs, row) => {
                     const attendanceId = String(row.attendance_id);
                     costs.set(attendanceId, (costs.get(attendanceId) || 0) + Number(row.employer_cost || 0));
                     return costs;
@@ -68,7 +72,7 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
                     ...row,
                     source: 'realization',
                     _employer_cost: ledgerCostByAttendance.get(String(row.id))
-                        ?? Number(row.employer_cost_snapshot || 0),
+                        ?? (reversedAttendanceIds.has(String(row.id)) ? 0 : Number(row.employer_cost_snapshot || 0)),
                 }));
 
                 // Sort by date desc
@@ -114,8 +118,12 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
             .update({ linked_project_id: newVal })
             .eq('id', realizaceId);
         
-        if (!error && onLinkProject) {
-            onLinkProject(newVal);
+        if (error) {
+            toast({ title: 'Projekt se nepodařilo propojit', description: error.message, variant: 'destructive' });
+            return;
+        }
+        if (onLinkProject) {
+            onLinkProject(newVal, projects.find((project) => project.id === newVal) || null);
         }
     };
 

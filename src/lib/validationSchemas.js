@@ -58,8 +58,6 @@ const RealizationSchemaFields = {
   investor_id: z.string().uuid('Vyberte investora').optional().nullable(),
   lead_person_id: z.string().uuid('Vyberte vedoucího').optional().nullable(),
   contract_amount: z.coerce.number().positive('Smluvní částka musí být kladná'),
-  budget: z.coerce.number().nonnegative('Rozpočet nesmí být záporný').optional(),
-  expected_total_cost: z.coerce.number().nonnegative('Očekávaný náklad nesmí být záporný').optional(),
   actual_costs: z.coerce.number().nonnegative('Aktuální náklady nesmí být záporné').optional(),
   profit_margin_percent: z.coerce.number().min(0).max(100, 'Maximálně 100%').optional().nullable(),
   overhead_percent: z.coerce.number().min(0).max(100, 'Maximálně 100%').optional().nullable(),
@@ -80,6 +78,13 @@ export const createRealizationSchema = ({ requireFinance = true } = {}) => z.obj
 }, {
   message: "Plánované dokončení musí být po datu zahájení",
   path: ["planned_end_date"],
+}).refine((data) => {
+  const margin = Number(data.profit_margin_percent || 0);
+  const overhead = Number(data.overhead_percent || 0);
+  return margin + overhead <= 100;
+}, {
+  message: "Součet plánované marže a režie nesmí překročit 100 %",
+  path: ["overhead_percent"],
 });
 
 export const RealizationSchema = createRealizationSchema();

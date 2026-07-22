@@ -11,6 +11,9 @@ type StorageTarget = {
   rootFolderId?: string;
   rootFolderPath?: string;
   structure?: string[];
+  costInvoiceFolderPath?: string;
+  commercialContractFolderPath?: string;
+  customerInvoiceFolderPath?: string;
 };
 
 type StorageConnection = {
@@ -41,6 +44,22 @@ const ALLOWED_INVOICE_CONTENT_TYPES = new Set([
   'image/png',
   'application/octet-stream',
 ]);
+const MAX_CONTRACT_FILE_SIZE = 20 * 1024 * 1024;
+const ALLOWED_CONTRACT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png', '.webp'];
+const ALLOWED_CONTRACT_CONTENT_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/octet-stream',
+]);
+const COMMERCIAL_DOCUMENT_FOLDERS: Record<string, string> = {
+  'obchodni-smlouva': 'Obchodni smlouvy',
+  'odberatelska-faktura': 'Odberatelske faktury',
+};
 const ENTITY_PERMISSION_MODULES: Record<EntityType, string[]> = {
   project: ['projects', 'documents'],
   realizace: ['realizace', 'projects', 'documents'],
@@ -66,22 +85,35 @@ const normalizePath = (...parts: Array<string | undefined>) => parts
   .filter(Boolean)
   .join('/');
 
-const assertInvoiceFile = (fileName: unknown, contentType: unknown, fileSize: unknown) => {
+const invoiceCategory = (body: Record<string, unknown>) => {
+  const metadata = body.metadata && typeof body.metadata === 'object'
+    ? body.metadata as Record<string, unknown>
+    : {};
+  return String(metadata.category || '');
+};
+
+const assertInvoiceFile = (fileName: unknown, contentType: unknown, fileSize: unknown, category = '') => {
   const normalizedName = String(fileName || '').trim().toLowerCase();
   const normalizedContentType = String(contentType || 'application/octet-stream').split(';')[0].trim().toLowerCase();
   const normalizedSize = Number(fileSize || 0);
-  if (!ALLOWED_INVOICE_EXTENSIONS.some((extension) => normalizedName.endsWith(extension))) {
-    const error = new Error('Invoice must be a PDF, JPG or PNG file.') as Error & { status?: number };
+  const isContract = category === 'obchodni-smlouva';
+  const allowedExtensions = isContract ? ALLOWED_CONTRACT_EXTENSIONS : ALLOWED_INVOICE_EXTENSIONS;
+  const allowedContentTypes = isContract ? ALLOWED_CONTRACT_CONTENT_TYPES : ALLOWED_INVOICE_CONTENT_TYPES;
+  const maxSize = isContract ? MAX_CONTRACT_FILE_SIZE : MAX_INVOICE_FILE_SIZE;
+  if (!allowedExtensions.some((extension) => normalizedName.endsWith(extension))) {
+    const error = new Error(isContract
+      ? 'Contract must be a PDF, DOC, DOCX, TXT, JPG, PNG or WEBP file.'
+      : 'Invoice must be a PDF, JPG or PNG file.') as Error & { status?: number };
     error.status = 415;
     throw error;
   }
-  if (!ALLOWED_INVOICE_CONTENT_TYPES.has(normalizedContentType)) {
-    const error = new Error('Invoice content type is not allowed.') as Error & { status?: number };
+  if (!allowedContentTypes.has(normalizedContentType)) {
+    const error = new Error(isContract ? 'Contract content type is not allowed.' : 'Invoice content type is not allowed.') as Error & { status?: number };
     error.status = 415;
     throw error;
   }
-  if (!Number.isFinite(normalizedSize) || normalizedSize <= 0 || normalizedSize > MAX_INVOICE_FILE_SIZE) {
-    const error = new Error('Invoice file must be between 1 byte and 10 MB.') as Error & { status?: number };
+  if (!Number.isFinite(normalizedSize) || normalizedSize <= 0 || normalizedSize > maxSize) {
+    const error = new Error(`${isContract ? 'Contract' : 'Invoice'} file must be between 1 byte and ${isContract ? 20 : 10} MB.`) as Error & { status?: number };
     error.status = 413;
     throw error;
   }
@@ -192,6 +224,9 @@ const resolveTarget = (connection: StorageConnection, entityType: EntityType): S
     rootFolderId: configured?.rootFolderId || config.rootFolderId,
     rootFolderPath: configured?.rootFolderPath ?? config.rootFolderPath,
     structure: configured?.structure || fallbackStructure || [],
+    costInvoiceFolderPath: configured?.costInvoiceFolderPath,
+    commercialContractFolderPath: configured?.commercialContractFolderPath,
+    customerInvoiceFolderPath: configured?.customerInvoiceFolderPath,
   };
 
   if (!target.driveId) throw new Error(`SharePoint drive is not configured for ${entityType}.`);
@@ -396,6 +431,17 @@ const assertInvoiceAccessLink = (entityId: string, accessEntityType: string, acc
   }
 };
 
+const resolveInvoiceFolderPath = (target: StorageTarget, body: Record<string, unknown>) => {
+  const category = invoiceCategory(body);
+  if (category === 'obchodni-smlouva') {
+    return normalizePath(target.commercialContractFolderPath || COMMERCIAL_DOCUMENT_FOLDERS[category]);
+  }
+  if (category === 'odberatelska-faktura') {
+    return normalizePath(target.customerInvoiceFolderPath || COMMERCIAL_DOCUMENT_FOLDERS[category]);
+  }
+  return String(body.folderPath || '');
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -460,9 +506,17 @@ Deno.serve(async (req: Request) => {
       if (accessEntityType === 'project') {
         const { data } = await userClient.rpc('can_access_project', { p_project_id: accessEntityId });
         canAccess = data === true;
+        if (canAccess && entityType === 'invoice') {
+          const { data: canViewFinance } = await userClient.rpc('can_view_project_financials');
+          canAccess = canViewFinance === true;
+        }
       } else if (accessEntityType === 'realizace' || accessEntityType === 'realization') {
         const { data } = await userClient.rpc('can_access_realization', { p_realization_id: accessEntityId });
         canAccess = data === true;
+        if (canAccess && entityType === 'invoice') {
+          const { data: canViewFinance } = await userClient.rpc('can_view_realization_financials');
+          canAccess = canViewFinance === true;
+        }
       } else if (accessEntityType === 'product') {
         const { data } = await userClient.from('commercial_item_catalog').select('id').eq('id', accessEntityId).maybeSingle();
         canAccess = Boolean(data);
@@ -556,9 +610,11 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'createUploadSession') {
       const fileName = safeSegment(body.fileName);
-      if (entityType === 'invoice') assertInvoiceFile(fileName, body.contentType, body.fileSize);
+      if (entityType === 'invoice') assertInvoiceFile(fileName, body.contentType, body.fileSize, invoiceCategory(body));
       let folderId = body.folderId ? String(body.folderId) : '';
-      let folderPath = String(body.folderPath || '');
+      let folderPath = entityType === 'invoice'
+        ? resolveInvoiceFolderPath(target, body)
+        : String(body.folderPath || '');
       if (!folderId) {
         assertFolderPathBelongsToEntity(folderPath, entityFolderMapping, target);
         const result = await ensurePath(graphToken, target, folderPath);
@@ -587,10 +643,19 @@ Deno.serve(async (req: Request) => {
       if (entityFolderMapping) {
         await assertItemBelongsToEntityFolder(graphToken, target, fileId, entityFolderMapping);
       }
+      if (entityType === 'invoice') {
+        const requiredFolderPath = resolveInvoiceFolderPath(target, body);
+        if (requiredFolderPath) {
+          const requiredFolder = await ensurePath(graphToken, target, requiredFolderPath);
+          if (requiredFolder.item.id !== folderId) {
+            return jsonResponse({ success: false, error: 'Invoice was uploaded outside its configured accounting folder.' }, 403);
+          }
+        }
+      }
       const uploaded = await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(fileId)}`);
       if (entityType === 'invoice') {
         try {
-          assertInvoiceFile(uploaded.name, uploaded.file?.mimeType, uploaded.size);
+          assertInvoiceFile(uploaded.name, uploaded.file?.mimeType, uploaded.size, invoiceCategory(body));
         } catch (validationError) {
           await graphFetch(
             graphToken,
@@ -641,10 +706,12 @@ Deno.serve(async (req: Request) => {
       const fileName = safeSegment(body.fileName);
       const fileBase64 = String(body.fileBase64 || '');
       if (!fileBase64) return jsonResponse({ success: false, error: 'File content is required.' }, 400);
-      if (entityType === 'invoice') assertInvoiceFile(fileName, body.contentType, body.fileSize);
+      if (entityType === 'invoice') assertInvoiceFile(fileName, body.contentType, body.fileSize, invoiceCategory(body));
 
       let folderId = body.folderId ? String(body.folderId) : '';
-      let folderPath = String(body.folderPath || '');
+      let folderPath = entityType === 'invoice'
+        ? resolveInvoiceFolderPath(target, body)
+        : String(body.folderPath || '');
       if (!folderId) {
         assertFolderPathBelongsToEntity(folderPath, entityFolderMapping, target);
         const result = await ensurePath(graphToken, target, folderPath);
@@ -667,7 +734,7 @@ Deno.serve(async (req: Request) => {
 
       if (entityType === 'invoice') {
         try {
-          assertInvoiceFile(uploaded.name, uploaded.file?.mimeType, uploaded.size);
+          assertInvoiceFile(uploaded.name, uploaded.file?.mimeType, uploaded.size, invoiceCategory(body));
         } catch (validationError) {
           await graphFetch(
             graphToken,

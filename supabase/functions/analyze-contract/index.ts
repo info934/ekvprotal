@@ -311,12 +311,16 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const entityType = String(body.entityType || '');
+    const storageEntityType = String(body.storageEntityType || entityType);
     const entityId = String(body.entityId || '');
     const fileId = String(body.fileId || '');
     const fileName = String(body.fileName || 'contract.pdf');
     const mimeType = String(body.mimeType || 'application/pdf');
     if (!['project', 'realization'].includes(entityType) || !entityId || !body.connectionId || !fileId) {
       return json({ success: false, error: 'Invalid contract source or target.' }, 400);
+    }
+    if (!['project', 'realization', 'realizace', 'invoice'].includes(storageEntityType)) {
+      return json({ success: false, error: 'Invalid contract storage target.' }, 400);
     }
     if (!ALLOWED_TYPES.has(mimeType)) return json({ success: false, error: 'Unsupported contract file type.' }, 400);
 
@@ -331,7 +335,23 @@ Deno.serve(async (req) => {
     const { data: target } = await admin.from(targetTable).select('id').eq('id', entityId).maybeSingle();
     if (!target) return json({ success: false, error: 'Target project or realization was not found.' }, 404);
 
-    const bytes = await downloadSharePointFile(connection, entityType, fileId);
+    if (storageEntityType === 'invoice') {
+      const ownerType = entityType === 'realization' ? 'realizace' : entityType;
+      const { data: registeredFile } = await admin
+        .from('document_storage_files')
+        .select('id')
+        .eq('connection_id', body.connectionId)
+        .eq('entity_type', 'invoice')
+        .eq('external_file_id', fileId)
+        .eq('owner_type', ownerType)
+        .eq('owner_id', entityId)
+        .maybeSingle();
+      if (!registeredFile) {
+        return json({ success: false, error: 'The central contract file is not registered for this project or realization.' }, 403);
+      }
+    }
+
+    const bytes = await downloadSharePointFile(connection, storageEntityType, fileId);
     if (bytes.byteLength === 0) throw new Error('Contract file is empty.');
     if (bytes.byteLength > MAX_FILE_SIZE) throw new Error('Contract file exceeds the 20 MB analysis limit.');
     const hash = await sha256(bytes);

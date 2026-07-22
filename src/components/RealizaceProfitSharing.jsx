@@ -25,7 +25,7 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
     const { canViewAmounts } = getFinancialVisibility(userRole);
 
     // Strictly disable edit for 'user' role
-    const canEdit = canEditOverride ?? userRole === 'admin';
+    const canEdit = (canEditOverride ?? userRole === 'admin') && isCompleted;
 
     const fetchData = useCallback(async () => {
         try {

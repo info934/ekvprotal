@@ -42,7 +42,7 @@ import BillingOverviewSummary from '@/components/finance/BillingOverviewSummary'
 import { deleteStoredFile, uploadProjectCostInvoice } from '@/lib/documentStorageService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import PlanningBoard from '@/components/PlanningBoard';
-import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
+import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
 import { formatMoney } from '@/lib/financePresentation';
 import { RecordMetricGrid, RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
 import { RecordAttentionList, RecordOverviewGrid, RecordOverviewItem, RecordOverviewPanel } from '@/components/ui/record-overview';
@@ -85,7 +85,7 @@ const InfoCard = ({ label, value, subValue, icon: Icon, isLink = false, to = '#'
 
 const completedTaskStatuses = new Set(['done', 'completed', 'hotovo', 'dokončeno']);
 const isTaskDone = (task) => completedTaskStatuses.has(String(task?.status || '').toLocaleLowerCase('cs-CZ'));
-const isTaskOverdue = (task) => Boolean(task?.due_date) && new Date(`${task.due_date}T23:59:59`) < new Date() && !isTaskDone(task);
+const isTaskOverdue = (task) => Boolean(task?.end_date) && new Date(`${task.end_date}T23:59:59`) < new Date() && !isTaskDone(task);
 
 const StatusBadge = ({ status, config }) => (
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors", config?.color || "bg-gray-100 text-gray-800")}>
@@ -131,6 +131,7 @@ const ProjectDetail = () => {
     const [projectFinancialSummary, setProjectFinancialSummary] = useState(null);
     const [projectLaborSummary, setProjectLaborSummary] = useState(null);
     const [financeLoadError, setFinanceLoadError] = useState(null);
+    const [operationalLoadError, setOperationalLoadError] = useState(null);
     const [projectLinks, setProjectLinks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [briefContent, setBriefContent] = useState('');
@@ -199,6 +200,7 @@ const ProjectDetail = () => {
     const refreshData = useCallback(async () => {
         setLoading(true);
         setFinanceLoadError(null);
+        setOperationalLoadError(null);
         try {
             const { data: projectData, error: projectError } = await supabase.rpc('get_project_safe', {
                 p_project_id: projectId,
@@ -229,6 +231,19 @@ const ProjectDetail = () => {
                 financialSummaryPromise,
                 laborSummaryPromise,
             ]);
+
+            const operationalErrors = [membersRes, subcontractorsRes, tasksRes, linksRes]
+                .map((result) => result.error?.message)
+                .filter(Boolean);
+            if (operationalErrors.length > 0) {
+                setOperationalLoadError(operationalErrors.join(' · '));
+            }
+            const financeErrors = canViewFinance
+                ? [costsRes, overheadCostsRes, payoutItemsRes].map((result) => result.error?.message).filter(Boolean)
+                : [];
+            if (financeErrors.length > 0) {
+                setFinanceLoadError(financeErrors.join(' · '));
+            }
 
             setMembers(membersRes.data || []);
             setSubcontractors(subcontractorsRes.data || []);
@@ -410,20 +425,33 @@ const ProjectDetail = () => {
 
     const deleteProjectCostStorage = async (cost) => {
         if (!cost?.invoice_url) return;
+        const metadata = cost.invoice_storage_metadata || {};
+        const isCentralCostInvoice = metadata.storageRole === 'central_cost_invoice';
         const deletions = [deleteStoredFile({
             provider: cost.invoice_storage_provider,
             connectionId: cost.invoice_storage_connection_id,
-            bucket: cost.invoice_storage_metadata?.bucket || 'project-files',
+            bucket: metadata.bucket || (isCentralCostInvoice ? 'invoices' : 'project-files'),
             filePath: cost.invoice_url,
             fileId: cost.invoice_external_file_id,
-            entityType: 'project',
-            entityId: projectId,
+            entityType: isCentralCostInvoice ? 'invoice' : 'project',
+            entityId: isCentralCostInvoice ? cost.id : projectId,
+            accessEntityType: isCentralCostInvoice ? 'project' : undefined,
+            accessEntityId: isCentralCostInvoice ? projectId : undefined,
         })];
-        if (cost.invoice_storage_metadata?.centralLinkFileId) {
+        if (metadata.projectLinkFileId) {
             deletions.push(deleteStoredFile({
                 provider: cost.invoice_storage_provider,
                 connectionId: cost.invoice_storage_connection_id,
-                fileId: cost.invoice_storage_metadata.centralLinkFileId,
+                fileId: metadata.projectLinkFileId,
+                entityType: 'project',
+                entityId: projectId,
+            }));
+        } else if (metadata.centralLinkFileId) {
+            // Compatibility with invoices stored before central accounting storage became authoritative.
+            deletions.push(deleteStoredFile({
+                provider: cost.invoice_storage_provider,
+                connectionId: cost.invoice_storage_connection_id,
+                fileId: metadata.centralLinkFileId,
                 entityType: 'invoice',
                 entityId: cost.id,
                 accessEntityType: 'project',
@@ -476,7 +504,6 @@ const ProjectDetail = () => {
                     file: invoiceFile,
                     project,
                     costId,
-                    createCentralLink: true,
                 });
                 Object.assign(payload, uploadedInvoice.storageFields);
             }
@@ -506,13 +533,6 @@ const ProjectDetail = () => {
                 before: rewardSnapshotBefore,
             });
             toast({ title: 'Náklad uložen' });
-            if (uploadedInvoice?.centralLinkError) {
-                toast({
-                    title: 'Faktura je u projektu, centrální odkaz se nevytvořil',
-                    description: uploadedInvoice.centralLinkError,
-                    variant: 'warning',
-                });
-            }
             setIsCostDialogOpen(false);
             setEditingCost(null);
             refreshData();
@@ -828,7 +848,7 @@ const ProjectDetail = () => {
             <div className="app-page-wide">
                 <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
                   <RecordMetricGrid className="mb-4">
-                    {!isPrivateMode && <StatCard title="Celková cena" value={canViewFinance ? `${(project.price || 0).toLocaleString('cs-CZ')} Kč` : myRewardDisplay} icon={DollarSign} color="success" />}
+                    {!isPrivateMode && <StatCard title={canViewFinance ? 'Hodnota zakázky bez DPH' : 'Moje odměna'} value={canViewFinance ? `${(project.price || 0).toLocaleString('cs-CZ')} Kč` : myRewardDisplay} icon={DollarSign} color="success" />}
                     <StatCard title="Pokrok projektu" value={`${progress}%`} icon={Target} color={progress > 80 ? "success" : progress > 50 ? "warning" : "danger"} />
                     <StatCard title="Členové týmu" value={members.length} icon={Users} color="info" />
                     <StatCard title="Dokončení" value={project.completion_date ? format(parseISO(project.completion_date), 'd. M. yyyy') : "Není"} icon={Calendar} />
@@ -848,6 +868,12 @@ const ProjectDetail = () => {
                     </RecordWorkspaceTabsList>
 
                     <TabsContent value="overview" className="space-y-6">
+                        {operationalLoadError && (
+                            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
+                                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                                <div><p className="font-semibold">Část provozních dat se nepodařilo načíst</p><p className="mt-1 text-amber-800">Prázdné seznamy nemusí znamenat, že projekt nemá úkoly nebo členy. Obnovte stránku.</p></div>
+                            </div>
+                        )}
                         {canViewFinance && (
                             <FinancialHealthAlert
                                 baseAmount={financials.teamBudget}
@@ -864,7 +890,7 @@ const ProjectDetail = () => {
                         </div>
                         <RecordOverviewPanel
                             title="Stav projektu"
-                            description="Provozní souhrn projektu bez opakování detailních finančních údajů."
+                            description="Stav úkolů a termínů bez opakování horních KPI."
                             badge={<Badge variant="outline" className="w-fit border-slate-200 bg-slate-50 text-slate-700">{project.stage?.name || 'Bez stupně dokumentace'}</Badge>}
                             aside={(
                                 <RecordAttentionList items={[
@@ -875,18 +901,17 @@ const ProjectDetail = () => {
                                     },
                                     {
                                         label: 'Úkoly bez termínu',
-                                        value: tasks.filter((task) => !task.due_date).length,
-                                        tone: tasks.some((task) => !task.due_date) ? 'warning' : 'neutral',
+                                        value: tasks.filter((task) => !task.end_date).length,
+                                        tone: tasks.some((task) => !task.end_date) ? 'warning' : 'neutral',
                                     },
-                                    { label: 'Celkový postup', value: `${progress} %`, tone: progress < 25 ? 'warning' : 'neutral' },
+                                    { label: 'Otevřené úkoly', value: tasks.filter((task) => !isTaskDone(task)).length, tone: 'neutral' },
                                 ]} />
                             )}
                         >
                             <RecordOverviewGrid>
-                                <RecordOverviewItem icon={Target} label="Postup" value={`${progress} %`} detail="Postup projektu" tone={progress >= 80 ? 'positive' : 'info'} />
-                                <RecordOverviewItem icon={ClipboardList} label="Úkoly" value={tasks.length} detail={`${tasks.filter(isTaskDone).length} dokončeno`} />
-                                <RecordOverviewItem icon={Users} label="Obsazení" value={members.length + subcontractors.length} detail={`${members.length} členů, ${subcontractors.length} subdodavatelů`} />
-                                <RecordOverviewItem icon={Calendar} label="Dokončení" value={project.completion_date ? format(parseISO(project.completion_date), 'd. M. yyyy') : 'Bez termínu'} detail="Plánovaný termín" tone={project.completion_date ? 'neutral' : 'warning'} />
+                                <RecordOverviewItem icon={ClipboardList} label="Úkoly celkem" value={tasks.length} detail="Evidované úkoly projektu" />
+                                <RecordOverviewItem icon={Target} label="Dokončeno" value={tasks.filter(isTaskDone).length} detail={`${tasks.filter((task) => !isTaskDone(task)).length} zbývá`} tone="positive" />
+                                <RecordOverviewItem icon={AlertTriangle} label="Po termínu" value={tasks.filter(isTaskOverdue).length} detail="Vyžaduje pozornost" tone={tasks.some(isTaskOverdue) ? 'warning' : 'neutral'} />
                             </RecordOverviewGrid>
                         </RecordOverviewPanel>
                         {isAdmin && (
@@ -988,7 +1013,7 @@ const ProjectDetail = () => {
                         </CollapsibleSection>
                     </TabsContent>
 
-                    <TabsContent value="tasks"><ProjectTasks projectId={projectId} project={project} tasks={tasks} members={members} canEdit={canEdit} onTaskUpdate={refreshData} /></TabsContent>
+                    <TabsContent value="tasks"><ProjectTasks projectId={projectId} project={project} tasks={tasks} members={members} canEdit={canEdit} onTaskUpdate={setTasks} /></TabsContent>
                     <TabsContent value="plan"><PlanningBoard entityType="project" entityId={projectId} embedded canEdit={canEdit} /></TabsContent>
                     <TabsContent value="engineering"><ProjectEngineering projectId={projectId} project={project} canEdit={canEdit} /></TabsContent>
                     <TabsContent value="documents" className="space-y-6">
@@ -1016,8 +1041,8 @@ const ProjectDetail = () => {
                                 </div>
                             </div>
                         )}
-                        <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
-                            { label: 'Evidovaná hodnota zakázky', value: <FinanceAmount value={financials.price ?? project.price} />, detail: 'Základ projektového rozpočtu', tone: 'neutral', icon: DollarSign },
+                        {!financeLoadError && <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
+                            { label: 'Evidovaná hodnota zakázky bez DPH', value: <FinanceAmount value={financials.price ?? project.price} />, detail: 'Základ projektového rozpočtu', tone: 'neutral', icon: DollarSign },
                             { label: 'Plánovaný projektový budget', value: <FinanceAmount value={financials.totalBudget} />, detail: `${project.budget_percentage}% z hodnoty`, tone: 'plan', icon: Wallet },
                             { label: 'Skutečné náklady', value: <FinanceAmount value={financials.costsAfterPaidPayouts} />, detail: 'Včetně vyplacených odměn', tone: 'neutral', icon: ClipboardList },
                             { label: 'Nerozdělený budget', value: <FinanceAmount value={financials.unallocatedBudget} />, detail: 'Po nákladech a plánovaných odměnách', tone: Number(financials.unallocatedBudget || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
@@ -1025,13 +1050,7 @@ const ProjectDetail = () => {
                             { label: 'Rezervované výplaty', value: <FinanceAmount value={financials.reservedPayouts} />, detail: 'Závazek, zatím ne náklad', tone: Number(financials.reservedPayouts || 0) ? 'warning' : 'neutral', icon: Clock },
                             { label: 'Dostupné pro výplatu', value: <FinanceAmount value={financials.availableForPayout} />, detail: 'Po kontrolách a rezervacích', tone: Number(financials.availableForPayout || 0) < 0 ? 'negative' : 'positive', icon: Users },
                             { label: 'Plánovaná marže', value: <FinanceAmount value={financials.plannedMargin ?? financials.projectProfit} />, detail: 'Hodnota minus plánovaný budget', tone: Number(financials.plannedMargin || 0) < 0 ? 'negative' : 'positive', icon: DollarSign },
-                        ]} />
-                        <FinanceStageFlow stages={[
-                            { label: 'Hodnota zakázky', value: financials.price ?? project.price, barClassName: 'bg-slate-500' },
-                            { label: 'Projektový budget', value: financials.totalBudget, barClassName: 'bg-blue-500' },
-                            { label: 'Skutečné náklady', value: financials.costsAfterPaidPayouts, barClassName: 'bg-amber-500' },
-                            { label: 'Dostupné pro výplatu', value: financials.availableForPayout, barClassName: 'bg-emerald-500' },
-                        ]} />
+                        ]} />}
                         <FinanceDefinitionNote>Nerozdělený budget je týmový základ po nákladech a naplánovaných odměnách; není totožný s limitem dostupným pro výplatu, který navíc zohledňuje rezervované žádosti. Režie je samostatná plánovaná rezerva a její detail je uveden pouze v přehledu připsaných režií níže.</FinanceDefinitionNote>
                         <FinancialSettingsCard
                             entityType="project"
@@ -1067,15 +1086,18 @@ const ProjectDetail = () => {
                                                     <TableCell>
                                                         {cost.invoice_url ? (
                                                             <button type="button" onClick={async () => {
+                                                                const isCentralCostInvoice = cost.invoice_storage_metadata?.storageRole === 'central_cost_invoice';
                                                                 const result = await downloadInvoiceFromStorage({
                                                                     provider: cost.invoice_storage_provider,
                                                                     connectionId: cost.invoice_storage_connection_id,
-                                                                    bucket: cost.invoice_storage_metadata?.bucket || 'project-files',
+                                                                    bucket: cost.invoice_storage_metadata?.bucket || (isCentralCostInvoice ? 'invoices' : 'project-files'),
                                                                     filePath: cost.invoice_url,
                                                                     fileId: cost.invoice_external_file_id,
                                                                     fileName: cost.invoice_name,
-                                                                    entityType: 'project',
-                                                                    entityId: projectId,
+                                                                    entityType: isCentralCostInvoice ? 'invoice' : 'project',
+                                                                    entityId: isCentralCostInvoice ? cost.id : projectId,
+                                                                    accessEntityType: isCentralCostInvoice ? 'project' : undefined,
+                                                                    accessEntityId: isCentralCostInvoice ? projectId : undefined,
                                                                 });
                                                                 if (!result.success) toast({ title: 'Fakturu se nepodarilo stahnout', description: result.error, variant: 'destructive' });
                                                             }} className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:underline">

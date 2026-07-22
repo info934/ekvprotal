@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
-import { AlertTriangle, BarChart, DollarSign, TrendingUp, TrendingDown, HardHat, Plus, Edit2, FileText, Upload, X } from 'lucide-react';
-import RealizaceFinancialChart from './RealizaceFinancialChart';
-import RealizaceFinancialTable from './RealizaceFinancialTable';
+import { AlertTriangle, BarChart, DollarSign, TrendingUp, TrendingDown, HardHat, Plus, Edit2, FileText, X, Wallet } from 'lucide-react';
 import RealizaceOverheadSummary from './RealizaceOverheadSummary';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +15,8 @@ import SubjectDialog from './SubjectDialog';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import { FinanceAmount, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import EkvLoader from '@/components/ui/ekv-loader';
 
 // Main Dashboard Component
 const RealizaceFinancials = () => {
@@ -46,7 +46,7 @@ const RealizaceFinancials = () => {
         fetchFinancials();
     }, [canViewAmounts, toast]);
 
-    if (loading) return <div className="p-8 text-center">Načítání...</div>;
+    if (loading) return <EkvLoader title="Načítám finance realizací" description="Sestavuji kanonický přehled výnosů, nákladů a rozpočtů." />;
     if (!canViewAmounts) {
         return (
             <div className="app-page">
@@ -65,15 +65,32 @@ const RealizaceFinancials = () => {
                 <p className="mt-1 text-sm text-slate-500">Souhrnný administrátorský pohled na výnosy, rozpočty a očekávaný výsledek realizací.</p>
             </div>
             <FinanceMetricStrip metrics={[
-                { label: 'Výnosy ze smluv', value: <FinanceAmount value={financials?.total_revenue} />, detail: 'Evidované realizace', tone: 'neutral', icon: DollarSign },
+                { label: 'Výnosy bez DPH', value: <FinanceAmount value={financials?.total_revenue} />, detail: 'Smlouvy a vícepráce', tone: 'neutral', icon: DollarSign },
+                { label: 'Skutečné náklady bez DPH', value: <FinanceAmount value={financials?.total_costs} />, detail: 'Přímá práce a vyplacené odměny', tone: 'neutral', icon: Wallet },
                 { label: 'Plánovaný zisk firmy', value: <FinanceAmount value={financials?.total_profit} />, detail: 'Podle nastavených marží', tone: Number(financials?.total_profit || 0) < 0 ? 'negative' : 'positive', icon: TrendingUp },
                 { label: 'Plánovaná režie', value: <FinanceAmount value={financials?.total_overhead} />, detail: 'Rozpočtová alokace', tone: 'warning', icon: FileText },
                 { label: 'Rozpočet týmů', value: <FinanceAmount value={financials?.total_distribution} />, detail: 'Základ pro odměny', tone: 'plan', icon: TrendingDown },
                 { label: 'Počet realizací', value: financials?.realization_count || 0, detail: 'V agregovaném přehledu', tone: 'neutral', icon: HardHat },
-            ]} className="2xl:grid-cols-5" />
+                { label: 'Dostupné pro výplatu', value: <FinanceAmount value={financials?.total_available_for_payout} />, detail: 'Po rezervacích a vyplacených odměnách', tone: 'positive', icon: Wallet },
+            ]} className="2xl:grid-cols-4" />
             <RealizaceOverheadSummary />
-            <RealizaceFinancialChart />
-            <RealizaceFinancialTable />
+            <Card>
+                <CardHeader><CardTitle>Finanční stav realizací</CardTitle></CardHeader>
+                <CardContent className="overflow-x-auto">
+                    <Table className="min-w-[980px]">
+                        <TableHeader><TableRow><TableHead>Realizace</TableHead><TableHead>Stav</TableHead><TableHead className="text-right">Výnos bez DPH</TableHead><TableHead className="text-right">Náklady bez DPH</TableHead><TableHead className="text-right">Marže</TableHead><TableHead className="text-right">Režie</TableHead><TableHead className="text-right">Týmový budget</TableHead><TableHead className="text-right">Dostupné</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                            {(financials?.items || []).map((item) => <TableRow key={item.id}>
+                                <TableCell className="font-medium">{item.name}</TableCell><TableCell>{item.status}</TableCell>
+                                <TableCell className="text-right"><FinanceAmount value={item.revenue} /></TableCell><TableCell className="text-right"><FinanceAmount value={item.costs} /></TableCell>
+                                <TableCell className="text-right"><FinanceAmount value={item.profit} /></TableCell><TableCell className="text-right"><FinanceAmount value={item.overhead} /></TableCell>
+                                <TableCell className="text-right"><FinanceAmount value={item.team_budget} /></TableCell><TableCell className="text-right"><FinanceAmount value={item.available_for_payout} /></TableCell>
+                            </TableRow>)}
+                            {!(financials?.items || []).length && <TableRow><TableCell colSpan={8} className="py-8 text-center text-slate-500">Nejsou evidované žádné realizace.</TableCell></TableRow>}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
         </div>
     );
 };
@@ -92,6 +109,7 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
     const [removeInvoice, setRemoveInvoice] = useState(false);
     const [isSubjectDialogOpen, setIsSubjectDialogOpen] = useState(false);
     const [loadingSubjects, setLoadingSubjects] = useState(false);
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         if(isOpen) fetchSubjects();
@@ -135,21 +153,18 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
          setIsSubjectDialogOpen(false);
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!description || !amount) {
             toast({ title: 'Chybí povinné údaje', variant: 'destructive' });
             return;
         }
-        onSave({
-            description,
-            amount: parseFloat(amount),
-            supplier_id: supplierId || null,
-            variable_symbol: variableSymbol || null,
-            note: note || null,
-            invoiceFile,
-            existingInvoice,
-            removeInvoice
-        });
+        setSaving(true);
+        try {
+            const saved = await onSave({ description, amount: parseFloat(amount), supplier_id: supplierId || null, variable_symbol: variableSymbol || null, note: note || null, invoiceFile, existingInvoice, removeInvoice });
+            if (saved !== false) onClose();
+        } finally {
+            setSaving(false);
+        }
     };
 
     return (
@@ -207,8 +222,8 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
                     </div>
                 </FormDialogBody>
                 <FormDialogFooter>
-                    <Button variant="outline" onClick={onClose}>Zrušit</Button>
-                    <Button onClick={handleSubmit}>Uložit</Button>
+                    <Button variant="outline" onClick={onClose} disabled={saving}>Zrušit</Button>
+                    <Button onClick={handleSubmit} disabled={saving}>{saving ? 'Ukládám…' : 'Uložit'}</Button>
                 </FormDialogFooter>
             </FormDialogContent>
             <SubjectDialog isOpen={isSubjectDialogOpen} onClose={() => setIsSubjectDialogOpen(false)} onSave={handleQuickSubjectSave}/>

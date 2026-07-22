@@ -34,6 +34,15 @@ const addDays = (date, days) => {
   next.setDate(next.getDate() + Number(days || 0));
   return toDateInput(next);
 };
+const isValidHttpUrl = (value) => {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
 
 const statusLabels = {
   draft: 'Koncept', issued: 'Vystavená', partially_paid: 'Částečně uhrazená',
@@ -243,7 +252,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
         due_date: addDays(issueDate, 14),
         amount_excl_vat: netParts[index],
         vat_rate: vatRate,
-        percent_of_contract: Number((100 / count).toFixed(3)),
+        percent_of_contract: contractNet > 0 ? Number((netParts[index] / contractNet * 100).toFixed(3)) : null,
       };
     });
     setSaving(true);
@@ -272,6 +281,10 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
     }
     if (isIssued && invoiceForm.document_required && !invoiceFile && !invoiceForm.document_url) {
       toast({ title: 'Nahrajte doklad faktury', description: 'Vystavenou fakturu nelze uložit bez souboru nebo ověřitelného odkazu.', variant: 'destructive' });
+      return;
+    }
+    if (invoiceForm.document_url && !isValidHttpUrl(invoiceForm.document_url.trim())) {
+      toast({ title: 'Odkaz na fakturu není platný', description: 'Použijte úplnou adresu začínající http:// nebo https://.', variant: 'destructive' });
       return;
     }
     if (paid > grossPreview + 0.01 && invoiceForm.invoice_kind !== 'credit_note') {

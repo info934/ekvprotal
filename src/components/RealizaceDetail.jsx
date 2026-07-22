@@ -26,10 +26,10 @@ import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 import BillingTracker from '@/components/BillingTracker';
 import BillingOverviewSummary from '@/components/finance/BillingOverviewSummary';
-import { deleteStoredFile, uploadInvoiceDocument } from '@/lib/documentStorageService';
+import { deleteStoredFile, uploadRealizationCostInvoice } from '@/lib/documentStorageService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import PlanningBoard from '@/components/PlanningBoard';
-import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
+import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
 import { RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
 import EkvLoader from '@/components/ui/ekv-loader';
 import { calculateRealizationRewardAllocation } from '@/domain/financials';
@@ -66,11 +66,9 @@ const RealizaceDetail = () => {
   const [laborFinancialSummary, setLaborFinancialSummary] = useState(null);
   const [financeLoadError, setFinanceLoadError] = useState(null);
 
-  // Hourly costs state (calculated)
-  const [hourlyCostsTotal, setHourlyCostsTotal] = useState(0);
+  // Linked project is contextual; labor costs come from the canonical ledger summary.
   const [linkedProjectId, setLinkedProjectId] = useState(null);
   const [linkedProjectCode, setLinkedProjectCode] = useState(null);
-  const [hourlyLoading, setHourlyLoading] = useState(false);
 
   // UI States
   const [costSearch, setCostSearch] = useState('');
@@ -206,6 +204,13 @@ const RealizaceDetail = () => {
       laborSummaryPromise,
     ]);
 
+    const financeListErrors = canViewCosts
+      ? [costsRes, extraRes].map((result) => result.error?.message).filter(Boolean)
+      : [];
+    if (financeListErrors.length > 0) {
+      setFinanceLoadError(financeListErrors.join(' · '));
+    }
+
     if (canViewCosts) {
       setCosts(costsRes.data || []);
       setExtraCosts(extraRes.data || []);
@@ -232,17 +237,6 @@ const RealizaceDetail = () => {
     setLoading(false);
   }, [realizaceId, navigate, toast, canViewAmounts, canViewCosts, canViewProfit]);
 
-  // The labor summary is the authoritative source. Direct member-rate reads are
-  // intentionally forbidden because compensation is private.
-  useEffect(() => {
-    if (!canViewCosts) {
-      setHourlyCostsTotal(0);
-    } else {
-      setHourlyCostsTotal(toNumber(laborFinancialSummary?.direct_project_cost));
-    }
-    setHourlyLoading(false);
-  }, [canViewCosts, laborFinancialSummary]);
-
   useEffect(() => {
     fetchData();
   }, [fetchData]);
@@ -256,12 +250,10 @@ const RealizaceDetail = () => {
   const totalManualCosts = hasFinancialSummary ? toNumber(financialSummary.manual_costs) : localManualCosts;
   const totalExtraCostsCost = hasFinancialSummary ? toNumber(financialSummary.extra_costs) : localExtraCostsCost;
   const totalExtraCostsSale = hasFinancialSummary ? toNumber(financialSummary.extra_revenue) : localExtraCostsSale;
-  const effectiveHourlyCostsTotal = hasFinancialSummary ? toNumber(financialSummary.hourly_costs) : hourlyCostsTotal;
   const reservedPayouts = hasFinancialSummary ? toNumber(financialSummary.reserved_payouts) : 0;
   const paidTaskPayouts = hasFinancialSummary ? toNumber(financialSummary.paid_task_payouts) : 0;
   const paidHourlyPayouts = hasFinancialSummary ? toNumber(financialSummary.paid_hourly_payouts) : 0;
   const paidPayoutCosts = hasFinancialSummary ? toNumber(financialSummary.paid_payout_costs) : 0;
-  const costsBeforePaidPayouts = hasFinancialSummary ? toNumber(financialSummary.costs_before_paid_payouts) : totalManualCosts + totalExtraCostsCost;
   const legacyGrandTotalCosts = hasFinancialSummary ? toNumber(financialSummary.costs_after_paid_payouts) : totalManualCosts + totalExtraCostsCost;
   const isCanonicalFinancialModel = Number(financialSummary?.financial_model_version || 0) >= 2;
   const grandTotalCosts = isCanonicalFinancialModel
@@ -300,7 +292,7 @@ const RealizaceDetail = () => {
   const handleSaveCost = async (costData) => {
     if (financeLoadError) {
       toast({ title: 'Finanční data nejsou dostupná', description: 'Obnovte autoritativní finanční souhrn před provedením změny.', variant: 'destructive' });
-      return;
+      return false;
     }
     try {
       const costId = editingCost?.id || crypto.randomUUID();
@@ -308,17 +300,18 @@ const RealizaceDetail = () => {
       let fileName = costData.existingInvoice?.name || null;
       let invoiceStorageFields = {};
       let uploadedInvoice = null;
+      const previousInvoiceIsLocal = editingCost?.invoice_storage_metadata?.storageRole === 'realization_cost_invoice';
       const previousInvoice = (costData.invoiceFile || costData.removeInvoice) && editingCost?.invoice_url
         ? {
             provider: editingCost.invoice_storage_provider,
             connectionId: editingCost.invoice_storage_connection_id,
-            bucket: editingCost.invoice_storage_metadata?.bucket || 'project-files',
+            bucket: editingCost.invoice_storage_metadata?.bucket || (previousInvoiceIsLocal ? 'project-files' : 'invoices'),
             filePath: editingCost.invoice_url,
             fileId: editingCost.invoice_external_file_id,
-            entityType: 'invoice',
-            entityId: editingCost.id,
-            accessEntityType: 'realizace',
-            accessEntityId: realizaceId,
+            entityType: previousInvoiceIsLocal ? 'realizace' : 'invoice',
+            entityId: previousInvoiceIsLocal ? realizaceId : editingCost.id,
+            accessEntityType: previousInvoiceIsLocal ? undefined : 'realizace',
+            accessEntityId: previousInvoiceIsLocal ? undefined : realizaceId,
           }
         : null;
 
@@ -336,13 +329,10 @@ const RealizaceDetail = () => {
 
       if (costData.invoiceFile) {
         const file = costData.invoiceFile;
-        uploadedInvoice = await uploadInvoiceDocument({
+        uploadedInvoice = await uploadRealizationCostInvoice({
           file,
-          recordId: costId,
-          projectReference: linkedProjectCode || null,
-          category: 'naklady-realizaci',
-          accessEntityType: 'realizace',
-          accessEntityId: realizaceId,
+          realization,
+          costId,
         });
         fileUrl = uploadedInvoice.dbUrl;
         fileName = file.name;
@@ -398,10 +388,12 @@ const RealizaceDetail = () => {
 
       setIsCostDialogOpen(false);
       setEditingCost(null);
-      fetchData();
+      await fetchData();
+      return true;
 
     } catch (error) {
       toast({ title: 'Chyba při ukládání', description: error.message, variant: 'destructive' });
+      return false;
     }
   };
 
@@ -417,16 +409,17 @@ const RealizaceDetail = () => {
     } else {
       if (cost?.invoice_url) {
         try {
+          const invoiceIsLocal = cost.invoice_storage_metadata?.storageRole === 'realization_cost_invoice';
           await deleteStoredFile({
             provider: cost.invoice_storage_provider,
             connectionId: cost.invoice_storage_connection_id,
-            bucket: cost.invoice_storage_metadata?.bucket || 'project-files',
+            bucket: cost.invoice_storage_metadata?.bucket || (invoiceIsLocal ? 'project-files' : 'invoices'),
             filePath: cost.invoice_url,
             fileId: cost.invoice_external_file_id,
-            entityType: 'invoice',
-            entityId: cost.id,
-            accessEntityType: 'realizace',
-            accessEntityId: realizaceId,
+            entityType: invoiceIsLocal ? 'realizace' : 'invoice',
+            entityId: invoiceIsLocal ? realizaceId : cost.id,
+            accessEntityType: invoiceIsLocal ? undefined : 'realizace',
+            accessEntityId: invoiceIsLocal ? undefined : realizaceId,
           });
         } catch (storageError) {
           toast({
@@ -446,8 +439,9 @@ const RealizaceDetail = () => {
     (c.supplier?.name || '').toLowerCase().includes(costSearch.toLowerCase())
   );
 
-  const handleLinkProjectUpdate = (newProjectId) => {
+  const handleLinkProjectUpdate = (newProjectId, linkedProject = null) => {
     setLinkedProjectId(newProjectId);
+    setLinkedProjectCode(linkedProject?.code || null);
   };
 
   if (loading) return (
@@ -460,7 +454,7 @@ const RealizaceDetail = () => {
     <div>
       <RecordWorkspaceHeader
         title={realization.name}
-        subtitle={realization.location_address || 'Adresa neuvedena'}
+        subtitle={[realization.code, realization.location_address || 'Adresa neuvedena'].filter(Boolean).join(' · ')}
         onBack={() => navigate('/realizace')}
         status={renderStatusMenu()}
         actions={canEdit && (
@@ -483,7 +477,7 @@ const RealizaceDetail = () => {
 
           <TabsContent value="overview">
             <div className="space-y-6">
-              {canViewAmounts && (
+              {canViewAmounts && !financeLoadError && (
                 <FinancialHealthAlert
                   baseAmount={totalRevenue}
                   remainingAmount={calculatedFinancials.teamBudget}
@@ -523,8 +517,8 @@ const RealizaceDetail = () => {
                     </div>
                   </div>
                 )}
-                <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
-                  { label: 'Výnos zakázky', value: <FinanceAmount value={totalRevenue} />, detail: 'Smlouva a schválené vícepráce', tone: 'neutral', icon: DollarSign },
+                {!financeLoadError && <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
+                  { label: 'Výnos zakázky bez DPH', value: <FinanceAmount value={totalRevenue} />, detail: 'Smlouva a schválené vícepráce', tone: 'neutral', icon: DollarSign },
                   { label: 'Skutečné náklady', value: <FinanceAmount value={grandTotalCosts} />, detail: 'Včetně vyplacených odměn', tone: 'neutral', icon: Download },
                   { label: 'Nerozdělený budget', value: <FinanceAmount value={rewardAllocation.unallocatedBudget} />, detail: 'Po nákladech a naplánovaných podílech', tone: Number(rewardAllocation.unallocatedBudget || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
                   { label: 'Režie realizace', value: <FinanceAmount value={calculatedFinancials.overheadAmount} />, detail: `${Number(realization.overhead_percent || 0).toLocaleString('cs-CZ')} % z výnosu`, tone: 'warning', icon: FileText },
@@ -532,13 +526,7 @@ const RealizaceDetail = () => {
                   { label: 'Vyplacené odměny', value: <FinanceAmount value={paidPayoutCosts} />, detail: 'Součást skutečných nákladů', tone: 'neutral', icon: DollarSign },
                   { label: 'Plánovaná marže', value: <FinanceAmount value={calculatedFinancials.profitAmount} />, detail: `${Number(realization.profit_margin_percent || 0).toLocaleString('cs-CZ')} % z výnosu`, tone: Number(calculatedFinancials.profitAmount || 0) < 0 ? 'negative' : 'positive', icon: PieChart },
                   { label: 'Provozní zůstatek', value: <FinanceAmount value={profitAvailable} />, detail: 'Výnos minus skutečné náklady', tone: Number(profitAvailable || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
-                ]} />
-                <FinanceStageFlow stages={[
-                  { label: 'Výnos zakázky', value: totalRevenue, barClassName: 'bg-slate-500' },
-                  { label: 'Projektový budget', value: calculatedFinancials.grossProjectBudget, barClassName: 'bg-blue-500' },
-                  { label: 'Skutečné náklady', value: grandTotalCosts, barClassName: 'bg-amber-500' },
-                  { label: 'Provozní zůstatek', value: profitAvailable, barClassName: Number(profitAvailable || 0) < 0 ? 'bg-red-500' : 'bg-emerald-500' },
-                ]} />
+                ]} />}
                 <FinanceDefinitionNote>Nerozdělený budget je týmový základ po skutečných nákladech a naplánovaných podílech. Režie zůstává oddělenou rezervou firmy; rezervované výplaty snižují dostupný limit, ale do skutečných nákladů vstoupí až po vyplacení.</FinanceDefinitionNote>
                 {userRole === 'admin' && (
                   <FinancialSettingsCard
@@ -615,17 +603,18 @@ const RealizaceDetail = () => {
                                       className="inline-flex items-center text-blue-600 hover:underline"
                                       onClick={async () => {
                                         try {
+                                          const invoiceIsLocal = cost.invoice_storage_metadata?.storageRole === 'realization_cost_invoice';
                                           const result = await downloadInvoiceFromStorage({
                                             provider: cost.invoice_storage_provider,
                                             connectionId: cost.invoice_storage_connection_id,
-                                            bucket: cost.invoice_storage_metadata?.bucket || 'project-files',
+                                            bucket: cost.invoice_storage_metadata?.bucket || (invoiceIsLocal ? 'project-files' : 'invoices'),
                                             filePath: cost.invoice_url,
                                             fileId: cost.invoice_external_file_id,
                                             fileName: cost.invoice_name,
-                                            entityType: 'invoice',
-                                            entityId: cost.id,
-                                            accessEntityType: 'realizace',
-                                            accessEntityId: realizaceId,
+                                            entityType: invoiceIsLocal ? 'realizace' : 'invoice',
+                                            entityId: invoiceIsLocal ? realizaceId : cost.id,
+                                            accessEntityType: invoiceIsLocal ? undefined : 'realizace',
+                                            accessEntityId: invoiceIsLocal ? undefined : realizaceId,
                                           });
                                           if (!result.success) throw new Error(result.error);
                                         } catch (error) {
@@ -694,7 +683,7 @@ const RealizaceDetail = () => {
                       realizaceId={realizaceId}
                       distributionAmount={calculatedFinancials.teamBudget}
                       sponsorDeductions={laborFinancialSummary?.sponsor_deductions || []}
-                      isCompleted={realization.status === 'Dokončeno'}
+                      isCompleted={['Dokončeno', 'Předáno'].includes(realization.status)}
                       canEdit={canEdit && !financeLoadError}
                     />
                   </section>

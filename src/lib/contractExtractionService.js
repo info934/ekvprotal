@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/customSupabaseClient';
 import { invokeWithTimeout } from '@/lib/requestControl';
-import { getEntityStorageFolder, uploadEntityStorageFile } from '@/lib/documentStorageService';
+import { getDefaultStorageConnection, uploadInvoiceDocument } from '@/lib/documentStorageService';
 
 const storageEntityType = (entityType) => entityType === 'realization' ? 'realizace' : entityType;
 const MAX_CONTRACT_FILE_SIZE = 20 * 1024 * 1024;
@@ -49,24 +49,35 @@ export const uploadAndAnalyzeContract = async ({ entityType, entityId, file }) =
     throw new Error('Podporované formáty jsou PDF, DOC, DOCX, TXT, JPG, PNG a WEBP.');
   }
   const mappedType = storageEntityType(entityType);
-  const folder = await getEntityStorageFolder({ entityType: mappedType, entityId });
-  if (!folder?.external_folder_id || !folder?.connection) {
-    throw new Error('Nejprve vytvořte nebo propojte SharePoint složku projektu či realizace.');
+  const targetTable = entityType === 'realization' ? 'realizations' : 'projects';
+  const { data: target } = await supabase
+    .from(targetTable)
+    .select('code')
+    .eq('id', entityId)
+    .maybeSingle();
+  const connection = await getDefaultStorageConnection();
+  if (connection.provider !== 'sharepoint') {
+    throw new Error('Analýza smlouvy vyžaduje aktivní centrální SharePoint úložiště Vedení.');
   }
-
-  const uploaded = await uploadEntityStorageFile({
-    entityType: mappedType,
-    entityId,
-    folderId: folder.external_folder_id,
+  const uploaded = await uploadInvoiceDocument({
     file,
-    connection: folder.connection,
+    recordId: crypto.randomUUID(),
+    projectReference: target?.code || null,
+    category: 'obchodni-smlouva',
+    accessEntityType: mappedType,
+    accessEntityId: entityId,
+    connection,
   });
+  if (uploaded.provider !== 'sharepoint' || !uploaded.fileId || !uploaded.connectionId) {
+    throw new Error('Analýza smlouvy vyžaduje aktivní centrální SharePoint úložiště Vedení.');
+  }
 
   const { data, error } = await invokeWithTimeout(supabase, 'analyze-contract', {
     body: {
       entityType,
+      storageEntityType: 'invoice',
       entityId,
-      connectionId: folder.connection.id,
+      connectionId: uploaded.connectionId,
       fileId: uploaded.fileId,
       fileName: file.name,
       mimeType,

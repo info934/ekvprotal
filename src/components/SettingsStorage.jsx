@@ -23,7 +23,7 @@ import { invokeWithTimeout } from '@/lib/requestControl';
 const TARGETS = [
   { key: 'project', label: 'Projekty', description: 'Projektová dokumentace a předání' },
   { key: 'realizace', label: 'Realizace', description: 'Realizační dokumentace, náklady a předání' },
-  { key: 'invoice', label: 'Faktury', description: 'Centrální účetní složka faktur' },
+  { key: 'invoice', label: 'Vedení', description: 'Obchodní smlouvy a odběratelské faktury' },
 ];
 
 const DEFAULT_STRUCTURES = {
@@ -39,6 +39,8 @@ const emptyTarget = {
   rootFolderPath: '',
   structure: [],
   costInvoiceFolderPath: '',
+  commercialContractFolderPath: '',
+  customerInvoiceFolderPath: '',
 };
 
 const createDefaultTargets = () => Object.fromEntries(TARGETS.map(({ key }) => [
@@ -46,7 +48,13 @@ const createDefaultTargets = () => Object.fromEntries(TARGETS.map(({ key }) => [
   {
     ...emptyTarget,
     structure: [...(DEFAULT_STRUCTURES[key] || [])],
-    costInvoiceFolderPath: key === 'project' ? '04_Fakturace' : '',
+    costInvoiceFolderPath: key === 'project'
+      ? '04_Fakturace/Nakladove faktury'
+      : key === 'realizace'
+        ? '02_Naklady/Faktury'
+        : '',
+    commercialContractFolderPath: key === 'invoice' ? 'Obchodni smlouvy' : '',
+    customerInvoiceFolderPath: key === 'invoice' ? 'Odberatelske faktury' : '',
   },
 ]));
 
@@ -79,7 +87,15 @@ const toForm = (connection) => {
         ...emptyTarget,
         ...(config.targets?.[key] || {}),
         costInvoiceFolderPath: key === 'project'
-          ? (config.targets?.[key]?.costInvoiceFolderPath || '04_Fakturace')
+          ? (config.targets?.[key]?.costInvoiceFolderPath || '04_Fakturace/Nakladove faktury')
+          : key === 'realizace'
+            ? (config.targets?.[key]?.costInvoiceFolderPath || '02_Naklady/Faktury')
+            : '',
+        commercialContractFolderPath: key === 'invoice'
+          ? (config.targets?.[key]?.commercialContractFolderPath || 'Obchodni smlouvy')
+          : '',
+        customerInvoiceFolderPath: key === 'invoice'
+          ? (config.targets?.[key]?.customerInvoiceFolderPath || 'Odberatelske faktury')
           : '',
         structure: Array.isArray(config.targets?.[key]?.structure)
           ? config.targets[key].structure
@@ -208,7 +224,15 @@ const SettingsStorage = () => {
       rootFolderPath: form.targets[key].rootFolderPath.trim(),
       structure: form.targets[key].structure || [],
       costInvoiceFolderPath: key === 'project'
-        ? String(form.targets[key].costInvoiceFolderPath || '04_Fakturace').trim().replace(/^\/+|\/+$/g, '')
+        ? String(form.targets[key].costInvoiceFolderPath || '04_Fakturace/Nakladove faktury').trim().replace(/^\/+|\/+$/g, '')
+        : key === 'realizace'
+          ? String(form.targets[key].costInvoiceFolderPath || '02_Naklady/Faktury').trim().replace(/^\/+|\/+$/g, '')
+          : '',
+      commercialContractFolderPath: key === 'invoice'
+        ? String(form.targets[key].commercialContractFolderPath || 'Obchodni smlouvy').trim().replace(/^\/+|\/+$/g, '')
+        : '',
+      customerInvoiceFolderPath: key === 'invoice'
+        ? String(form.targets[key].customerInvoiceFolderPath || 'Odberatelske faktury').trim().replace(/^\/+|\/+$/g, '')
         : '',
     }]));
     targets.product = { ...targets.project, rootFolderPath: 'EKVPortal' };
@@ -387,17 +411,42 @@ const SettingsStorage = () => {
                           </p>
                         </div>
                       )}
-                      {target.key === 'project' && (
+                      {target.key !== 'invoice' && (
                         <div className="space-y-1.5">
-                          <Label htmlFor={`${target.key}-cost-invoices`}>Cílová složka nákladových faktur</Label>
+                          <Label htmlFor={`${target.key}-cost-invoices`}>Složka nákladových faktur</Label>
                           <Input
                             id={`${target.key}-cost-invoices`}
                             value={form.targets[target.key].costInvoiceFolderPath || ''}
                             onChange={(event) => updateTarget(target.key, 'costInvoiceFolderPath', event.target.value)}
-                            placeholder="04_Fakturace/Nakladove"
+                            placeholder={target.key === 'project' ? '04_Fakturace/Nakladove faktury' : '02_Naklady/Faktury'}
                           />
                           <p className="text-xs text-muted-foreground">
-                            Relativní cesta uvnitř složky projektu. Chybějící podsložky se vytvoří při prvním nahrání faktury.
+                            Originály nákladových faktur se ukládají přímo do složky konkrétního projektu nebo realizace.
+                          </p>
+                        </div>
+                      )}
+                      {target.key === 'invoice' && (
+                        <div className="space-y-4">
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`${target.key}-commercial-contracts`}>Složka obchodních smluv</Label>
+                            <Input
+                              id={`${target.key}-commercial-contracts`}
+                              value={form.targets[target.key].commercialContractFolderPath || ''}
+                              onChange={(event) => updateTarget(target.key, 'commercialContractFolderPath', event.target.value)}
+                              placeholder="Obchodni smlouvy"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`${target.key}-customer-invoices`}>Složka odběratelských faktur</Label>
+                            <Input
+                              id={`${target.key}-customer-invoices`}
+                              value={form.targets[target.key].customerInvoiceFolderPath || ''}
+                              onChange={(event) => updateTarget(target.key, 'customerInvoiceFolderPath', event.target.value)}
+                              placeholder="Odberatelske faktury"
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Centrální úložiště Vedení je určené pouze pro obchodní smlouvy a odběratelské faktury spojené se zakázkou.
                           </p>
                         </div>
                       )}

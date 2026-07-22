@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ClipboardList, Plus, Edit2, Trash2, LayoutGrid, List } from 'lucide-react';
@@ -17,43 +17,53 @@ const taskStatusConfig = {
   'Hotovo': { label: 'Hotovo', color: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500' },
 };
 
-const ProjectTasks = ({ project }) => {
-    const { projectId } = useParams();
+const ProjectTasks = ({ project, projectId: projectIdProp, tasks: initialTasks = [], onTaskUpdate, canEdit: canEditOverride }) => {
+    const { projectId: routeProjectId } = useParams();
+    const projectId = projectIdProp || routeProjectId;
     const { toast } = useToast();
     const { hasPermission } = useAuth();
-    const [tasks, setTasks] = useState([]);
+    const [tasks, setTasks] = useState(initialTasks);
     const [view, setView] = useState('kanban');
     const [editingTask, setEditingTask] = useState(null);
     const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
 
-    const canEdit = useMemo(() => hasPermission('projects', 'can_edit'), [hasPermission]);
+    const canEdit = canEditOverride ?? hasPermission('projects', 'can_edit');
 
     const fetchData = useCallback(async () => {
         const { data, error } = await supabase.from('project_tasks').select('*, member:members(name)').eq('project_id', projectId).order('end_date', { ascending: true });
         if (error) {
             toast({ title: "Chyba při načítání úkolů.", description: error.message, variant: "destructive" });
+            return null;
         } else {
-            setTasks(data);
+            const nextTasks = data || [];
+            setTasks(nextTasks);
+            return nextTasks;
         }
     }, [projectId, toast]);
 
     useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+        setTasks(initialTasks);
+    }, [initialTasks]);
 
     const handleSaveTask = async (taskData) => {
         const dataToSave = { ...taskData, project_id: projectId };
+        let saveError = null;
         
         if (editingTask) {
             const { error } = await supabase.from('project_tasks').update(dataToSave).eq('id', editingTask.id);
+            saveError = error;
             if (error) { toast({ title: "Chyba při úpravě úkolu.", variant: "destructive" }); }
             else { toast({ title: "✅ Úkol upraven!" }); }
         } else {
             const { error } = await supabase.from('project_tasks').insert([dataToSave]);
+            saveError = error;
             if (error) { toast({ title: "Chyba při vytváření úkolu.", variant: "destructive" }); }
             else { toast({ title: "✅ Nový úkol vytvořen!" }); }
         }
-        fetchData();
+        if (saveError) return;
+
+        const nextTasks = await fetchData();
+        if (nextTasks) onTaskUpdate?.(nextTasks);
         setIsTaskDialogOpen(false);
         setEditingTask(null);
     };
@@ -70,6 +80,7 @@ const ProjectTasks = ({ project }) => {
                 toast({ title: 'Chyba při změně stavu úkolu', variant: 'destructive' });
             } else {
                 toast({ title: `Úkol přesunut do stavu "${taskStatusConfig[newStatus].label}"` });
+                onTaskUpdate?.(updatedTasks);
             }
         }
     };
@@ -77,7 +88,11 @@ const ProjectTasks = ({ project }) => {
     const handleDeleteTask = async (id) => {
         const { error } = await supabase.from('project_tasks').delete().eq('id', id);
         if (error) { toast({ title: "Chyba při mazání úkolu.", variant: "destructive" }); }
-        else { toast({ title: "🗑️ Úkol smazán." }); fetchData(); }
+        else {
+            toast({ title: "🗑️ Úkol smazán." });
+            const nextTasks = await fetchData();
+            if (nextTasks) onTaskUpdate?.(nextTasks);
+        }
     };
 
     if (!project) return <div>Načítání...</div>;

@@ -124,7 +124,7 @@ const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate, canEdit: canEd
 
     return (
         <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <CardTitle className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-orange-500"/> Vícenáklady / Vícepráce</CardTitle>
                     <CardDescription>Evidence dodatečných nákladů a prací nad rámec rozpočtu.</CardDescription>
@@ -147,7 +147,7 @@ const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate, canEdit: canEd
                         <p className="text-lg font-bold text-green-700">{formatCurrency(totalSale)}</p>
                     </div>
                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider">Zisk z víceprací</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider">Hrubý rozdíl před marží a režií</p>
                         <p className={`text-lg font-bold ${totalProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                             {formatCurrency(totalProfit)}
                         </p>
@@ -240,7 +240,7 @@ const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate, canEdit: canEd
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div className="grid gap-2">
                                 <Label>Nákladová cena bez DPH (Kč) *</Label>
                                 <Input type="number" value={costAmount} onChange={e => setCostAmount(e.target.value)} placeholder="0" min="0" />

@@ -9,6 +9,10 @@ const DEFAULT_CONNECTION_CACHE_TTL = 5 * 60 * 1000;
 const FOLDER_LIST_CACHE_TTL = 60 * 1000;
 const SIMPLE_EXTERNAL_UPLOAD_LIMIT = 3 * 1024 * 1024;
 const GRAPH_UPLOAD_CHUNK_SIZE = 10 * 320 * 1024;
+const COMMERCIAL_DOCUMENT_FOLDERS = {
+  'odberatelska-faktura': 'Odberatelske faktury',
+  'obchodni-smlouva': 'Obchodni smlouvy',
+};
 
 let defaultConnectionCache = null;
 let defaultConnectionPromise = null;
@@ -356,11 +360,11 @@ export const uploadProjectDocument = async ({ file, project, documentName }) => 
   };
 };
 
-export const uploadProjectCostInvoice = async ({ file, project, costId, createCentralLink = true }) => {
+export const uploadProjectCostInvoice = async ({ file, project, costId }) => {
   const connection = await getDefaultStorageConnection();
   const configuredInvoiceFolder = sanitizeRelativeFolderPath(
     connection.config?.targets?.project?.costInvoiceFolderPath,
-    '04_Fakturace',
+    '04_Fakturace/Nakladove faktury',
   );
   await ensureEntityFolder({
     entityType: 'project',
@@ -369,35 +373,23 @@ export const uploadProjectCostInvoice = async ({ file, project, costId, createCe
     name: project.name,
     connection,
   });
-  const projectReference = String(project.code || '').trim();
-  const storedFileName = buildStoredFileName(file.name, projectReference, costId);
+  const storedFileName = buildStoredFileName(file.name, project.code, costId);
   const invoiceFolderPath = `${buildEntityFolderPath({
-    entityType: 'project',
-    entityId: project.id,
-    code: project.code,
-    name: project.name,
+    entityType: 'project', entityId: project.id, code: project.code, name: project.name,
   })}/${configuredInvoiceFolder}`;
 
   if (connection.provider === 'supabase') {
-    const filePath = `${project.id}/${configuredInvoiceFolder}/${storedFileName}`;
-    const { error } = await supabase.storage
-      .from(PROJECT_BUCKET)
-      .upload(filePath, file, { cacheControl: '3600', upsert: false });
+    const filePath = `cost-invoices/project/${project.id}/${storedFileName}`;
+    const { error } = await supabase.storage.from(PROJECT_BUCKET).upload(filePath, file, { cacheControl: '3600', upsert: false });
     if (error) throw error;
     return {
-      provider: 'supabase',
-      connectionId: connection.id,
-      dbUrl: `${PROJECT_BUCKET}/${filePath}`,
-      filePath,
-      fileName: file.name,
+      provider: 'supabase', connectionId: connection.id, dbUrl: `${PROJECT_BUCKET}/${filePath}`,
+      filePath, fileId: filePath, fileName: file.name,
       storageFields: {
-        invoice_url: `${PROJECT_BUCKET}/${filePath}`,
-        invoice_name: file.name,
-        invoice_storage_provider: 'supabase',
-        invoice_storage_connection_id: connection.id,
-        invoice_external_file_id: filePath,
-        invoice_external_web_url: null,
-        invoice_storage_metadata: { bucket: PROJECT_BUCKET, folderPath: invoiceFolderPath },
+        invoice_url: `${PROJECT_BUCKET}/${filePath}`, invoice_name: file.name,
+        invoice_storage_provider: 'supabase', invoice_storage_connection_id: connection.id,
+        invoice_external_file_id: filePath, invoice_external_web_url: null,
+        invoice_storage_metadata: { bucket: PROJECT_BUCKET, folderPath: invoiceFolderPath, storageRole: 'project_cost_invoice' },
       },
       cleanup: async () => supabase.storage.from(PROJECT_BUCKET).remove([filePath]),
     };
@@ -406,68 +398,75 @@ export const uploadProjectCostInvoice = async ({ file, project, costId, createCe
   const { data, error } = await uploadExternalFile({
     file,
     body: {
-      connectionId: connection.id,
-      provider: connection.provider,
-      entityType: 'project',
-      entityId: project.id,
-      folderPath: invoiceFolderPath,
-      fileName: storedFileName,
-      contentType: file.type || 'application/octet-stream',
+      connectionId: connection.id, provider: connection.provider,
+      entityType: 'project', entityId: project.id, folderPath: invoiceFolderPath,
+      fileName: storedFileName, contentType: file.type || 'application/octet-stream',
       metadata: { documentKind: 'project_cost_invoice', costId, originalFileName: file.name },
     },
   });
-
   if (error) throw error;
   if (data?.success === false) throw new Error(data.error || 'Fakturu se nepodařilo nahrát do projektové složky.');
-
-  let centralLink = null;
-  let centralLinkError = null;
-  if (createCentralLink && data.webUrl) {
-    try {
-      const shortcut = new File(
-        [`[InternetShortcut]\r\nURL=${data.webUrl}\r\n`],
-        `Odkaz - ${storedFileName}.url`,
-        { type: 'application/internet-shortcut' },
-      );
-      centralLink = await uploadInvoiceDocument({
-        file: shortcut,
-        recordId: costId,
-        projectReference: project.code || null,
-        category: 'odkaz-projektovy-naklad',
-        connection,
-        accessEntityType: 'project',
-        accessEntityId: project.id,
-      });
-    } catch (linkError) {
-      centralLinkError = linkError.message || 'Centrální odkaz se nepodařilo vytvořit.';
-    }
-  }
-
   return {
-    provider: connection.provider,
-    connectionId: connection.id,
-    dbUrl: data.webUrl,
-    filePath: data.filePath,
-    fileId: data.fileId,
-    webUrl: data.webUrl,
-    fileName: file.name,
-    centralLink,
-    centralLinkError,
+    provider: connection.provider, connectionId: connection.id, dbUrl: data.webUrl,
+    filePath: data.filePath, fileId: data.fileId, webUrl: data.webUrl, fileName: file.name,
     storageFields: {
-      invoice_url: data.webUrl,
-      invoice_name: file.name,
-      invoice_storage_provider: connection.provider,
-      invoice_storage_connection_id: connection.id,
-      invoice_external_file_id: data.fileId,
-      invoice_external_web_url: data.webUrl,
+      invoice_url: data.webUrl, invoice_name: file.name,
+      invoice_storage_provider: connection.provider, invoice_storage_connection_id: connection.id,
+      invoice_external_file_id: data.fileId, invoice_external_web_url: data.webUrl,
       invoice_storage_metadata: {
-        ...(data.metadata || {}),
-        folderPath: invoiceFolderPath,
-        centralLinkFileId: centralLink?.fileId || null,
-        centralLinkWebUrl: centralLink?.webUrl || null,
-        centralLinkError,
+        ...(data.metadata || {}), folderPath: invoiceFolderPath, storageRole: 'project_cost_invoice',
       },
     },
+    cleanup: async () => deleteExternalStorageFile({ connection, entityType: 'project', entityId: project.id, fileId: data.fileId }),
+  };
+};
+
+export const uploadRealizationCostInvoice = async ({ file, realization, costId }) => {
+  const connection = await getDefaultStorageConnection();
+  const configuredInvoiceFolder = sanitizeRelativeFolderPath(
+    connection.config?.targets?.realizace?.costInvoiceFolderPath,
+    '02_Naklady/Faktury',
+  );
+  await ensureEntityFolder({
+    entityType: 'realizace',
+    entityId: realization.id,
+    code: realization.code,
+    name: realization.name,
+    connection,
+  });
+  const storedFileName = buildStoredFileName(file.name, realization.code, costId);
+  const invoiceFolderPath = `${buildEntityFolderPath({
+    entityType: 'realizace', entityId: realization.id, code: realization.code, name: realization.name,
+  })}/${configuredInvoiceFolder}`;
+
+  if (connection.provider === 'supabase') {
+    const filePath = `cost-invoices/realizace/${realization.id}/${storedFileName}`;
+    const { error } = await supabase.storage.from(PROJECT_BUCKET).upload(filePath, file, { cacheControl: '3600', upsert: false });
+    if (error) throw error;
+    return {
+      provider: 'supabase', connectionId: connection.id, dbUrl: `${PROJECT_BUCKET}/${filePath}`,
+      filePath, fileId: filePath, fileName: file.name,
+      metadata: { bucket: PROJECT_BUCKET, folderPath: invoiceFolderPath, storageRole: 'realization_cost_invoice' },
+      cleanup: async () => supabase.storage.from(PROJECT_BUCKET).remove([filePath]),
+    };
+  }
+
+  const { data, error } = await uploadExternalFile({
+    file,
+    body: {
+      connectionId: connection.id, provider: connection.provider,
+      entityType: 'realizace', entityId: realization.id, folderPath: invoiceFolderPath,
+      fileName: storedFileName, contentType: file.type || 'application/octet-stream',
+      metadata: { documentKind: 'realization_cost_invoice', costId, originalFileName: file.name },
+    },
+  });
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || 'Fakturu se nepodařilo nahrát do složky realizace.');
+  return {
+    provider: connection.provider, connectionId: connection.id, dbUrl: data.webUrl,
+    filePath: data.filePath, fileId: data.fileId, webUrl: data.webUrl, fileName: file.name,
+    metadata: { ...(data.metadata || {}), folderPath: invoiceFolderPath, storageRole: 'realization_cost_invoice' },
+    cleanup: async () => deleteExternalStorageFile({ connection, entityType: 'realizace', entityId: realization.id, fileId: data.fileId }),
   };
 };
 
@@ -684,16 +683,24 @@ export const uploadInvoiceDocument = async ({
   ].join('-');
   const safeRecordId = sanitizePathSegment(recordId);
   const readableFileName = sanitizeReadableFileName(file.name);
-  const folderPath = '';
+  const configuredCommercialFolder = category === 'obchodni-smlouva'
+    ? connection.config?.targets?.invoice?.commercialContractFolderPath
+    : category === 'odberatelska-faktura'
+      ? connection.config?.targets?.invoice?.customerInvoiceFolderPath
+      : null;
+  const folderPath = COMMERCIAL_DOCUMENT_FOLDERS[category]
+    ? sanitizeRelativeFolderPath(configuredCommercialFolder, COMMERCIAL_DOCUMENT_FOLDERS[category])
+    : '';
   const storedFileName = projectReference
     ? buildStoredFileName(readableFileName, projectReference, recordId)
     : `${uploadDate}_${safeRecordId}_${readableFileName}`;
 
   if (connection.provider === 'supabase') {
-    if (!['payout', 'hourly_payout'].includes(accessEntityType) || !accessEntityId) {
-      throw new Error('Faktura musi byt navazana na konkretni vyplatu.');
+    const normalizedAccessEntityType = accessEntityType === 'realization' ? 'realizace' : accessEntityType;
+    if (!['payout', 'hourly_payout', 'project', 'realizace'].includes(normalizedAccessEntityType) || !accessEntityId) {
+      throw new Error('Faktura musí být navázána na konkrétní výplatu, projekt nebo realizaci.');
     }
-    const filePath = `${accessEntityType}/${sanitizePathSegment(accessEntityId)}/${storedFileName}`;
+    const filePath = `${normalizedAccessEntityType}/${sanitizePathSegment(accessEntityId)}/${storedFileName}`;
     const { error } = await supabase.storage
       .from(INVOICE_BUCKET)
       .upload(filePath, file, { cacheControl: '3600', upsert: false });
@@ -710,6 +717,7 @@ export const uploadInvoiceDocument = async ({
         bucket: INVOICE_BUCKET,
         originalFileName: file.name,
         category,
+        folderPath,
         uploadedAt: now.toISOString(),
       },
       cleanup: async () => supabase.storage.from(INVOICE_BUCKET).remove([filePath]),

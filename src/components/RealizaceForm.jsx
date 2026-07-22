@@ -46,7 +46,7 @@ const RealizaceForm = () => {
     const [teamEntries, setTeamEntries] = useState([{ member_id: '', share_type: '', share_value: '' }]);
     const [profitSharesLoading, setProfitSharesLoading] = useState(false);
     const [initialInvestor, setInitialInvestor] = useState(null);
-    const [canonicalActualCosts, setCanonicalActualCosts] = useState(null);
+    const [canonicalFinancialSummary, setCanonicalFinancialSummary] = useState(null);
 
     // Toggle states for percent/fixed
     const [profitMode, setProfitMode] = useState('percent'); // 'percent' | 'fixed'
@@ -75,8 +75,6 @@ const RealizaceForm = () => {
             investor_id: null,
             lead_person_id: null,
             contract_amount: 0,
-            budget: 0,
-            expected_total_cost: 0,
             actual_costs: 0,
             profit_margin_percent: 0,
             overhead_percent: 0,
@@ -90,24 +88,24 @@ const RealizaceForm = () => {
     const watchStatus = watch('status', '');
     const watchContract = watch('contract_amount', 0);
     const watchActual = watch('actual_costs', 0);
-    const watchExpected = watch('expected_total_cost', 0);
-    const watchBudget = watch('budget', 0);
     const watchProfitPercent = watch('profit_margin_percent', 0);
     const watchOverheadPercent = watch('overhead_percent', 0);
 
     const realizationStatuses = ['Připravuje se', 'Probíhá', 'Pozastaveno', 'Dokončeno', 'Předáno'];
-    const isCompleted = watchStatus === 'Dokončeno';
+    const isCompleted = ['Dokončeno', 'Předáno'].includes(watchStatus);
     
     const numberVal = (val) => {
         const n = parseFloat(val);
         return Number.isNaN(n) ? 0 : n;
     };
     const safeContract = numberVal(watchContract);
-    const safeActual = canonicalActualCosts === null ? numberVal(watchActual) : numberVal(canonicalActualCosts);
-    const safeExpected = numberVal(watchExpected);
-    const safeBudget = numberVal(watchBudget);
-    const baseCost = safeActual > 0 ? safeActual : (safeExpected > 0 ? safeExpected : safeBudget);
-    const availableProfitRaw = safeContract - baseCost;
+    const safeActual = canonicalFinancialSummary === null ? numberVal(watchActual) : numberVal(canonicalFinancialSummary.operational_costs);
+    const extraRevenue = numberVal(canonicalFinancialSummary?.extra_revenue);
+    const financialBase = safeContract + extraRevenue;
+    const availableProfitRaw = financialBase
+        - (financialBase * numberVal(watchProfitPercent) / 100)
+        - (financialBase * numberVal(watchOverheadPercent) / 100)
+        - safeActual;
     const availableProfit = Number.isFinite(availableProfitRaw) ? Math.max(0, availableProfitRaw) : 0;
     const formatCurrency = formatMoney;
 
@@ -202,8 +200,6 @@ const RealizaceForm = () => {
                     planned_end_date: data.planned_end_date ? format(parseISO(data.planned_end_date), 'yyyy-MM-dd') : '',
                     actual_end_date: data.actual_end_date ? format(parseISO(data.actual_end_date), 'yyyy-MM-dd') : '',
                     contract_amount: canViewFinance ? Number(data.contract_amount || 0) : null,
-                    budget: canViewFinance ? Number(data.budget || 0) : null,
-                    expected_total_cost: canViewFinance ? Number(data.expected_total_cost || 0) : null,
                     actual_costs: null,
                     profit_margin_percent: canViewFinance ? Number(data.profit_margin_percent || 0) : null,
                     overhead_percent: canViewFinance ? Number(data.overhead_percent || 0) : null,
@@ -213,7 +209,7 @@ const RealizaceForm = () => {
                 if (canViewFinance) {
                     const { data: summary, error: summaryError } = await supabase.rpc('realization_financial_summary', { p_realization_id: realizaceId });
                     if (summaryError) throw summaryError;
-                    setCanonicalActualCosts(Number(summary?.costs_after_paid_payouts ?? summary?.total_costs ?? 0));
+                    setCanonicalFinancialSummary(summary || null);
                 }
 
                 if (data.team_members && Array.isArray(data.team_members)) {
@@ -236,8 +232,6 @@ const RealizaceForm = () => {
                         setValue('name', opportunity.title || '');
                         setValue('investor_id', opportunity.subject_id || null);
                         setValue('contract_amount', Number(opportunity.value || 1));
-                        setValue('budget', Math.round(Number(opportunity.value || 0) * 0.72));
-                        setValue('expected_total_cost', Math.round(Number(opportunity.value || 0) * 0.72));
                         setValue('planned_end_date', opportunity.expected_close_date || '');
                         setValue('status', 'Připravuje se');
                     }
@@ -262,7 +256,7 @@ const RealizaceForm = () => {
 
         let dataToSave = { ...formData };
         if (!canViewFinance) {
-            for (const key of ['contract_amount', 'budget', 'expected_total_cost', 'actual_costs', 'profit_margin_percent', 'profit_share_percent', 'overhead_percent']) {
+            for (const key of ['contract_amount', 'actual_costs', 'profit_margin_percent', 'profit_share_percent', 'overhead_percent']) {
                 delete dataToSave[key];
             }
         }
@@ -284,7 +278,7 @@ const RealizaceForm = () => {
         dataToSave.team_members = memberIds;
         if (sourceOpportunityId) dataToSave.crm_opportunity_id = sourceOpportunityId;
 
-        if (canViewFinance && dataToSave.status === 'Dokončeno') {
+        if (canViewFinance && ['Dokončeno', 'Předáno'].includes(dataToSave.status)) {
             const percentTotal = teamEntries
                 .filter((entry) => entry.share_type === 'percent')
                 .reduce((sum, entry) => sum + numberVal(entry.share_value), 0);
@@ -306,7 +300,27 @@ const RealizaceForm = () => {
 
         try {
             let targetId = realizaceId;
-            if (isEditing) {
+            let savedRealization = null;
+            const shares = teamEntries
+                .filter(entry => entry.member_id && entry.share_type && parseFloat(entry.share_value) > 0)
+                .map(entry => ({
+                    member_id: entry.member_id,
+                    share_type: entry.share_type,
+                    share_value: parseFloat(entry.share_value),
+                }));
+
+            if (canViewFinance) {
+                const { status: nextStatus, ...realizationPayload } = dataToSave;
+                const { data: result, error } = await supabase.rpc('save_realization_with_profit_shares', {
+                    p_realization_id: isEditing ? realizaceId : null,
+                    p_payload: realizationPayload,
+                    p_status: nextStatus,
+                    p_shares: ['Dokončeno', 'Předáno'].includes(nextStatus) ? shares : [],
+                });
+                if (error) throw error;
+                savedRealization = result?.realization || result;
+                targetId = savedRealization?.id || targetId;
+            } else if (isEditing) {
                 const { status: nextStatus, ...realizationPayload } = dataToSave;
                 const { error } = await supabase.from('realizations').update(realizationPayload).eq('id', realizaceId);
                 if (error) throw error;
@@ -319,7 +333,7 @@ const RealizaceForm = () => {
                     if (statusError) throw statusError;
                 }
             } else {
-                let { data: newRealization, error } = await supabase.from('realizations').insert(dataToSave).select('id, name').single();
+                let { data: newRealization, error } = await supabase.from('realizations').insert(dataToSave).select('id, name, code').single();
                 if (error && ['42703', 'PGRST204'].includes(error.code) && sourceOpportunityId) {
                     const { crm_opportunity_id, ...legacyData } = dataToSave;
                     const legacyResult = await supabase.from('realizations').insert(legacyData).select('id, name').single();
@@ -328,13 +342,7 @@ const RealizaceForm = () => {
                 }
                 if (error) throw error;
                 targetId = newRealization.id;
-
-                if (sourceOpportunityId) {
-                    await supabase
-                        .from('crm_opportunities')
-                        .update({ realization_id: newRealization.id, updated_at: new Date().toISOString() })
-                        .eq('id', sourceOpportunityId);
-                }
+                savedRealization = newRealization;
 
                 try {
                     await ensureEntityFolder({
@@ -349,22 +357,28 @@ const RealizaceForm = () => {
                 }
             }
 
-            // Pokud je dokončeno, uložíme rozdělení zisku pro tým
-            if (canViewFinance && dataToSave.status === 'Dokončeno' && targetId) {
-                const shares = teamEntries
-                    .filter(entry => entry.member_id && entry.share_type && parseFloat(entry.share_value) > 0)
-                    .map(entry => ({
-                        realizace_id: targetId,
-                        member_id: entry.member_id,
-                        share_type: entry.share_type,
-                        share_value: parseFloat(entry.share_value)
-                    }));
+            if (!isEditing && canViewFinance && targetId) {
+                try {
+                    await ensureEntityFolder({
+                        entityType: 'realizace',
+                        entityId: targetId,
+                        code: savedRealization?.code,
+                        name: savedRealization?.name || dataToSave.name,
+                    });
+                } catch (storageError) {
+                    console.warn('Failed to prepare realization storage folder', storageError);
+                    toast({ title: 'Realizace vytvořena, ale složku dokumentů se nepodařilo připravit.', variant: 'warning' });
+                }
+            }
 
-                const { error: sharesError } = await supabase.rpc('replace_realization_profit_shares', {
-                    p_realization_id: targetId,
-                    p_shares: shares.map(({ member_id, share_type, share_value }) => ({ member_id, share_type, share_value })),
-                });
-                if (sharesError) throw sharesError;
+            if (!isEditing && sourceOpportunityId && targetId) {
+                const { error: opportunityLinkError } = await supabase
+                    .from('crm_opportunities')
+                    .update({ realization_id: targetId, updated_at: new Date().toISOString() })
+                    .eq('id', sourceOpportunityId);
+                if (opportunityLinkError) {
+                    toast({ title: 'Realizace je uložena, ale nepodařilo se propojit obchodní případ.', variant: 'warning' });
+                }
             }
 
             toast({ title: isEditing ? 'Realizace aktualizována' : 'Realizace vytvořena' });
@@ -486,7 +500,7 @@ const RealizaceForm = () => {
                                 <Input id="name" {...register('name')} className={errors.name ? 'border-red-500' : ''} />
                                 {errors.name && <p className="text-red-500 text-xs">{errors.name.message}</p>}
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4">
                                 <div>
                                     <Label>Investor</Label>
                                     <Controller 
@@ -561,16 +575,6 @@ const RealizaceForm = () => {
                                     />
                                     {errors.contract_amount && <p className="text-red-500 text-xs">{errors.contract_amount.message}</p>}
                                     <p className="text-xs text-muted-foreground mt-1">Smluvní hodnota bez DPH, ze které se počítá zisk.</p>
-                                </div>
-                                <div className="space-y-1">
-                                    <Label htmlFor="budget">Plánovaný rozpočet (Kč)</Label>
-                                    <Input 
-                                        id="budget" 
-                                        type="number" 
-                                        step="0.01"
-                                        {...register('budget')} 
-                                    />
-                                    <p className="text-xs text-muted-foreground mt-1">Celková alokovaná částka na realizaci.</p>
                                 </div>
                             </div>
                             
@@ -665,17 +669,7 @@ const RealizaceForm = () => {
                             <input type="hidden" {...register('profit_margin_percent')} />
                             <input type="hidden" {...register('overhead_percent')} />
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t">
-                                <div className="space-y-1">
-                                    <Label htmlFor="expected_total_cost">Očekávaný celkový náklad (Kč)</Label>
-                                    <Input 
-                                        id="expected_total_cost" 
-                                        type="number" 
-                                        step="0.01"
-                                        {...register('expected_total_cost')} 
-                                    />
-                                    <p className="text-xs text-muted-foreground mt-1">Plánovaný náklad, oproti kterému se vyhodnocuje skutečnost.</p>
-                                </div>
+                            <div className="grid grid-cols-1 gap-4 pt-2 border-t">
                                 <div className="space-y-1">
                                     <Label htmlFor="actual_costs">Aktuální náklady (Kč)</Label>
                                     <Input id="actual_costs" type="text" value={formatCurrency(safeActual)} readOnly className="bg-slate-50" />
@@ -696,7 +690,7 @@ const RealizaceForm = () => {
                             <div className="flex flex-col gap-3">
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                     <p className="text-sm text-muted-foreground">
-                                        {isCompleted && canViewFinance ? `Dostupný zisk k rozdělení: ${formatCurrency(availableProfit)}` : 'Vyberte členy týmu, kteří budou mít přístup.'}
+                                        {isCompleted && canViewFinance ? `Týmový budget k rozdělení: ${formatCurrency(availableProfit)}` : 'Vyberte členy týmu, kteří budou mít přístup.'}
                                     </p>
                                     <Button type="button" variant="outline" size="sm" onClick={() => setTeamEntries([...teamEntries, { member_id: '', share_type: '', share_value: '' }])} disabled={!canEdit}>
                                         <Plus className="w-4 h-4 mr-2" /> Přidat člena
