@@ -493,18 +493,41 @@ Deno.serve(async (req: Request) => {
 
     const { data: member } = await admin
       .from('members')
-      .select('user_role')
+      .select('id, user_role')
       .eq('auth_user_id', user.id)
       .maybeSingle();
     const role = String(member?.user_role || '');
     const isAdmin = role === 'admin';
+    const accessEntityType = String(body.accessEntityType || entityType);
+    const accessEntityId = String(body.accessEntityId || entityId);
+    const isPayoutInvoice = entityType === 'invoice'
+      && ['payout', 'hourly_payout'].includes(accessEntityType);
+
+    // A worker can upload/download their own payout invoice even if their role
+    // intentionally has no broad payout-administration permission. This keeps
+    // the authority limited to the exact payout bound to their member record.
+    let ownsPayout = false;
+    let ownsApprovedPayout = false;
+    if (isPayoutInvoice && member?.id && accessEntityId) {
+      const table = accessEntityType === 'hourly_payout' ? 'hourly_payout_requests' : 'payouts';
+      const { data: ownedPayout } = await admin
+        .from(table)
+        .select('id, status')
+        .eq('id', accessEntityId)
+        .eq('member_id', member.id)
+        .maybeSingle();
+      ownsPayout = Boolean(ownedPayout);
+      ownsApprovedPayout = ownedPayout?.status === 'approved';
+    }
+
+    const isPayoutInvoiceWrite = ['uploadFile', 'createUploadSession', 'registerUploadedFile'].includes(action);
     const requiredModules = action === 'testConnection' ? ['settings'] : ENTITY_PERMISSION_MODULES[entityType];
     const { data: permissionRows } = await admin
       .from('role_permissions')
       .select('module, can_read, can_edit, can_admin')
       .eq('role', role)
       .in('module', requiredModules);
-    const hasPermission = isAdmin || (permissionRows || []).some((permission) => {
+    const hasPermission = isAdmin || (isPayoutInvoiceWrite && ownsApprovedPayout) || (permissionRows || []).some((permission) => {
       if (action === 'testConnection') return permission.can_admin;
       if (action === 'downloadUrl' || action === 'listFiles') return permission.can_read || permission.can_edit || permission.can_admin;
       return permission.can_edit || permission.can_admin;
@@ -517,8 +540,6 @@ Deno.serve(async (req: Request) => {
       const userClient = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: authHeader } },
       });
-      const accessEntityType = String(body.accessEntityType || entityType);
-      const accessEntityId = String(body.accessEntityId || entityId);
       if (entityType !== 'invoice' && (accessEntityType !== entityType || accessEntityId !== entityId)) {
         return jsonResponse({ success: false, error: 'Storage access scope does not match the target entity.' }, 403);
       }
@@ -543,10 +564,10 @@ Deno.serve(async (req: Request) => {
         canAccess = Boolean(data);
       } else if (accessEntityType === 'payout') {
         const { data } = await userClient.from('payouts').select('id').eq('id', accessEntityId).maybeSingle();
-        canAccess = Boolean(data);
+        canAccess = ownsPayout || Boolean(data);
       } else if (accessEntityType === 'hourly_payout') {
         const { data } = await userClient.from('hourly_payout_requests').select('id').eq('id', accessEntityId).maybeSingle();
-        canAccess = Boolean(data);
+        canAccess = ownsPayout || Boolean(data);
       }
       if (!canAccess) return jsonResponse({ success: false, error: 'You cannot access this entity.' }, 403);
     }

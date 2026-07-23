@@ -21,9 +21,32 @@ const folderListRequests = new Map();
 
 const MISSING_STORAGE_CONFIG_CODES = new Set(['42P01', '42703', 'PGRST116', 'PGRST204', 'PGRST205']);
 
-const invokeDocumentStorage = (options, timeoutMs = 60_000) => (
-  invokeWithTimeout(supabase, 'document-storage', options, timeoutMs)
-);
+const invokeDocumentStorage = async (options, timeoutMs = 60_000) => {
+  const result = await invokeWithTimeout(supabase, 'document-storage', options, timeoutMs);
+  if (!result.error?.context) return result;
+
+  // Supabase otherwise collapses a useful Edge Function response into a generic
+  // "non-2xx" error, which made permission failures look like server outages.
+  const response = result.error.context;
+  if (typeof response.clone !== 'function') return result;
+
+  try {
+    const payload = await response.clone().json();
+    if (payload?.error) {
+      return {
+        ...result,
+        error: Object.assign(new Error(payload.error), {
+          code: payload.code || result.error.code,
+          status: response.status,
+        }),
+      };
+    }
+  } catch {
+    // Keep the original client error when the function did not return JSON.
+  }
+
+  return result;
+};
 
 const uploadExternalFile = async ({ file, body }) => {
   const uploadBody = { ...body, fileSize: file.size };

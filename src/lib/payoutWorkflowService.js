@@ -85,6 +85,33 @@ export const clearPayoutInvoice = async (payoutId) => {
   }
 };
 
+export const reopenPayoutForReview = async (payoutId) => {
+  try {
+    const { data, error } = await supabase.rpc('reopen_payout_for_review', {
+      p_payout_id: payoutId,
+    });
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    console.error('[PayoutWorkflow] Reopen payout error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const cancelPayoutRequest = async (payoutId, reason = null) => {
+  try {
+    const { data, error } = await supabase.rpc('cancel_payout_request', {
+      p_payout_id: payoutId,
+      p_reason: reason,
+    });
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    console.error('[PayoutWorkflow] Cancel payout error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 /**
  * TASK 3.3: Confirm invoice and mark as paid
  * Changes status from invoice_uploaded → paid

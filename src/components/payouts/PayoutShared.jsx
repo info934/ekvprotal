@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Clock, FileText, Upload, XCircle } from 'lucide-react';
+import { AlertTriangle, Ban, CheckCircle2, Clock, FileText, Upload, XCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
@@ -31,6 +31,12 @@ export const payoutStatusMeta = {
     icon: XCircle,
     className: 'border-red-200 bg-red-50 text-red-700'
   }
+};
+
+payoutStatusMeta.cancelled = {
+  label: 'Stornováno',
+  icon: Ban,
+  className: 'border-slate-300 bg-slate-100 text-slate-700'
 };
 
 export const formatCurrency = formatMoney;

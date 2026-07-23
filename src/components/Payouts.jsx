@@ -27,7 +27,14 @@ import AdminPayoutApprovalDialog from '@/components/AdminPayoutApprovalDialog';
 import { approvePayout } from '@/lib/PayoutApprovalService';
 import { sendPayoutRejectionEmail } from '@/lib/email';
 import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
-import { uploadInvoice, clearPayoutInvoice, confirmInvoice, approveWithoutInvoice } from '@/lib/payoutWorkflowService';
+import {
+  approveWithoutInvoice,
+  cancelPayoutRequest,
+  clearPayoutInvoice,
+  confirmInvoice,
+  reopenPayoutForReview,
+  uploadInvoice,
+} from '@/lib/payoutWorkflowService';
 import { sendInvoiceUploadedNotification, sendPayoutPaidEmail as sendWorkflowPayoutPaidEmail } from '@/lib/payoutWorkflowEmailService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import { deleteStoredFile, uploadInvoiceDocument } from '@/lib/documentStorageService';
@@ -320,25 +327,60 @@ const Payouts = () => {
   };
   const handleRemoveInvoice = async (payout) => {
     try {
-      await deleteStoredFile({
-        provider: payout.invoice_storage_provider,
-        connectionId: payout.invoice_storage_connection_id,
-        bucket: payout.invoice_storage_metadata?.bucket || 'invoices',
-        filePath: payout.invoice_url,
-        fileId: payout.invoice_external_file_id,
-        fileName: payout.invoice_name,
-        entityType: 'invoice',
-        entityId: payout.id,
-        accessEntityType: 'payout',
-        accessEntityId: payout.id,
-      });
       const result = await clearPayoutInvoice(payout.id);
       if (!result.success) throw new Error(result.error);
+
+      // The financial state changes first. A storage failure must never leave a
+      // payout pointing at a file that was already deleted.
+      try {
+        await deleteStoredFile({
+          provider: payout.invoice_storage_provider,
+          connectionId: payout.invoice_storage_connection_id,
+          bucket: payout.invoice_storage_metadata?.bucket || 'invoices',
+          filePath: payout.invoice_url,
+          fileId: payout.invoice_external_file_id,
+          fileName: payout.invoice_name,
+          entityType: 'invoice',
+          entityId: payout.id,
+          accessEntityType: 'payout',
+          accessEntityId: payout.id,
+        });
+      } catch (storageError) {
+        console.warn('Invoice file cleanup failed after payout state update:', storageError);
+        toast({
+          title: 'Výplata vrácena k faktuře',
+          description: 'Záznam faktury byl odebrán. Soubor se nepodařilo smazat z úložiště, správce jej může odstranit později.',
+          variant: 'warning',
+        });
+        await fetchPayouts();
+        return;
+      }
+
       toast({ title: 'Faktura odstraněna', description: 'Výplata je znovu připravena k nahrání správné faktury.' });
       await fetchPayouts();
     } catch (error) {
       console.error('Invoice removal error:', error);
       toast({ title: 'Fakturu se nepodařilo odstranit', description: getFinanceErrorMessage(error), variant: 'destructive' });
+    }
+  };
+  const handleReopenForReview = async (payout) => {
+    try {
+      const result = await reopenPayoutForReview(payout.id);
+      if (!result.success) throw new Error(result.error);
+      toast({ title: 'Výplata vrácena ke schválení', description: 'Žádost lze znovu upravit a schválit.' });
+      await fetchPayouts();
+    } catch (error) {
+      toast({ title: 'Výplatu se nepodařilo vrátit ke schválení', description: getFinanceErrorMessage(error), variant: 'destructive' });
+    }
+  };
+  const handleCancelPayout = async (payout) => {
+    try {
+      const result = await cancelPayoutRequest(payout.id);
+      if (!result.success) throw new Error(result.error);
+      toast({ title: 'Žádost o výplatu byla stornována', description: 'Záznam zůstává dohledatelný v historii a auditu.' });
+      await fetchPayouts();
+    } catch (error) {
+      toast({ title: 'Žádost se nepodařilo stornovat', description: getFinanceErrorMessage(error), variant: 'destructive' });
     }
   };
   const handleDelete = async (id) => { 
@@ -494,6 +536,7 @@ const Payouts = () => {
                       <SelectItem value="invoice_uploaded">Faktura nahrána</SelectItem>
                       <SelectItem value="paid">Vyplaceno</SelectItem>
                       <SelectItem value="rejected">Zamítnuto</SelectItem>
+                      <SelectItem value="cancelled">Stornováno</SelectItem>
                     </SelectContent>
                   </Select>
                 </>
@@ -528,7 +571,9 @@ const Payouts = () => {
                 onApproveWithDialog={handleApproveWithDialog}
                 onDelete={handleDelete}
                 onDownloadInvoice={handleDownloadInvoice}
+                onCancel={handleCancelPayout}
                 onRemoveInvoice={handleRemoveInvoice}
+                onReopen={handleReopenForReview}
                 onEdit={(p) => {
                   setEditingPayout(p);
                   setIsDialogOpen(true);

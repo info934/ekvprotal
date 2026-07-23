@@ -8,9 +8,16 @@ import { logPayoutAction } from '@/lib/payoutLogger';
 import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
 import { uploadHourlyPayoutInvoice } from '@/lib/hourlyPayoutWorkflowService';
 import { uploadInvoiceDocument } from '@/lib/documentStorageService';
+import { getFinanceErrorMessage } from '@/lib/financePresentation';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_RETRIES = 3;
+
+const isRetryableUploadError = (error) => {
+  const status = Number(error?.status || error?.context?.status || 0);
+  const message = String(error?.message || '').toLowerCase();
+  return status === 429 || status >= 500 || /timeout|timed out|network|fetch/.test(message);
+};
 
 const InvoiceUpload = ({ requestId, memberId, projectReference, onUploadSuccess }) => {
   const [isUploading, setIsUploading] = useState(false);
@@ -54,7 +61,11 @@ const InvoiceUpload = ({ requestId, memberId, projectReference, onUploadSuccess 
           break;
         } catch (error) {
           uploadError = error;
-          if (attempt < MAX_RETRIES) await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+          if (attempt < MAX_RETRIES && isRetryableUploadError(error)) {
+            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+            continue;
+          }
+          break;
         }
       }
       if (uploadError || !storedInvoice) throw uploadError || new Error('Fakturu se nepodařilo uložit.');
@@ -100,9 +111,9 @@ const InvoiceUpload = ({ requestId, memberId, projectReference, onUploadSuccess 
       await logPayoutAction('invoice_upload_failure', requestId, { error: error.message || error });
       
       toast({
-        title: "Chyba nahrávání",
-        description: "Při nahrávání faktury došlo k chybě. Zkontrolujte prosím připojení a zkuste to znovu.",
-        variant: "destructive"
+        title: 'Chyba nahrávání',
+        description: getFinanceErrorMessage(error, 'Fakturu se nepodařilo nahrát. Zkuste to znovu.'),
+        variant: 'destructive'
       });
     } finally {
       setIsUploading(false);

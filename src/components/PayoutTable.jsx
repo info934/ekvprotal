@@ -15,6 +15,7 @@ import {
   Hash,
   Loader2,
   MoreHorizontal,
+  RotateCcw,
   DollarSign,
   Trash2,
   Upload,
@@ -47,21 +48,27 @@ const PayoutTableActions = ({
   onApproveWithDialog,
   onDelete,
   onDownloadInvoice,
+  onCancel,
   onRemoveInvoice,
+  onReopen,
   onEdit,
   onUpdateStatus,
   onUploadInvoice
 }) => {
-  const { user } = useAuth();
+  const { memberId } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const fileInputId = `payout-invoice-${item.id}`;
-  const isOwner = user?.id === item.members?.auth_user_id;
+  const isOwner = Boolean(memberId && memberId === item.member_id);
   const canUploadInvoice = item.status === 'approved' && (isOwner || canAdmin) && !item.approved_without_invoice && !item.invoice_url;
   const canMarkPaid = canAdmin && (item.status === 'invoice_uploaded' || (item.status === 'approved' && item.approved_without_invoice));
   const canManagePending = canAdmin && item.status === 'pending';
   const canEditPending = item.status === 'pending' && (canAdmin || isOwner);
   const canDeleteRequest = item.status === 'pending' && (canAdmin || isOwner) && !item.invoice_url;
   const canRemoveInvoice = item.status === 'invoice_uploaded' && (canAdmin || isOwner) && Boolean(item.invoice_url);
+  const canReopenForReview = item.status === 'approved' && canAdmin;
+  const canCancelRequest = ['approved', 'invoice_uploaded'].includes(item.status)
+    && (canAdmin || isOwner)
+    && (item.status !== 'invoice_uploaded' || canAdmin);
 
   const handleFileChange = async (event) => {
     const file = event.target.files?.[0];
@@ -134,7 +141,7 @@ const PayoutTableActions = ({
         </Button>
       )}
 
-      {(canEditPending || canDeleteRequest || canRemoveInvoice) && (
+      {(canEditPending || canDeleteRequest || canRemoveInvoice || canReopenForReview || canCancelRequest) && (
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-950" title="Další akce">
@@ -191,6 +198,52 @@ const PayoutTableActions = ({
                     <AlertDialogCancel>Zrušit</AlertDialogCancel>
                     <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={() => onRemoveInvoice?.(item)}>
                       Odebrat fakturu
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {canReopenForReview && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="w-full justify-start gap-2" >
+                    <RotateCcw className="h-4 w-4 text-slate-500" />
+                    Vrátit ke schválení
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Vrátit výplatu ke schválení?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Schválení se zruší a žádost se vrátí do stavu čekajícího na schválení. Tato změna bude zaznamenána v auditu.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => onReopen?.(item)}>Vrátit ke schválení</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {canCancelRequest && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-red-600 hover:bg-red-50 hover:text-red-700">
+                    <XCircle className="h-4 w-4" />
+                    Stornovat žádost
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Stornovat žádost o výplatu?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Žádost nebude fyzicky smazána. Zůstane dohledatelná v auditu a nebude se dál započítávat mezi čekající výplaty.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                    <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={() => onCancel?.(item)}>
+                      Stornovat žádost
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -364,9 +417,11 @@ const PayoutTable = ({
   data,
   loading,
   onApproveWithDialog,
+  onCancel,
   onDelete,
   onDownloadInvoice,
   onRemoveInvoice,
+  onReopen,
   onEdit,
   onUpdateStatus,
   onUploadInvoice
@@ -505,9 +560,11 @@ const PayoutTable = ({
             item={item}
             canAdmin={canAdmin}
             onApproveWithDialog={onApproveWithDialog}
+            onCancel={onCancel}
             onDelete={onDelete}
             onDownloadInvoice={onDownloadInvoice}
             onRemoveInvoice={onRemoveInvoice}
+            onReopen={onReopen}
             onEdit={onEdit}
             onUpdateStatus={onUpdateStatus}
             onUploadInvoice={onUploadInvoice}

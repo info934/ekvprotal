@@ -184,12 +184,12 @@ BEGIN
       'available_share', GREATEST(0, total_share - reserved_payouts - paid_task_payouts + edit_amount),
       'availability_reason',
         CASE
-          WHEN share_type IS NULL THEN 'NenĂ­ nastaven podĂ­l'
-          WHEN team_budget <= 0 THEN 'TĂ˝movĂ˝ rozpoÄŤet je nulovĂ˝ nebo zĂˇpornĂ˝'
-          WHEN total_share <= 0 THEN 'PodĂ­l vychĂˇzĂ­ na 0 KÄŤ'
-          WHEN reserved_payouts + paid_task_payouts >= total_share THEN 'PodĂ­l je uĹľ rezervovanĂ˝ nebo vyplacenĂ˝'
-          WHEN GREATEST(0, total_share - reserved_payouts - paid_task_payouts + edit_amount) > 0 THEN 'DostupnĂ© k ĹľĂˇdosti'
-          ELSE 'NenĂ­ dostupnĂ˝ zĹŻstatek'
+          WHEN share_type IS NULL THEN 'Není nastaven podíl'
+          WHEN team_budget <= 0 THEN 'Týmový rozpočet je nulový nebo záporný'
+          WHEN total_share <= 0 THEN 'Podíl vychází na 0 Kč'
+          WHEN reserved_payouts + paid_task_payouts >= total_share THEN 'Podíl je už rezervovaný nebo vyplacený'
+          WHEN GREATEST(0, total_share - reserved_payouts - paid_task_payouts + edit_amount) > 0 THEN 'Dostupné k žádosti'
+          ELSE 'Není dostupný zůstatek'
         END
     )
     ORDER BY name
