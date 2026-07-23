@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Users, Plus, Trash2, Edit2, Briefcase, Coins } from 'lucide-react';
+import { Users, Plus, UserMinus, Edit2, Briefcase, Coins, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from '@/components/ui/label';
@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { formatCurrency } from '@/lib/utils';
 
 const RealizaceTeam = ({ realizaceId, teamBudget }) => {
@@ -37,6 +37,9 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
     const [validFrom, setValidFrom] = useState(new Date().toISOString().slice(0, 10));
     const [validTo, setValidTo] = useState('');
     const [saving, setSaving] = useState(false);
+    const [endingAssignment, setEndingAssignment] = useState(null);
+    const [assignmentEndDate, setAssignmentEndDate] = useState(new Date().toISOString().slice(0, 10));
+    const [assignmentEndReason, setAssignmentEndReason] = useState('');
 
     // Strictly disable edit for 'user' role
     const canEdit = userRole === 'admin';
@@ -53,6 +56,8 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                     is_hourly,
                     valid_from,
                     valid_to,
+                    ended_at,
+                    ended_reason,
                     hourly_funding_mode,
                     hourly_sponsor_member_id,
                     hourly_sponsor_percent,
@@ -75,7 +80,7 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                 .select('id, name, member_roles(name)')
                 .order('name'),
               userRole === 'admin'
-                ? supabase.from('realization_profit_shares').select('member_id').eq('realizace_id', realizaceId)
+                ? supabase.from('realization_reward_plans').select('member_id').eq('realizace_id', realizaceId)
                 : Promise.resolve({ data: [], error: null }),
             ]);
             
@@ -165,15 +170,34 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
         }
     };
 
-    const handleDeleteMember = async (id) => {
+    const handleEndAssignment = async () => {
+        if (!endingAssignment || !assignmentEndDate || !assignmentEndReason.trim()) return;
+        setSaving(true);
         try {
-            const { error } = await supabase.from('realizace_team_members').delete().eq('id', id);
+            const { error } = await supabase.rpc('end_realization_team_assignment', {
+                p_assignment_id: endingAssignment.id,
+                p_valid_to: assignmentEndDate,
+                p_reason: assignmentEndReason.trim(),
+            });
             if (error) throw error;
-            toast({ title: 'Člen týmu odebrán' });
-            fetchData();
+            toast({
+                title: 'Přiřazení bylo ukončeno',
+                description: 'Historická docházka, náklady a audit zůstaly zachovány.',
+            });
+            setEndingAssignment(null);
+            setAssignmentEndReason('');
+            await fetchData();
         } catch (error) {
-            toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
+            toast({ title: 'Přiřazení se nepodařilo ukončit', description: error.message, variant: 'destructive' });
+        } finally {
+            setSaving(false);
         }
+    };
+
+    const openEndAssignment = (assignment) => {
+        setEndingAssignment(assignment);
+        setAssignmentEndDate(assignment.valid_to || new Date().toISOString().slice(0, 10));
+        setAssignmentEndReason('');
     };
 
     const openEdit = (member) => {
@@ -207,7 +231,13 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
     );
 
     const isBudgetPositive = teamBudget >= 0;
-    const sponsorOptions = teamMembers.filter((item) => rewardedMemberIds.includes(item.member?.id) && item.member?.id !== selectedMemberId);
+    const today = new Date().toISOString().slice(0, 10);
+    const sponsorOptions = teamMembers.filter((item) => (
+        rewardedMemberIds.includes(item.member?.id)
+        && item.member?.id !== selectedMemberId
+        && !item.ended_at
+        && (!item.valid_to || item.valid_to >= today)
+    ));
 
     const renderLaborFields = () => (
         <div className="space-y-3 rounded-lg border bg-slate-50 p-3">
@@ -320,30 +350,35 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                                                     : 'Hodinová práce z rozpočtu realizace'}
                                             </div>
                                         )}
+                                        <div className="mt-1 text-xs text-muted-foreground">
+                                            Platnost: {item.valid_from || 'neuvedeno'} – {item.valid_to || 'bez omezení'}
+                                        </div>
+                                        {item.ended_at && (
+                                            <Badge variant="outline" className="mt-2 border-slate-300 text-slate-600">
+                                                Přiřazení ukončeno
+                                            </Badge>
+                                        )}
                                     </div>
                                 </div>
                                 
                                 {canEdit && (
                                     <div className="flex items-center gap-1">
-                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(item)}>
-                                            <Edit2 className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-                                        </Button>
-                                        <AlertDialog>
-                                            <AlertDialogTrigger asChild>
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50">
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                            </AlertDialogTrigger>
-                                            <AlertDialogContent>
-                                                <AlertDialogHeader>
-                                                    <AlertDialogTitle>Odebrat člena z týmu?</AlertDialogTitle>
-                                                </AlertDialogHeader>
-                                                <AlertDialogFooter>
-                                                    <AlertDialogCancel>Zrušit</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={() => handleDeleteMember(item.id)} className="bg-destructive">Odebrat</AlertDialogAction>
-                                                </AlertDialogFooter>
-                                            </AlertDialogContent>
-                                        </AlertDialog>
+                                        {!item.ended_at && (
+                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(item)}>
+                                                <Edit2 className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+                                            </Button>
+                                        )}
+                                        {!item.ended_at && (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                                                onClick={() => openEndAssignment(item)}
+                                                title="Ukončit platnost přiřazení"
+                                            >
+                                                <UserMinus className="w-4 h-4" />
+                                            </Button>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -351,6 +386,68 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                     </div>
                 )}
             </CardContent>
+
+            <AlertDialog
+                open={Boolean(endingAssignment)}
+                onOpenChange={(open) => {
+                    if (!open && !saving) {
+                        setEndingAssignment(null);
+                        setAssignmentEndReason('');
+                    }
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <AlertTriangle className="h-5 w-5 text-amber-600" />
+                            Ukončit platnost přiřazení
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Člen nebude smazán. Budoucí docházku po koncovém datu nebude možné k tomuto
+                            přiřazení zaúčtovat; již zaúčtované hodiny, náklady, odměny a audit zůstanou beze změny.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="rounded-md border bg-slate-50 p-3 text-sm">
+                            <div className="font-medium">{endingAssignment?.member?.name}</div>
+                            <div className="text-muted-foreground">{endingAssignment?.responsibility || 'Bez popisu odpovědnosti'}</div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="assignment-end-date">Poslední den platnosti</Label>
+                            <Input
+                                id="assignment-end-date"
+                                type="date"
+                                min={endingAssignment?.valid_from || undefined}
+                                value={assignmentEndDate}
+                                onChange={(event) => setAssignmentEndDate(event.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="assignment-end-reason">Důvod ukončení</Label>
+                            <Textarea
+                                id="assignment-end-reason"
+                                value={assignmentEndReason}
+                                onChange={(event) => setAssignmentEndReason(event.target.value)}
+                                placeholder="Např. dokončení přidělené části, změna odpovědnosti..."
+                                rows={3}
+                            />
+                        </div>
+                    </div>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={saving}>Zrušit</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(event) => {
+                                event.preventDefault();
+                                handleEndAssignment();
+                            }}
+                            disabled={saving || !assignmentEndDate || !assignmentEndReason.trim()}
+                            className="bg-amber-600 hover:bg-amber-700"
+                        >
+                            {saving ? 'Ukončuji...' : 'Ukončit přiřazení'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             {/* Add Member Dialog */}
             <Dialog open={isAddOpen} onOpenChange={(open) => { setIsAddOpen(open); if(!open) resetForm(); }}>

@@ -99,14 +99,14 @@ const RealizaceForm = () => {
         return Number.isNaN(n) ? 0 : n;
     };
     const safeContract = numberVal(watchContract);
-    const safeActual = canonicalFinancialSummary === null ? numberVal(watchActual) : numberVal(canonicalFinancialSummary.operational_costs);
-    const extraRevenue = numberVal(canonicalFinancialSummary?.extra_revenue);
-    const financialBase = safeContract + extraRevenue;
-    const availableProfitRaw = financialBase
-        - (financialBase * numberVal(watchProfitPercent) / 100)
-        - (financialBase * numberVal(watchOverheadPercent) / 100)
-        - safeActual;
-    const availableProfit = Number.isFinite(availableProfitRaw) ? Math.max(0, availableProfitRaw) : 0;
+    const safeActual = canonicalFinancialSummary === null
+        ? numberVal(watchActual)
+        : numberVal(canonicalFinancialSummary.operational_costs);
+    const availableProfitRaw = canonicalFinancialSummary === null
+        ? 0
+        : numberVal(canonicalFinancialSummary.team_budget);
+    const availableProfit = Number.isFinite(availableProfitRaw) ? availableProfitRaw : 0;
+    const distributableProfit = Math.max(0, availableProfit);
     const formatCurrency = formatMoney;
 
     // Helpers for switching modes
@@ -153,10 +153,9 @@ const RealizaceForm = () => {
 
     const loadProfitShares = useCallback(async (id) => {
         setProfitSharesLoading(true);
-        const { data, error } = await supabase
-            .from('realization_profit_shares')
-            .select('member_id, share_type, share_value')
-            .eq('realizace_id', id);
+        const { data: result, error } = await supabase
+            .rpc('get_realization_reward_plan', { p_realization_id: id });
+        const data = result?.shares || [];
 
         if (!error && data) {
             setTeamEntries((prev) => {
@@ -207,7 +206,11 @@ const RealizaceForm = () => {
                 setInitialInvestor(data.investor || null);
 
                 if (canViewFinance) {
-                    const { data: summary, error: summaryError } = await supabase.rpc('realization_financial_summary', { p_realization_id: realizaceId });
+                    const { data: summary, error: summaryError } = await supabase.rpc('realization_financial_preview', {
+                        p_realization_id: realizaceId,
+                        p_overrides: {},
+                        p_shares: null,
+                    });
                     if (summaryError) throw summaryError;
                     setCanonicalFinancialSummary(summary || null);
                 }
@@ -247,6 +250,54 @@ const RealizaceForm = () => {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    const proposedShares = useMemo(() => teamEntries
+        .filter((entry) => entry.member_id && entry.share_type && numberVal(entry.share_value) > 0)
+        .map((entry) => ({
+            member_id: entry.member_id,
+            share_type: entry.share_type,
+            share_value: numberVal(entry.share_value),
+        })), [teamEntries]);
+
+    useEffect(() => {
+        if (!canViewFinance || loading) return undefined;
+
+        let cancelled = false;
+        const timer = window.setTimeout(async () => {
+            const { data, error } = await supabase.rpc('realization_financial_preview', {
+                p_realization_id: isEditing ? realizaceId : null,
+                p_overrides: {
+                    status: watchStatus || 'Připravuje se',
+                    contract_amount: numberVal(watchContract),
+                    profit_margin_percent: numberVal(watchProfitPercent),
+                    overhead_percent: numberVal(watchOverheadPercent),
+                },
+                p_shares: proposedShares,
+            });
+
+            if (cancelled) return;
+            if (error) {
+                console.error('realization_financial_preview failed:', error.message);
+                return;
+            }
+            setCanonicalFinancialSummary(data || null);
+        }, 250);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [
+        canViewFinance,
+        isEditing,
+        loading,
+        proposedShares,
+        realizaceId,
+        watchContract,
+        watchOverheadPercent,
+        watchProfitPercent,
+        watchStatus,
+    ]);
 
     const onSubmit = async (formData) => {
         if (!canEdit) {
@@ -291,8 +342,8 @@ const RealizaceForm = () => {
                 return;
             }
 
-            const projected = fixedTotal + (availableProfit * (percentTotal / 100));
-            if (!Number.isFinite(projected) || projected > availableProfit + 0.01) {
+            const projected = fixedTotal + (distributableProfit * (percentTotal / 100));
+            if (!Number.isFinite(projected) || projected > distributableProfit + 0.01) {
                 toast({ title: 'Rozdělení přesahuje dostupný zisk', description: 'Upravte částky nebo procenta.', variant: 'destructive' });
                 return;
             }
@@ -315,7 +366,7 @@ const RealizaceForm = () => {
                     p_realization_id: isEditing ? realizaceId : null,
                     p_payload: realizationPayload,
                     p_status: nextStatus,
-                    p_shares: ['Dokončeno', 'Předáno'].includes(nextStatus) ? shares : [],
+                    p_shares: shares,
                 });
                 if (error) throw error;
                 savedRealization = result?.realization || result;
@@ -690,7 +741,9 @@ const RealizaceForm = () => {
                             <div className="flex flex-col gap-3">
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                     <p className="text-sm text-muted-foreground">
-                                        {isCompleted && canViewFinance ? `Týmový budget k rozdělení: ${formatCurrency(availableProfit)}` : 'Vyberte členy týmu, kteří budou mít přístup.'}
+                                        {canViewFinance
+                                            ? `${isCompleted ? 'Aktivní' : 'Plánovaný'} týmový budget: ${formatCurrency(availableProfit)}`
+                                            : 'Vyberte členy týmu, kteří budou mít přístup.'}
                                     </p>
                                     <Button type="button" variant="outline" size="sm" onClick={() => setTeamEntries([...teamEntries, { member_id: '', share_type: '', share_value: '' }])} disabled={!canEdit}>
                                         <Plus className="w-4 h-4 mr-2" /> Přidat člena
@@ -700,16 +753,6 @@ const RealizaceForm = () => {
                                 <div className="space-y-3">
                                     {teamEntries.map((entry, idx) => (
                                         <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 border rounded-lg bg-slate-50/60">
-                                            {(() => {
-                                                const shareVal = numberVal(entry.share_value);
-                                                const payout = entry.share_type === 'percent'
-                                                    ? (availableProfit * shareVal) / 100
-                                                    : entry.share_type === 'fixed'
-                                                        ? shareVal
-                                                        : 0;
-                                                entry._computedPayout = payout; 
-                                                return null;
-                                            })()}
                                             <div className="md:col-span-4">
                                                 <Label className="text-xs text-muted-foreground">Člen týmu</Label>
                                                 <Controller
@@ -729,7 +772,7 @@ const RealizaceForm = () => {
                                                 />
                                             </div>
 
-                                            {isCompleted && canViewFinance && (
+                                            {canViewFinance && (
                                                 <>
                                                     <div className="md:col-span-4">
                                                         <Label className="text-xs text-muted-foreground">Typ podílu</Label>
@@ -783,10 +826,16 @@ const RealizaceForm = () => {
                                                 )}
                                             </div>
 
-                                            {isCompleted && canViewFinance && (
+                                            {canViewFinance && (
                                                 <div className="md:col-span-12 text-xs text-muted-foreground flex items-center justify-between">
                                                     <span>
-                                                        Součet pro tohoto člena: {formatCurrency(entry._computedPayout || 0)}
+                                                        Součet pro tohoto člena: {formatCurrency(
+                                                            entry.share_type === 'percent'
+                                                                ? (distributableProfit * numberVal(entry.share_value)) / 100
+                                                                : entry.share_type === 'fixed'
+                                                                    ? numberVal(entry.share_value)
+                                                                    : 0
+                                                        )}
                                                         {entry.share_type === 'percent' ? ` (${entry.share_value || 0}% z dostupného zisku)` : ''}
                                                     </span>
                                                 </div>
@@ -795,9 +844,11 @@ const RealizaceForm = () => {
                                     ))}
                                 </div>
 
-                                {isCompleted && canViewFinance && (
+                                {canViewFinance && (
                                     <p className="text-xs text-muted-foreground">
-                                        Přidělujte podíly ze zisku pouze po dokončení realizace. Součet procent by neměl překročit 100 % ani dostupný zisk.
+                                        {isCompleted
+                                            ? 'Podíly jsou aktivní pro finanční vypořádání. Součet nesmí překročit dostupný týmový budget.'
+                                            : 'Jde o plán odměn. Aktivuje se automaticky až při stavu Dokončeno nebo Předáno.'}
                                     </p>
                                 )}
                             </div>

@@ -20,7 +20,6 @@ import RealizaceExtraCosts from './RealizaceExtraCosts';
 import HandoverProtocolsTab from './HandoverProtocolsTab';
 import SharePointFolderBrowser from '@/components/SharePointFolderBrowser';
 import { RealizaceCostDialog } from './RealizaceFinancials';
-import { calculateFinancials } from './RealizaceFinancialCalculations';
 import RealizaceTeam from './RealizaceTeam';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
@@ -191,7 +190,11 @@ const RealizaceDetail = () => {
       ? supabase.from('realizace_extra_costs').select('*').eq('realizace_id', realizaceId).order('created_at', { ascending: true })
       : Promise.resolve({ data: [], error: null });
     const financialSummaryPromise = shouldLoadFinancialSummary
-      ? supabase.rpc('realization_financial_summary', { p_realization_id: realizaceId })
+      ? supabase.rpc('realization_financial_preview', {
+          p_realization_id: realizaceId,
+          p_overrides: {},
+          p_shares: null,
+        })
       : Promise.resolve({ data: null, error: null });
     const laborSummaryPromise = shouldLoadFinancialSummary
       ? supabase.rpc('realization_labor_financial_summary', { p_realization_id: realizaceId })
@@ -220,7 +223,7 @@ const RealizaceDetail = () => {
     }
 
     if (financialSummaryRes.error) {
-      console.error('realization_financial_summary failed:', financialSummaryRes.error.message);
+      console.error('realization_financial_preview failed:', financialSummaryRes.error.message);
       setFinanceLoadError(financialSummaryRes.error.message);
       setFinancialSummary(null);
     } else {
@@ -242,46 +245,41 @@ const RealizaceDetail = () => {
   }, [fetchData]);
 
   // --- Financial Calculations ---
-  // Legacy Financial Calculations (for backwards compat)
-  const localManualCosts = costs.reduce((sum, c) => sum + Number(c.amount || 0), 0);
-  const localExtraCostsCost = extraCosts.reduce((sum, c) => sum + Number(c.cost_amount || 0), 0);
-  const localExtraCostsSale = extraCosts.reduce((sum, c) => sum + Number(c.sale_amount || 0), 0);
   const hasFinancialSummary = !!financialSummary;
-  const totalManualCosts = hasFinancialSummary ? toNumber(financialSummary.manual_costs) : localManualCosts;
-  const totalExtraCostsCost = hasFinancialSummary ? toNumber(financialSummary.extra_costs) : localExtraCostsCost;
-  const totalExtraCostsSale = hasFinancialSummary ? toNumber(financialSummary.extra_revenue) : localExtraCostsSale;
+  const totalManualCosts = hasFinancialSummary ? toNumber(financialSummary.manual_costs) : 0;
+  const totalExtraCostsCost = hasFinancialSummary ? toNumber(financialSummary.extra_costs) : 0;
+  const totalExtraCostsSale = hasFinancialSummary ? toNumber(financialSummary.extra_revenue) : 0;
   const reservedPayouts = hasFinancialSummary ? toNumber(financialSummary.reserved_payouts) : 0;
   const paidTaskPayouts = hasFinancialSummary ? toNumber(financialSummary.paid_task_payouts) : 0;
   const paidHourlyPayouts = hasFinancialSummary ? toNumber(financialSummary.paid_hourly_payouts) : 0;
   const paidPayoutCosts = hasFinancialSummary ? toNumber(financialSummary.paid_payout_costs) : 0;
-  const legacyGrandTotalCosts = hasFinancialSummary ? toNumber(financialSummary.costs_after_paid_payouts) : totalManualCosts + totalExtraCostsCost;
+  const legacyGrandTotalCosts = hasFinancialSummary ? toNumber(financialSummary.costs_after_paid_payouts) : 0;
   const isCanonicalFinancialModel = Number(financialSummary?.financial_model_version || 0) >= 2;
   const grandTotalCosts = isCanonicalFinancialModel
     ? legacyGrandTotalCosts
     : laborFinancialSummary
     ? legacyGrandTotalCosts - paidHourlyPayouts + toNumber(laborFinancialSummary.direct_project_cost)
     : legacyGrandTotalCosts;
-  const rewardBaseCosts = isCanonicalFinancialModel
-    ? toNumber(financialSummary.operational_costs)
-    : grandTotalCosts;
   const contractAmountBase = hasFinancialSummary ? toNumber(financialSummary.base_contract_amount) : Number(realization?.contract_amount || 0);
   const totalRevenue = hasFinancialSummary ? toNumber(financialSummary.total_revenue) : contractAmountBase + totalExtraCostsSale;
   
   // Available "profit" in the old sense (Revenue - Costs)
   const profitAvailable = totalRevenue - grandTotalCosts;
 
-  // New Financial Model
+  // The database preview is the only financial calculation model used by
+  // both the form and the detail. Lists below remain local only for rendering.
   const calculatedFinancials = useMemo(() => {
-    if (!realization) return {
+    if (!financialSummary) return {
       contractAmount: 0, profitAmount: 0, overheadAmount: 0, teamBudget: 0, totalCosts: 0
     };
-    return calculateFinancials(
-      totalRevenue, // Base calculation on Total Revenue (Contract + Extra Works Sale)
-      realization.profit_margin_percent, 
-      realization.overhead_percent,
-      rewardBaseCosts
-    );
-  }, [realization, totalRevenue, rewardBaseCosts]);
+    return {
+      contractAmount: toNumber(financialSummary.total_revenue),
+      profitAmount: toNumber(financialSummary.profit_amount),
+      overheadAmount: toNumber(financialSummary.overhead_amount),
+      teamBudget: toNumber(financialSummary.team_budget),
+      totalCosts: toNumber(financialSummary.operational_costs),
+    };
+  }, [financialSummary]);
 
   const rewardAllocation = useMemo(() => calculateRealizationRewardAllocation(
     financialSummary?.member_shares || [],

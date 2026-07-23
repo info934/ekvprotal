@@ -24,14 +24,15 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
     
     const { canViewAmounts } = getFinancialVisibility(userRole);
 
-    // Strictly disable edit for 'user' role
-    const canEdit = (canEditOverride ?? userRole === 'admin') && isCompleted;
+    // Reward rows are a plan while delivery is open and become active
+    // entitlements only when the realization is financially closed.
+    const canEdit = canEditOverride ?? userRole === 'admin';
 
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
             const [sharesRes, membersRes] = await Promise.all([
-                supabase.from('realization_profit_shares').select('*').eq('realizace_id', realizaceId),
+                supabase.rpc('get_realization_reward_plan', { p_realization_id: realizaceId }),
                 supabase.from('members').select('id, name').order('name')
             ]);
 
@@ -41,7 +42,7 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
             setMembers(membersRes.data || []);
             
             // Transform shares to local state
-            const loadedShares = (sharesRes.data || []).map(s => ({
+            const loadedShares = (sharesRes.data?.shares || []).map(s => ({
                 id: s.id, // existing ID
                 member_id: s.member_id,
                 share_type: s.share_type,
@@ -123,13 +124,18 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
                 share_value: parseFloat(s.share_value),
                 note: s.note
             }));
-            const { error: replaceError } = await supabase.rpc('replace_realization_profit_shares', {
+            const { error: replaceError } = await supabase.rpc('replace_realization_reward_plan', {
                 p_realization_id: realizaceId,
                 p_shares: payload,
             });
             if (replaceError) throw replaceError;
 
-            toast({ title: 'Rozdělení uloženo' });
+            toast({
+                title: isCompleted ? 'Aktivní rozdělení uloženo' : 'Plán odměn uložen',
+                description: isCompleted
+                    ? 'Podíly jsou aktivní pro finanční vypořádání.'
+                    : 'Podíly se aktivují až při finančním uzavření realizace.',
+            });
             fetchData();
         } catch (error) {
             console.error('Error saving shares:', error);
@@ -143,6 +149,15 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
 
     return (
         <div className="space-y-6">
+            <Alert className={isCompleted ? 'border-emerald-200 bg-emerald-50' : 'border-blue-200 bg-blue-50'}>
+                <Coins className="h-4 w-4" />
+                <AlertTitle>{isCompleted ? 'Aktivní odměny' : 'Plánované odměny'}</AlertTitle>
+                <AlertDescription>
+                    {isCompleted
+                        ? 'Rozdělení je aktivní a vstupuje do finančního vypořádání realizace.'
+                        : 'Rozdělení lze připravovat průběžně. Do výplat a nároků vstoupí až při stavu Dokončeno nebo Předáno.'}
+                </AlertDescription>
+            </Alert>
             {canViewAmounts && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <Card className={`border ${isBudgetPositive ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'}`}>
@@ -184,16 +199,6 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
                 </div>
             )}
 
-            {!isCompleted && (
-                <Alert variant="warning" className="bg-yellow-50 border-yellow-200">
-                    <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                    <AlertTitle className="text-yellow-800">Realizace není dokončena</AlertTitle>
-                    <AlertDescription className="text-yellow-700">
-                        Finální rozdělení zisku by mělo proběhnout až po dokončení realizace.
-                    </AlertDescription>
-                </Alert>
-            )}
-
             {!isBudgetPositive && canViewAmounts && (
                  <Alert variant="destructive">
                     <AlertTriangle className="h-4 w-4" />
@@ -220,7 +225,9 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
                     <div>
                         <CardTitle className="flex items-center gap-2"><Users className="w-5 h-5"/> Podíly členů týmu</CardTitle>
                         <CardDescription>
-                            {canViewAmounts ? 'Definujte podíly z čistého týmového rozpočtu.' : 'Seznam členů s podílem na zisku.'}
+                            {canViewAmounts
+                                ? 'Definujte plán podílů z čistého týmového rozpočtu.'
+                                : 'Seznam členů s plánovaným podílem na zisku.'}
                         </CardDescription>
                     </div>
                     {canEdit && isBudgetPositive && (
@@ -364,7 +371,7 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
             {canEdit && (
                 <div className="flex justify-end items-center bg-slate-100 p-4 rounded-lg">
                     <Button onClick={handleSave} disabled={saving || (!isBudgetPositive && shares.length > 0 && !isValid)}>
-                        {saving ? 'Ukládání...' : <><Save className="w-4 h-4 mr-2" /> Uložit rozdělení</>}
+                        {saving ? 'Ukládání...' : <><Save className="w-4 h-4 mr-2" /> Uložit plán odměn</>}
                     </Button>
                 </div>
             )}
