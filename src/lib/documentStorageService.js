@@ -94,8 +94,27 @@ const sanitizePathSegment = (value) => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
   .replace(/[^a-zA-Z0-9._-]+/g, '-')
+  .replace(/-+/g, '-')
   .replace(/^-+|-+$/g, '')
   .slice(0, 90) || 'item';
+
+const normalizeFolderCode = (value) => String(value || '')
+  .normalize('NFC')
+  .replace(/[~"#%&*:<>?/\\{|}]+/g, '-')
+  .replace(/\s+/g, '-')
+  .replace(/-+/g, '-')
+  .replace(/^-+|-+$/g, '')
+  .slice(0, 48);
+
+const normalizeFolderName = (value) => String(value || '')
+  .normalize('NFC')
+  .replace(/[~"#%&*:<>?/\\{|}]+/g, '-')
+  .replace(/\s+/g, ' ')
+  .replace(/^\s*-+\s*/, '')
+  .replace(/\s*-+\s*$/, '')
+  .replace(/[. ]+$/g, '')
+  .trim()
+  .slice(0, 90);
 
 const sanitizeReadableFileName = (value, fallback = 'soubor') => {
   const rawName = String(value || '').trim();
@@ -193,8 +212,10 @@ export const invalidateStorageConnectionCache = () => {
 
 export const buildEntityFolderPath = ({ entityType, entityId, code, name }) => {
   const root = entityType === 'realizace' ? 'realizace' : entityType === 'product' ? 'products' : 'projects';
-  const label = [code, name].filter(Boolean).join(' - ');
-  return `${root}/${sanitizePathSegment(label || entityId)}`;
+  const normalizedCode = normalizeFolderCode(code);
+  const normalizedName = normalizeFolderName(name);
+  const label = [normalizedCode, normalizedName].filter(Boolean).join(' - ');
+  return `${root}/${label || sanitizePathSegment(entityId)}`;
 };
 
 const persistFolderMapping = async ({
@@ -231,17 +252,6 @@ const persistFolderMapping = async ({
 export const ensureEntityFolder = async ({ entityType, entityId, code, name, connection }) => {
   const activeConnection = connection || await getDefaultStorageConnection();
   const folderPath = buildEntityFolderPath({ entityType, entityId, code, name });
-
-  const { data: existingMapping, error: existingMappingError } = activeConnection.id
-    ? await supabase
-      .from('document_storage_folders')
-      .select('*')
-      .eq('connection_id', activeConnection.id)
-      .eq('entity_type', entityType)
-      .eq('entity_id', entityId)
-      .maybeSingle()
-    : { data: null, error: null };
-  if (existingMappingError && !isStorageConfigMissingError(existingMappingError)) throw existingMappingError;
 
   if (activeConnection.provider === 'supabase') {
     await persistFolderMapping({

@@ -78,6 +78,24 @@ const safeSegment = (value: unknown) => String(value || '')
   .replace(/[. ]+$/g, '')
   .slice(0, 120);
 
+const normalizeEntityFolderCode = (value: unknown) => String(value || '')
+  .normalize('NFC')
+  .replace(/[~"#%&*:<>?/\\{|}]+/g, '-')
+  .replace(/\s+/g, '-')
+  .replace(/-+/g, '-')
+  .replace(/^-+|-+$/g, '')
+  .slice(0, 48);
+
+const normalizeEntityFolderName = (value: unknown) => String(value || '')
+  .normalize('NFC')
+  .replace(/[~"#%&*:<>?/\\{|}]+/g, '-')
+  .replace(/\s+/g, ' ')
+  .replace(/^\s*-+\s*/, '')
+  .replace(/\s*-+\s*$/, '')
+  .replace(/[. ]+$/g, '')
+  .trim()
+  .slice(0, 90);
+
 const normalizePath = (...parts: Array<string | undefined>) => parts
   .flatMap((part) => String(part || '').split('/'))
   .filter((part) => part.trim().length > 0)
@@ -420,7 +438,10 @@ const getServerEntityFolderPath = async (
     throw notFound;
   }
   const root = entityType === 'project' ? 'projects' : entityType === 'realizace' ? 'realizace' : 'products';
-  return normalizePath(root, [data.code, data.name].filter(Boolean).join(' - ') || data.id);
+  const code = normalizeEntityFolderCode(data.code);
+  const name = normalizeEntityFolderName(data.name);
+  const label = [code, name].filter(Boolean).join(' - ');
+  return normalizePath(root, label || data.id);
 };
 
 const assertInvoiceAccessLink = (entityId: string, accessEntityType: string, accessEntityId: string) => {
