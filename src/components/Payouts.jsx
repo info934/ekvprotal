@@ -512,10 +512,10 @@ const Payouts = () => {
                   </div>
                   <div className="flex shrink-0 rounded-lg bg-slate-100 p-1">
                     <Button variant={view === 'pending' ? 'secondary' : 'ghost'} onClick={() => setView('pending')} size="sm" className="h-8">
-                      Aktivní
+                      Aktivní ({stats.fixed.activeCount})
                     </Button>
                     <Button variant={view === 'all' ? 'secondary' : 'ghost'} onClick={() => setView('all')} size="sm" className="h-8">
-                      Všechny
+                      Historie / vše ({stats.fixed.totalCount})
                     </Button>
                   </div>
                 </div>

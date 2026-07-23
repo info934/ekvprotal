@@ -45,6 +45,7 @@ import {
 } from '@/components/payouts/PayoutShared';
 import PayoutRequestsTable from '@/components/payouts/PayoutRequestsTable';
 import ForwardInvoiceDialog from '@/components/payouts/ForwardInvoiceDialog';
+import { getHourlyPayoutDisplay } from '@/lib/hourlyPayoutDisplay';
 
 const InvoiceLink = ({ request, onDownload, isDownloading }) => {
   if (!request?.invoice_url) {
@@ -113,6 +114,7 @@ const HourlyPayoutRequestsAdmin = () => {
       setRequests((data || []).map((request) => ({
         ...request,
         discrepancy: discrepancyById.get(request.id) || null,
+        display: getHourlyPayoutDisplay(request),
       })));
     } catch (error) {
       console.error('Error fetching hourly payout requests:', error);
@@ -141,6 +143,7 @@ const HourlyPayoutRequestsAdmin = () => {
         !normalizedSearch ||
         request.members?.name?.toLowerCase().includes(normalizedSearch) ||
         request.projects?.name?.toLowerCase().includes(normalizedSearch) ||
+        request.display?.searchText?.toLowerCase().includes(normalizedSearch) ||
         `${request.payout_month || ''}/${request.payout_year || ''}`.includes(normalizedSearch);
 
       return statusMatches && searchMatches;
@@ -205,7 +208,7 @@ const HourlyPayoutRequestsAdmin = () => {
       const storedInvoice = await uploadInvoiceDocument({
         file,
         recordId: request.id,
-        projectReference: request.projects?.code || request.project_id,
+        projectReference: request.display?.projectReference || request.projects?.code || request.project_id,
         category: 'hodinove-vyplaty',
         accessEntityType: 'hourly_payout',
         accessEntityId: request.id,
@@ -390,6 +393,19 @@ const HourlyPayoutRequestsAdmin = () => {
       render: (request) => request.payout_month && request.payout_year
         ? `Žádost za ${request.payout_month}/${request.payout_year}`
         : request.projects?.name || 'Měsíční žádost',
+    },
+    {
+      key: 'context',
+      header: 'Kontext',
+      cellClassName: 'text-sm text-slate-600',
+      render: (request) => (
+        <div className="max-w-[360px]">
+          <div className="font-semibold text-slate-950">{request.display?.assignmentLabel || request.projects?.name || 'Bez vazby na projekt'}</div>
+          {request.display?.assignmentDetail && (
+            <div className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-400">{request.display.assignmentDetail}</div>
+          )}
+        </div>
+      ),
     },
     {
       key: 'hours',

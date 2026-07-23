@@ -23,6 +23,7 @@ import {
   PayoutPanel,
   PayoutStatusBadge
 } from '@/components/payouts/PayoutShared';
+import { getHourlyPayoutDisplay } from '@/lib/hourlyPayoutDisplay';
 
 const HourlyPayoutRequest = ({ onPayoutRequested }) => {
   const { memberId } = useAuth();
@@ -59,7 +60,10 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setMyRequests(requestsData || []);
+      setMyRequests((requestsData || []).map((request) => ({
+        ...request,
+        display: getHourlyPayoutDisplay(request),
+      })));
     } catch (error) {
       console.error('Hourly payout request load failed:', error);
       toast({ title: 'Chyba načítání dat', description: 'Nepodařilo se načíst hodinové výplaty.', variant: 'destructive' });
@@ -306,6 +310,10 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
                     <h3 className="text-base font-semibold text-slate-950">
                       {request.payout_month ? `Žádost za ${request.payout_month}/${request.payout_year}` : request.projects?.name || 'Měsíční žádost'}
                     </h3>
+                    <div className="mt-1 text-sm text-slate-600">
+                      <span className="font-medium text-slate-800">{request.display?.assignmentLabel || request.projects?.name || 'Bez vazby na projekt'}</span>
+                      {request.display?.assignmentDetail && <span className="ml-2 text-xs uppercase tracking-wide text-slate-400">{request.display.assignmentDetail}</span>}
+                    </div>
                     <div className="mt-1 flex flex-wrap gap-4 text-sm text-slate-600">
                       <span>{formatHours(request.total_hours || request.hours)}</span>
                       <span className="font-semibold text-slate-950">{formatCurrency(request.total_amount)}</span>
@@ -323,7 +331,7 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
                     <InvoiceUpload
                       requestId={request.id}
                       memberId={memberId}
-                      projectReference={request.projects?.code || request.project_id}
+                      projectReference={request.display?.projectReference || request.projects?.code || request.project_id}
                       onUploadSuccess={() => fetchBaseData()}
                     />
                   )}
