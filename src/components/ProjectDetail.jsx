@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -47,6 +47,11 @@ import { formatMoney } from '@/lib/financePresentation';
 import { RecordMetricGrid, RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
 import { RecordAttentionList, RecordOverviewGrid, RecordOverviewItem, RecordOverviewPanel } from '@/components/ui/record-overview';
 import FinancialSettingsCard from '@/components/finance/FinancialSettingsCard';
+import {
+    createTimedAbortController,
+    isRequestAbortError,
+    isRequestTimeoutError,
+} from '@/lib/requestControl';
 
 const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progress }) => {
   const tone = color === 'success' ? 'emerald' : color === 'warning' ? 'amber' : color === 'danger' ? 'rose' : color === 'info' ? 'blue' : 'slate';
@@ -134,6 +139,9 @@ const ProjectDetail = () => {
     const [operationalLoadError, setOperationalLoadError] = useState(null);
     const [projectLinks, setProjectLinks] = useState([]);
     const [loading, setLoading] = useState(true);
+    const loadRequestRef = useRef({ id: 0, controller: null });
+    const financeRequestRef = useRef({ id: 0, controller: null });
+    const loadedProjectIdRef = useRef(null);
     const [briefContent, setBriefContent] = useState('');
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
@@ -197,40 +205,60 @@ const ProjectDetail = () => {
         );
     };
 
-    const refreshData = useCallback(async () => {
-        setLoading(true);
+    const refreshData = useCallback(async ({ showLoader = false } = {}) => {
+        loadRequestRef.current.controller?.abort();
+        const requestId = loadRequestRef.current.id + 1;
+        const request = createTimedAbortController(20_000);
+        loadRequestRef.current = { id: requestId, controller: request.controller };
+        const isCurrentRequest = () => loadRequestRef.current.id === requestId;
+
+        if (showLoader || loadedProjectIdRef.current !== projectId) setLoading(true);
         setFinanceLoadError(null);
         setOperationalLoadError(null);
         try {
             const { data: projectData, error: projectError } = await supabase.rpc('get_project_safe', {
                 p_project_id: projectId,
-            });
+            }).abortSignal(request.signal);
+
+            if (!isCurrentRequest()) return false;
               
-            if (projectError) { toast({ title: 'Chyba při načítání projektu', variant: 'destructive', description: projectError.message }); navigate('/projects'); return; }
+            if (projectError) {
+                toast({ title: 'Chyba při načítání projektu', variant: 'destructive', description: projectError.message });
+                navigate('/projects');
+                return false;
+            }
             setProject(projectData);
             setBriefContent(projectData.brief || '');
 
-            const payoutItemsPromise = canViewFinance ? supabase.from('payout_items').select('id, amount, project_id, payouts(status, member:members!payouts_member_id_fkey(name))').eq('project_id', projectId) : Promise.resolve({ data: [], error: null });
-            const financialSummaryPromise = canViewFinance ? supabase.rpc('project_financial_summary', { p_project_id: projectId }) : Promise.resolve({ data: null, error: null });
-            const laborSummaryPromise = canViewFinance ? supabase.rpc('project_labor_financial_summary', { p_project_id: projectId }) : Promise.resolve({ data: null, error: null });
+            const payoutItemsPromise = canViewFinance
+                ? supabase.from('payout_items').select('id, amount, project_id, payouts(status, member:members!payouts_member_id_fkey(name))').eq('project_id', projectId).abortSignal(request.signal)
+                : Promise.resolve({ data: [], error: null });
+            const financialSummaryPromise = canViewFinance
+                ? supabase.rpc('project_financial_summary', { p_project_id: projectId }).abortSignal(request.signal)
+                : Promise.resolve({ data: null, error: null });
+            const laborSummaryPromise = canViewFinance
+                ? supabase.rpc('project_labor_financial_summary', { p_project_id: projectId }).abortSignal(request.signal)
+                : Promise.resolve({ data: null, error: null });
             const costsPromise = canViewFinance
-                ? supabase.from('project_costs').select('*, member:members!project_costs_member_id_fkey(id, name, email)').eq('project_id', projectId)
+                ? supabase.from('project_costs').select('*, member:members!project_costs_member_id_fkey(id, name, email)').eq('project_id', projectId).abortSignal(request.signal)
                 : Promise.resolve({ data: [], error: null });
             const overheadCostsPromise = canViewFinance
-                ? supabase.from('project_overhead_costs').select('*, overhead_allocation_items!inner(overhead_costs(name, category))').eq('project_id', projectId)
+                ? supabase.from('project_overhead_costs').select('*, overhead_allocation_items!inner(overhead_costs(name, category))').eq('project_id', projectId).abortSignal(request.signal)
                 : Promise.resolve({ data: [], error: null });
 
             const [membersRes, subcontractorsRes, tasksRes, costsRes, linksRes, overheadCostsRes, payoutItemsRes, financialSummaryRes, laborSummaryRes] = await Promise.all([
-                supabase.rpc('list_project_members_safe', { p_project_id: projectId }),
-                supabase.rpc('list_project_subcontractors_safe', { p_project_id: projectId }),
-                supabase.from('project_tasks').select('*').eq('project_id', projectId),
+                supabase.rpc('list_project_members_safe', { p_project_id: projectId }).abortSignal(request.signal),
+                supabase.rpc('list_project_subcontractors_safe', { p_project_id: projectId }).abortSignal(request.signal),
+                supabase.from('project_tasks').select('*').eq('project_id', projectId).abortSignal(request.signal),
                 costsPromise,
-                supabase.from('project_links').select('*').eq('project_id', projectId),
+                supabase.from('project_links').select('*').eq('project_id', projectId).abortSignal(request.signal),
                 overheadCostsPromise,
                 payoutItemsPromise,
                 financialSummaryPromise,
                 laborSummaryPromise,
             ]);
+
+            if (!isCurrentRequest()) return false;
 
             const operationalErrors = [membersRes, subcontractorsRes, tasksRes, linksRes]
                 .map((result) => result.error?.message)
@@ -266,15 +294,99 @@ const ProjectDetail = () => {
             } else {
                 setProjectLaborSummary(laborSummaryRes.data || null);
             }
-
+            loadedProjectIdRef.current = projectId;
+            return true;
         } catch (error) {
+            const timeout = isRequestTimeoutError(error) || isRequestTimeoutError(request.signal.reason);
+            const superseded = request.signal.aborted && !timeout;
+            if (!isCurrentRequest() || superseded || (isRequestAbortError(error) && !timeout)) return false;
             toast({ title: 'Chyba při načítání dat', variant: 'destructive', description: error.message });
+            return false;
         } finally {
-            setLoading(false);
+            request.dispose();
+            if (isCurrentRequest()) setLoading(false);
         }
     }, [projectId, toast, navigate, canViewFinance]);
 
-    useEffect(() => { refreshData(); }, [refreshData]);
+    const refreshFinancialData = useCallback(async () => {
+        if (!canViewFinance) return true;
+
+        financeRequestRef.current.controller?.abort();
+        const requestId = financeRequestRef.current.id + 1;
+        const request = createTimedAbortController(15_000);
+        financeRequestRef.current = { id: requestId, controller: request.controller };
+        const isCurrentRequest = () => financeRequestRef.current.id === requestId;
+
+        setFinanceLoadError(null);
+        try {
+            const [costsRes, overheadCostsRes, payoutItemsRes, financialSummaryRes, laborSummaryRes] = await Promise.all([
+                supabase
+                    .from('project_costs')
+                    .select('*, member:members!project_costs_member_id_fkey(id, name, email)')
+                    .eq('project_id', projectId)
+                    .abortSignal(request.signal),
+                supabase
+                    .from('project_overhead_costs')
+                    .select('*, overhead_allocation_items!inner(overhead_costs(name, category))')
+                    .eq('project_id', projectId)
+                    .abortSignal(request.signal),
+                supabase
+                    .from('payout_items')
+                    .select('id, amount, project_id, payouts(status, member:members!payouts_member_id_fkey(name))')
+                    .eq('project_id', projectId)
+                    .abortSignal(request.signal),
+                supabase.rpc('project_financial_summary', { p_project_id: projectId }).abortSignal(request.signal),
+                supabase.rpc('project_labor_financial_summary', { p_project_id: projectId }).abortSignal(request.signal),
+            ]);
+
+            if (!isCurrentRequest()) return false;
+
+            const errors = [costsRes, overheadCostsRes, payoutItemsRes, financialSummaryRes, laborSummaryRes]
+                .map((result) => result.error?.message)
+                .filter(Boolean);
+            if (errors.length > 0) {
+                setFinanceLoadError(errors.join(' · '));
+                return false;
+            }
+
+            setCosts(costsRes.data || []);
+            setOverheadCosts(overheadCostsRes.data || []);
+            setPayoutItems(payoutItemsRes.data || []);
+            setProjectFinancialSummary(financialSummaryRes.data || null);
+            setProjectLaborSummary(laborSummaryRes.data || null);
+            return true;
+        } catch (error) {
+            const timeout = isRequestTimeoutError(error) || isRequestTimeoutError(request.signal.reason);
+            const superseded = request.signal.aborted && !timeout;
+            if (!isCurrentRequest() || superseded || (isRequestAbortError(error) && !timeout)) return false;
+            const message = timeout
+                ? 'Obnovení finančních dat překročilo časový limit.'
+                : error.message;
+            setFinanceLoadError(message);
+            toast({ title: 'Finanční data se nepodařilo obnovit', description: message, variant: 'destructive' });
+            return false;
+        } finally {
+            request.dispose();
+        }
+    }, [canViewFinance, projectId, toast]);
+
+    useEffect(() => {
+        loadedProjectIdRef.current = null;
+        setProject(null);
+        void refreshData({ showLoader: true });
+        return () => {
+            loadRequestRef.current.controller?.abort();
+            financeRequestRef.current.controller?.abort();
+            loadRequestRef.current = {
+                id: loadRequestRef.current.id + 1,
+                controller: null,
+            };
+            financeRequestRef.current = {
+                id: financeRequestRef.current.id + 1,
+                controller: null,
+            };
+        };
+    }, [refreshData]);
 
     const paidPayoutItems = useMemo(() => {
         if (!canViewFinance || payoutItems.length === 0) return [];
@@ -535,7 +647,7 @@ const ProjectDetail = () => {
             toast({ title: 'Náklad uložen' });
             setIsCostDialogOpen(false);
             setEditingCost(null);
-            refreshData();
+            await refreshFinancialData();
             return true;
         } catch (error) {
             if (uploadedInvoice?.cleanup) await uploadedInvoice.cleanup().catch(console.error);
@@ -590,7 +702,11 @@ const ProjectDetail = () => {
             if (shouldLogRewards) {
                 await logRewardSnapshot({ action: 'delete', table, itemId: id, before: rewardSnapshotBefore });
             }
-            refreshData();
+            if (table === 'project_costs') {
+                await refreshFinancialData();
+            } else {
+                refreshData();
+            }
         }
         setItemToDelete(null);
     };

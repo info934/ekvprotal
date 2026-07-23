@@ -22,8 +22,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FinanceMetricStrip, FinanceStageFlow, FinanceDefinitionNote } from '@/components/finance/FinanceWorkspace';
 import { formatMoney, formatPercent, getFinanceErrorMessage, VAT_RATE_OPTIONS } from '@/lib/financePresentation';
 import ConfirmActionDialog from '@/components/ui/confirm-action-dialog';
-import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
 import { getBillingNetAmounts, splitNetAmount } from '@/domain/billingFinancials';
+import { getBillingSummary } from '@/lib/billingSummaryCache';
 
 const money = formatMoney;
 const percent = formatPercent;
@@ -94,36 +94,38 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
   const [planForm, setPlanForm] = useState({ count: '3', first_date: toDateInput(new Date()), interval_days: '30', vat_rate: '21' });
   const loadRequestRef = useRef({ id: 0, controller: null });
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options = {}) => {
     if (!entityId) return;
     loadRequestRef.current.controller?.abort();
     const requestId = loadRequestRef.current.id + 1;
-    const request = createTimedAbortController();
-    loadRequestRef.current = { id: requestId, controller: request.controller };
+    const controller = new AbortController();
+    loadRequestRef.current = { id: requestId, controller };
     setLoading(true);
-    setSummary(null);
     try {
-      const { data, error } = await supabase.rpc('get_entity_billing_summary', {
-        p_entity_type: entityType,
-        p_entity_id: entityId,
-      }).abortSignal(request.signal);
-      if (requestId !== loadRequestRef.current.id) return;
-      if (error) throw error;
+      const data = await getBillingSummary(entityType, entityId, {
+        force: options?.force === true,
+      });
+      if (requestId !== loadRequestRef.current.id || controller.signal.aborted) return;
       setSummary(data);
       onSummaryChange?.(data);
     } catch (error) {
-      if (requestId !== loadRequestRef.current.id || (request.signal.aborted && isRequestAbortError(error))) return;
+      if (requestId !== loadRequestRef.current.id || controller.signal.aborted) return;
       setSummary(null);
       toast({ title: 'Fakturaci se nepodařilo načíst', description: getFinanceErrorMessage(error), variant: 'destructive' });
     } finally {
-      request.dispose();
       if (requestId === loadRequestRef.current.id) setLoading(false);
     }
   }, [entityId, entityType, onSummaryChange, toast]);
 
   useEffect(() => {
     load();
-    return () => loadRequestRef.current.controller?.abort();
+    return () => {
+      loadRequestRef.current.controller?.abort();
+      loadRequestRef.current = {
+        id: loadRequestRef.current.id + 1,
+        controller: null,
+      };
+    };
   }, [load]);
 
   const entries = useMemo(() => summary?.entries || [], [summary]);
@@ -222,7 +224,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
     }
     setMilestoneDialogOpen(false);
     toast({ title: editingMilestoneId ? 'Etapa aktualizována' : 'Etapa přidána' });
-    await load();
+    await load({ force: true });
   };
 
   const createEqualPlan = async () => {
@@ -264,7 +266,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
     }
     setPlanDialogOpen(false);
     toast({ title: `Vytvořeno ${count} fakturačních etap` });
-    await load();
+    await load({ force: true });
   };
 
   const saveInvoice = async () => {
@@ -335,7 +337,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
       if (error) throw error;
       setInvoiceDialogOpen(false);
       toast({ title: editingInvoiceId ? 'Fakturace aktualizována' : 'Faktura přidána' });
-      await load();
+      await load({ force: true });
     } catch (error) {
       if (storedDocument?.cleanup) await storedDocument.cleanup().catch(() => null);
       toast({ title: 'Fakturu se nepodařilo uložit', description: getFinanceErrorMessage(error), variant: 'destructive' });
@@ -349,7 +351,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
     try {
       const { error } = await supabase.from('entity_billing_entries').delete().eq('id', entry.id);
       if (error) throw error;
-      await load();
+      await load({ force: true });
       setConfirmAction(null);
     } catch (error) {
       toast({ title: 'Fakturu se nepodařilo odstranit', description: getFinanceErrorMessage(error), variant: 'destructive' });
@@ -374,7 +376,7 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
     try {
       const { error } = await supabase.from('entity_billing_milestones').delete().eq('id', milestone.id);
       if (error) throw error;
-      await load();
+      await load({ force: true });
       setConfirmAction(null);
     } catch (error) {
       toast({ title: 'Etapu se nepodařilo odstranit', description: getFinanceErrorMessage(error), variant: 'destructive' });

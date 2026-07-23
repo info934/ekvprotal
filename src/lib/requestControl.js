@@ -23,6 +23,11 @@ export const isRequestAbortError = (error) => (
   || /aborted|timed out|timeout/i.test(String(error?.message || ''))
 );
 
+export const isRequestTimeoutError = (error) => (
+  error?.name === 'TimeoutError'
+  || /timed out|timeout/i.test(String(error?.message || ''))
+);
+
 export const combineAbortSignals = (...signals) => {
   const activeSignals = signals.filter(Boolean);
   if (activeSignals.length === 0) return undefined;

@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, Receipt } from 'lucide-react';
-import { supabase } from '@/lib/customSupabaseClient';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
 import { formatMoney, formatPercent, getFinanceErrorMessage } from '@/lib/financePresentation';
+import { getBillingSummary } from '@/lib/billingSummaryCache';
 
 const coverageLabels = {
   not_configured: 'Neevidováno',
@@ -32,25 +32,34 @@ const BillingOverviewSummary = ({ entityType, entityId, onOpenDetails, className
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const loadRequestIdRef = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options = {}) => {
     if (!entityId) return;
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
     setLoading(true);
     setError('');
-    const { data, error: loadError } = await supabase.rpc('get_entity_billing_summary', {
-      p_entity_type: entityType,
-      p_entity_id: entityId,
-    });
-    if (loadError) {
+    try {
+      const data = await getBillingSummary(entityType, entityId, {
+        force: options?.force === true,
+      });
+      if (loadRequestIdRef.current !== requestId) return;
+      setSummary(data);
+    } catch (loadError) {
+      if (loadRequestIdRef.current !== requestId) return;
       setError(getFinanceErrorMessage(loadError));
-      setLoading(false);
-      return;
+    } finally {
+      if (loadRequestIdRef.current === requestId) setLoading(false);
     }
-    setSummary(data);
-    setLoading(false);
   }, [entityId, entityType]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => {
+      loadRequestIdRef.current += 1;
+    };
+  }, [load]);
 
   const milestones = useMemo(() => summary?.milestones || [], [summary]);
   const activeMilestones = useMemo(() => milestones
@@ -81,7 +90,7 @@ const BillingOverviewSummary = ({ entityType, entityId, onOpenDetails, className
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div><div className="font-semibold">Fakturaci se nepodařilo načíst</div><div className="text-xs text-red-700">{error}</div></div>
         </div>
-        <Button size="sm" variant="outline" onClick={load}>Zkusit znovu</Button>
+        <Button size="sm" variant="outline" onClick={() => load({ force: true })}>Zkusit znovu</Button>
       </section>
     );
   }

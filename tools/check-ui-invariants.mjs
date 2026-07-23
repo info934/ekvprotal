@@ -16,6 +16,19 @@ const invoicePreview = read('src/components/InvoicePreview.jsx');
 const viteConfig = read('vite.config.js');
 const portalStatusChart = read('src/components/PortalStatusChart.jsx');
 const projectStatusChart = read('src/components/ProjectStatusChart.jsx');
+const sourceFiles = [];
+const collectSourceFiles = (directory) => {
+  fs.readdirSync(directory, { withFileTypes: true }).forEach((entry) => {
+    const absolutePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) collectSourceFiles(absolutePath);
+    else if (/\.(?:js|jsx|ts|tsx)$/.test(entry.name)) sourceFiles.push(absolutePath);
+  });
+};
+collectSourceFiles(path.join(root, 'src'));
+const mojibakePattern = /(?:Ã|Â|Ä|Ĺ|Ă|â€|�)/;
+const mojibakeFiles = sourceFiles
+  .filter((filePath) => mojibakePattern.test(fs.readFileSync(filePath, 'utf8')))
+  .map((filePath) => path.relative(root, filePath));
 
 assert(!app.includes('localStorage.clear()'), 'Reset relace nesmí smazat všechna lokální UI nastavení.');
 assert(app.includes('<Route path="*" element={<NotFound />} />'), 'Přihlášené routy musí mít 404 fallback.');
@@ -29,6 +42,7 @@ assert((portalStatusChart.match(/'?Nové'?: \{ color:/g) || []).length === 1, 'P
 assert((projectStatusChart.match(/'?Nové'?: \{ color:/g) || []).length === 1, 'ProjectStatusChart obsahuje duplicitní stav Nové.');
 assert((portalStatusChart.match(/'V řešení': \{ color:/g) || []).length === 1, 'PortalStatusChart obsahuje duplicitní stav V řešení.');
 assert((projectStatusChart.match(/'V řešení': \{ color:/g) || []).length === 1, 'ProjectStatusChart obsahuje duplicitní stav V řešení.');
+assert(mojibakeFiles.length === 0, `Zdrojové soubory obsahují poškozené UTF-8 řetězce: ${mojibakeFiles.join(', ')}`);
 
 if (failures.length) {
   console.error('UI invariant checks failed:');

@@ -67,16 +67,26 @@ const clearSupabaseSessionStorage = () => {
     .forEach((key) => localStorage.removeItem(key));
 };
 
-const PortalLoaderCard = ({ title = 'Načítání modulu', description = 'Připravujeme data a rozhraní portálu.', showActions = false, onResetSession }) => (
+const PortalLoaderCard = ({
+  title = 'Načítání modulu',
+  description = 'Připravujeme data a rozhraní portálu.',
+  error,
+  showActions = false,
+  onRetry,
+  onResetSession,
+}) => (
   <div className="w-full max-w-[440px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.10)]">
     <EkvLoader title={title} description={description} compact className="py-7" />
     {showActions && (
       <div className="border-t border-amber-200 bg-amber-50 p-4 text-left">
-        <p className="text-sm font-semibold text-amber-950">Načítání trvá déle než obvykle</p>
-        <p className="mt-1 text-xs leading-5 text-amber-800">Zkontrolujte připojení, obnovte stránku nebo bezpečně resetujte relaci.</p>
+        <p className="text-sm font-semibold text-amber-950">{error ? 'Načítání se nepodařilo dokončit' : 'Načítání trvá déle než obvykle'}</p>
+        <p className="mt-1 text-xs leading-5 text-amber-800">{error || 'Zkontrolujte připojení, obnovte stránku nebo bezpečně resetujte relaci.'}</p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Button type="button" onClick={() => window.location.reload()} size="sm" className="bg-amber-600 text-white hover:bg-amber-700">
+          {onRetry && <Button type="button" onClick={onRetry} size="sm" className="bg-amber-600 text-white hover:bg-amber-700">
             <RefreshCw className="mr-2 h-4 w-4" />
+            Zkusit znovu
+          </Button>}
+          <Button type="button" onClick={() => window.location.reload()} size="sm" variant="outline" className="border-amber-200 bg-white text-amber-800 hover:bg-amber-100">
             Obnovit stránku
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={onResetSession} className="border-amber-200 bg-white text-amber-800 hover:bg-amber-100">
@@ -97,7 +107,7 @@ const PrivateRoute = ({ children, module, level = 'can_read' }) => {
   const { hasPermission, isAdmin, loading, permissionsReady } = useAuth();
 
   if (loading || !permissionsReady) {
-    return <EkvLoader title="OvÄ›Ĺ™uji pĹ™Ă­stup" description="Kontroluji oprĂˇvnÄ›nĂ­ modulu." className="min-h-[50vh]" />;
+    return <EkvLoader title="Ověřuji přístup" description="Kontroluji oprávnění modulu." className="min-h-[50vh]" />;
   }
 
   if (isAdmin) {
@@ -116,11 +126,12 @@ const PrivateRoute = ({ children, module, level = 'can_read' }) => {
 };
 
 function AppContent() {
-  const { session, loading } = useAuth();
+  const { session, loading, permissionsReady, authError, retryPermissions } = useAuth();
   const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const isPortalLoading = loading || Boolean(session && !permissionsReady);
 
   useEffect(() => {
-    if (loading) {
+    if (isPortalLoading) {
       const timeout = setTimeout(() => {
         setLoadingTimeout(true);
       }, 10000); 
@@ -129,15 +140,17 @@ function AppContent() {
     } else {
       setLoadingTimeout(false);
     }
-  }, [loading]);
+  }, [isPortalLoading]);
 
-  if (loading) {
+  if (isPortalLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-50 p-5">
         <PortalLoaderCard
           title="Načítání portálu"
           description="Ověřujeme relaci a připravujeme pracovní prostředí."
-          showActions={loadingTimeout}
+          error={authError}
+          showActions={loadingTimeout || Boolean(authError)}
+          onRetry={retryPermissions}
           onResetSession={async () => {
             await supabase.auth.signOut();
             clearSupabaseSessionStorage();
@@ -236,9 +249,6 @@ function AppContent() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<Auth />} />
-              <Route path="/order/:token" element={<OrderPage />} />
-              <Route path="/sub-order/:token" element={<SubcontractorOrderPage />} />
-              <Route path="/update-password" element={<UpdatePassword />} />
               <Route path="*" element={<Navigate to="/login" />} />
             </Routes>
           </Suspense>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -34,6 +34,11 @@ import EkvLoader from '@/components/ui/ekv-loader';
 import { calculateRealizationRewardAllocation } from '@/domain/financials';
 import { formatMoney } from '@/lib/financePresentation';
 import FinancialSettingsCard from '@/components/finance/FinancialSettingsCard';
+import {
+  createTimedAbortController,
+  isRequestAbortError,
+  isRequestTimeoutError,
+} from '@/lib/requestControl';
 
 const formatCurrency = formatMoney;
 const toNumber = (value) => {
@@ -64,6 +69,9 @@ const RealizaceDetail = () => {
   const [financialSummary, setFinancialSummary] = useState(null);
   const [laborFinancialSummary, setLaborFinancialSummary] = useState(null);
   const [financeLoadError, setFinanceLoadError] = useState(null);
+  const loadRequestRef = useRef({ id: 0, controller: null });
+  const financeRequestRef = useRef({ id: 0, controller: null });
+  const loadedRealizationIdRef = useRef(null);
 
   // Linked project is contextual; labor costs come from the canonical ledger summary.
   const [linkedProjectId, setLinkedProjectId] = useState(null);
@@ -156,92 +164,210 @@ const RealizaceDetail = () => {
     );
   };
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async ({ showLoader = false } = {}) => {
+    loadRequestRef.current.controller?.abort();
+    const requestId = loadRequestRef.current.id + 1;
+    const request = createTimedAbortController(20_000);
+    loadRequestRef.current = { id: requestId, controller: request.controller };
+    const isCurrentRequest = () => loadRequestRef.current.id === requestId;
+
+    if (showLoader || loadedRealizationIdRef.current !== realizaceId) setLoading(true);
     setFinanceLoadError(null);
-    const { data: realData, error: realError } = await supabase.rpc('get_realization_safe', {
-      p_realization_id: realizaceId,
-    });
+    try {
+      const { data: realData, error: realError } = await supabase.rpc('get_realization_safe', {
+        p_realization_id: realizaceId,
+      }).abortSignal(request.signal);
 
-    if (realError) {
-      toast({ title: 'Chyba', description: 'Nepodařilo se načíst realizaci.', variant: 'destructive' });
-      navigate('/realizace');
-      return;
+      if (!isCurrentRequest()) return false;
+      if (realError) {
+        toast({ title: 'Chyba', description: 'Nepodařilo se načíst realizaci.', variant: 'destructive' });
+        navigate('/realizace');
+        return false;
+      }
+      setRealization(realData);
+      setLinkedProjectId(realData.linked_project_id);
+
+      if (realData.linked_project_id) {
+        const { data: linkedProject } = await supabase
+          .from('projects')
+          .select('code')
+          .eq('id', realData.linked_project_id)
+          .maybeSingle()
+          .abortSignal(request.signal);
+        if (!isCurrentRequest()) return false;
+        setLinkedProjectCode(linkedProject?.code || null);
+      } else {
+        setLinkedProjectCode(null);
+      }
+
+      const shouldLoadFinancialSummary = canViewAmounts || canViewCosts || canViewProfit;
+      const costsPromise = canViewCosts
+        ? supabase.from('realizace_costs').select(`*, supplier:subjects!realizace_costs_supplier_id_fkey(name)`).eq('realizace_id', realizaceId).order('created_at', { ascending: false }).abortSignal(request.signal)
+        : Promise.resolve({ data: [], error: null });
+      const extraCostsPromise = canViewCosts
+        ? supabase.from('realizace_extra_costs').select('*').eq('realizace_id', realizaceId).order('created_at', { ascending: true }).abortSignal(request.signal)
+        : Promise.resolve({ data: [], error: null });
+      const financialSummaryPromise = shouldLoadFinancialSummary
+        ? supabase.rpc('realization_financial_preview', {
+            p_realization_id: realizaceId,
+            p_overrides: {},
+            p_shares: null,
+          }).abortSignal(request.signal)
+        : Promise.resolve({ data: null, error: null });
+      const laborSummaryPromise = shouldLoadFinancialSummary
+        ? supabase.rpc('realization_labor_financial_summary', { p_realization_id: realizaceId }).abortSignal(request.signal)
+        : Promise.resolve({ data: null, error: null });
+
+      const [costsRes, extraRes, financialSummaryRes, laborSummaryRes] = await Promise.all([
+        costsPromise,
+        extraCostsPromise,
+        financialSummaryPromise,
+        laborSummaryPromise,
+      ]);
+
+      if (!isCurrentRequest()) return false;
+      const financeListErrors = canViewCosts
+        ? [costsRes, extraRes].map((result) => result.error?.message).filter(Boolean)
+        : [];
+      if (financeListErrors.length > 0) {
+        setFinanceLoadError(financeListErrors.join(' · '));
+      }
+
+      if (canViewCosts) {
+        setCosts(costsRes.data || []);
+        setExtraCosts(extraRes.data || []);
+      } else {
+        setCosts([]);
+        setExtraCosts([]);
+      }
+
+      if (financialSummaryRes.error) {
+        console.error('realization_financial_preview failed:', financialSummaryRes.error.message);
+        setFinanceLoadError(financialSummaryRes.error.message);
+        setFinancialSummary(null);
+      } else {
+        setFinancialSummary(financialSummaryRes.data || null);
+      }
+      if (laborSummaryRes.error) {
+        console.error('realization_labor_financial_summary failed:', laborSummaryRes.error.message);
+        setFinanceLoadError((current) => current || laborSummaryRes.error.message);
+        setLaborFinancialSummary(null);
+      } else {
+        setLaborFinancialSummary(laborSummaryRes.data || null);
+      }
+
+      loadedRealizationIdRef.current = realizaceId;
+      return true;
+    } catch (error) {
+      const timeout = isRequestTimeoutError(error) || isRequestTimeoutError(request.signal.reason);
+      const superseded = request.signal.aborted && !timeout;
+      if (!isCurrentRequest() || superseded || (isRequestAbortError(error) && !timeout)) return false;
+      toast({
+        title: 'Chyba při načítání realizace',
+        description: timeout ? 'Načítání překročilo časový limit. Zkuste stránku obnovit.' : error.message,
+        variant: 'destructive',
+      });
+      return false;
+    } finally {
+      request.dispose();
+      if (isCurrentRequest()) setLoading(false);
     }
-    setRealization(realData);
-    setLinkedProjectId(realData.linked_project_id);
-
-    if (realData.linked_project_id) {
-      const { data: linkedProject } = await supabase
-        .from('projects')
-        .select('code')
-        .eq('id', realData.linked_project_id)
-        .maybeSingle();
-      setLinkedProjectCode(linkedProject?.code || null);
-    } else {
-      setLinkedProjectCode(null);
-    }
-
-    const shouldLoadFinancialSummary = canViewAmounts || canViewCosts || canViewProfit;
-    const costsPromise = canViewCosts
-      ? supabase.from('realizace_costs').select(`*, supplier:subjects!realizace_costs_supplier_id_fkey(name)`).eq('realizace_id', realizaceId).order('created_at', { ascending: false })
-      : Promise.resolve({ data: [], error: null });
-    const extraCostsPromise = canViewCosts
-      ? supabase.from('realizace_extra_costs').select('*').eq('realizace_id', realizaceId).order('created_at', { ascending: true })
-      : Promise.resolve({ data: [], error: null });
-    const financialSummaryPromise = shouldLoadFinancialSummary
-      ? supabase.rpc('realization_financial_preview', {
-          p_realization_id: realizaceId,
-          p_overrides: {},
-          p_shares: null,
-        })
-      : Promise.resolve({ data: null, error: null });
-    const laborSummaryPromise = shouldLoadFinancialSummary
-      ? supabase.rpc('realization_labor_financial_summary', { p_realization_id: realizaceId })
-      : Promise.resolve({ data: null, error: null });
-
-    const [costsRes, extraRes, financialSummaryRes, laborSummaryRes] = await Promise.all([
-      costsPromise,
-      extraCostsPromise,
-      financialSummaryPromise,
-      laborSummaryPromise,
-    ]);
-
-    const financeListErrors = canViewCosts
-      ? [costsRes, extraRes].map((result) => result.error?.message).filter(Boolean)
-      : [];
-    if (financeListErrors.length > 0) {
-      setFinanceLoadError(financeListErrors.join(' · '));
-    }
-
-    if (canViewCosts) {
-      setCosts(costsRes.data || []);
-      setExtraCosts(extraRes.data || []);
-    } else {
-      setCosts([]);
-      setExtraCosts([]);
-    }
-
-    if (financialSummaryRes.error) {
-      console.error('realization_financial_preview failed:', financialSummaryRes.error.message);
-      setFinanceLoadError(financialSummaryRes.error.message);
-      setFinancialSummary(null);
-    } else {
-      setFinancialSummary(financialSummaryRes.data || null);
-    }
-    if (laborSummaryRes.error) {
-      console.error('realization_labor_financial_summary failed:', laborSummaryRes.error.message);
-      setFinanceLoadError((current) => current || laborSummaryRes.error.message);
-      setLaborFinancialSummary(null);
-    } else {
-      setLaborFinancialSummary(laborSummaryRes.data || null);
-    }
-
-    setLoading(false);
   }, [realizaceId, navigate, toast, canViewAmounts, canViewCosts, canViewProfit]);
 
+  const refreshFinancialData = useCallback(async () => {
+    const shouldLoadFinancialSummary = canViewAmounts || canViewCosts || canViewProfit;
+    if (!canViewCosts && !shouldLoadFinancialSummary) return true;
+
+    financeRequestRef.current.controller?.abort();
+    const requestId = financeRequestRef.current.id + 1;
+    const request = createTimedAbortController(15_000);
+    financeRequestRef.current = { id: requestId, controller: request.controller };
+    const isCurrentRequest = () => financeRequestRef.current.id === requestId;
+
+    setFinanceLoadError(null);
+    try {
+      const costsPromise = canViewCosts
+        ? supabase
+            .from('realizace_costs')
+            .select('*, supplier:subjects!realizace_costs_supplier_id_fkey(name)')
+            .eq('realizace_id', realizaceId)
+            .order('created_at', { ascending: false })
+            .abortSignal(request.signal)
+        : Promise.resolve({ data: [], error: null });
+      const extraCostsPromise = canViewCosts
+        ? supabase
+            .from('realizace_extra_costs')
+            .select('*')
+            .eq('realizace_id', realizaceId)
+            .order('created_at', { ascending: true })
+            .abortSignal(request.signal)
+        : Promise.resolve({ data: [], error: null });
+      const financialSummaryPromise = shouldLoadFinancialSummary
+        ? supabase.rpc('realization_financial_preview', {
+            p_realization_id: realizaceId,
+            p_overrides: {},
+            p_shares: null,
+          }).abortSignal(request.signal)
+        : Promise.resolve({ data: null, error: null });
+      const laborSummaryPromise = shouldLoadFinancialSummary
+        ? supabase.rpc('realization_labor_financial_summary', { p_realization_id: realizaceId }).abortSignal(request.signal)
+        : Promise.resolve({ data: null, error: null });
+
+      const [costsRes, extraRes, financialSummaryRes, laborSummaryRes] = await Promise.all([
+        costsPromise,
+        extraCostsPromise,
+        financialSummaryPromise,
+        laborSummaryPromise,
+      ]);
+
+      if (!isCurrentRequest()) return false;
+
+      const errors = [costsRes, extraRes, financialSummaryRes, laborSummaryRes]
+        .map((result) => result.error?.message)
+        .filter(Boolean);
+      if (errors.length > 0) {
+        setFinanceLoadError(errors.join(' · '));
+        return false;
+      }
+
+      if (canViewCosts) {
+        setCosts(costsRes.data || []);
+        setExtraCosts(extraRes.data || []);
+      }
+      setFinancialSummary(financialSummaryRes.data || null);
+      setLaborFinancialSummary(laborSummaryRes.data || null);
+      return true;
+    } catch (error) {
+      const timeout = isRequestTimeoutError(error) || isRequestTimeoutError(request.signal.reason);
+      const superseded = request.signal.aborted && !timeout;
+      if (!isCurrentRequest() || superseded || (isRequestAbortError(error) && !timeout)) return false;
+      const message = timeout
+        ? 'Obnovení finančních dat překročilo časový limit.'
+        : error.message;
+      setFinanceLoadError(message);
+      toast({ title: 'Finanční data se nepodařilo obnovit', description: message, variant: 'destructive' });
+      return false;
+    } finally {
+      request.dispose();
+    }
+  }, [canViewAmounts, canViewCosts, canViewProfit, realizaceId, toast]);
+
   useEffect(() => {
-    fetchData();
+    loadedRealizationIdRef.current = null;
+    setRealization(null);
+    void fetchData({ showLoader: true });
+    return () => {
+      loadRequestRef.current.controller?.abort();
+      financeRequestRef.current.controller?.abort();
+      loadRequestRef.current = {
+        id: loadRequestRef.current.id + 1,
+        controller: null,
+      };
+      financeRequestRef.current = {
+        id: financeRequestRef.current.id + 1,
+        controller: null,
+      };
+    };
   }, [fetchData]);
 
   // --- Financial Calculations ---
@@ -386,7 +512,7 @@ const RealizaceDetail = () => {
 
       setIsCostDialogOpen(false);
       setEditingCost(null);
-      await fetchData();
+      await refreshFinancialData();
       return true;
 
     } catch (error) {
@@ -428,7 +554,7 @@ const RealizaceDetail = () => {
         }
       }
       toast({ title: 'Náklad smazán' });
-      fetchData();
+      void refreshFinancialData();
     }
   };
 
@@ -539,7 +665,7 @@ const RealizaceDetail = () => {
                 <RealizaceExtraCosts
                   realizaceId={realizaceId}
                   extraCosts={extraCosts}
-                  onUpdate={fetchData}
+                  onUpdate={refreshFinancialData}
                   canEdit={canEdit && !financeLoadError}
                 />
 

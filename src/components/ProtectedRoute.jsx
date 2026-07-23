@@ -9,7 +9,7 @@ const ProtectedRoute = ({ children, requiredRole }) => {
   const { user, userRole, loading, permissionsReady } = useAuth();
 
   if (loading || (user && !permissionsReady)) {
-    return <EkvLoader title="Ověřuji přístup" description="Kontroluji uživatele a oprávnění modulu." className="min-h-screen" />;
+    return <EkvLoader title="Ověřuji přístup" description="Kontroluji uživatele a oprávnění modulu." className="min-h-[50vh]" />;
   }
 
   if (!user) {

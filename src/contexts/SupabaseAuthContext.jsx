@@ -1,7 +1,12 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
-import { combineAbortSignals, createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
+import {
+  combineAbortSignals,
+  createTimedAbortController,
+  isRequestAbortError,
+  isRequestTimeoutError,
+} from '@/lib/requestControl';
 
 const AuthContext = createContext(undefined);
 
@@ -46,15 +51,6 @@ const clearCache = () => {
   cache.timestamp.clear();
 };
 
-const withTimeout = (promise, timeoutMs, label) => {
-  let timeoutId;
-  const timeout = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
-  });
-
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
-};
-
 export const AuthProvider = ({ children }) => {
   const { toast } = useToast();
 
@@ -64,20 +60,22 @@ export const AuthProvider = ({ children }) => {
   const [permissions, setPermissions] = useState({});
   const [permissionsReady, setPermissionsReady] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState(null);
   const [isPrivateMode, setIsPrivateMode] = useState(false); 
   const currentUserIdRef = useRef(null);
   const authEventRunIdRef = useRef(0);
   const permissionsLoadedUserIdRef = useRef(null);
+  const permissionsLoadingUserIdRef = useRef(null);
   const permissionAbortRef = useRef(null);
-  const authEventTimerRef = useRef(null);
 
   const isSuperUser = useMemo(() => userRole === 'admin' || userRole === 'super_manager', [userRole]);
 
   const clearState = useCallback(() => {
     currentUserIdRef.current = null;
     permissionsLoadedUserIdRef.current = null;
+    permissionsLoadingUserIdRef.current = null;
     setUser(null);
     setSession(null);
     setMemberId(null);
@@ -87,6 +85,7 @@ export const AuthProvider = ({ children }) => {
     setUserRole(null);
     setIsPrivateMode(false);
     setLoading(false);
+    setAuthError(null);
     clearCache();
   }, []);
   
@@ -102,25 +101,6 @@ export const AuthProvider = ({ children }) => {
         toast({ title: "Byli jste odhlášeni." });
     }
   }, [toast, clearState]);
-
-  // Session Timeout Handler
-  useEffect(() => {
-    if (!session?.expires_at) return;
-    
-    const expiresAtMs = session.expires_at * 1000;
-    const timeUntilExpiry = expiresAtMs - Date.now();
-    
-    // Set a timeout to log out when session expires (minus 10 seconds for buffer)
-    if (timeUntilExpiry > 0) {
-      const timeoutId = setTimeout(async () => {
-        toast({ title: "Relace vypršela", description: "Z bezpečnostních důvodů jste byli odhlášeni.", variant: "warning" });
-        await signOut();
-      }, timeUntilExpiry - 10000);
-      return () => clearTimeout(timeoutId);
-    } else {
-      signOut();
-    }
-  }, [session, signOut, toast]);
 
   const signIn = useCallback(async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -176,7 +156,7 @@ export const AuthProvider = ({ children }) => {
       try {
         return await operation();
       } catch (err) {
-        if (isRequestAbortError(err)) throw err;
+        if (isRequestAbortError(err) && !isRequestTimeoutError(err)) throw err;
         if (attempt === maxRetries - 1) throw err;
         await new Promise(resolve => setTimeout(resolve, delay * (attempt + 1)));
       }
@@ -199,17 +179,17 @@ export const AuthProvider = ({ children }) => {
     };
 
     try {
-      const { data: accountStatus, error: accountStatusError } = await supabase
-        .from('user_account_status')
-        .select('status, reason')
-        .eq('auth_user_id', currentUser.id)
-        .maybeSingle()
-        .abortSignal(requestSignal());
+      const accountStatus = await retryOperation(async () => {
+        const { data, error } = await supabase
+          .from('user_account_status')
+          .select('status, reason')
+          .eq('auth_user_id', currentUser.id)
+          .maybeSingle()
+          .abortSignal(requestSignal());
+        if (error && error.code !== 'PGRST116' && error.code !== '42P01') throw error;
+        return data;
+      });
       assertCurrentRun();
-
-      if (accountStatusError && accountStatusError.code !== 'PGRST116' && accountStatusError.code !== '42P01') {
-        throw accountStatusError;
-      }
 
       if (accountStatus?.status === 'disabled') {
         toast({
@@ -251,22 +231,17 @@ export const AuthProvider = ({ children }) => {
       const adminStatus = role === 'admin';
       setIsAdmin(adminStatus);
       
-      let memberData = null;
-      try {
-        memberData = await retryOperation(async () => {
-          const { data, error } = await supabase
-            .from('members')
-            .select('id, notification_preferences')
-            .eq('auth_user_id', currentUser.id)
-            .single()
-            .abortSignal(requestSignal());
-            
-          if (error && error.code !== 'PGRST116') throw error;
-          return data;
-        });
-      } catch (err) {
-        console.error("Error fetching member ID:", err);
-      }
+      const memberData = await retryOperation(async () => {
+        const { data, error } = await supabase
+          .from('members')
+          .select('id, notification_preferences')
+          .eq('auth_user_id', currentUser.id)
+          .maybeSingle()
+          .abortSignal(requestSignal());
+
+        if (error && error.code !== 'PGRST116') throw error;
+        return data;
+      });
 
       if (memberData) {
         assertCurrentRun();
@@ -297,21 +272,15 @@ export const AuthProvider = ({ children }) => {
           realizace: { can_read: true, can_edit: true, can_admin: true },
         };
       } else {
-        try {
-          const permsData = await retryOperation(async () => {
-             const { data, error } = await supabase.rpc('get_permissions', { p_role: role })
-               .abortSignal(requestSignal());
-               
-             if (error) throw error;
-             return data;
-          });
-          
-          finalPermissions = permsData || {};
-          
-        } catch (err) {
-          console.error("Error fetching permissions:", err);
-          finalPermissions = {};
-        }
+        const permsData = await retryOperation(async () => {
+          const { data, error } = await supabase.rpc('get_permissions', { p_role: role })
+            .abortSignal(requestSignal());
+
+          if (error) throw error;
+          return data;
+        });
+
+        finalPermissions = permsData || {};
       }
 
       assertCurrentRun();
@@ -329,134 +298,139 @@ export const AuthProvider = ({ children }) => {
     } catch(error) {
       if (runSignal?.aborted || isRequestAbortError(error)) throw error;
       console.error("An unexpected error occurred during permission fetch:", error);
-      
-      if (error.message?.includes('JWT') || error.message?.includes('token') || error.message?.includes('timeout') || error.name === 'TimeoutError') {
+
+      if (error.message?.includes('JWT') || error.message?.includes('token')) {
         toast({ 
-          title: 'Relace vypršela nebo timeout', 
-          description: 'Prosím přihlaste se znovu nebo zkontrolujte připojení.',
+          title: 'Relace vypršela',
+          description: 'Přihlaste se prosím znovu.',
           variant: 'destructive'
         });
         await signOut();
         return;
       }
-      
-      toast({ title: 'Nastala chyba při načítání dat.', variant: 'destructive'});
-      
-      setPermissions({});
-      setPermissionsReady(true);
+
+      throw error;
     }
   }, [clearState, toast, signOut, retryOperation]);
+
+  const loadPermissionsForUser = useCallback(async (
+    currentUser,
+    { foreground = true, invalidateCache = false } = {}
+  ) => {
+    if (!currentUser) return false;
+
+    const runId = authEventRunIdRef.current + 1;
+    authEventRunIdRef.current = runId;
+    permissionAbortRef.current?.abort();
+    const permissionRequest = createTimedAbortController(20_000);
+    permissionAbortRef.current = permissionRequest.controller;
+    permissionsLoadingUserIdRef.current = currentUser.id;
+
+    if (invalidateCache) clearCache();
+    setAuthError(null);
+    setPermissionsReady(false);
+    if (foreground) setLoading(true);
+
+    try {
+      await fetchPermissions(currentUser, permissionRequest.signal);
+      if (authEventRunIdRef.current !== runId || currentUserIdRef.current !== currentUser.id) return false;
+      permissionsLoadedUserIdRef.current = currentUser.id;
+      return true;
+    } catch (error) {
+      const superseded = permissionRequest.signal.aborted && !isRequestTimeoutError(
+        permissionRequest.signal.reason || error
+      );
+      if (superseded || authEventRunIdRef.current !== runId) return false;
+
+      console.error("Error loading auth permissions:", error);
+      const message = isRequestTimeoutError(error) || isRequestTimeoutError(permissionRequest.signal.reason)
+        ? 'Načítání oprávnění překročilo časový limit. Zkontrolujte připojení a zkuste to znovu.'
+        : 'Oprávnění se nepodařilo načíst. Zkuste akci zopakovat.';
+      setAuthError(message);
+      toast({
+        title: 'Načítání oprávnění selhalo',
+        description: message,
+        variant: 'destructive',
+      });
+      return false;
+    } finally {
+      permissionRequest.dispose();
+      if (permissionAbortRef.current === permissionRequest.controller) {
+        permissionAbortRef.current = null;
+      }
+      if (permissionsLoadingUserIdRef.current === currentUser.id && authEventRunIdRef.current === runId) {
+        permissionsLoadingUserIdRef.current = null;
+      }
+      if (authEventRunIdRef.current === runId && foreground) setLoading(false);
+    }
+  }, [fetchPermissions, toast]);
+
+  const retryPermissions = useCallback(async () => {
+    if (!user) return false;
+    return loadPermissionsForUser(user, { foreground: true, invalidateCache: true });
+  }, [loadPermissionsForUser, user]);
 
   useEffect(() => {
     let isMounted = true;
 
-    const initializeAuth = async () => {
-      setLoading(true);
-      try {
-        const { data: { session } } = await withTimeout(
-          supabase.auth.getSession(),
-          8000,
-          'Auth session initialization'
-        );
-        
-        if (isMounted) {
-          setSession(session);
-          const currentUser = session?.user ?? null;
-          currentUserIdRef.current = currentUser?.id ?? null;
-          setUser(currentUser);
-          
-          if (currentUser) {
-            const permissionRequest = createTimedAbortController(20_000);
-            permissionAbortRef.current?.abort();
-            permissionAbortRef.current = permissionRequest.controller;
-            try {
-              await fetchPermissions(currentUser, permissionRequest.signal);
-            } finally {
-              permissionRequest.dispose();
-            }
-            permissionsLoadedUserIdRef.current = currentUser.id;
-          }
-        }
-      } catch (error) {
-        console.error("Error initializing auth:", error);
-        if (isMounted) {
-          clearState();
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    initializeAuth();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, nextSession) => {
         if (!isMounted) return;
 
-        const newCurrentUser = session?.user ?? null;
+        const nextUser = nextSession?.user ?? null;
         const previousUserId = currentUserIdRef.current;
-        const nextUserId = newCurrentUser?.id ?? null;
+        const nextUserId = nextUser?.id ?? null;
 
-        setSession(session);
-        setUser(newCurrentUser);
+        setSession(nextSession);
+        setUser(nextUser);
 
-        if (_event === 'SIGNED_OUT' || !newCurrentUser) {
+        if (event === 'SIGNED_OUT' || !nextUser) {
           clearState();
-          return;
-        }
-
-        const mustRefreshPermissions = _event === 'TOKEN_REFRESHED' || _event === 'USER_UPDATED';
-        if (!mustRefreshPermissions && nextUserId === previousUserId && permissionsLoadedUserIdRef.current === nextUserId) {
-          currentUserIdRef.current = nextUserId;
-          setPermissionsReady(true);
-          setLoading(false);
           return;
         }
 
         currentUserIdRef.current = nextUserId;
-        permissionsLoadedUserIdRef.current = null;
-        setPermissionsReady(false);
-        if (mustRefreshPermissions) clearCache();
-        setLoading(true);
-        const runId = authEventRunIdRef.current + 1;
-        authEventRunIdRef.current = runId;
-        permissionAbortRef.current?.abort();
-        if (authEventTimerRef.current) clearTimeout(authEventTimerRef.current);
-        const permissionRequest = createTimedAbortController(20_000);
-        permissionAbortRef.current = permissionRequest.controller;
 
-        authEventTimerRef.current = setTimeout(async () => {
-          try {
-            await fetchPermissions(newCurrentUser, permissionRequest.signal);
-            if (!isMounted || authEventRunIdRef.current !== runId) return;
-            permissionsLoadedUserIdRef.current = newCurrentUser.id;
-          } catch (error) {
-            if (isRequestAbortError(error) || !isMounted || authEventRunIdRef.current !== runId) return;
-            console.error("Error loading auth permissions:", error);
-            toast({
-              title: 'Načítání oprávnění selhalo',
-              description: 'Zkuste prosím obnovit stránku nebo se přihlásit znovu.',
-              variant: 'destructive',
-            });
-          } finally {
-            permissionRequest.dispose();
-            if (isMounted && authEventRunIdRef.current === runId) {
-              setLoading(false);
-            }
-          }
-        }, 0);
+        // A refreshed access token does not change application permissions.
+        // Keeping the route mounted prevents all page queries from running again.
+        if (
+          event === 'TOKEN_REFRESHED'
+          && nextUserId === previousUserId
+          && permissionsLoadedUserIdRef.current === nextUserId
+        ) {
+          return;
+        }
+
+        const identityChanged = nextUserId !== previousUserId;
+        if (
+          event !== 'USER_UPDATED'
+          && !identityChanged
+          && permissionsLoadingUserIdRef.current === nextUserId
+        ) {
+          return;
+        }
+        const mustReload = identityChanged
+          || event === 'INITIAL_SESSION'
+          || event === 'USER_UPDATED'
+          || permissionsLoadedUserIdRef.current !== nextUserId;
+
+        if (!mustReload) return;
+
+        const invalidateCache = identityChanged || event === 'USER_UPDATED';
+        void loadPermissionsForUser(nextUser, {
+          foreground: true,
+          invalidateCache,
+        });
       }
     );
 
     return () => {
       isMounted = false;
+      authEventRunIdRef.current += 1;
       permissionAbortRef.current?.abort();
-      if (authEventTimerRef.current) clearTimeout(authEventTimerRef.current);
       subscription?.unsubscribe();
     };
-  }, []);
+  }, [clearState, loadPermissionsForUser]);
 
   const hasPermission = useCallback((module, level = 'can_read') => {
     if (isAdmin) return true;
@@ -470,6 +444,7 @@ export const AuthProvider = ({ children }) => {
     user,
     session,
     loading,
+    authError,
     permissionsReady,
     permissions,
     isAdmin,
@@ -480,10 +455,11 @@ export const AuthProvider = ({ children }) => {
     signOut,
     signIn,
     signInWithSso,
+    retryPermissions,
 
     isPrivateMode,
     togglePrivateMode,
-  }), [user, session, loading, permissionsReady, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signInWithSso, isPrivateMode, togglePrivateMode]);
+  }), [user, session, loading, authError, permissionsReady, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signInWithSso, retryPermissions, isPrivateMode, togglePrivateMode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
