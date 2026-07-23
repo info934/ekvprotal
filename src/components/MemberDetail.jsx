@@ -176,6 +176,7 @@ const MemberDetail = () => {
   const [member, setMember] = useState(null);
   const [projects, setProjects] = useState([]);
   const [projectRewards, setProjectRewards] = useState({});
+  const [payoutAvailability, setPayoutAvailability] = useState({ projects: [], realizations: [] });
   const [payouts, setPayouts] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -191,10 +192,10 @@ const MemberDetail = () => {
 
   const canEdit = useMemo(() => hasPermission('members', 'can_edit'), [hasPermission]);
   const canAdmin = useMemo(() => hasPermission('members', 'can_admin'), [hasPermission]);
+  const canViewCompensation = isAdmin || String(currentMemberId) === String(memberId);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const canViewCompensation = isAdmin || String(currentMemberId) === String(memberId);
     const [{ data: memberData, error: memberError }, compensationResult] = await Promise.all([
       supabase
         .from('members')
@@ -232,6 +233,19 @@ const MemberDetail = () => {
         return acc;
       }, {});
       setProjectRewards(rewardsByProject);
+    }
+
+    const { data: availabilityData, error: availabilityError } = canViewCompensation
+      ? await supabase.rpc('get_payout_availability', { p_member_id: memberId, p_edit_payout_id: null })
+      : { data: { projects: [], realizations: [] }, error: null };
+    if (availabilityError) {
+      toast({ title: 'Chyba při načítání nároků k výplatě', variant: 'destructive', description: availabilityError.message });
+      setPayoutAvailability({ projects: [], realizations: [] });
+    } else {
+      setPayoutAvailability({
+        projects: availabilityData?.projects || [],
+        realizations: availabilityData?.realizations || [],
+      });
     }
 
     const { data: payoutsData, error: payoutsError } = canViewCompensation
@@ -306,9 +320,43 @@ const MemberDetail = () => {
       .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   };
 
-  const getTotalRemaining = () => {
-    return projects.reduce((sum, pa) => sum + getRemainingReward(pa), 0);
-  };
+  const payoutEntitlements = useMemo(() => [
+    ...(payoutAvailability.projects || []).map((project) => ({
+      id: project.project_id,
+      type: 'Projekt',
+      name: project.project_name,
+      code: project.project_code,
+      status: project.project_status,
+      total: Number(project.total_reward || 0),
+      reserved: Number(project.reserved_payouts || 0),
+      paid: Number(project.paid_payouts || 0),
+      available: Number(project.available_balance || 0),
+      recommended: Number(project.recommended_available_balance ?? project.available_balance ?? 0),
+      href: `/projects/${project.project_id}`,
+    })),
+    ...(payoutAvailability.realizations || []).map((realization) => ({
+      id: realization.id,
+      type: 'Realizace',
+      name: realization.name,
+      code: realization.code || null,
+      status: realization.status,
+      total: Number(realization.total_share || 0),
+      reserved: Number(realization.reserved_payouts || 0),
+      paid: Number(realization.paid_amount || 0),
+      available: Number(realization.available_share || 0),
+      recommended: Number(realization.recommended_available_share ?? realization.available_share ?? 0),
+      href: `/realizace/${realization.id}`,
+    })),
+  ], [payoutAvailability]);
+
+  const totalAvailableForPayout = useMemo(
+    () => payoutEntitlements.reduce((sum, entitlement) => sum + entitlement.available, 0),
+    [payoutEntitlements]
+  );
+  const totalRecommendedForPayout = useMemo(
+    () => payoutEntitlements.reduce((sum, entitlement) => sum + entitlement.recommended, 0),
+    [payoutEntitlements]
+  );
 
   const payoutItemsSummary = useMemo(() => {
     const rows = [];
@@ -586,7 +634,7 @@ const MemberDetail = () => {
           {/* Finanční přehled */}
           <div className="glass-effect rounded-xl p-6">
             <DetailSection title="Finanční přehled" icon={DollarSign}>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-2">
                     <DollarSign className="w-5 h-5 text-purple-600" />
@@ -599,7 +647,7 @@ const MemberDetail = () => {
                 <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
                   <div className="flex items-center gap-2 mb-2">
                     <Briefcase className="w-5 h-5 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-800">Celkové odměny (fix)</span>
+                    <span className="text-sm font-medium text-blue-800">Odměny z projektů</span>
                   </div>
                   <p className="text-2xl font-bold text-blue-900">{getTotalRewards().toLocaleString('cs-CZ')} Kč</p>
                 </div>
@@ -613,11 +661,62 @@ const MemberDetail = () => {
                 <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200">
                   <div className="flex items-center gap-2 mb-2">
                     <Clock className="w-5 h-5 text-orange-600" />
-                    <span className="text-sm font-medium text-orange-800">Zbývající odměna</span>
+                    <span className="text-sm font-medium text-orange-800">K výplatě nyní</span>
                   </div>
-                  <p className="text-2xl font-bold text-orange-900">{getTotalRemaining().toLocaleString('cs-CZ')} Kč</p>
+                  <p className="text-2xl font-bold text-orange-900">{totalAvailableForPayout.toLocaleString('cs-CZ')} Kč</p>
+                  {totalRecommendedForPayout < totalAvailableForPayout && (
+                    <p className="mt-1 text-xs text-orange-700">Kryté úhradami: {totalRecommendedForPayout.toLocaleString('cs-CZ')} Kč</p>
+                  )}
                 </div>
               </div>
+            </DetailSection>
+          </div>
+
+          <div className="glass-effect rounded-xl p-6">
+            <DetailSection title="Nároky k výplatě" icon={Layers} contentClassName="max-h-96 overflow-auto pr-2">
+              <p className="text-sm text-muted-foreground">
+                Souhrn aktivních nároků z projektů i realizací. Částka odpovídá stejnému výpočtu jako při založení žádosti o výplatu.
+              </p>
+              {payoutEntitlements.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Zdroj</TableHead>
+                      <TableHead>Stav</TableHead>
+                      <TableHead className="text-right">Nárok</TableHead>
+                      <TableHead className="text-right">Rezervováno</TableHead>
+                      <TableHead className="text-right">Vyplaceno</TableHead>
+                      <TableHead className="text-right">K výplatě</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {payoutEntitlements.map((entitlement) => (
+                      <TableRow key={`${entitlement.type}-${entitlement.id}`}>
+                        <TableCell>
+                          <Link to={entitlement.href} className="font-medium hover:text-primary">
+                            {entitlement.name || 'Bez názvu'}
+                          </Link>
+                          <div className="text-xs text-muted-foreground">
+                            {entitlement.type}{entitlement.code ? ` · ${entitlement.code}` : ''}
+                          </div>
+                        </TableCell>
+                        <TableCell>{entitlement.status || '—'}</TableCell>
+                        <TableCell className="text-right">{entitlement.total.toLocaleString('cs-CZ')} Kč</TableCell>
+                        <TableCell className="text-right text-amber-700">{entitlement.reserved.toLocaleString('cs-CZ')} Kč</TableCell>
+                        <TableCell className="text-right text-emerald-700">{entitlement.paid.toLocaleString('cs-CZ')} Kč</TableCell>
+                        <TableCell className="text-right font-semibold text-primary">
+                          {entitlement.available.toLocaleString('cs-CZ')} Kč
+                          {entitlement.recommended < entitlement.available && (
+                            <div className="text-xs font-normal text-muted-foreground">kryto: {entitlement.recommended.toLocaleString('cs-CZ')} Kč</div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="py-4 text-center text-sm text-muted-foreground">Aktuálně nejsou žádné nároky připravené k výplatě.</p>
+              )}
             </DetailSection>
           </div>
 

@@ -31,15 +31,20 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
-            const [sharesRes, membersRes] = await Promise.all([
+            const [sharesRes, teamRes] = await Promise.all([
                 supabase.rpc('get_realization_reward_plan', { p_realization_id: realizaceId }),
-                supabase.from('members').select('id, name').order('name')
+                supabase
+                    .from('realizace_team_members')
+                    .select(`
+                        member:members!realizace_team_members_member_id_fkey(id, name),
+                        ended_at
+                    `)
+                    .eq('realizace_id', realizaceId)
+                    .is('ended_at', null)
             ]);
 
             if (sharesRes.error) throw sharesRes.error;
-            if (membersRes.error) throw membersRes.error;
-
-            setMembers(membersRes.data || []);
+            if (teamRes.error) throw teamRes.error;
             
             // Transform shares to local state
             const loadedShares = (sharesRes.data?.shares || []).map(s => ({
@@ -50,6 +55,20 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
                 note: s.note || ''
             }));
             
+            const teamMembers = (teamRes.data || [])
+                .map((assignment) => assignment.member)
+                .filter(Boolean)
+                .map((member) => ({ ...member, isEligible: true }));
+            const eligibleMemberIds = new Set(teamMembers.map((member) => member.id));
+            const historicalMembers = (sharesRes.data?.shares || [])
+                .filter((share) => !eligibleMemberIds.has(share.member_id))
+                .map((share) => ({
+                    id: share.member_id,
+                    name: `${share.member_name || 'Neznámý člen'} (mimo aktuální tým)`,
+                    isEligible: false,
+                }));
+
+            setMembers([...teamMembers, ...historicalMembers]);
             setShares(loadedShares);
 
         } catch (error) {
@@ -113,6 +132,18 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
         const memberIds = shares.map(share => share.member_id);
         if (new Set(memberIds).size !== memberIds.length) {
             toast({ title: 'Duplicitní člen týmu', description: 'Každý člen může mít v realizaci pouze jeden podíl.', variant: 'destructive' });
+            return;
+        }
+
+        const eligibleMemberIds = new Set(
+            members.filter((member) => member.isEligible).map((member) => member.id)
+        );
+        if (shares.some((share) => !eligibleMemberIds.has(share.member_id))) {
+            toast({
+                title: 'Člen není v týmu realizace',
+                description: 'Podíl lze přiřadit pouze aktivně přiřazenému členovi týmu této realizace.',
+                variant: 'destructive',
+            });
             return;
         }
 
@@ -278,7 +309,7 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
                                                                 <SelectItem
                                                                     key={m.id}
                                                                     value={m.id}
-                                                                    disabled={shares.some((otherShare, otherIndex) => otherIndex !== index && otherShare.member_id === m.id)}
+                                                                    disabled={!m.isEligible || shares.some((otherShare, otherIndex) => otherIndex !== index && otherShare.member_id === m.id)}
                                                                 >
                                                                     {m.name}
                                                                 </SelectItem>
