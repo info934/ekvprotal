@@ -479,7 +479,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       items: nextItems,
     } : current);
     setFveWizardOpen(false);
-    toast({ title: 'FVE polo?ky vlo?eny', description: 'P?ed ulo?en?m je m??ete ru?n? upravit.' });
+    toast({ title: 'FVE položky vloženy', description: 'Před uložením je můžete ručně upravit.' });
   };
 
 
