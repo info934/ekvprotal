@@ -13,6 +13,29 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
   headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 });
 
+const errorJson = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error || 'Unexpected error.');
+  let status = 500;
+  let code = 'unexpected_error';
+
+  if (/Admin|Authentication|session|Not allowed/i.test(message)) {
+    status = 403;
+    code = 'forbidden';
+  } else if (/not configured|not connected|není připojen|není nakonfigurován/i.test(message)) {
+    status = 503;
+    code = 'configuration_required';
+  } else if (/Google Drive request failed/i.test(message)) {
+    status = 502;
+    code = 'google_drive_request_failed';
+  } else if (/Protocol|PDF|signer|Unsupported|Unknown action|empty|exceeds/i.test(message)) {
+    status = 400;
+    code = 'invalid_request';
+  }
+
+  // Do not expose token values, request bodies, or provider secrets.
+  return json({ success: false, error: message.slice(0, 500), code }, status);
+};
+
 const requiredEnv = (name: string) => {
   const value = Deno.env.get(name);
   if (!value) throw new Error(`${name} is not configured.`);
@@ -384,7 +407,6 @@ Deno.serve(async (req) => {
     return json({ success: false, error: 'Unknown action.' }, 400);
   } catch (error) {
     console.error('google-drive-esign error', error);
-    const message = error instanceof Error ? error.message : 'Unexpected error.';
-    return json({ success: false, error: message }, /Admin|Authentication|session/.test(message) ? 403 : 400);
+    return errorJson(error);
   }
 });

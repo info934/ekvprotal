@@ -1,28 +1,41 @@
 import { supabase } from '@/lib/customSupabaseClient';
 import { invokeWithTimeout } from '@/lib/requestControl';
 
+const extractFunctionErrorMessage = async (error) => {
+  let message = error?.message || '';
+  const response = error?.context;
+
+  if (response && typeof response.clone === 'function') {
+    try {
+      const details = await response.clone().json();
+      message = details?.error || details?.message || message;
+    } catch {
+      try {
+        message = (await response.clone().text()) || message;
+      } catch {
+        // Keep the SDK error when the response body is unavailable.
+      }
+    }
+  } else if (response && typeof response === 'object') {
+    message = response.error || response.message || message;
+  }
+
+  if (!message || /non-2xx status code/i.test(message)) {
+    return 'Služba Google Drive nevrátila podrobnost chyby. Zkuste akci znovu nebo ověřte připojení v Nastavení úložiště.';
+  }
+  return message;
+};
+
 const invoke = async (action, payload = {}) => {
   const { data, error } = await invokeWithTimeout(supabase, 'google-drive-esign', {
     body: { action, ...payload },
   }, 60_000);
   if (error) {
-    let message = error.message;
-    const response = error.context;
-    if (response && typeof response.clone === 'function') {
-      try {
-        const details = await response.clone().json();
-        message = details?.error || details?.message || message;
-      } catch {
-        try {
-          message = (await response.clone().text()) || message;
-        } catch {
-          // Keep the SDK error when the response body is unavailable.
-        }
-      }
-    }
-    throw new Error(message || 'Google Drive eSignature request failed.');
+    throw new Error(await extractFunctionErrorMessage(error));
   }
-  if (!data?.success) throw new Error(data?.error || 'Google Drive eSignature request failed.');
+  if (!data?.success) {
+    throw new Error(data?.error || 'Google Drive nevrátilo platnou odpověď pro požadovanou akci.');
+  }
   return data;
 };
 
