@@ -191,7 +191,7 @@ const RealizationPayoutInput = ({ realization, amount, onAmountChange, onRemove,
 
 const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = false }) => {
   const { toast } = useToast();
-  const { memberId: currentMemberId, isSuperUser, hasPermission } = useAuth();
+  const { memberId: currentMemberId, hasPermission } = useAuth();
   const isEditMode = Boolean(payout);
   const canAdmin = hasPermission('payouts', 'can_admin');
   const canDelete = Boolean(isEditMode && onDelete && (canAdmin || (payout?.status === 'pending' && payout?.member_id === currentMemberId)));
@@ -200,6 +200,8 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
   const [requestDate, setRequestDate] = useState(new Date().toISOString().split('T')[0]);
   const [reason, setReason] = useState('');
   const [members, setMembers] = useState([]);
+  const [memberIdentityLoading, setMemberIdentityLoading] = useState(false);
+  const [memberIdentityError, setMemberIdentityError] = useState('');
   const [validationErrors, setValidationErrors] = useState({});
   const [projectsWithBalance, setProjectsWithBalance] = useState([]);
   const [realizations, setRealizations] = useState([]);
@@ -213,18 +215,38 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
 
   useEffect(() => {
     const fetchMembers = async () => {
-      let fetchedMembers = [];
-      if (isSuperUser) {
-        const { data } = await supabase.from('members').select('id, name').order('name');
-        fetchedMembers = data || [];
-      } else if (currentMemberId) {
-        const { data } = await supabase.from('members').select('id, name').eq('id', currentMemberId).single();
-        if (data) fetchedMembers = [data];
+      setMemberIdentityLoading(true);
+      setMemberIdentityError('');
+      try {
+        if (canAdmin) {
+          const { data, error } = await supabase.from('members').select('id, name, email').order('name');
+          if (error) throw error;
+          setMembers(data || []);
+          return;
+        }
+
+        const { data, error } = await supabase.rpc('get_current_member_identity').maybeSingle();
+        if (error) throw error;
+        if (!data?.id) {
+          setMembers([]);
+          setMemberId('');
+          setMemberIdentityError('Váš účet není propojen se zaměstnancem. Kontaktujte administrátora.');
+          return;
+        }
+
+        setMembers([data]);
+        setMemberId(data.id);
+      } catch (error) {
+        console.error('[PayoutDialog] Failed to resolve payout member identity:', error);
+        setMembers([]);
+        setMemberId('');
+        setMemberIdentityError('Nepodařilo se ověřit zaměstnance pro žádost o výplatu.');
+      } finally {
+        setMemberIdentityLoading(false);
       }
-      setMembers(fetchedMembers);
     };
-    fetchMembers();
-  }, [isSuperUser, currentMemberId]);
+    if (isOpen) fetchMembers();
+  }, [canAdmin, currentMemberId, isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -243,10 +265,10 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
       } else {
         setRequestDate(new Date().toISOString().split('T')[0]);
         setReason(''); setProjectsWithBalance([]); setRealizations([]); setSelectedProjects([]); setSelectedRealizations([]); setPayoutAmounts({});
-        if (isSuperUser) setMemberId(''); else if (currentMemberId) setMemberId(currentMemberId);
+        if (canAdmin) setMemberId(''); else if (currentMemberId) setMemberId(currentMemberId);
       }
     }
-  }, [isOpen, payout, isSuperUser, currentMemberId]);
+  }, [isOpen, payout, canAdmin, currentMemberId]);
 
   useEffect(() => { if (!isOpen) return; setProjectSearch(''); setRealizationSearch(''); }, [memberId, isOpen]);
 
@@ -338,7 +360,7 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
   const totalItems = useMemo(() => selectedProjects.length + selectedRealizations.length, [selectedProjects, selectedRealizations]);
 
   const resetForm = () => {
-    setMemberId(isSuperUser ? '' : currentMemberId);
+    setMemberId(canAdmin ? '' : (members[0]?.id || currentMemberId || ''));
     setRequestDate(new Date().toISOString().split('T')[0]);
     setReason('');
     setSelectedProjects([]);
@@ -374,8 +396,9 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
 
       const items = [...projectItems, ...realizaceItems];
 
+      const effectiveMemberId = canAdmin ? memberId : (members[0]?.id || currentMemberId || '');
       const dataToValidate = { 
-        member_id: memberId, 
+        member_id: effectiveMemberId,
         request_date: requestDate, 
         reason: reason, 
         items: items 
@@ -534,10 +557,30 @@ const PayoutDialog = ({ isOpen, onClose, onSave, onDelete, payout, embedded = fa
             <div className="rounded-xl border bg-slate-50/60 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField label="Zaměstnanec" icon={User} required error={validationErrors.member_id}>
-                  <Select value={memberId} onValueChange={setMemberId} disabled={!isSuperUser || isSubmitting}>
-                    <SelectTrigger className={validationErrors.member_id ? "border-red-500" : ""}><SelectValue placeholder="-- Vyberte zaměstnance --" /></SelectTrigger>
-                    <SelectContent>{members.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-                  </Select>
+                  {canAdmin ? (
+                    <Select value={memberId} onValueChange={setMemberId} disabled={isSubmitting || memberIdentityLoading}>
+                      <SelectTrigger className={validationErrors.member_id ? "border-red-500" : ""}><SelectValue placeholder="-- Vyberte zaměstnance --" /></SelectTrigger>
+                      <SelectContent>{members.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                  ) : (
+                    <div className={cn(
+                      "flex min-h-10 items-center gap-3 rounded-md border bg-white px-3 py-2",
+                      memberIdentityError && "border-red-300 bg-red-50"
+                    )}>
+                      {memberIdentityLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : (
+                        <User className="h-4 w-4 text-blue-600" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">
+                          {memberIdentityLoading ? 'Ověřuji zaměstnance…' : (members[0]?.name || 'Zaměstnanec nenalezen')}
+                        </div>
+                        {members[0]?.email && <div className="truncate text-xs text-muted-foreground">{members[0].email}</div>}
+                      </div>
+                    </div>
+                  )}
+                  {memberIdentityError && <p className="mt-2 text-xs text-red-600">{memberIdentityError}</p>}
                 </FormField>
                 <FormField label="Datum žádosti" icon={Calendar} required error={validationErrors.request_date}>
                   <Input type="date" value={requestDate} onChange={(e) => setRequestDate(e.target.value)} className={validationErrors.request_date ? "border-red-500" : ""} disabled={isSubmitting} />

@@ -231,7 +231,7 @@ export const AuthProvider = ({ children }) => {
       const adminStatus = role === 'admin';
       setIsAdmin(adminStatus);
       
-      const memberData = await retryOperation(async () => {
+      let memberData = await retryOperation(async () => {
         const { data, error } = await supabase
           .from('members')
           .select('id, notification_preferences')
@@ -242,6 +242,18 @@ export const AuthProvider = ({ children }) => {
         if (error && error.code !== 'PGRST116') throw error;
         return data;
       });
+
+      if (!memberData) {
+        memberData = await retryOperation(async () => {
+          const { data, error } = await supabase
+            .rpc('get_current_member_identity')
+            .maybeSingle()
+            .abortSignal(requestSignal());
+
+          if (error && error.code !== 'PGRST116') throw error;
+          return data;
+        });
+      }
 
       if (memberData) {
         assertCurrentRun();
