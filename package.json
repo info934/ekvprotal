@@ -19,10 +19,11 @@
     "supabase:anonymize-seed": "node tools/anonymize-seed.mjs",
     "backend:check": "node tools/check-backend-env.mjs",
     "vendor:import-sql": "node tools/import-supplier-price-export.mjs",
+    "migrations:check": "node tools/check-supabase-migrations.mjs",
     "test:critical": "node tools/check-critical-invariants.mjs",
     "security:check": "node tools/check-security-invariants.mjs",
     "ui:check": "node tools/check-ui-invariants.mjs",
-    "test": "eslint . --quiet && node tools/check-financial-calculations.mjs && node tools/check-critical-invariants.mjs && node tools/check-security-invariants.mjs && node tools/check-ui-invariants.mjs"
+    "test": "eslint . --quiet && node tools/check-supabase-migrations.mjs && node tools/check-financial-calculations.mjs && node tools/check-critical-invariants.mjs && node tools/check-security-invariants.mjs && node tools/check-ui-invariants.mjs"
   },
   "dependencies": {
     "@babel/generator": "^7.26.3",

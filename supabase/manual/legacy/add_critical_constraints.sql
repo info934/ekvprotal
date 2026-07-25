@@ -1,3 +1,8 @@
+-- LEGACY REVIEW-ONLY SQL.
+-- Do not execute wholesale. This file predates timestamped migrations and is
+-- retained only as historical context. Verify every statement against the
+-- current schema and ship any required change as a new idempotent migration.
+
 -- Add NOT NULL constraints
 ALTER TABLE public.members ALTER COLUMN name SET NOT NULL;
 ALTER TABLE public.projects ALTER COLUMN name SET NOT NULL;

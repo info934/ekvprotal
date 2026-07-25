@@ -1,3 +1,8 @@
+-- LEGACY REVIEW-ONLY SQL.
+-- Do not execute wholesale. This file predates timestamped migrations and is
+-- retained only as historical context. Verify every policy against production
+-- and ship any required change as a new timestamped migration.
+
 -- RLS Policy Enhancements for Integrity
 
 -- Ensure users can only insert valid attendance hours via RLS
