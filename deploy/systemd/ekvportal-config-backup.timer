@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily EKVPortal configuration backup
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 Europe/Prague
+Persistent=true
+RandomizedDelaySec=10m
+Unit=ekvportal-config-backup.service
+
+[Install]
+WantedBy=timers.target

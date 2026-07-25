@@ -1,0 +1,20 @@
+services:
+  portainer:
+    image: portainer/portainer-ce@sha256:908d04d20e86f07a50b0f1a029a111b89aa3089b7fc7fdf68ec1c71b025f36cd
+    container_name: portainer
+    restart: always
+    init: true
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "192.168.1.180:9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+volumes:
+  portainer_data:
+    external: true
