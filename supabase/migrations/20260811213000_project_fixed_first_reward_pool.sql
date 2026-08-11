@@ -104,6 +104,7 @@ grant execute on function public.assert_project_reward_allocation(uuid) to servi
 -- runs as the database owner, so suspend only that trigger for the audited
 -- conversion. The surrounding migration transaction restores it on failure.
 alter table public.project_members disable trigger protect_project_member_compensation;
+set constraints validate_project_reward_allocation deferred;
 
 do $$
 declare
