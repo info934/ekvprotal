@@ -13,6 +13,7 @@ import {
   calculateCostAdjustedTeamBudget,
   calculateProjectFinancials,
   calculateProjectMemberReward,
+  calculateProjectRewardPool,
   calculateProjectRewardRebalance,
   calculateRealizationRewardAllocation,
   calculateRealizationMemberShare,
@@ -156,9 +157,22 @@ const fixedRewardRebalance = calculateProjectRewardRebalance({
   rewardType: 'fixed',
   rewardAmount: 3500,
 });
-assert.equal(fixedRewardRebalance.canAutoRebalance, true, 'fixed reward can proportionally rebalance percentage assignments');
-assertMoney(fixedRewardRebalance.percentageTotalAfter, 89.66, 'percentage assignments preserve their ratio after fixed reward reservation');
-assertMoney(fixedRewardRebalance.budgetAfter, 0, 'fixed reward rebalance does not over-allocate the reward pool');
+assert.equal(fixedRewardRebalance.canAutoRebalance, false, 'fixed-first model does not rewrite stored percentages');
+assertMoney(fixedRewardRebalance.percentageTotalAfter, 100, 'percentage assignments remain whole shares of the residual pool');
+assertMoney(fixedRewardRebalance.percentageRewardPool, 30340, 'fixed reward is reserved before the percentage pool');
+assertMoney(fixedRewardRebalance.budgetAfter, 0, '100 percent of the residual pool allocates the complete reward pool');
+
+const residualRewardPool = calculateProjectRewardPool([
+  { reward_type: 'percentage', reward_percentage: 50 },
+  { reward_type: 'percentage', reward_percentage: 50 },
+  { reward_type: 'fixed', reward_amount: 3500 },
+], 33840);
+assertMoney(residualRewardPool.percentageRewardPool, 30340, 'residual pool excludes fixed commitments');
+assertMoney(calculateProjectMemberReward(
+  { reward_type: 'percentage', reward_percentage: 50 },
+  33840,
+  { percentageRewardPool: residualRewardPool.percentageRewardPool }
+), 15170, '50 percent member receives half of the residual pool');
 
 const impossibleFixedReward = calculateProjectRewardRebalance({
   teamBudget: 5000,

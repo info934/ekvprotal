@@ -43,11 +43,37 @@ export const calculateCostAdjustedTeamBudget = ({
   };
 };
 
-export const calculateProjectMemberReward = (assignment = {}, teamBudget = 0) => {
+export const calculateProjectRewardPool = (assignments = [], teamBudget = 0) => {
+  const pool = Math.max(0, toAmount(teamBudget));
+  const fixedRewardsTotal = sumByAmount(
+    (assignments || []).filter((assignment) => assignment?.reward_type === 'fixed'),
+    (assignment) => assignment?.reward_amount
+  );
+  const percentageTotal = sumByAmount(
+    (assignments || []).filter((assignment) => assignment?.reward_type === 'percentage'),
+    (assignment) => assignment?.reward_percentage
+  );
+  const percentageRewardPool = Math.max(0, pool - fixedRewardsTotal);
+
+  return {
+    pool,
+    fixedRewardsTotal,
+    percentageRewardPool,
+    percentageTotal,
+    percentageRewardsTotal: percentageRewardPool * percentageTotal / 100,
+  };
+};
+
+export const calculateProjectMemberReward = (assignment = {}, teamBudget = 0, options = {}) => {
   if (!assignment?.reward_type) return 0;
   const availableBudget = Math.max(0, toAmount(teamBudget));
   if (assignment.reward_type === 'fixed') return Math.min(toAmount(assignment.reward_amount), availableBudget);
-  if (assignment.reward_type === 'percentage') return availableBudget * (toAmount(assignment.reward_percentage) / 100);
+  if (assignment.reward_type === 'percentage') {
+    const percentageRewardPool = options.percentageRewardPool === undefined
+      ? Math.max(0, availableBudget - toAmount(options.fixedRewardsTotal))
+      : Math.max(0, toAmount(options.percentageRewardPool));
+    return percentageRewardPool * (toAmount(assignment.reward_percentage) / 100);
+  }
   return 0;
 };
 
@@ -63,49 +89,41 @@ export const calculateProjectRewardRebalance = ({
   const existing = (assignments || []).filter((assignment) => (
     !editedMemberId || String(assignment?.member_id || '') !== String(editedMemberId)
   ));
-  const existingFixedRewards = sumByAmount(
-    existing.filter((assignment) => assignment?.reward_type === 'fixed'),
-    (assignment) => assignment?.reward_amount
-  );
-  const percentageTotalBefore = sumByAmount(
-    existing.filter((assignment) => assignment?.reward_type === 'percentage'),
-    (assignment) => assignment?.reward_percentage
-  );
-  const existingPercentageRewards = pool * percentageTotalBefore / 100;
-  const newRewardAmount = rewardType === 'fixed'
-    ? toAmount(rewardAmount)
-    : rewardType === 'percentage'
-      ? pool * toAmount(rewardPercentage) / 100
-      : 0;
-  const currentTeamRewards = existingFixedRewards + existingPercentageRewards;
-  const rawBudgetAfter = pool - currentTeamRewards - newRewardAmount;
-  const fixedCommitment = existingFixedRewards + (rewardType === 'fixed' ? newRewardAmount : 0);
-  const canAutoRebalance = rewardType === 'fixed'
-    && existingPercentageRewards > 0
-    && fixedCommitment <= pool + 0.01
-    && rawBudgetAfter < -0.01;
-  const autoRebalanceReduction = canAutoRebalance
-    ? Math.min(existingPercentageRewards, Math.abs(rawBudgetAfter))
+  const currentPool = calculateProjectRewardPool(existing, pool);
+  const candidate = rewardType ? {
+    member_id: editedMemberId || '__preview__',
+    reward_type: rewardType,
+    reward_amount: rewardType === 'fixed' ? toAmount(rewardAmount) : null,
+    reward_percentage: rewardType === 'percentage' ? toAmount(rewardPercentage) : null,
+  } : null;
+  const projectedAssignments = candidate ? [...existing, candidate] : existing;
+  const projectedPool = calculateProjectRewardPool(projectedAssignments, pool);
+  const currentTeamRewards = currentPool.fixedRewardsTotal + currentPool.percentageRewardsTotal;
+  const projectedTeamRewards = projectedPool.fixedRewardsTotal + projectedPool.percentageRewardsTotal;
+  const newRewardAmount = candidate
+    ? calculateProjectMemberReward(candidate, pool, { percentageRewardPool: projectedPool.percentageRewardPool })
     : 0;
-  const budgetAfter = rawBudgetAfter + autoRebalanceReduction;
-  const percentageTotalAfter = canAutoRebalance && existingPercentageRewards > 0
-    ? percentageTotalBefore * ((existingPercentageRewards - autoRebalanceReduction) / existingPercentageRewards)
-    : percentageTotalBefore + (rewardType === 'percentage' ? toAmount(rewardPercentage) : 0);
+  const fixedOverrun = Math.max(0, projectedPool.fixedRewardsTotal - pool);
+  const percentageOverrun = Math.max(0, projectedPool.percentageTotal - 100);
+  const budgetAfter = pool - projectedTeamRewards;
 
   return {
     pool,
-    existingFixedRewards,
-    existingPercentageRewards,
+    existingFixedRewards: currentPool.fixedRewardsTotal,
+    existingPercentageRewards: currentPool.percentageRewardsTotal,
     currentTeamRewards,
     availableRewardAmount: Math.max(0, pool - currentTeamRewards),
     newRewardAmount,
-    rawBudgetAfter,
+    rawBudgetAfter: budgetAfter,
     budgetAfter,
-    budgetExceededBy: Math.max(0, -budgetAfter),
-    canAutoRebalance,
-    autoRebalanceReduction,
-    percentageTotalBefore,
-    percentageTotalAfter,
+    budgetExceededBy: fixedOverrun > 0 ? fixedOverrun : percentageOverrun > 0 ? Math.abs(budgetAfter) : 0,
+    canAutoRebalance: false,
+    autoRebalanceReduction: 0,
+    percentageTotalBefore: currentPool.percentageTotal,
+    percentageTotalAfter: projectedPool.percentageTotal,
+    fixedRewardsTotal: projectedPool.fixedRewardsTotal,
+    percentageRewardPool: projectedPool.percentageRewardPool,
+    percentageOverrun,
   };
 };
 
@@ -123,8 +141,8 @@ export const sumProjectCostsForMember = (costs = [], memberId = null) => {
   );
 };
 
-export const calculateProjectMemberNetReward = (assignment = {}, teamBudget = 0, costs = []) => {
-  const grossReward = calculateProjectMemberReward(assignment, teamBudget);
+export const calculateProjectMemberNetReward = (assignment = {}, teamBudget = 0, costs = [], options = {}) => {
+  const grossReward = calculateProjectMemberReward(assignment, teamBudget, options);
   const assignedCosts = sumProjectCostsForMember(costs, assignment?.member_id);
   return Math.max(0, grossReward - assignedCosts);
 };
@@ -149,7 +167,13 @@ export const calculateProjectFinancials = ({
   const assignedMemberCosts = totalCosts - unassignedCosts;
   const totalAllocatedOverhead = sumByAmount(overheadCosts, (cost) => cost?.amount);
   const rewardBaseBudget = budget.teamBudget - unassignedCosts - totalAllocatedOverhead;
-  const teamRewards = sumByAmount(members, (member) => calculateProjectMemberNetReward(member, rewardBaseBudget, costs));
+  const rewardPool = calculateProjectRewardPool(members, rewardBaseBudget);
+  const teamRewards = sumByAmount(members, (member) => calculateProjectMemberNetReward(
+    member,
+    rewardBaseBudget,
+    costs,
+    { percentageRewardPool: rewardPool.percentageRewardPool }
+  ));
   const unallocatedBudget = rewardBaseBudget - teamRewards;
   const plannedMargin = budget.price - budget.totalBudget;
   const remainingAfterCosts = budget.teamBudget - unassignedCosts - totalAllocatedOverhead;
@@ -160,6 +184,8 @@ export const calculateProjectFinancials = ({
     totalSubcontractorPrice: budget.subcontractorCosts,
     teamRewards,
     rewardBaseBudget,
+    fixedRewardsTotal: rewardPool.fixedRewardsTotal,
+    percentageRewardPool: rewardPool.percentageRewardPool,
     unallocatedBudget,
     remainingTeamBudget: unallocatedBudget,
     totalCosts,

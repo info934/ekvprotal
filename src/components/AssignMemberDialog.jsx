@@ -12,7 +12,7 @@ import { Users, DollarSign, Percent, Calendar, Plus, Edit2, AlertCircle, Clock }
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/components/ui/use-toast';
 import { sendEmail } from '@/lib/email';
-import { calculateProjectBudget, calculateProjectMemberReward, calculateProjectRewardRebalance, toAmount } from '@/domain/financials';
+import { calculateProjectBudget, calculateProjectMemberReward, calculateProjectRewardPool, calculateProjectRewardRebalance, toAmount } from '@/domain/financials';
 
 const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], project, projectSubcontractors = [], teamBudgetOverride = null }) => {
   const [formData, setFormData] = useState({
@@ -93,11 +93,12 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
   }, [member, isOpen]);
 
   const getMemberRewardAmount = (rewardType, rewardValue) => {
+    const rewardPool = calculateProjectRewardPool(team, teamBudget);
     return calculateProjectMemberReward({
       reward_type: rewardType,
       reward_amount: rewardType === 'fixed' ? rewardValue : null,
       reward_percentage: rewardType === 'percentage' ? rewardValue : null,
-    }, teamBudget);
+    }, teamBudget, { percentageRewardPool: rewardPool.percentageRewardPool });
   };
   
   const sendAssignmentEmail = async (memberData, rewardData) => {
@@ -209,8 +210,6 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
         }
     }
 
-    dataToSave.auto_rebalance_percentages = canAutoRebalance;
-
     setIsSaving(true);
     try {
       const saved = await onSave(dataToSave);
@@ -229,22 +228,6 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
     }
   };
   
-  let newRewardAmount = 0;
-  let newRewardPercentage = 0;
-
-  if (formData.reward_type) {
-      if (formData.reward_type === 'percentage') {
-          newRewardPercentage = toAmount(formData.reward_percentage);
-          newRewardAmount = calculateProjectMemberReward({
-            reward_type: 'percentage',
-            reward_percentage: newRewardPercentage,
-          }, teamBudget);
-      } else if (formData.reward_type === 'fixed') {
-          newRewardAmount = toAmount(formData.reward_amount);
-          newRewardPercentage = teamBudget > 0 ? (newRewardAmount / teamBudget) * 100 : 0;
-      }
-  }
-
   const rewardPreview = calculateProjectRewardRebalance({
     teamBudget,
     assignments: team,
@@ -256,13 +239,18 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
   const {
     currentTeamRewards,
     availableRewardAmount,
+    newRewardAmount,
     budgetAfter: budgetAfterAllRewards,
     budgetExceededBy,
-    canAutoRebalance,
+    fixedRewardsTotal,
+    percentageRewardPool,
+    percentageOverrun,
     percentageTotalBefore: currentTotalPercentage,
-    percentageTotalAfter: rebalancedPercentageTotal,
+    percentageTotalAfter,
   } = rewardPreview;
-  const isRewardOverBudget = Boolean(formData.reward_type) && budgetExceededBy > 0.01;
+  const newRewardPercentage = formData.reward_type === 'percentage' ? toAmount(formData.reward_percentage) : 0;
+  const isRewardOverBudget = Boolean(formData.reward_type)
+    && (budgetExceededBy > 0.01 || percentageOverrun > 0.0001);
   
   const availableRewardPercentage = 100 - currentTotalPercentage;
   const sponsorOptions = team.filter((teamMember) => {
@@ -412,7 +400,7 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
                               <Label htmlFor="reward_percentage" className="flex items-center gap-2">
                                 <Percent className="h-4 w-4 text-muted-foreground" /> Odměna z budgetu týmu (%) <span className="text-red-500">*</span>
                               </Label>
-                              <span className="text-xs text-muted-foreground">K dispozici: {availableRewardPercentage.toFixed(2)} %</span>
+                              <span className="text-xs text-muted-foreground">K dispozici ze zbytku: {Math.max(0, availableRewardPercentage).toFixed(2)} %</span>
                             </div>
                             <Input id="reward_percentage" type="number" step="0.01" value={formData.reward_percentage} onChange={(e) => setFormData({ ...formData, reward_percentage: e.target.value })} required placeholder="např. 50" className="text-right font-mono" />
                           </div>
@@ -441,16 +429,24 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
                   {formData.reward_type === 'percentage' && <span className="text-sm font-normal ml-2">({newRewardPercentage.toFixed(2)} %)</span>}
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-3 border-t border-blue-200 pt-3 text-sm sm:grid-cols-3">
+              <div className="grid grid-cols-2 gap-3 border-t border-blue-200 pt-3 text-sm sm:grid-cols-5">
                 <div>
                   <p className="text-muted-foreground">Fond odměn</p>
                   <p className="font-semibold text-slate-900">{teamBudget.toLocaleString('cs-CZ')} Kč</p>
                 </div>
                 <div>
+                  <p className="text-muted-foreground">Fixně rezervováno</p>
+                  <p className="font-semibold text-slate-900">{fixedRewardsTotal.toLocaleString('cs-CZ')} Kč</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Fond pro procenta</p>
+                  <p className="font-semibold text-slate-900">{percentageRewardPool.toLocaleString('cs-CZ')} Kč</p>
+                </div>
+                <div>
                   <p className="text-muted-foreground">Již přiděleno</p>
                   <p className="font-semibold text-slate-900">{currentTeamRewards.toLocaleString('cs-CZ')} Kč</p>
                 </div>
-                <div className="col-span-2 sm:col-span-1">
+                <div>
                   <p className="text-muted-foreground">Volné před změnou</p>
                   <p className="font-semibold text-slate-900">{availableRewardAmount.toLocaleString('cs-CZ')} Kč</p>
                 </div>
@@ -465,20 +461,19 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
                 {isRewardOverBudget && (
                   <p className="mt-1 flex items-center justify-center gap-1 text-xs text-red-700">
                     <AlertCircle className="h-3.5 w-3.5" />
-                    Nejprve snižte existující odměny alespoň o {budgetExceededBy.toLocaleString('cs-CZ')} Kč.
+                    {percentageOverrun > 0.0001
+                      ? `Součet procentních podílů překračuje 100 % o ${percentageOverrun.toLocaleString('cs-CZ')} %.`
+                      : `Fixní odměny překračují fond o ${budgetExceededBy.toLocaleString('cs-CZ')} Kč.`}
                   </p>
                 )}
               </div>
-              {canAutoRebalance && (
-                <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-                  <p className="font-semibold">Automatický přepočet procentních podílů</p>
-                  <p className="mt-1 text-xs leading-5 text-blue-800">
-                    Pevná odměna se rezervuje jako první. Stávající procentní podíly se poměrně upraví
-                    z {currentTotalPercentage.toFixed(2)} % na {rebalancedPercentageTotal.toFixed(2)} % a jejich vzájemný poměr zůstane zachován.
-                    Změna bude uložena do historie projektu.
-                  </p>
-                </div>
-              )}
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                <p className="font-semibold">Fixní odměny se odečítají jako první</p>
+                <p className="mt-1 text-xs leading-5 text-blue-800">
+                  Procentní podíly zůstávají beze změny ({percentageTotalAfter.toFixed(2)} %) a počítají se až ze zbytku{' '}
+                  {percentageRewardPool.toLocaleString('cs-CZ')} Kč po odečtení fixních odměn. Změna bude dohledatelná v historii projektu.
+                </p>
+              </div>
             </motion.div>
           )}
 

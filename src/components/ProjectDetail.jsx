@@ -30,6 +30,7 @@ import {
     calculateProjectFinancials,
     calculateProjectMemberNetReward,
     calculateProjectMemberReward,
+    calculateProjectRewardPool,
     sumProjectCostsForMember,
     sumUnassignedProjectCosts,
     toAmount
@@ -425,8 +426,11 @@ const ProjectDetail = () => {
                   + (projectLaborSummary ? toAmount(sourceSummary.paid_hourly_payouts) - toAmount(projectLaborSummary.direct_project_cost) : 0)
             : toAmount(fallbackFinancials.remainingAfterCosts) - toAmount(paidOutAmount);
 
+        const rewardPool = calculateProjectRewardPool(sourceMembers, rewardBaseBudget);
         return (sourceMembers || []).map((assignment) => {
-            const grossReward = calculateProjectMemberReward(assignment, rewardBaseBudget);
+            const grossReward = calculateProjectMemberReward(assignment, rewardBaseBudget, {
+                percentageRewardPool: rewardPool.percentageRewardPool,
+            });
             const assignedCosts = sumProjectCostsForMember(sourceCosts, assignment.member_id);
             const sponsoredLaborCosts = getSponsoredLaborDeduction(assignment.member_id);
             return {
@@ -492,9 +496,8 @@ const ProjectDetail = () => {
             return false;
         }
         const payload = { ...data, project_id: projectId };
-        const serverAuditsRewardRebalance = table === 'project_members' && data.auto_rebalance_percentages === true;
-        const shouldLogRewards = ['project_members', 'project_subcontractors', 'project_costs'].includes(table)
-            && !serverAuditsRewardRebalance;
+        // Member assignment writes are audited transactionally by the RPC.
+        const shouldLogRewards = ['project_subcontractors', 'project_costs'].includes(table);
         const rewardSnapshotBefore = shouldLogRewards ? buildRewardSnapshot() : null;
         let result;
         if (table === 'projects') {
@@ -668,8 +671,9 @@ const ProjectDetail = () => {
     const handleDeleteGeneric = async () => {
         if (!itemToDelete) return;
         const { table, id } = itemToDelete;
-        const shouldLogRewards = ['project_members', 'project_subcontractors', 'project_costs'].includes(table);
-        if (financeLoadError && shouldLogRewards) {
+        const changesFinancialModel = ['project_members', 'project_subcontractors', 'project_costs'].includes(table);
+        const shouldLogRewards = ['project_subcontractors', 'project_costs'].includes(table);
+        if (financeLoadError && changesFinancialModel) {
             toast({ title: 'Finanční data nejsou dostupná', description: 'Mazání finančních vazeb je do obnovení souhrnu zablokováno.', variant: 'destructive' });
             setItemToDelete(null);
             return;
@@ -724,9 +728,28 @@ const ProjectDetail = () => {
         return formatMoney(toAmount(value), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }, []);
 
+    const memberRewardSummaryById = useMemo(() => new Map(
+        (Array.isArray(projectFinancialSummary?.member_rewards) ? projectFinancialSummary.member_rewards : [])
+            .map((reward) => [String(reward.member_id), reward])
+    ), [projectFinancialSummary]);
+
+    const rewardPool = useMemo(() => calculateProjectRewardPool(
+        members,
+        projectFinancialSummary
+            ? toAmount(projectFinancialSummary.cost_adjusted_team_budget ?? projectFinancialSummary.remaining_after_costs)
+            : calculateProjectBudget(project, subcontractors).teamBudget
+    ), [members, projectFinancialSummary, project, subcontractors]);
+
     const getMemberReward = useCallback((member, teamBudget) => {
-        return Math.max(0, calculateProjectMemberNetReward(member, teamBudget, costs) - getSponsoredLaborDeduction(member.member_id));
-    }, [costs, getSponsoredLaborDeduction]);
+        const authoritativeReward = memberRewardSummaryById.get(String(member.member_id));
+        if (authoritativeReward) return Math.max(0, toAmount(authoritativeReward.total_reward));
+        return Math.max(0, calculateProjectMemberNetReward(
+            member,
+            teamBudget,
+            costs,
+            { percentageRewardPool: rewardPool.percentageRewardPool }
+        ) - getSponsoredLaborDeduction(member.member_id));
+    }, [costs, getSponsoredLaborDeduction, memberRewardSummaryById, rewardPool.percentageRewardPool]);
 
     const myRewardDisplay = useMemo(() => {
         if (!memberId || !project) return 'N/A';
@@ -759,21 +782,36 @@ const ProjectDetail = () => {
                 : 'Hodinová sazba z rozpočtu projektu');
         }
         if (member.reward_type) {
-            const grossAmount = calculateProjectMemberReward(member, teamBudget);
-            const assignedCosts = sumProjectCostsForMember(costs, member.member_id);
-            const sponsoredLaborCosts = getSponsoredLaborDeduction(member.member_id);
+            const authoritativeReward = memberRewardSummaryById.get(String(member.member_id));
+            const grossAmount = authoritativeReward
+                ? toAmount(authoritativeReward.gross_reward)
+                : calculateProjectMemberReward(member, teamBudget, { percentageRewardPool: rewardPool.percentageRewardPool });
+            const assignedCosts = authoritativeReward
+                ? toAmount(authoritativeReward.assigned_costs) - toAmount(authoritativeReward.sponsored_labor_costs)
+                : sumProjectCostsForMember(costs, member.member_id);
+            const sponsoredLaborCosts = authoritativeReward
+                ? toAmount(authoritativeReward.sponsored_labor_costs)
+                : getSponsoredLaborDeduction(member.member_id);
             const totalDeductions = assignedCosts + sponsoredLaborCosts;
-            const amount = Math.max(0, grossAmount - totalDeductions);
+            const amount = authoritativeReward
+                ? toAmount(authoritativeReward.total_reward)
+                : Math.max(0, grossAmount - totalDeductions);
             const amountStr = amount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' Kč';
             const deduction = totalDeductions > 0
                 ? `, hrubá ${grossAmount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč - běžné náklady ${assignedCosts.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč - práce týmu ${sponsoredLaborCosts.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč`
                 : '';
-            if (member.reward_type === 'percentage') parts.push(`${amountStr} (${(parseFloat(member.reward_percentage) || 0).toFixed(2)}%${deduction})`);
-            if (member.reward_type === 'fixed') parts.push(`${amountStr} (fixní${deduction})`);
+            const available = toAmount(authoritativeReward?.available_amount);
+            const paid = toAmount(authoritativeReward?.paid_amount);
+            const reserved = toAmount(authoritativeReward?.reserved_amount);
+            const payoutOverview = authoritativeReward
+                ? `; volno ${formatCurrency(available)}; vyplaceno ${formatCurrency(paid)}${reserved > 0 ? `; rezervováno ${formatCurrency(reserved)}` : ''}`
+                : '';
+            if (member.reward_type === 'percentage') parts.push(`${amountStr} (${toAmount(member.reward_percentage).toLocaleString('cs-CZ', { maximumFractionDigits: 2 })} % ze zbytku${deduction}${payoutOverview})`);
+            if (member.reward_type === 'fixed') parts.push(`${amountStr} (fixní${deduction}${payoutOverview})`);
         }
         if (parts.length === 0 && member.is_hourly) return "Hodinová sazba";
         if (parts.length === 0) return 'Není specifikováno';
-        return parts.join(' + ');
+        return parts.join(' · ');
     };
 
     const financials = useMemo(() => {
@@ -793,10 +831,16 @@ const ProjectDetail = () => {
         const authoritativeRewards = isCanonicalModel && Array.isArray(summary.member_rewards)
             ? summary.member_rewards
             : null;
+        const fallbackRewardPool = calculateProjectRewardPool(members, rewardBaseBudget);
         const teamRewards = authoritativeRewards
             ? authoritativeRewards.reduce((sum, reward) => sum + toAmount(reward.total_reward), 0)
             : members.reduce((sum, member) => (
-                sum + Math.max(0, calculateProjectMemberNetReward(member, rewardBaseBudget, costs) - getSponsoredLaborDeduction(member.member_id))
+                sum + Math.max(0, calculateProjectMemberNetReward(
+                    member,
+                    rewardBaseBudget,
+                    costs,
+                    { percentageRewardPool: fallbackRewardPool.percentageRewardPool }
+                ) - getSponsoredLaborDeduction(member.member_id))
             ), 0);
         const totalBudget = toAmount(summary.gross_project_budget);
         const totalCosts = toAmount(summary.direct_costs);
@@ -880,7 +924,9 @@ const ProjectDetail = () => {
     }, []);
 
     const requestDeleteMember = useCallback((assignment) => {
-        const rewardAmount = canViewFinance ? calculateProjectMemberReward(assignment, rewardCalculationBudget) : null;
+        const rewardAmount = canViewFinance
+            ? getMemberReward(assignment, rewardCalculationBudget)
+            : null;
 
         setItemToDelete({
             table: 'project_members',
@@ -896,7 +942,7 @@ const ProjectDetail = () => {
                 'Pokud má člen navázané úkoly nebo docházku, před smazáním zkontrolujte jejich návaznosti.',
             ],
         });
-    }, [canViewFinance, rewardCalculationBudget]);
+    }, [canViewFinance, getMemberReward, rewardCalculationBudget]);
 
     const requestDeleteSubcontractor = useCallback((subcontractor) => {
         setItemToDelete({
@@ -1088,7 +1134,11 @@ const ProjectDetail = () => {
                                         <TableRow key={m.id}>
                                             <TableCell className="font-medium">{m.member?.name}</TableCell>
                                             <TableCell>{m.member?.email}</TableCell>
-                                            {canViewFinance && <TableCell>{formatReward(m, rewardCalculationBudget)}</TableCell>}
+                                            {canViewFinance && (
+                                                <TableCell className="max-w-[760px] whitespace-normal text-sm leading-5">
+                                                    {formatReward(m, rewardCalculationBudget)}
+                                                </TableCell>
+                                            )}
                                             <TableCell className="text-right">
                                                 {isAdmin && (
                                                     <>
