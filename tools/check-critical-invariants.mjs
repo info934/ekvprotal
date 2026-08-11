@@ -128,4 +128,22 @@ for (const requiredRewardRule of [
   assert.ok(rewardConsistencyMigration.includes(requiredRewardRule), `missing canonical reward rule: ${requiredRewardRule}`);
 }
 
+const memberNetRewardGuardMigration = readFileSync(
+  new URL('../supabase/migrations/20260812003000_project_member_net_reward_guards.sql', import.meta.url),
+  'utf8'
+);
+for (const requiredMemberGuard of [
+  'project_member_reward_state',
+  'project_member_reward_guard_baselines',
+  'would worsen the protected reserved or paid payout deficit',
+  'validate_project_reward_on_payout_item',
+  'validate_project_reward_on_payout',
+  'protect_project_member_history',
+  "'operation', 'end_assignment'",
+  "round(nullif(p_payload->>'reward_percentage', '')::numeric, 6)",
+  'correlation_id',
+]) {
+  assert.ok(memberNetRewardGuardMigration.includes(requiredMemberGuard), `missing project member net reward guard: ${requiredMemberGuard}`);
+}
+
 console.log('Critical route and numbering checks passed');

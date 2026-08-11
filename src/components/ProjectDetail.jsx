@@ -717,7 +717,7 @@ const ProjectDetail = () => {
                     });
                 }
             }
-            toast({ title: '🗑️ Smazáno' });
+            toast({ title: table === 'project_members' ? 'Platnost přiřazení byla ukončena' : 'Smazáno' });
             if (shouldLogRewards) {
                 await logRewardSnapshot({ action: 'delete', table, itemId: id, before: rewardSnapshotBefore });
             }
@@ -945,12 +945,13 @@ const ProjectDetail = () => {
             name: 'člena',
             displayName: assignment.member?.name || assignment.member?.email || 'Neznámý člen',
             severity: 'high',
+            confirmLabel: 'Ukončit přiřazení',
             amountLabel: canViewFinance ? 'Aktuálně vypočtená odměna' : null,
             amount: rewardAmount,
-            summary: 'Člen bude odebrán z týmu projektu a přestane se započítávat do plánovaných týmových odměn.',
+            summary: 'Aktivní přiřazení člena bude ukončeno. Záznam, finanční vazby, rezervované i vyplacené částky zůstanou zachované v historii.',
             details: [
-                'Historické výplaty a již vytvořené žádosti se tím automaticky nesmažou.',
-                'Pokud má člen navázané úkoly nebo docházku, před smazáním zkontrolujte jejich návaznosti.',
+                'Databáze ověří čistý nárok člena proti všem rezervovaným a vyplaceným výplatám.',
+                'Řádková změna i finanční snapshot budou propojené společným auditním identifikátorem.',
             ],
         });
     }, [canViewFinance, getMemberReward, rewardCalculationBudget]);
@@ -1373,7 +1374,7 @@ const ProjectDetail = () => {
                     <AlertDialogFooter>
                         <AlertDialogCancel>Zrušit</AlertDialogCancel>
                         <AlertDialogAction onClick={handleDeleteGeneric} className="bg-red-600 hover:bg-red-700">
-                            Smazat
+                            {itemToDelete?.confirmLabel || 'Smazat'}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
