@@ -157,6 +157,7 @@ begin
 end;
 $$;
 
+set constraints validate_project_reward_allocation immediate;
 alter table public.project_members enable trigger protect_project_member_compensation;
 
 alter function public.project_financial_summary_admin_internal(uuid)
