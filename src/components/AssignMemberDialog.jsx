@@ -12,7 +12,7 @@ import { Users, DollarSign, Percent, Calendar, Plus, Edit2, AlertCircle, Clock }
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/components/ui/use-toast';
 import { sendEmail } from '@/lib/email';
-import { calculateProjectBudget, calculateProjectMemberReward, toAmount } from '@/domain/financials';
+import { calculateProjectBudget, calculateProjectMemberReward, calculateProjectRewardRebalance, toAmount } from '@/domain/financials';
 
 const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], project, projectSubcontractors = [], teamBudgetOverride = null }) => {
   const [formData, setFormData] = useState({
@@ -31,6 +31,7 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
     completion_date: '',
   });
   const [availableMembers, setAvailableMembers] = useState([]);
+  const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -179,6 +180,15 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
       toast({ title: 'Chybí financující člen', description: 'Vyberte člena týmu, z jehož odměny se bude hodinová práce odečítat.', variant: 'destructive' });
       return;
     }
+
+    if (isRewardOverBudget) {
+      toast({
+        title: 'Odměnu nelze přidělit',
+        description: `Fond odměn je již vyčerpán. Nová odměna překračuje dostupný zůstatek o ${budgetExceededBy.toLocaleString('cs-CZ')} Kč.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     
     const { createOrder, orderValidity, completion_date, ...dataToSave } = formData;
 
@@ -199,28 +209,25 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
         }
     }
 
-    // If it's a new assignment (not an edit), send email
-    if (!member) {
-      await sendAssignmentEmail(dataToSave, {
-        reward_type: dataToSave.reward_type,
-        reward_amount: dataToSave.reward_amount,
-        reward_percentage: dataToSave.reward_percentage,
-      });
-    }
+    dataToSave.auto_rebalance_percentages = canAutoRebalance;
 
-    onSave(dataToSave);
-  };
-  
-  const getExistingMemberRewardAmount = (teamMember) => {
-    return calculateProjectMemberReward(teamMember, teamBudget);
-  };
+    setIsSaving(true);
+    try {
+      const saved = await onSave(dataToSave);
+      if (saved === false) return;
 
-  const currentTeamRewards = team.reduce((acc, teamMember) => {
-      if (member && teamMember.member_id === member.member_id) {
-          return acc; 
+      // Notify only after the assignment has been accepted by the database.
+      if (!member) {
+        await sendAssignmentEmail(dataToSave, {
+          reward_type: dataToSave.reward_type,
+          reward_amount: dataToSave.reward_amount,
+          reward_percentage: dataToSave.reward_percentage,
+        });
       }
-      return acc + getExistingMemberRewardAmount(teamMember);
-  }, 0);
+    } finally {
+      setIsSaving(false);
+    }
+  };
   
   let newRewardAmount = 0;
   let newRewardPercentage = 0;
@@ -238,16 +245,24 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
       }
   }
 
-  const totalTeamRewardAmount = currentTeamRewards + newRewardAmount;
-  const budgetAfterAllRewards = teamBudget - totalTeamRewardAmount;
-
-  const currentTotalPercentage = team.reduce((acc, teamMember) => {
-      if (member && teamMember.member_id === member.member_id) { return acc; }
-      if (teamMember.reward_type === 'percentage') {
-        return acc + parseFloat(teamMember.reward_percentage || 0);
-      }
-      return acc;
-  }, 0);
+  const rewardPreview = calculateProjectRewardRebalance({
+    teamBudget,
+    assignments: team,
+    editedMemberId: member?.member_id || null,
+    rewardType: formData.reward_type,
+    rewardAmount: formData.reward_amount,
+    rewardPercentage: formData.reward_percentage,
+  });
+  const {
+    currentTeamRewards,
+    availableRewardAmount,
+    budgetAfter: budgetAfterAllRewards,
+    budgetExceededBy,
+    canAutoRebalance,
+    percentageTotalBefore: currentTotalPercentage,
+    percentageTotalAfter: rebalancedPercentageTotal,
+  } = rewardPreview;
+  const isRewardOverBudget = Boolean(formData.reward_type) && budgetExceededBy > 0.01;
   
   const availableRewardPercentage = 100 - currentTotalPercentage;
   const sponsorOptions = team.filter((teamMember) => {
@@ -426,18 +441,53 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
                   {formData.reward_type === 'percentage' && <span className="text-sm font-normal ml-2">({newRewardPercentage.toFixed(2)} %)</span>}
                 </p>
               </div>
-              <div className="border-t border-blue-200 pt-3 text-center">
-                <p className="text-sm text-green-800 font-medium">Zůstatek budgetu po odměnách</p>
-                <p className="text-lg font-bold text-green-900">{budgetAfterAllRewards.toLocaleString('cs-CZ')} Kč</p>
-                <p className="text-xs text-muted-foreground">z budgetu pro tým {teamBudget.toLocaleString('cs-CZ')} Kč</p>
+              <div className="grid grid-cols-2 gap-3 border-t border-blue-200 pt-3 text-sm sm:grid-cols-3">
+                <div>
+                  <p className="text-muted-foreground">Fond odměn</p>
+                  <p className="font-semibold text-slate-900">{teamBudget.toLocaleString('cs-CZ')} Kč</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Již přiděleno</p>
+                  <p className="font-semibold text-slate-900">{currentTeamRewards.toLocaleString('cs-CZ')} Kč</p>
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <p className="text-muted-foreground">Volné před změnou</p>
+                  <p className="font-semibold text-slate-900">{availableRewardAmount.toLocaleString('cs-CZ')} Kč</p>
+                </div>
               </div>
+              <div className={`rounded-md border p-3 text-center ${isRewardOverBudget ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                <p className={`text-sm font-medium ${isRewardOverBudget ? 'text-red-800' : 'text-emerald-800'}`}>
+                  Zůstatek fondu po této změně
+                </p>
+                <p className={`text-lg font-bold ${isRewardOverBudget ? 'text-red-900' : 'text-emerald-900'}`}>
+                  {budgetAfterAllRewards.toLocaleString('cs-CZ')} Kč
+                </p>
+                {isRewardOverBudget && (
+                  <p className="mt-1 flex items-center justify-center gap-1 text-xs text-red-700">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    Nejprve snižte existující odměny alespoň o {budgetExceededBy.toLocaleString('cs-CZ')} Kč.
+                  </p>
+                )}
+              </div>
+              {canAutoRebalance && (
+                <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                  <p className="font-semibold">Automatický přepočet procentních podílů</p>
+                  <p className="mt-1 text-xs leading-5 text-blue-800">
+                    Pevná odměna se rezervuje jako první. Stávající procentní podíly se poměrně upraví
+                    z {currentTotalPercentage.toFixed(2)} % na {rebalancedPercentageTotal.toFixed(2)} % a jejich vzájemný poměr zůstane zachován.
+                    Změna bude uložena do historie projektu.
+                  </p>
+                </div>
+              )}
             </motion.div>
           )}
 
           </FormDialogBody>
           <FormDialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Zrušit</Button>
-            <Button type="submit" className="min-w-[120px]">{member ? 'Uložit změny' : 'Přiřadit'}</Button>
+            <Button type="submit" className="min-w-[120px]" disabled={isSaving || isRewardOverBudget}>
+              {isSaving ? 'Ukládám…' : member ? 'Uložit změny' : 'Přiřadit'}
+            </Button>
           </FormDialogFooter>
         </form>
       </FormDialogContent>

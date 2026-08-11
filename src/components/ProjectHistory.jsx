@@ -81,6 +81,12 @@ const actionMeta = {
     dot: 'bg-violet-500',
     badge: 'border-violet-200 bg-violet-50 text-violet-700',
   },
+  project_reward_auto_rebalance: {
+    label: 'P\u0159epo\u010det pod\u00edl\u016f',
+    icon: CircleDollarSign,
+    dot: 'bg-indigo-500',
+    badge: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+  },
   default: {
     label: 'Zm\u011bna',
     icon: History,
@@ -116,7 +122,7 @@ const getHistorySummary = (logs) => {
   const users = new Set(logs.map((log) => log.user_email).filter(Boolean));
   return {
     total: logs.length,
-    financial: logs.filter((log) => log.action === 'project_reward_snapshot').length,
+    financial: logs.filter((log) => ['project_reward_snapshot', 'project_reward_auto_rebalance'].includes(log.action)).length,
     status: logs.filter((log) => ['update_project_status', 'update_task_status', 'update_activity_status'].includes(log.action)).length,
     users: users.size,
   };
@@ -204,6 +210,8 @@ const ProjectHistory = () => {
       }
       case 'project_reward_snapshot':
         return `${actionLabels[details.source_action] || 'zm\u011bnil'} polo\u017eku ${sourceTableLabels[details.source_table] || 'projektov\u00fdch financ\u00ed'} a p\u0159epo\u010d\u00edtal odm\u011bny t\u00fdmu`;
+      case 'project_reward_auto_rebalance':
+        return `p\u0159idal pevnou odm\u011bnu ${formatCurrency(details.fixed_reward_amount)} a pom\u011brn\u011b upravil procentn\u00ed pod\u00edly t\u00fdmu`;
       default:
         return 'provedl zm\u011bnu v projektu';
     }
@@ -235,6 +243,35 @@ const ProjectHistory = () => {
         ) : (
           <p className="text-sm text-slate-500">{labels.unchangedRewards}</p>
         )}
+      </div>
+    );
+  };
+
+  const renderRebalanceRows = (details = {}) => {
+    const before = Array.isArray(details.before) ? details.before : [];
+    const after = Array.isArray(details.after) ? details.after : [];
+
+    return (
+      <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+        <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-indigo-800">
+          <span>Fond odměn: <strong>{formatCurrency(details.reward_pool)}</strong></span>
+          <span>
+            Součet podílů: <strong>{Number(details.percentage_total_before || 0).toFixed(2)} % → {Number(details.percentage_total_after || 0).toFixed(2)} %</strong>
+          </span>
+        </div>
+        <div className="space-y-2">
+          {after.map((row) => {
+            const previous = before.find((item) => item.assignment_id === row.assignment_id);
+            return (
+              <div key={row.assignment_id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-sm">
+                <span className="font-medium text-slate-900">{row.member_name || row.member_id}</span>
+                <span className="font-mono text-slate-700">
+                  {Number(previous?.reward_percentage || 0).toFixed(2)} % → {Number(row.reward_percentage || 0).toFixed(2)} %
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   };
@@ -305,6 +342,7 @@ const ProjectHistory = () => {
                           {renderLogDetails(log)}
                         </p>
                         {log.action === 'project_reward_snapshot' && renderRewardRows(log.details)}
+                        {log.action === 'project_reward_auto_rebalance' && renderRebalanceRows(log.details)}
                       </div>
                     </article>
                   );

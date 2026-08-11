@@ -13,6 +13,7 @@ import {
   calculateCostAdjustedTeamBudget,
   calculateProjectFinancials,
   calculateProjectMemberReward,
+  calculateProjectRewardRebalance,
   calculateRealizationRewardAllocation,
   calculateRealizationMemberShare,
 } from '../src/domain/financials.js';
@@ -145,6 +146,28 @@ const projectAllocation = calculateProjectFinancials({
 assertMoney(projectAllocation.rewardBaseBudget, 24000, 'project reward base follows costs and allocated overhead');
 assertMoney(projectAllocation.teamRewards, 12000, 'project planned rewards use the shared reward base');
 assertMoney(projectAllocation.unallocatedBudget, 12000, 'project unallocated budget excludes planned rewards');
+
+const fixedRewardRebalance = calculateProjectRewardRebalance({
+  teamBudget: 33840,
+  assignments: [
+    { member_id: 'member-a', reward_type: 'percentage', reward_percentage: 50 },
+    { member_id: 'member-b', reward_type: 'percentage', reward_percentage: 50 },
+  ],
+  rewardType: 'fixed',
+  rewardAmount: 3500,
+});
+assert.equal(fixedRewardRebalance.canAutoRebalance, true, 'fixed reward can proportionally rebalance percentage assignments');
+assertMoney(fixedRewardRebalance.percentageTotalAfter, 89.66, 'percentage assignments preserve their ratio after fixed reward reservation');
+assertMoney(fixedRewardRebalance.budgetAfter, 0, 'fixed reward rebalance does not over-allocate the reward pool');
+
+const impossibleFixedReward = calculateProjectRewardRebalance({
+  teamBudget: 5000,
+  assignments: [{ member_id: 'member-a', reward_type: 'fixed', reward_amount: 4000 }],
+  rewardType: 'fixed',
+  rewardAmount: 2000,
+});
+assert.equal(impossibleFixedReward.canAutoRebalance, false, 'fixed rewards cannot be reduced by percentage rebalance');
+assertMoney(impossibleFixedReward.budgetExceededBy, 1000, 'fixed reward over-allocation remains blocked');
 
 const exhausted = calculateCostAdjustedTeamBudget({
   project,

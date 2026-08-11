@@ -51,6 +51,64 @@ export const calculateProjectMemberReward = (assignment = {}, teamBudget = 0) =>
   return 0;
 };
 
+export const calculateProjectRewardRebalance = ({
+  teamBudget = 0,
+  assignments = [],
+  editedMemberId = null,
+  rewardType = null,
+  rewardAmount = 0,
+  rewardPercentage = 0,
+} = {}) => {
+  const pool = Math.max(0, toAmount(teamBudget));
+  const existing = (assignments || []).filter((assignment) => (
+    !editedMemberId || String(assignment?.member_id || '') !== String(editedMemberId)
+  ));
+  const existingFixedRewards = sumByAmount(
+    existing.filter((assignment) => assignment?.reward_type === 'fixed'),
+    (assignment) => assignment?.reward_amount
+  );
+  const percentageTotalBefore = sumByAmount(
+    existing.filter((assignment) => assignment?.reward_type === 'percentage'),
+    (assignment) => assignment?.reward_percentage
+  );
+  const existingPercentageRewards = pool * percentageTotalBefore / 100;
+  const newRewardAmount = rewardType === 'fixed'
+    ? toAmount(rewardAmount)
+    : rewardType === 'percentage'
+      ? pool * toAmount(rewardPercentage) / 100
+      : 0;
+  const currentTeamRewards = existingFixedRewards + existingPercentageRewards;
+  const rawBudgetAfter = pool - currentTeamRewards - newRewardAmount;
+  const fixedCommitment = existingFixedRewards + (rewardType === 'fixed' ? newRewardAmount : 0);
+  const canAutoRebalance = rewardType === 'fixed'
+    && existingPercentageRewards > 0
+    && fixedCommitment <= pool + 0.01
+    && rawBudgetAfter < -0.01;
+  const autoRebalanceReduction = canAutoRebalance
+    ? Math.min(existingPercentageRewards, Math.abs(rawBudgetAfter))
+    : 0;
+  const budgetAfter = rawBudgetAfter + autoRebalanceReduction;
+  const percentageTotalAfter = canAutoRebalance && existingPercentageRewards > 0
+    ? percentageTotalBefore * ((existingPercentageRewards - autoRebalanceReduction) / existingPercentageRewards)
+    : percentageTotalBefore + (rewardType === 'percentage' ? toAmount(rewardPercentage) : 0);
+
+  return {
+    pool,
+    existingFixedRewards,
+    existingPercentageRewards,
+    currentTeamRewards,
+    availableRewardAmount: Math.max(0, pool - currentTeamRewards),
+    newRewardAmount,
+    rawBudgetAfter,
+    budgetAfter,
+    budgetExceededBy: Math.max(0, -budgetAfter),
+    canAutoRebalance,
+    autoRebalanceReduction,
+    percentageTotalBefore,
+    percentageTotalAfter,
+  };
+};
+
 export const getProjectCostMemberId = (cost = {}) => cost?.member_id || cost?.member?.id || null;
 
 export const sumUnassignedProjectCosts = (costs = []) => (

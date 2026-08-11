@@ -17,6 +17,8 @@ const viteConfig = read('vite.config.js');
 const portalStatusChart = read('src/components/PortalStatusChart.jsx');
 const projectStatusChart = read('src/components/ProjectStatusChart.jsx');
 const sharePointFolderBrowser = read('src/components/SharePointFolderBrowser.jsx');
+const projectDetail = read('src/components/ProjectDetail.jsx');
+const assignMemberDialog = read('src/components/AssignMemberDialog.jsx');
 const sourceFiles = [];
 const collectSourceFiles = (directory) => {
   fs.readdirSync(directory, { withFileTypes: true }).forEach((entry) => {
@@ -47,6 +49,20 @@ assert(mojibakeFiles.length === 0, `Zdrojové soubory obsahují poškozené UTF-
 
 assert(!sharePointFolderBrowser.includes('file instanceof File'), 'SharePoint upload must not confuse the global File API with a React icon.');
 assert(sharePointFolderBrowser.includes('File as FileIcon'), 'The SharePoint file icon must use a non-conflicting alias.');
+assert(
+  projectDetail.includes('const rewardCalculationBudget = financials.rewardBaseBudget'),
+  'Projektové odměny musí používat stejný cost-adjusted fond jako databázová validace.',
+);
+assert(
+  assignMemberDialog.indexOf('const saved = await onSave(dataToSave)') < assignMemberDialog.indexOf('await sendAssignmentEmail(dataToSave'),
+  'Oznámení o přiřazení člena se smí odeslat až po úspěšném databázovém zápisu.',
+);
+assert(assignMemberDialog.includes('disabled={isSaving || isRewardOverBudget}'), 'Dialog musí blokovat odměnu překračující dostupný fond.');
+assert(
+  assignMemberDialog.indexOf('dataToSave.auto_rebalance_percentages = canAutoRebalance')
+    < assignMemberDialog.indexOf('const saved = await onSave(dataToSave)'),
+  'Příznak automatického přepočtu podílů musí být součástí payloadu před databázovým zápisem.',
+);
 
 if (failures.length) {
   console.error('UI invariant checks failed:');

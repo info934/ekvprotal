@@ -492,7 +492,9 @@ const ProjectDetail = () => {
             return false;
         }
         const payload = { ...data, project_id: projectId };
-        const shouldLogRewards = ['project_members', 'project_subcontractors', 'project_costs'].includes(table);
+        const serverAuditsRewardRebalance = table === 'project_members' && data.auto_rebalance_percentages === true;
+        const shouldLogRewards = ['project_members', 'project_subcontractors', 'project_costs'].includes(table)
+            && !serverAuditsRewardRebalance;
         const rewardSnapshotBefore = shouldLogRewards ? buildRewardSnapshot() : null;
         let result;
         if (table === 'projects') {
@@ -519,7 +521,14 @@ const ProjectDetail = () => {
         }
         const { error } = result;
         if (error) {
-            toast({ title: `Chyba při ukládání`, variant: 'destructive', description: error.message });
+            const rewardBudgetMatch = error.message?.match(/Project rewards exceed the current team budget by\s+([\d.]+)/i);
+            const committedPayoutConflict = error.message?.includes('Automatic reward rebalance would reduce a member below already committed payouts');
+            const description = rewardBudgetMatch
+                ? `Součet odměn překračuje dostupný fond o ${toAmount(rewardBudgetMatch[1]).toLocaleString('cs-CZ')} Kč. Nejprve upravte existující podíly členů týmu.`
+                : committedPayoutConflict
+                    ? 'Automatický přepočet by snížil odměnu některého člena pod již schválenou nebo vyplacenou částku. Podíly upravte ručně.'
+                    : error.message;
+            toast({ title: 'Chyba při ukládání', variant: 'destructive', description });
             return false;
         }
         else {
@@ -839,7 +848,10 @@ const ProjectDetail = () => {
         };
     }, [project, members, subcontractors, costs, overheadCosts, canViewFinance, paidOutAmount, projectFinancialSummary, projectLaborSummary, getSponsoredLaborDeduction]);
 
-    const rewardCalculationBudget = financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts ?? financials.teamBudget ?? 0;
+    // Member rewards are allocated from the cost-adjusted reward pool. Paid
+    // payouts reduce liquidity, but must not change the base used by existing
+    // percentage assignments (the database validator follows the same rule).
+    const rewardCalculationBudget = financials.rewardBaseBudget ?? financials.remainingAfterCosts ?? financials.teamBudget ?? 0;
 
     const financeDerivedRows = useMemo(() => {
         if (!canViewFinance) return [];
