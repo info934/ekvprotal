@@ -100,6 +100,11 @@ grant execute on function public.assert_project_reward_allocation(uuid) to servi
 
 -- Undo only percentages that still exactly match a previously audited
 -- automatic rebalance. Later manual edits are intentionally left untouched.
+-- The compensation trigger expects an authenticated admin JWT. This migration
+-- runs as the database owner, so suspend only that trigger for the audited
+-- conversion. The surrounding migration transaction restores it on failure.
+alter table public.project_members disable trigger protect_project_member_compensation;
+
 do $$
 declare
   v_row record;
@@ -150,6 +155,8 @@ begin
   end loop;
 end;
 $$;
+
+alter table public.project_members enable trigger protect_project_member_compensation;
 
 alter function public.project_financial_summary_admin_internal(uuid)
   rename to project_financial_summary_admin_internal_legacy_20260811;
