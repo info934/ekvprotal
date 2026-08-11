@@ -16,6 +16,7 @@ const invoicePreview = read('src/components/InvoicePreview.jsx');
 const viteConfig = read('vite.config.js');
 const portalStatusChart = read('src/components/PortalStatusChart.jsx');
 const projectStatusChart = read('src/components/ProjectStatusChart.jsx');
+const sharePointFolderBrowser = read('src/components/SharePointFolderBrowser.jsx');
 const sourceFiles = [];
 const collectSourceFiles = (directory) => {
   fs.readdirSync(directory, { withFileTypes: true }).forEach((entry) => {
@@ -43,6 +44,9 @@ assert((projectStatusChart.match(/'?Nové'?: \{ color:/g) || []).length === 1, '
 assert((portalStatusChart.match(/'V řešení': \{ color:/g) || []).length === 1, 'PortalStatusChart obsahuje duplicitní stav V řešení.');
 assert((projectStatusChart.match(/'V řešení': \{ color:/g) || []).length === 1, 'ProjectStatusChart obsahuje duplicitní stav V řešení.');
 assert(mojibakeFiles.length === 0, `Zdrojové soubory obsahují poškozené UTF-8 řetězce: ${mojibakeFiles.join(', ')}`);
+
+assert(!sharePointFolderBrowser.includes('file instanceof File'), 'SharePoint upload must not confuse the global File API with a React icon.');
+assert(sharePointFolderBrowser.includes('File as FileIcon'), 'The SharePoint file icon must use a non-conflicting alias.');
 
 if (failures.length) {
   console.error('UI invariant checks failed:');

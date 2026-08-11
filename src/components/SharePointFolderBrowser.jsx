@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import {
   ChevronRight,
   ExternalLink,
-  File,
+  File as FileIcon,
   Folder,
   FolderPlus,
   FolderOpen,
@@ -165,8 +165,18 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
   };
 
   const uploadFiles = useCallback(async (files) => {
-    const selectedFiles = Array.from(files || []).filter((file) => file instanceof File);
-    if (selectedFiles.length === 0 || !currentFolder?.id || uploading) return;
+    const selectedFiles = Array.from(files || []).filter((file) => (
+      file && typeof file.name === 'string' && typeof file.size === 'number'
+    ));
+    if (selectedFiles.length === 0) {
+      toast({
+        title: 'Nebyl vybrán žádný soubor',
+        description: 'Přetáhněte soubor z počítače nebo použijte tlačítko Vybrat soubory.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!currentFolder?.id || uploading) return;
 
     let uploadedCount = 0;
     const failedFiles = [];
@@ -383,7 +393,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
                       onClick={() => item.folder ? openFolder(item) : window.open(item.webUrl, '_blank', 'noopener,noreferrer')}
                       className="flex max-w-full items-center gap-2 font-medium text-slate-900 hover:text-blue-700"
                     >
-                      {item.folder ? <Folder className="h-4 w-4 shrink-0 fill-blue-50 text-blue-600" /> : <File className="h-4 w-4 shrink-0 text-slate-500" />}
+                      {item.folder ? <Folder className="h-4 w-4 shrink-0 fill-blue-50 text-blue-600" /> : <FileIcon className="h-4 w-4 shrink-0 text-slate-500" />}
                       <span className="truncate">{item.name}</span>
                     </button>
                   </td>
