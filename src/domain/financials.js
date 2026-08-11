@@ -77,6 +77,24 @@ export const calculateProjectMemberReward = (assignment = {}, teamBudget = 0, op
   return 0;
 };
 
+export const normalizeProjectMemberRewardSummary = (reward = {}) => {
+  const sponsoredLaborCosts = Math.max(0, toAmount(reward?.sponsored_labor_costs));
+  const legacyCombinedCosts = Math.max(0, toAmount(reward?.assigned_costs));
+  const directAssignedCosts = reward?.direct_assigned_costs === undefined
+    ? Math.max(0, legacyCombinedCosts - sponsoredLaborCosts)
+    : Math.max(0, toAmount(reward.direct_assigned_costs));
+  const totalDeductions = reward?.total_deductions === undefined
+    ? directAssignedCosts + sponsoredLaborCosts
+    : Math.max(0, toAmount(reward.total_deductions));
+
+  return {
+    ...reward,
+    direct_assigned_costs: directAssignedCosts,
+    sponsored_labor_costs: sponsoredLaborCosts,
+    total_deductions: totalDeductions,
+  };
+};
+
 export const calculateProjectRewardRebalance = ({
   teamBudget = 0,
   assignments = [],

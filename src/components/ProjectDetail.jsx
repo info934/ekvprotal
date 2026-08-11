@@ -31,6 +31,7 @@ import {
     calculateProjectMemberNetReward,
     calculateProjectMemberReward,
     calculateProjectRewardPool,
+    normalizeProjectMemberRewardSummary,
     sumProjectCostsForMember,
     sumUnassignedProjectCosts,
     toAmount
@@ -452,7 +453,9 @@ const ProjectDetail = () => {
         const { data, error } = await supabase.rpc('project_financial_summary', { p_project_id: projectId });
         if (error) throw error;
         const rows = Array.isArray(data?.member_rewards) ? data.member_rewards : [];
-        return rows.map((row) => ({
+        return rows.map((rawRow) => {
+            const row = normalizeProjectMemberRewardSummary(rawRow);
+            return {
                 member_id: row.member_id,
                 member_name: members.find((assignment) => String(assignment.member_id) === String(row.member_id))?.member?.name || row.member_id,
                 reward_type: row.reward_type,
@@ -460,9 +463,12 @@ const ProjectDetail = () => {
                 reward_fixed_amount: toAmount(row.reward_amount),
                 gross_reward: toAmount(row.gross_reward),
                 assigned_costs: toAmount(row.assigned_costs),
+                direct_assigned_costs: toAmount(row.direct_assigned_costs),
                 sponsored_labor_costs: toAmount(row.sponsored_labor_costs),
+                total_deductions: toAmount(row.total_deductions),
                 total_reward: toAmount(row.total_reward),
-            }));
+            };
+        });
     }, [canViewFinance, members, projectId]);
 
     const logRewardSnapshot = useCallback(async ({ action, table, itemId, before }) => {
@@ -730,7 +736,10 @@ const ProjectDetail = () => {
 
     const memberRewardSummaryById = useMemo(() => new Map(
         (Array.isArray(projectFinancialSummary?.member_rewards) ? projectFinancialSummary.member_rewards : [])
-            .map((reward) => [String(reward.member_id), reward])
+            .map((rawReward) => {
+                const reward = normalizeProjectMemberRewardSummary(rawReward);
+                return [String(reward.member_id), reward];
+            })
     ), [projectFinancialSummary]);
 
     const rewardPool = useMemo(() => calculateProjectRewardPool(
@@ -787,12 +796,14 @@ const ProjectDetail = () => {
                 ? toAmount(authoritativeReward.gross_reward)
                 : calculateProjectMemberReward(member, teamBudget, { percentageRewardPool: rewardPool.percentageRewardPool });
             const assignedCosts = authoritativeReward
-                ? toAmount(authoritativeReward.assigned_costs) - toAmount(authoritativeReward.sponsored_labor_costs)
+                ? toAmount(authoritativeReward.direct_assigned_costs)
                 : sumProjectCostsForMember(costs, member.member_id);
             const sponsoredLaborCosts = authoritativeReward
                 ? toAmount(authoritativeReward.sponsored_labor_costs)
                 : getSponsoredLaborDeduction(member.member_id);
-            const totalDeductions = assignedCosts + sponsoredLaborCosts;
+            const totalDeductions = authoritativeReward
+                ? toAmount(authoritativeReward.total_deductions)
+                : assignedCosts + sponsoredLaborCosts;
             const amount = authoritativeReward
                 ? toAmount(authoritativeReward.total_reward)
                 : Math.max(0, grossAmount - totalDeductions);

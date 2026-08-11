@@ -15,6 +15,7 @@ import {
   calculateProjectMemberReward,
   calculateProjectRewardPool,
   calculateProjectRewardRebalance,
+  normalizeProjectMemberRewardSummary,
   calculateRealizationRewardAllocation,
   calculateRealizationMemberShare,
 } from '../src/domain/financials.js';
@@ -173,6 +174,22 @@ assertMoney(calculateProjectMemberReward(
   33840,
   { percentageRewardPool: residualRewardPool.percentageRewardPool }
 ), 15170, '50 percent member receives half of the residual pool');
+
+const legacyRewardSummary = normalizeProjectMemberRewardSummary({
+  assigned_costs: 6500,
+  sponsored_labor_costs: 2500,
+});
+assertMoney(legacyRewardSummary.direct_assigned_costs, 4000, 'legacy combined assignment costs are normalized');
+assertMoney(legacyRewardSummary.total_deductions, 6500, 'legacy deductions remain backward compatible');
+
+const explicitRewardSummary = normalizeProjectMemberRewardSummary({
+  assigned_costs: 6500,
+  direct_assigned_costs: 4000,
+  sponsored_labor_costs: 2500,
+  total_deductions: 6500,
+});
+assertMoney(explicitRewardSummary.direct_assigned_costs, 4000, 'explicit direct assignment costs are authoritative');
+assertMoney(explicitRewardSummary.total_deductions, 6500, 'explicit total deductions are authoritative');
 
 const impossibleFixedReward = calculateProjectRewardRebalance({
   teamBudget: 5000,

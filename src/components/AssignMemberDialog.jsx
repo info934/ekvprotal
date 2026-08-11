@@ -429,21 +429,21 @@ const AssignMemberDialog = ({ isOpen, onClose, onSave, member, team = [], projec
                   {formData.reward_type === 'percentage' && <span className="text-sm font-normal ml-2">({newRewardPercentage.toFixed(2)} %)</span>}
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-3 border-t border-blue-200 pt-3 text-sm sm:grid-cols-5">
+              <div className="grid grid-cols-2 gap-3 border-t border-blue-200 pt-3 text-sm sm:grid-cols-3">
                 <div>
                   <p className="text-muted-foreground">Fond odměn</p>
                   <p className="font-semibold text-slate-900">{teamBudget.toLocaleString('cs-CZ')} Kč</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Fixně rezervováno</p>
+                  <p className="text-muted-foreground">Fixně po změně</p>
                   <p className="font-semibold text-slate-900">{fixedRewardsTotal.toLocaleString('cs-CZ')} Kč</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Fond pro procenta</p>
+                  <p className="text-muted-foreground">Pro procenta po změně</p>
                   <p className="font-semibold text-slate-900">{percentageRewardPool.toLocaleString('cs-CZ')} Kč</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Již přiděleno</p>
+                  <p className="text-muted-foreground">Přiděleno před změnou</p>
                   <p className="font-semibold text-slate-900">{currentTeamRewards.toLocaleString('cs-CZ')} Kč</p>
                 </div>
                 <div>
