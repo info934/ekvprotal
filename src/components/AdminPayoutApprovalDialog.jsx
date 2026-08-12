@@ -38,27 +38,33 @@ const AdminPayoutApprovalDialog = ({ isOpen, onClose, payout, onConfirm }) => {
     try {
       await onConfirm(payout.id, adminNote, approvedWithoutInvoice);
 
-      const memberResult = await sendPayoutApprovalEmail({
-        memberId: payout.member_id,
-        amount: payout.amount,
-        approved_without_invoice: approvedWithoutInvoice
-      });
-
-      const adminResult = await sendAdminPayoutNotification({
-        memberName: payout.members?.name || 'Pracovník',
-        amount: payout.amount,
-        action: approvedWithoutInvoice ? 'Schválení žádosti bez faktury' : 'Schválení žádosti'
-      });
+      const [memberResult, adminResult] = await Promise.all([
+        sendPayoutApprovalEmail({
+          payoutId: payout.id,
+          payoutType: 'task',
+          memberId: payout.member_id,
+          amount: payout.amount,
+          approved_without_invoice: approvedWithoutInvoice,
+        }),
+        sendAdminPayoutNotification({
+          memberName: payout.members?.name || 'Pracovník',
+          amount: payout.amount,
+          action: approvedWithoutInvoice ? 'Schválení žádosti bez faktury' : 'Schválení žádosti',
+          entityId: payout.id,
+          entityType: 'payouts',
+          eventType: 'approved',
+        }),
+      ]);
 
       if (!memberResult?.success || !adminResult?.success) {
         toast({
-          title: 'Schváleno, ale notifikace selhala',
-          description: memberResult?.error || adminResult?.error,
+          title: 'Výplata byla schválena',
+          description: `Stav je uložený, ale některý e-mail se nepodařilo potvrdit: ${memberResult?.error || adminResult?.error || 'neznámá chyba'}`,
           variant: 'warning'
         });
       } else {
         toast({
-          title: 'Schváleno',
+          title: 'Schváleno a odesláno',
           description: approvedWithoutInvoice
             ? 'Výplatu bude možné uzavřít bez nahrání faktury.'
             : 'Zaměstnanec byl vyzván k nahrání faktury.'

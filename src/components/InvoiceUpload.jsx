@@ -91,7 +91,10 @@ const InvoiceUpload = ({ requestId, memberId, projectReference, onUploadSuccess 
       const emailResult = await sendAdminPayoutNotification({
         memberName: memberData?.name || 'Pracovník',
         amount: dbData?.total_amount || 0,
-        action: 'Faktura nahrána k hodinové žádosti'
+        action: 'Faktura nahrána k hodinové žádosti',
+        entityId: requestId,
+        entityType: 'hourly_payout_requests',
+        eventType: 'invoice_uploaded',
       });
 
       if (!emailResult.success) {

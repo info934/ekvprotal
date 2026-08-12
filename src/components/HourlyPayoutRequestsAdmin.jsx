@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
-import { sendHourlyPayoutPaidEmail, sendPayoutApprovalEmail } from '@/lib/email';
+import { sendHourlyPayoutPaidEmail, sendPayoutApprovalEmail, sendPayoutRejectionEmail } from '@/lib/email';
 import { logPayoutAction } from '@/lib/payoutLogger';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import { uploadInvoiceDocument } from '@/lib/documentStorageService';
@@ -228,7 +228,10 @@ const HourlyPayoutRequestsAdmin = () => {
       await sendAdminPayoutNotification({
         memberName: request.members?.name || 'Pracovnik',
         amount: request.total_amount || 0,
-        action: 'Faktura nahrana administratorem k hodinove zadosti'
+        action: 'Faktura nahrána administrátorem k hodinové žádosti',
+        entityId: request.id,
+        entityType: 'hourly_payout_requests',
+        eventType: 'invoice_uploaded',
       }).catch((error) => console.error('[HourlyPayoutRequestsAdmin] Admin upload notification failed:', error));
 
       toast({ title: 'Faktura nahrana', description: 'Zadost je pripravena ke kontrole a vyplaceni.' });
@@ -254,16 +257,23 @@ const HourlyPayoutRequestsAdmin = () => {
       const approvedRequest = await approveHourlyPayoutRequestWorkflow(requestId, adminNote, approvedWithoutInvoice);
       const memberName = approvalRequest?.members?.name || 'Pracovník';
       const amount = approvedRequest?.total_amount || approvalRequest?.total_amount || 0;
-      const memberEmailResult = await sendPayoutApprovalEmail({
-        memberId: approvalRequest?.member_id,
-        amount,
-        approved_without_invoice: approvedWithoutInvoice
-      });
-      const adminEmailResult = await sendAdminPayoutNotification({
-        memberName,
-        amount,
-        action: 'Schválení hodinové žádosti'
-      });
+      const [memberEmailResult, adminEmailResult] = await Promise.all([
+        sendPayoutApprovalEmail({
+          payoutId: requestId,
+          payoutType: 'hourly',
+          memberId: approvalRequest?.member_id,
+          amount,
+          approved_without_invoice: approvedWithoutInvoice,
+        }),
+        sendAdminPayoutNotification({
+          memberName,
+          amount,
+          action: 'Schválení hodinové žádosti',
+          entityId: requestId,
+          entityType: 'hourly_payout_requests',
+          eventType: 'approved',
+        }),
+      ]);
 
       if (!memberEmailResult.success || !adminEmailResult.success) {
         toast({
@@ -297,7 +307,16 @@ const HourlyPayoutRequestsAdmin = () => {
     try {
       await rejectHourlyPayoutRequestWorkflow(selectedRequest.id, reason);
       await logPayoutAction('reject_success', selectedRequest.id);
-      toast({ title: 'Zamítnuto', description: 'Hodinová žádost byla zamítnuta.' });
+      const notification = await sendPayoutRejectionEmail({
+        payoutId: selectedRequest.id,
+        payoutType: 'hourly',
+        memberId: selectedRequest.member_id,
+        amount: selectedRequest.total_amount,
+        reason,
+      });
+      toast(notification?.success
+        ? { title: 'Zamítnuto', description: 'Hodinová žádost byla zamítnuta a zaměstnanec byl informován.' }
+        : { title: 'Žádost byla zamítnuta', description: 'Stav je uložený, ale e-mail se nepodařilo potvrdit.', variant: 'warning' });
       fetchRequests();
     } catch (error) {
       await logPayoutAction('reject_failure', selectedRequest.id, { error: error.message });
@@ -326,18 +345,16 @@ const HourlyPayoutRequestsAdmin = () => {
 
     try {
       const paidRequest = await markHourlyPayoutPaid(request.id);
-      const paidDate = paidRequest?.paid_at || new Date().toISOString();
-
-      await sendHourlyPayoutPaidEmail({
-        email: request.members?.email,
-        memberName: request.members?.name || 'Pracovník',
+      const notification = await sendHourlyPayoutPaidEmail({
+        requestId: request.id,
+        memberId: request.member_id,
         amount: paidRequest?.total_amount || request.total_amount,
-        hours: paidRequest?.total_hours || paidRequest?.hours || request.total_hours || request.hours,
-        paidAt: paidDate
       });
 
       await logPayoutAction('mark_paid_success', request.id);
-      toast({ title: 'Vyplaceno', description: 'Žádost byla uzavřena a zaměstnanec byl informován emailem.' });
+      toast(notification?.success
+        ? { title: 'Vyplaceno', description: 'Žádost byla uzavřena a zaměstnanec byl informován e-mailem.' }
+        : { title: 'Žádost byla uzavřena', description: 'Stav je uložený, ale e-mail se nepodařilo potvrdit.', variant: 'warning' });
       if (request.invoice_url) {
         setInvoiceForwardDialog({
           open: true,

@@ -212,18 +212,27 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
         
         const projectNames = [...new Set(attendance.map(a => a.projects?.name || a.realizations?.name).filter(Boolean))].join(', ');
         
-        await sendAttendanceApprovalRequestEmail({
+        const notification = await sendAttendanceApprovalRequestEmail({
+          submissionId: savedSubmission?.id,
           memberName,
           totalHours,
           monthDate: format(currentMonth, 'MM/yyyy'),
           projects: projectNames || 'Žádné specifikované',
           submittedAt: new Date().toISOString()
         });
+        if (!notification?.success) {
+          toast({
+            title: 'Docházka byla odeslána',
+            description: 'Změna je uložená, ale e-mail administrátorům se nepodařilo potvrdit.',
+            variant: 'warning',
+          });
+        } else {
+          toast({ title: 'Docházka odeslána ke schválení', description: 'Administrátoři byli informováni e-mailem.' });
+        }
       } catch (emailError) {
         console.error('Failed to send attendance approval email:', emailError);
+        toast({ title: 'Docházka byla odeslána', description: 'Změna je uložená, e-mailová notifikace ale selhala.', variant: 'warning' });
       }
-
-      toast({ title: 'Docházka odeslána ke schválení' });
       const result = await fetchAttendanceAndSubmission();
       if (result) {
         if (result.submissionRes.data) setSubmission(result.submissionRes.data);

@@ -207,8 +207,10 @@ const Payouts = () => {
         toast({ title: "Žádost zamítnuta" });
         fetchPayouts();
 
-        const memberResult = await sendPayoutRejectionEmail({ memberId: payout.member_id, amount: payout.amount });
-        const adminResult = await sendAdminPayoutNotification({ memberName: payout.members?.name, amount: payout.amount, action: 'Zamítnutí žádosti' });
+        const [memberResult, adminResult] = await Promise.all([
+          sendPayoutRejectionEmail({ payoutId: payout.id, payoutType: 'task', memberId: payout.member_id, amount: payout.amount }),
+          sendAdminPayoutNotification({ memberName: payout.members?.name, amount: payout.amount, action: 'Zamítnutí žádosti', entityId: payout.id, entityType: 'payouts', eventType: 'rejected' }),
+        ]);
         if (!memberResult?.success || !adminResult?.success) {
           toast({ title: "Notifikace se nepodařilo odeslat", description: memberResult?.error || adminResult?.error, variant: "warning" });
         }
@@ -235,7 +237,7 @@ const Payouts = () => {
         }
 
         const memberResult = await sendWorkflowPayoutPaidEmail(paidPayout);
-        const adminResult = await sendAdminPayoutNotification({ memberName: payout.members?.name, amount: payout.amount, action: 'Vyplaceno a uzavřeno' });
+        const adminResult = await sendAdminPayoutNotification({ memberName: payout.members?.name, amount: payout.amount, action: 'Vyplaceno a uzavřeno', entityId: payout.id, entityType: 'payouts', eventType: 'paid' });
         if (!memberResult?.success || !adminResult?.success) {
           toast({ title: "Notifikace se nepodařilo odeslat", description: memberResult?.error || adminResult?.error, variant: "warning" });
         }

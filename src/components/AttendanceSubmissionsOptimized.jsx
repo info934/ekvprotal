@@ -18,7 +18,7 @@ import { useDebouncedValue } from '@/hooks/useDebounce';
 import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { sendEmail } from '@/lib/email';
+import { sendAttendanceNotification } from '@/lib/attendanceEmailService';
 import {
   approveAttendanceSubmission,
   rejectAttendanceSubmission,
@@ -27,55 +27,6 @@ import {
 import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 // --- Memoized Components ---
-const escapeHtml = (value) => String(value ?? '')
-  .replaceAll('&', '&')
-  .replaceAll('<', '&lt;')
-  .replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;')
-  .replaceAll("'", '&#039;');
-
-const buildAttendanceApprovalEmail = ({ submission, records }) => {
-  const monthLabel = format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs });
-  const detailRows = records.map((record) => {
-    const target = record.project?.code
-      ?`${record.project.code} - ${record.project.name}`
-      : (record.realization?.name || '-');
-
-    return `
-      <tr>
-        <td style="padding:8px;border-bottom:1px solid #eef2f7;">${format(new Date(record.date), 'dd.MM.yyyy')}</td>
-        <td style="padding:8px;border-bottom:1px solid #eef2f7;">${escapeHtml(target)}</td>
-        <td style="padding:8px;border-bottom:1px solid #eef2f7;">${escapeHtml(record.description || '')}</td>
-        <td style="padding:8px;border-bottom:1px solid #eef2f7;text-align:right;font-weight:700;">${Number(record.hours || 0).toFixed(1)} h</td>
-      </tr>
-    `;
-  }).join('');
-
-  return `
-    <p>Vaše docházka za období <strong>${monthLabel}</strong> byla schválena.</p>
-
-    <div style="margin:18px 0;padding:16px;border:1px solid #bbf7d0;border-radius:10px;background:#f0fdf4;">
-      <div style="font-size:12px;color:#166534;font-weight:700;text-transform:uppercase;">Schválený souhrn</div>
-      <div style="font-size:26px;font-weight:800;color:#14532d;margin-top:6px;">${Number(submission.total_hours || 0).toFixed(1)} h</div>
-    </div>
-
-    <h3 style="margin:22px 0 8px;">Detail záznamů</h3>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <thead>
-        <tr style="background:#f8fafc;">
-          <th style="padding:8px;text-align:left;border-bottom:1px solid #cbd5e1;">Datum</th>
-          <th style="padding:8px;text-align:left;border-bottom:1px solid #cbd5e1;">Projekt / Realizace</th>
-          <th style="padding:8px;text-align:left;border-bottom:1px solid #cbd5e1;">Popis</th>
-          <th style="padding:8px;text-align:right;border-bottom:1px solid #cbd5e1;">Hodiny</th>
-        </tr>
-      </thead>
-      <tbody>${detailRows || '<tr><td colspan="4" style="padding:10px;color:#64748b;">Bez detailních záznamů.</td></tr>'}</tbody>
-    </table>
-
-    <p style="margin-top:20px;color:#64748b;font-size:13px;">Schválená docházka je nyní uzavřená pro další zpracování hodinové mzdy.</p>
-  `;
-};
-
 const StatusBadge = React.memo(({ status }) => {
   const config = {
     submitted: { label: 'Ke schválení', icon: Clock, variant: 'warning', className: 'bg-orange-100 text-orange-800 border-orange-200' },
@@ -276,40 +227,17 @@ const AttendanceSubmissionsOptimized = () => {
     try {
       await approveAttendanceSubmission(submission.id);
 
-      toast({ title: 'Schváleno', className: 'bg-green-100 text-green-800' });
       fetchSubmissions();
-      
-      if (submission.member?.email) {
-        try {
-          const start = startOfMonth(parseISO(submission.month_date));
-          const end = endOfMonth(start);
-          const { data: approvedRecords, error: recordsError } = await supabase
-            .from('attendance')
-            .select('date, hours, description, project:projects(name, code), realization:realizations(name)')
-            .eq('member_id', submission.member_id)
-            .gte('date', format(start, 'yyyy-MM-dd'))
-            .lte('date', format(end, 'yyyy-MM-dd'))
-            .order('date');
-
-          if (recordsError) throw recordsError;
-
-          const { error: emailError } = await sendEmail({
-            to: submission.member.email,
-            subject: `Docházka schválena: ${format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs })}`,
-            greeting: `Dobrý den, ${submission.member?.name || ''}`,
-            content: buildAttendanceApprovalEmail({ submission, records: approvedRecords || [] }),
-            salutation: 'S pozdravem,<br>EKV Portál'
-          });
-
-          if (emailError) throw emailError;
-        } catch (emailError) {
-          toast({
-            title: 'Schváleno, ale email se nepodařilo odeslat',
-            description: emailError.message,
-            variant: 'warning'
-          });
-        }
-      }
+      const notification = await sendAttendanceNotification({
+        submissionId: submission.id,
+        eventType: 'approved',
+        memberName: submission.member?.name || 'Pracovník',
+        monthDate: format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs }),
+        totalHours: submission.total_hours,
+      });
+      toast(notification?.success
+        ? { title: 'Schváleno', description: 'Zaměstnanec byl informován e-mailem.', className: 'bg-green-100 text-green-800' }
+        : { title: 'Docházka byla schválena', description: 'Stav je uložený, ale e-mail se nepodařilo potvrdit.', variant: 'warning' });
     } catch (error) {
       toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
     }
@@ -320,18 +248,21 @@ const AttendanceSubmissionsOptimized = () => {
     try {
       await rejectAttendanceSubmission(rejectDialog.id, rejectReason);
 
-      toast({ title: 'Zamítnuto', description: 'Uživatel byl notifikován.' });
       setRejectDialog(null);
       setRejectReason('');
       fetchSubmissions();
 
-      if (rejectDialog.member?.email) {
-        await sendEmail({
-          to: rejectDialog.member.email,
-          subject: `Docházka ZAMÍTNUTA: ${format(parseISO(rejectDialog.month_date), 'LLLL yyyy', { locale: cs })}`,
-          content: `<p>Vaše docházka byla zamítnuta.</p><p>Důvod: ${rejectReason}</p>`
-        });
-      }
+      const notification = await sendAttendanceNotification({
+        submissionId: rejectDialog.id,
+        eventType: 'rejected',
+        memberName: rejectDialog.member?.name || 'Pracovník',
+        monthDate: format(parseISO(rejectDialog.month_date), 'LLLL yyyy', { locale: cs }),
+        totalHours: rejectDialog.total_hours,
+        reason: rejectReason,
+      });
+      toast(notification?.success
+        ? { title: 'Zamítnuto', description: 'Zaměstnanec byl informován e-mailem.' }
+        : { title: 'Docházka byla zamítnuta', description: 'Stav je uložený, ale e-mail se nepodařilo potvrdit.', variant: 'warning' });
     } catch (error) {
       toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
     }
@@ -342,18 +273,21 @@ const AttendanceSubmissionsOptimized = () => {
     try {
       await returnAttendanceSubmissionForEdit(returnDialog.id, returnReason);
 
-      toast({ title: 'Vráceno k úpravě', description: 'Zaměstnanec může výkaz upravit a znovu odeslat.' });
       setReturnDialog(null);
       setReturnReason('');
       fetchSubmissions();
 
-      if (returnDialog.member?.email) {
-        await sendEmail({
-          to: returnDialog.member.email,
-          subject: `Docházka vrácena k úpravě: ${format(parseISO(returnDialog.month_date), 'LLLL yyyy', { locale: cs })}`,
-          content: `<p>Vaše docházka byla vrácena k úpravě.</p><p>Poznámka: ${returnReason || 'Bez poznámky.'}</p>`
-        });
-      }
+      const notification = await sendAttendanceNotification({
+        submissionId: returnDialog.id,
+        eventType: 'returned',
+        memberName: returnDialog.member?.name || 'Pracovník',
+        monthDate: format(parseISO(returnDialog.month_date), 'LLLL yyyy', { locale: cs }),
+        totalHours: returnDialog.total_hours,
+        reason: returnReason || 'Bez poznámky.',
+      });
+      toast(notification?.success
+        ? { title: 'Vráceno k úpravě', description: 'Zaměstnanec byl informován e-mailem.' }
+        : { title: 'Docházka byla vrácena k úpravě', description: 'Stav je uložený, ale e-mail se nepodařilo potvrdit.', variant: 'warning' });
     } catch (error) {
       toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
     }

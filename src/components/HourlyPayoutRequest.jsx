@@ -155,16 +155,23 @@ const HourlyPayoutRequest = ({ onPayoutRequested }) => {
       const requestBreakdown = request?.breakdown || monthData.breakdown;
 
       try {
-        await sendHourlyPayoutRequestEmail({
-          memberName: member?.name || 'Neznámý pracovník',
-          hours: requestHours,
-          projects: Object.keys(requestBreakdown || {}).join(', ') || 'Všechny projekty',
-          totalAmount: requestAmount,
-          createdAt: new Date().toISOString()
-        });
+        const [adminNotification, memberNotification] = await Promise.all([
+          sendHourlyPayoutRequestEmail({
+            requestId: request?.id,
+            memberName: member?.name || 'Neznámý pracovník',
+            hours: requestHours,
+            projects: Object.keys(requestBreakdown || {}).join(', ') || 'Všechny projekty',
+            totalAmount: requestAmount,
+            createdAt: new Date().toISOString(),
+          }),
+          sendPayoutRequestEmail({ payoutId: request?.id, payoutType: 'hourly', memberId, amount: requestAmount }),
+        ]);
 
-        await sendPayoutRequestEmail({ memberId, amount: requestAmount });
-        toast({ title: 'Žádost odeslána', description: 'Žádost byla předána ke schválení a emaily byly odeslány.' });
+        if (!adminNotification?.success || !memberNotification?.success) {
+          toast({ title: 'Žádost byla vytvořena', description: 'Zápis je uložený, ale některý e-mail se nepodařilo potvrdit.', variant: 'warning' });
+        } else {
+          toast({ title: 'Žádost odeslána', description: 'Žádost byla předána ke schválení a e-maily byly odeslány.' });
+        }
       } catch (emailError) {
         console.error('Hourly payout notification failed:', emailError);
         toast({

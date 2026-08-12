@@ -98,5 +98,8 @@ verify_jwt = true
 [functions.send-admin-payout-notification]
 verify_jwt = true
 
+[functions.send-attendance-notification]
+verify_jwt = true
+
 [functions.send-payout-notification]
 verify_jwt = true

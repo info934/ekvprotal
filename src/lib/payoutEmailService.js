@@ -11,6 +11,7 @@ const invokeEmailFunction = async (functionName, body) => {
 
 export const sendPayoutNotification = async ({
   payoutId,
+  payoutType = 'task',
   memberId,
   status,
   amount,
@@ -47,31 +48,39 @@ export const sendPayoutNotification = async ({
     }
 
     const templateData = {
-      memberName: member.name || 'Pracovnik',
+      memberName: member.name || 'Pracovník',
       amount: amount || 0,
       reason: reason || '',
       approved_without_invoice,
       action: action || status,
     };
 
-    let subject = 'Aktualizace stavu vyplaty';
+    let subject = 'Aktualizace stavu výplaty';
     let htmlContent = '';
 
     if (templates[status]) {
       htmlContent = templates[status](templateData);
       switch (status) {
-        case 'request_created': subject = 'Nova zadost o vyplatu prijata'; break;
-        case 'approved': subject = 'Vase zadost o vyplatu byla schvalena'; break;
-        case 'rejected': subject = 'Vase zadost o vyplatu byla zamitnuta'; break;
-        case 'invoice_uploaded': subject = 'Faktura uspesne nahrana'; break;
-        case 'paid': subject = 'Vyplata odeslana na vas ucet'; break;
-        case 'completed': subject = 'Vyplata uzavrena'; break;
+        case 'request_created': subject = 'Nová žádost o výplatu přijata'; break;
+        case 'approved': subject = 'Vaše žádost o výplatu byla schválena'; break;
+        case 'rejected': subject = 'Vaše žádost o výplatu byla zamítnuta'; break;
+        case 'invoice_uploaded': subject = 'Faktura úspěšně nahrána'; break;
+        case 'paid': subject = 'Výplata odeslána na váš účet'; break;
+        case 'completed': subject = 'Výplata uzavřena'; break;
       }
     } else {
       return { success: false, error: 'Unknown status' };
     }
 
-    const data = await invokeEmailFunction('send-payout-email', { payoutId, to: member.email, subject, htmlContent });
+    if (!payoutId) return { success: false, error: 'Chybí identifikace výplaty.' };
+    const data = await invokeEmailFunction('send-payout-email', {
+      payoutId,
+      payoutType,
+      eventType: status,
+      to: member.email,
+      subject,
+      htmlContent,
+    });
     return { success: true, data };
   } catch (error) {
     console.error('Error in sendPayoutNotification:', error);
@@ -79,11 +88,17 @@ export const sendPayoutNotification = async ({
   }
 };
 
-export const sendAdminPayoutNotification = async ({ memberName, amount, action }) => {
+export const sendAdminPayoutNotification = async ({ memberName, amount, action, entityId, entityType = 'payouts', eventType = 'admin_notification' }) => {
   try {
     const htmlContent = templates.admin_notification({ memberName, amount, action });
-    const subject = `[Admin] Vyplaty: ${action} - ${memberName}`;
-    const data = await invokeEmailFunction('send-admin-payout-notification', { subject, htmlContent });
+    const subject = `[Admin] Výplaty: ${action} - ${memberName}`;
+    const data = await invokeEmailFunction('send-admin-payout-notification', {
+      subject,
+      htmlContent,
+      entityId,
+      entityType,
+      eventType,
+    });
     return { success: true, data };
   } catch (error) {
     console.error('Error in sendAdminPayoutNotification:', error);
