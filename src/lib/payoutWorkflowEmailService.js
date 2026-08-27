@@ -103,7 +103,13 @@ export const sendPayoutCreatedEmail = async (payout) => {
     
     const htmlContent = createEmailTemplate(subject, content);
     
-    const adminData = await invokeEmailFunction('send-admin-payout-notification', { subject, htmlContent });
+    const adminData = await invokeEmailFunction('send-admin-payout-notification', {
+      subject,
+      htmlContent,
+      entityId: payout.id,
+      entityType: 'payouts',
+      eventType: 'request_created',
+    });
 
     let memberData = null;
     if (memberEmail) {
@@ -388,7 +394,13 @@ export const sendInvoiceUploadedNotification = async (payout) => {
     
     const htmlContent = createEmailTemplate(subject, content);
     
-    const data = await invokeEmailFunction('send-admin-payout-notification', { subject, htmlContent });
+    const data = await invokeEmailFunction('send-admin-payout-notification', {
+      subject,
+      htmlContent,
+      entityId: payout.id,
+      entityType: 'payouts',
+      eventType: 'invoice_uploaded',
+    });
     
     console.log('[PayoutEmail] Invoice uploaded notification sent successfully:', {
       payoutId: payout.id,
