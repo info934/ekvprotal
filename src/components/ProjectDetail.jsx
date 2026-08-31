@@ -31,6 +31,7 @@ import {
     calculateProjectMemberNetReward,
     calculateProjectMemberReward,
     calculateProjectRewardPool,
+    getProjectFinancialHealthInputs,
     normalizeProjectMemberRewardSummary,
     sumProjectCostsForMember,
     sumUnassignedProjectCosts,
@@ -907,6 +908,7 @@ const ProjectDetail = () => {
     // payouts reduce liquidity, but must not change the base used by existing
     // percentage assignments (the database validator follows the same rule).
     const rewardCalculationBudget = financials.rewardBaseBudget ?? financials.remainingAfterCosts ?? financials.teamBudget ?? 0;
+    const projectFinancialHealth = getProjectFinancialHealthInputs(financials);
 
     const financeDerivedRows = useMemo(() => {
         if (!canViewFinance) return [];
@@ -1062,10 +1064,7 @@ const ProjectDetail = () => {
                         )}
                         {canViewFinance && (
                             <FinancialHealthAlert
-                                baseAmount={financials.teamBudget}
-                                remainingAmount={financials.teamBudgetAfterPaidPayouts ?? financials.remainingAfterCosts}
-                                availableAmount={financials.availableForPayout}
-                                committedAmount={financials.teamRewards}
+                                {...projectFinancialHealth}
                             />
                         )}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

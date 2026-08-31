@@ -358,3 +358,16 @@ export const assessFinancialHealth = ({
   if (reservePercent < minimumReservePercent) return { status: 'warning', base, remaining, available, committed, reservePercent, overallocation };
   return { status: 'healthy', base, remaining, available, committed, reservePercent, overallocation };
 };
+
+export const getProjectFinancialHealthInputs = (financials = {}) => {
+  const baseAmount = toAmount(financials.teamBudget);
+  const remainingAmount = toAmount(
+    financials.rewardBaseBudget ?? financials.remainingAfterCosts ?? baseAmount
+  );
+  const committedAmount = Math.max(0, toAmount(financials.teamRewards));
+  const availableAmount = toAmount(
+    financials.unallocatedBudget ?? (remainingAmount - committedAmount)
+  );
+
+  return { baseAmount, remainingAmount, availableAmount, committedAmount };
+};

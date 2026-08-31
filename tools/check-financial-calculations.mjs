@@ -7,6 +7,7 @@ import {
 } from '../src/lib/crmItemPayloads.js';
 import {
   assessFinancialHealth,
+  getProjectFinancialHealthInputs,
   calculateLaborFunding,
   calculateMemberRewardAfterLabor,
   calculateRewardAvailability,
@@ -252,6 +253,19 @@ assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 20000,
 assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 10000, availableAmount: 0 }).status, 'critical');
 assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 9000, availableAmount: 9000 }).status, 'warning');
 assert.equal(assessFinancialHealth({ baseAmount: 100000, remainingAmount: 30000, availableAmount: 30000 }).status, 'healthy');
+
+const paidProjectRewardHealthInputs = getProjectFinancialHealthInputs({
+  teamBudget: 710951,
+  rewardBaseBudget: 659151,
+  teamRewards: 643126.47,
+  unallocatedBudget: 16024.53,
+  teamBudgetAfterPaidPayouts: 609151,
+  paidPayouts: 50000,
+});
+const paidProjectRewardHealth = assessFinancialHealth(paidProjectRewardHealthInputs);
+assertMoney(paidProjectRewardHealth.overallocation, 0, 'paid project rewards are not counted twice in health checks');
+assertMoney(paidProjectRewardHealth.available, 16024.53, 'project health reports the true unallocated reward reserve');
+assert.equal(paidProjectRewardHealth.status, 'warning', 'low reserve is reported instead of false reward overallocation');
 
 const sponsoredLabor = calculateLaborFunding({ hours: 40, hourlyRate: 500, fundingMode: 'member_reward', sponsorPercent: 100 });
 assertMoney(sponsoredLabor.payAmount, 20000, 'sponsored worker payout');
