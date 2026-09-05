@@ -9,7 +9,8 @@ import MemberDialog from '@/components/MemberDialog';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { differenceInDays, parseISO } from 'date-fns';
+import { certificationState, matchesCertification } from '@/lib/memberDirectory';
+import { isRecordActivation } from '@/lib/listWorkspaceState';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,34 +20,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 
-const getCertificationStatus = (certifications) => {
-    if (!certifications || certifications.length === 0) {
-        return { icon: null, color: '', tooltip: 'Žádné certifikace' };
-    }
-    let soonToExpire = false;
-    let expired = false;
-
-    for (const cert of certifications) {
-        if (cert.expiry_date) {
-            const daysUntilExpiry = differenceInDays(parseISO(cert.expiry_date), new Date());
-            if (daysUntilExpiry < 0) {
-                expired = true;
-                break;
-            }
-            if (daysUntilExpiry <= 30) {
-                soonToExpire = true;
-            }
-        }
-    }
-    if (expired) {
-        return { icon: AlertTriangle, color: 'text-red-500', tooltip: 'Některé certifikace jsou expirované' };
-    }
-    if (soonToExpire) {
-        return { icon: AlertTriangle, color: 'text-yellow-500', tooltip: 'Některé certifikace brzy expirují' };
-    }
-    return { icon: CheckCircle, color: 'text-green-500', tooltip: 'Všechny certifikace jsou platné' };
-};
-
+const getCertificationStatus = certifications => ({
+ none: {icon:null,color:'',tooltip:'Žádné certifikace'},
+ expired: {icon:AlertTriangle,color:'text-red-600',tooltip:'Některé certifikace jsou expirované'},
+ soon: {icon:AlertTriangle,color:'text-amber-600',tooltip:'Certifikace končí do 30 dnů'},
+ valid: {icon:CheckCircle,color:'text-green-600',tooltip:'Všechny certifikace jsou platné'},
+})[certificationState(certifications)];
 
 const Members = () => {
     const { toast } = useToast();
@@ -61,6 +40,8 @@ const Members = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
     const [certificationFilter, setCertificationFilter] = useState('all');
+    const [deleteCandidate,setDeleteCandidate]=useState(null);
+    const [deleting,setDeleting]=useState(false);
 
     const canEdit = hasPermission('members', 'can_edit');
     const canAdmin = hasPermission('members', 'can_admin');
@@ -186,11 +167,15 @@ const Members = () => {
 
     const handleDeleteMember = async (id) => {
         if (!canAdmin) return;
+        if(deleting)return;
+        setDeleting(true);
         const { error } = await supabase.from('members').delete().eq('id', id);
+        setDeleting(false);
         if (error) {
             toast({ title: "Chyba při mazání zaměstnance", variant: "destructive" });
         } else {
             toast({ title: "Zaměstnanec smazán" });
+            setDeleteCandidate(null);
             fetchMembersAndRewards();
         }
     };
@@ -208,15 +193,9 @@ const Members = () => {
         const memberRole = member.member_roles?.name || 'Bez pozice';
         const matchesRole = roleFilter === 'all' || memberRole === roleFilter;
 
-        const matchesCertification = (() => {
-            if (certificationFilter === 'all') return true;
-            const certStatus = getCertificationStatus(member.member_certifications);
-            return certificationFilter === 'valid' ? certStatus.icon === CheckCircle :
-                certificationFilter === 'expired' ? certStatus.icon === AlertTriangle :
-                    certificationFilter === 'none' ? !certStatus.icon : true;
-        })();
+        const matchesCert = matchesCertification(member.member_certifications,certificationFilter);
 
-        return matchesSearch && matchesRole && matchesCertification;
+        return matchesSearch && matchesRole && matchesCert;
     });
 
     const totalMembers = members.length;
@@ -224,8 +203,7 @@ const Members = () => {
     const totalPayouts = Object.values(payouts).reduce((sum, payout) => sum + payout, 0);
     const pendingPayouts = totalRewards - totalPayouts;
     const membersWithExpiredCerts = members.filter(member => {
-        const certStatus = getCertificationStatus(member.member_certifications);
-        return certStatus.icon === AlertTriangle;
+        return certificationState(member.member_certifications) === 'expired';
     }).length;
     const roleCounts = React.useMemo(() => {
         return members.reduce((acc, member) => {
@@ -235,7 +213,7 @@ const Members = () => {
         }, {});
     }, [members]);
     const uniqueRolesCount = Object.keys(roleCounts).filter((role) => role !== 'Bez pozice').length;
-    const membersWithoutRole = roleCounts['Bez pozice'] || 0;
+
 
     const renderMemberFinancials = (memberId) => {
         if (!canViewFinance) return { totalReward: 0, balance: 0 };
@@ -255,9 +233,11 @@ const Members = () => {
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                whileHover={{ y: -4, scale: 1.02 }}
-                className="group bg-white border rounded-xl p-6 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all duration-200"
-                onClick={() => navigate(`/members/${member.id}`)}
+                whileHover={{ y: -2 }}
+                className="group bg-white border rounded-xl p-4 cursor-pointer hover:shadow-md hover:border-primary/50 transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                role="link" tabIndex={0} aria-label={`Otevřít kartu ${member.name}`}
+                onKeyDown={event=>{if(isRecordActivation(event)){event.preventDefault();navigate(`/members/${member.id}`);}}}
+                onClick={event=>{if(isRecordActivation(event))navigate(`/members/${member.id}`);}}
             >
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex-1 min-w-0">
@@ -276,7 +256,7 @@ const Members = () => {
                     </div>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" aria-label={`Akce pro zamestnance ${member.name || 'bez jmena'}`} className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="sm" aria-label={`Akce pro zamestnance ${member.name || 'bez jmena'}`} className="h-9 w-9 p-0 text-slate-500 hover:text-slate-900" onClick={(e) => e.stopPropagation()}>
                                 <MoreHorizontal className="h-4 w-4" />
                             </Button>
                         </DropdownMenuTrigger>
@@ -293,7 +273,7 @@ const Members = () => {
                             )}
                             {canAdmin && (
                                 <DropdownMenuItem
-                                    onClick={() => handleDeleteMember(member.id)}
+                                    onClick={() => setDeleteCandidate(member)}
                                     className="text-red-600"
                                 >
                                     <Trash2 className="h-4 w-4 mr-2" />
@@ -340,8 +320,8 @@ const Members = () => {
     };
 
     return (
-        <div className="app-page">
-            <div className="space-y-6">
+        <div className="app-page member-directory">
+            <div className="space-y-4">
                 <PageHeader
                     icon={Users}
                     title="Zaměstnanci"
@@ -369,7 +349,7 @@ const Members = () => {
                     }
                 />
                 {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="directory-metrics grid grid-cols-2 lg:grid-cols-4 gap-3">
                     <Card>
                         <CardContent className="p-4">
                             <div className="flex items-center gap-3">
@@ -427,59 +407,15 @@ const Members = () => {
                     </Card>
                 </div>
 
-                {isSuperUser && (
-                    <Card className="overflow-hidden">
-                        <CardHeader className="border-b bg-slate-50/70 pb-4">
-                            <CardTitle className="text-base">Pozice a kategorie zaměstnanců</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4">
-                            <div className="flex flex-wrap gap-2">
-                                <Button
-                                    variant={roleFilter === 'all' ? 'default' : 'outline'}
-                                    size="sm"
-                                    onClick={() => setRoleFilter('all')}
-                                >
-                                    Všechny pozice
-                                    <Badge variant="secondary" className="ml-2">{totalMembers}</Badge>
-                                </Button>
-                                {Object.entries(roleCounts)
-                                    .filter(([role]) => role !== 'Bez pozice')
-                                    .sort(([a], [b]) => a.localeCompare(b, 'cs-CZ'))
-                                    .map(([role, count]) => (
-                                        <Button
-                                            key={role}
-                                            variant={roleFilter === role ? 'default' : 'outline'}
-                                            size="sm"
-                                            onClick={() => setRoleFilter(roleFilter === role ? 'all' : role)}
-                                        >
-                                            {role}
-                                            <Badge variant="secondary" className="ml-2">{count}</Badge>
-                                        </Button>
-                                    ))}
-                                {membersWithoutRole > 0 && (
-                                    <Button
-                                        variant={roleFilter === 'Bez pozice' ? 'default' : 'outline'}
-                                        size="sm"
-                                        onClick={() => setRoleFilter(roleFilter === 'Bez pozice' ? 'all' : 'Bez pozice')}
-                                    >
-                                        Bez pozice
-                                        <Badge variant="secondary" className="ml-2">{membersWithoutRole}</Badge>
-                                    </Button>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
                 {/* Filters and Search - pouze pro super uživatele */}
                 {isSuperUser && (
                     <Card>
-                        <CardContent className="p-6">
+                        <CardContent className="p-3">
                             <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
                                 <div className="relative flex-1 w-full max-w-md">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                                     <Input
-                                        placeholder="Hledat zaměstnance..."
+                                        aria-label="Hledat zaměstnance" placeholder="Jméno nebo e-mail…"
                                         className="pl-10"
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -487,14 +423,15 @@ const Members = () => {
                                 </div>
 
                                 <div className="flex flex-wrap gap-2 items-center">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
                                         <Filter className="h-4 w-4 text-muted-foreground" />
                                         <Select value={roleFilter} onValueChange={setRoleFilter}>
-                                            <SelectTrigger className="w-[160px]">
+                                            <SelectTrigger aria-label="Pozice zaměstnance" className="w-[160px]">
                                                 <SelectValue placeholder="Všechny pozice" />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="all">Všechny pozice</SelectItem>
+                                                <SelectItem value="Bez pozice">Bez pozice ({roleCounts['Bez pozice']||0})</SelectItem>
                                                 {Array.from(new Set(members.map(m => m.member_roles?.name).filter(Boolean))).map(role => (
                                                     <SelectItem key={role} value={role}>{role}</SelectItem>
                                                 ))}
@@ -502,13 +439,14 @@ const Members = () => {
                                         </Select>
 
                                         <Select value={certificationFilter} onValueChange={setCertificationFilter}>
-                                            <SelectTrigger className="w-[180px]">
+                                            <SelectTrigger aria-label="Stav certifikací" className="w-[180px]">
                                                 <SelectValue placeholder="Všechny certifikace" />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="all">Všechny certifikace</SelectItem>
                                                 <SelectItem value="valid">Platné</SelectItem>
                                                 <SelectItem value="expired">Expirované</SelectItem>
+                                                <SelectItem value="soon">Končí do 30 dnů</SelectItem>
                                                 <SelectItem value="none">Bez certifikací</SelectItem>
                                             </SelectContent>
                                         </Select>
@@ -518,7 +456,7 @@ const Members = () => {
                                         <Button
                                             variant={view === 'grid' ? 'default' : 'outline'}
                                             size="sm"
-                                            onClick={() => setView('grid')}
+                                            aria-pressed={view==='grid'} onClick={() => setView('grid')}
                                         >
                                             <LayoutGrid className="w-4 h-4 mr-2" />
                                             Karty
@@ -526,7 +464,7 @@ const Members = () => {
                                         <Button
                                             variant={view === 'table' ? 'default' : 'outline'}
                                             size="sm"
-                                            onClick={() => setView('table')}
+                                            aria-pressed={view==='table'} onClick={() => setView('table')}
                                         >
                                             <Rows className="w-4 h-4 mr-2" />
                                             Tabulka
@@ -538,6 +476,7 @@ const Members = () => {
                     </Card>
                 )}
 
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500"><span role="status">Zobrazeno {filteredMembers.length} z {members.length} zaměstnanců</span>{(searchTerm||roleFilter!=='all'||certificationFilter!=='all')&&<Button variant="ghost" size="sm" onClick={()=>{setSearchTerm('');setRoleFilter('all');setCertificationFilter('all');}}>Zrušit filtry</Button>}</div>
                 {/* Content */}
                 {filteredMembers.length > 0 ? (
                     view === 'grid' ? (
@@ -574,7 +513,9 @@ const Members = () => {
                                                     <TableRow
                                                         key={member.id}
                                                         className="cursor-pointer hover:bg-muted/50 transition-colors group"
-                                                        onClick={(e) => { e.stopPropagation(); navigate(`/members/${member.id}`);}}
+                                                        tabIndex={0} aria-label={`Otevřít kartu ${member.name}`}
+                                                        onKeyDown={event=>{if(isRecordActivation(event)){event.preventDefault();navigate(`/members/${member.id}`);}}}
+                                                        onClick={event=>{if(isRecordActivation(event))navigate(`/members/${member.id}`);}}
                                                     >
                                                         <TableCell>
                                                             <div className="font-medium">{member.name}</div>
@@ -608,7 +549,7 @@ const Members = () => {
                                                         <TableCell onClick={(e) => e.stopPropagation()}>
                                                             <DropdownMenu>
                                                                 <DropdownMenuTrigger asChild>
-                                                                    <Button variant="ghost" size="sm" aria-label={`Akce pro zamestnance ${member.name || 'bez jmena'}`} className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    <Button variant="ghost" size="sm" aria-label={`Akce pro zamestnance ${member.name || 'bez jmena'}`} className="h-9 w-9 p-0 text-slate-500 hover:text-slate-900">
                                                                         <MoreHorizontal className="h-4 w-4" />
                                                                     </Button>
                                                                 </DropdownMenuTrigger>
@@ -625,7 +566,7 @@ const Members = () => {
                                                                     )}
                                                                     {canAdmin && (
                                                                         <DropdownMenuItem
-                                                                            onClick={(e) => { e.stopPropagation(); handleDeleteMember(member.id); }}
+                                                                            onClick={(e) => { e.stopPropagation(); setDeleteCandidate(member); }}
                                                                             className="text-red-600"
                                                                         >
                                                                             <Trash2 className="h-4 w-4 mr-2" />
@@ -668,6 +609,7 @@ const Members = () => {
                     </motion.div>
                 )}
 
+                <AlertDialog open={Boolean(deleteCandidate)} onOpenChange={open=>{if(!open&&!deleting)setDeleteCandidate(null);}}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Smazat zaměstnance {deleteCandidate?.name}?</AlertDialogTitle><AlertDialogDescription>Odstranění karty nelze vrátit. Pokud chcete pouze ukončit přístup, upravte účet místo mazání karty.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>Ponechat zaměstnance</AlertDialogCancel><Button variant="destructive" disabled={deleting} onClick={()=>handleDeleteMember(deleteCandidate.id)}>{deleting?'Mažu…':'Smazat zaměstnance'}</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
                 <MemberDialog
                     isOpen={isDialogOpen}
                     onClose={() => { setIsDialogOpen(false); setEditingMember(null); }}

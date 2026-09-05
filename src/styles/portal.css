@@ -160,3 +160,12 @@ button:focus-visible, a:focus-visible { outline: 2px solid #1469e8; outline-offs
 .compact-workspace .portal-page-heading h1 { font-size: 1.625rem; }
 .compact-workspace .portal-page-heading p { margin-top: 0.25rem; font-size: 0.875rem; line-height: 1.4; }
 .compact-workspace.app-page, .compact-workspace > div > .app-page { padding-top: 1rem; }
+
+/* Directory summaries stay compact on touch screens, with wrapping labels. */
+.member-directory .directory-metrics > div { min-width: 0; }
+.member-directory .directory-metrics .p-4 { padding: 12px; }
+.member-directory .directory-metrics .text-2xl { font-size: 1.25rem; overflow-wrap: anywhere; }
+@media (max-width: 639px) {
+  .member-directory .directory-metrics .p-2 { display: none; }
+  .member-directory .directory-metrics .text-sm { font-size: .75rem; }
+}
