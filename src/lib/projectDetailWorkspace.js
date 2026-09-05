@@ -31,7 +31,7 @@ export function projectTaskOverview(tasks, now = new Date()) {
 
 export const projectTaskStatus = task => String(task?.status || '').trim() || 'Bez stavu';
 
-export function projectTaskStatuses(tasks, defaults = ['Nové', 'V řešení', 'Hotovo', 'Zrušeno']) {
+export function projectTaskStatuses(tasks, defaults = ['Nové', 'V řešení', 'Blokováno', 'Hotovo', 'Zrušeno']) {
   return [...new Set([...defaults, ...tasks.map(projectTaskStatus)])];
 }
 

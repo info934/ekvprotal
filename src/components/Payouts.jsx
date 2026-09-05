@@ -338,20 +338,20 @@ const Payouts = () => {
   };
 
   return (
-    <div className="pb-12">
+    <div className="pb-12 compact-workspace">
       <div className="">
-        <div className="app-page !pb-5">
+        <div className="app-page !pb-3">
           <PageHeader
             icon={Wallet}
             title={canAdmin ? 'Výplaty a odměny' : 'Moje výplaty'}
             description={canAdmin ? 'Od podané žádosti přes kontrolu dokladů až k evidenci úhrady.' : 'Vaše odměny, stav žádostí a historie vyplacení.'}
             actions={
               <>
-                <Button variant="outline" onClick={fetchPayouts} className="bg-white shadow-sm border-slate-200 ">
-                  <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />Aktualizovat
+                <Button variant="outline" aria-label="Aktualizovat výplaty" onClick={fetchPayouts} className="bg-white border-slate-200">
+                  <RefreshCw className={cn("w-4 h-4 sm:mr-2", loading && "animate-spin")} /><span className="hidden sm:inline">Aktualizovat</span>
                 </Button>
                 {canCreateOwnPayout && (
-                  <Button onClick={() => navigate('/payouts/new')} className="shadow-sm w-full sm:w-auto">
+                  <Button onClick={() => navigate('/payouts/new')} className="shadow-sm flex-1 sm:flex-none">
                     <Plus className="w-4 h-4 mr-2" />Nová úkolová žádost
                   </Button>
                 )}
@@ -363,39 +363,21 @@ const Payouts = () => {
 
       <div className="app-page !pt-0">
         <p className="mb-3 text-xs text-slate-500">{canAdmin ? 'Všechny dostupné výplaty firmy' : 'Pouze vaše výplaty'} · celá historie · částky podle evidence odměn</p>
-        <FinanceMetricStrip className="grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4" metrics={[
+        <FinanceMetricStrip className="grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4 [&>div]:py-2" metrics={[
           { label: 'Otevřené žádosti', value: count(total('activeCount')), detail: <FinanceAmount value={total('activeAmount')} exact />, tone: 'neutral', icon: Target },
-          { label: 'Ke schválení', value: count(total('pendingCount')), detail: 'Čekají na rozhodnutí', tone: 'warning', icon: Timer },
+          { label: 'Ke schválení', value: count(total('pendingCount')), detail: canAdmin ? <div className="flex flex-wrap gap-x-3 gap-y-1"><Link className="inline-flex min-h-8 items-center underline underline-offset-2" to="/payouts?tab=fixed&status=pending">Úkolové ({count(stats.fixed.pendingCount)})</Link><Link className="inline-flex min-h-8 items-center underline underline-offset-2" to="/payouts?tab=hourly_admin&status=pending">Hodinové ({count(stats.hourly.pendingCount)})</Link></div> : 'Čekají na rozhodnutí', tone: 'warning', icon: Timer },
           { label: 'K evidenci úhrady', value: count(total('readyToPayCount')), detail: `Čekají na fakturu: ${count(total('awaitingInvoiceCount'))}`, tone: 'plan', icon: FileText },
           { label: 'Vyplaceno celkem', value: <FinanceAmount value={total('paidAmount')} exact />, detail: `Uzavřené žádosti: ${count(total('paidCount'))}`, tone: 'positive', icon: PiggyBank },
         ]} />
         {(workspace.fixed?.error || workspace.hourly?.error) && <div role="alert" className="mt-4 flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"><AlertCircle className="mt-0.5 h-5 w-5 shrink-0" /><div><strong>Přehled není úplný</strong>{workspace.fixed?.error && <p>Úkolové odměny: {workspace.fixed.error}</p>}{workspace.hourly?.error && <p>Hodinové odměny: {workspace.hourly.error}</p>}<p className="mt-1">Neúplné souhrny se nezobrazují jako nula. Zkuste přehled aktualizovat.</p></div></div>}
-        {canAdmin && <div className="mt-4 flex flex-wrap gap-2"><Button asChild variant="outline"><Link to="/payouts?tab=fixed&status=pending">Úkolové ke schválení ({count(stats.fixed.pendingCount)})</Link></Button><Button asChild variant="outline"><Link to="/payouts?tab=hourly_admin&status=pending">Hodinové ke schválení ({count(stats.hourly.pendingCount)})</Link></Button></div>}
 
-        <details className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-700">Jak probíhá výplata</summary>
-          <div className="grid divide-y divide-slate-100 border-t md:grid-cols-4 md:divide-x md:divide-y-0">
-            {[
-              ['1', 'Žádost', 'Zaměstnanec vytvoří úkolovou nebo hodinovou žádost.'],
-              ['2', 'Schválení', 'Administrátor žádost schválí nebo zamítne.'],
-              ['3', 'Faktura', 'Po schválení se nahraje faktura, pokud není výjimka.'],
-              ['4', 'Vyplaceno', 'Po skutečné úhradě administrátor zaznamená vyplacení.']
-            ].map(([step, title, description]) => (
-              <div key={step} className="flex gap-3 p-4">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-700">{step}</div>
-                <div>
-                  <div className="text-sm font-semibold text-slate-950">{title}</div>
-                  <div className="mt-1 text-sm leading-5 text-slate-500">{description}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </details>
+
+
 
         <Tabs value={activeTab} onValueChange={tab => setSearchParams(current => { const next = new URLSearchParams(current); next.set('tab', tab); return next; })} className="w-full">
-          <div className="mt-6 overflow-x-auto border-b border-slate-200"><TabsList aria-label="Agendy výplat" className="h-12 min-w-full justify-start border-0 sm:justify-start">{tabs.map(tab => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} className="h-12 gap-2 px-4"><Icon className="h-4 w-4" />{tab.label}</TabsTrigger>; })}</TabsList></div>
+          <div className="mt-3 overflow-x-auto border-b border-slate-200"><TabsList aria-label="Agendy výplat" className="h-12 min-w-full justify-start border-0 sm:justify-start">{tabs.map(tab => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} className="h-12 gap-2 px-4"><Icon className="h-4 w-4" />{tab.label}</TabsTrigger>; })}</TabsList></div>
 
-          <TabsContent value="fixed" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <TabsContent value="fixed" className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <PayoutPanel
               title="Úkolové odměny"
               description="Odměny z projekcí a realizací, jejich doklady a stav vyplacení."
@@ -481,6 +463,25 @@ const Payouts = () => {
           </TabsContent>
           {canAdmin && <TabsContent value="hourly_admin" className="space-y-8 animate-in fade-in-slide-in-from-bottom-4 duration-500"><HourlyPayoutRequestsAdmin /></TabsContent>}
         </Tabs>
+        <details className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-700">Jak probíhá výplata</summary>
+          <div className="grid divide-y divide-slate-100 border-t md:grid-cols-4 md:divide-x md:divide-y-0">
+            {[
+              ['1', 'Žádost', 'Zaměstnanec vytvoří úkolovou nebo hodinovou žádost.'],
+              ['2', 'Schválení', 'Administrátor žádost schválí nebo zamítne.'],
+              ['3', 'Faktura', 'Po schválení se nahraje faktura, pokud není výjimka.'],
+              ['4', 'Vyplaceno', 'Po skutečné úhradě administrátor zaznamená vyplacení.']
+            ].map(([step, title, description]) => (
+              <div key={step} className="flex gap-3 p-4">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-700">{step}</div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-950">{title}</div>
+                  <div className="mt-1 text-sm leading-5 text-slate-500">{description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
       </div>
       <Dialog open={Boolean(decision)} onOpenChange={open => { if (!open && !processing) setDecision(null); }}><FormDialogContent size="md"><form onSubmit={confirmDecision}><FormDialogHeader title={decision?.status === 'paid' ? 'Zaznamenat vyplacení' : 'Zamítnout žádost'} description={decision?.status === 'paid' ? 'Potvrďte, že peníze již byly skutečně uhrazeny. Tato akce neodesílá bankovní platbu.' : 'Žadatel uvidí důvod rozhodnutí.'} /><FormDialogBody><p className="text-sm">{decision?.payout?.members?.name} · <FinanceAmount value={decision?.payout?.amount} exact /></p>{decision?.status === 'rejected' && <div className="mt-4 space-y-2"><label htmlFor="payout-decision-reason" className="text-sm font-medium">Důvod zamítnutí</label><Textarea id="payout-decision-reason" value={decisionNote} onChange={event => setDecisionNote(event.target.value)} required maxLength={500} disabled={processing} /></div>}{decisionError && <p role="alert" className="mt-3 text-sm text-red-700">{decisionError}</p>}</FormDialogBody><FormDialogFooter><Button type="button" variant="outline" disabled={processing} onClick={() => setDecision(null)}>Zpět</Button><Button type="submit" disabled={processing}>{processing ? 'Ukládám…' : decision?.status === 'paid' ? 'Potvrdit vyplacení' : 'Zamítnout s odůvodněním'}</Button></FormDialogFooter></form></FormDialogContent></Dialog>
       <PayoutDialog isOpen={isDialogOpen} onClose={() => { setIsDialogOpen(false); setEditingPayout(null); }} onSave={handleSavePayout} onDelete={handleDelete} payout={editingPayout} />

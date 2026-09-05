@@ -65,6 +65,7 @@ const taskStatusConfig = {
     icon: AlertCircle,
     variant: 'warning'
   },
+  'Blokováno': { color: 'bg-red-100 text-red-800', dot: 'bg-red-500', titleColor: 'text-red-700', icon: AlertCircle, variant: 'destructive' },
   'Hotovo': { 
     color: 'bg-green-100 text-green-800', 
     dot: 'bg-green-500', 
@@ -573,6 +574,7 @@ const Tasks = () => {
                       <SelectItem value="all">Všechny stavy</SelectItem>
                       <SelectItem value="Nové">Nové</SelectItem>
                       <SelectItem value="V řešení">V řešení</SelectItem>
+                      <SelectItem value="Blokováno">Blokováno</SelectItem>
                       <SelectItem value="Hotovo">Hotovo</SelectItem>
                       <SelectItem value="Zrušeno">Zrušeno</SelectItem>
                     </SelectContent>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart3, RefreshCw, AlertTriangle, FileText, Download, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import {
 import { cn } from '@/lib/utils';
 import PageHeader from '@/components/ui/page-header';
 import { toSafeCsv } from '@/lib/operationsHelpers';
+import { fetchReportRows } from '@/lib/reportData';
 
 const ReportCard = ({ report, onDelete, onDownload }) => {
   const { hasPermission, isSuperUser } = useAuth();
@@ -81,10 +82,12 @@ const Reports = () => {
   const [loadError, setLoadError] = useState('');
   const { toast } = useToast();
   const { hasPermission, isSuperUser } = useAuth();
-  const canViewReports = isSuperUser || hasPermission('reports', 'can_admin');
+  const requestId = useRef(0);
+  const canViewReports = isSuperUser || hasPermission('reports', 'can_read');
   const canExportProjects = canViewReports && (isSuperUser || hasPermission('projects', 'can_read'));
 
   const fetchReports = useCallback(async () => {
+    const currentRequest = ++requestId.current;
     if (!canViewReports) {
       setReports([]);
       setLoading(false);
@@ -93,22 +96,21 @@ const Reports = () => {
 
     setLoading(true);
     setLoadError('');
-    const { data, error } = await supabase
-      .from('reports')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
+    try {
+      const data = await fetchReportRows(() => supabase.from('reports').select('*')
+        .order('created_at', { ascending: false }).order('id'));
+      if (currentRequest === requestId.current) setReports(data);
+    } catch (error) {
+      if (currentRequest !== requestId.current) return;
       setLoadError(error.message);
       toast({
         title: 'Chyba při načítání reportů',
         description: error.message,
         variant: 'destructive',
       });
-    } else {
-      setReports(data);
+    } finally {
+      if (currentRequest === requestId.current) setLoading(false);
     }
-    setLoading(false);
   }, [canViewReports, toast]);
 
   useEffect(() => {
@@ -119,16 +121,9 @@ const Reports = () => {
     if (!canExportProjects || exporting) return;
     setExporting(true);
     try {
-      const projects = [];
-      const pageSize = 500;
-      for (let offset = 0; ; offset += pageSize) {
-        const { data, error } = await supabase.from('projects')
+      const projects = await fetchReportRows(() => supabase.from('projects')
           .select('id, code, name, status, start_date, completion_date')
-          .order('id').range(offset, offset + pageSize - 1);
-        if (error) throw error;
-        projects.push(...(data || []));
-        if ((data || []).length < pageSize) break;
-      }
+          .order('id'));
       const createdAt = new Date();
       const rows = [
         ['Přehled projektů EKV', format(createdAt, 'd. M. yyyy HH:mm')],
@@ -155,7 +150,7 @@ const Reports = () => {
   };
 
   const handleDeleteReport = async (id) => {
-    if (!hasPermission('reports', 'can_admin')) {
+    if (!isSuperUser && !hasPermission('reports', 'can_admin')) {
       toast({ title: 'Nedostatečná oprávnění', description: 'Nemáte oprávnění mazat reporty.', variant: 'destructive' });
       return;
     }

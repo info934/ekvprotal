@@ -1,3 +1,4 @@
+import MeetingNotes from '@/components/MeetingNotes';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { safeListReturnPath } from '@/lib/listWorkspaceState';
@@ -93,10 +94,11 @@ const RealizaceDetail = () => {
     'orders',
     'documents',
     'handover',
+    'meetings',
   ], [canViewCosts]);
   const workspaceGroups = [
     { label: 'Přehled', icon: LayoutDashboard, tabs: [{ value: 'overview', label: 'Přehled' }] },
-    { label: 'Práce', icon: GanttChart, tabs: [{ value: 'plan', label: 'Plán' }, { value: 'orders', label: 'Objednávky' }] },
+    { label: 'Práce', icon: GanttChart, tabs: [{ value: 'plan', label: 'Plán' }, { value: 'orders', label: 'Objednávky' }, { value: 'meetings', label: 'Zápisy KD' }] },
     { label: 'Lidé', icon: Users, tabs: [{ value: 'team', label: 'Tým realizace' }] },
     ...(canViewCosts ? [{ label: 'Finance', icon: DollarSign, tabs: [{ value: 'finance', label: 'Finance' }] }] : []),
     { label: 'Dokumenty', icon: FolderOpen, tabs: [{ value: 'documents', label: 'Soubory' }, { value: 'handover', label: 'Předání' }] },
@@ -641,6 +643,7 @@ const RealizaceDetail = () => {
             </div>
           </TabsContent>
 
+          <TabsContent value="meetings"><MeetingNotes entityType="realizace" entityId={realizaceId} canEdit={canEdit} onOpenPlan={() => setActiveTab('plan')} /></TabsContent>
           <TabsContent value="plan">
             <PlanningBoard entityType="realization" entityId={realizaceId} embedded canEdit={canEdit} />
           </TabsContent>

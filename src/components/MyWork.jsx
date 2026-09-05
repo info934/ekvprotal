@@ -20,12 +20,12 @@ export function WorkPanel({ title, action, children, className = '' }) {
 export function WorkEmpty({ children }) {
   return <div className="work-empty"><CheckCircle2 size={24} strokeWidth={1.5} /><p>{children}</p></div>;
 }
-export function MyWorkView({ data, loading, onRefresh, hasPermission, tab, onTabChange }) {
+export function MyWorkView({ data, loading, onRefresh, hasPermission, memberId, tab, onTabChange }) {
   const actions = [
     ['attendance', 'Zapsat docházku', '/attendance', Clock],
     ['tasks', 'Moje úkoly', '/tasks', CheckSquare],
     ['projects', 'Nová zakázka', '/projects/new', FolderPlus, 'can_edit'],
-    ['employee', 'Moje zázemí a finance', '/employee', User],
+    ['employee', 'Moje karta', memberId ? `/members/${memberId}` : '/members', User],
   ].filter(([module,,,, level]) => module === 'employee' || hasPermission(module, level || 'can_read'));
   return <div className="app-page work-home" aria-busy={loading}>
     <PageHeader title="Moje práce" description="Vše důležité pro váš pracovní den." actions={<NewRecordMenu />} />
@@ -84,5 +84,5 @@ export default function MyWork({ loadWork = defaultLoad }) {
       .finally(() => { clearTimeout(timeout); if (id === requestId.current) setLoading(false); });
     return () => { requestId.current++; clearTimeout(timeout); controller.abort(); };
   }, [hasPermission, memberId, isAdmin, userRole, revision, loadWork]);
-  return <MyWorkView data={data} loading={loading} hasPermission={hasPermission} onRefresh={() => setRevision(value => value + 1)} tab={params.get('tab') === 'approvals' ? 'approvals' : 'overview'} onTabChange={value => setParams(value === 'overview' ? {} : { tab: value }, { replace: true })} />;
+  return <MyWorkView memberId={memberId} data={data} loading={loading} hasPermission={hasPermission} onRefresh={() => setRevision(value => value + 1)} tab={params.get('tab') === 'approvals' ? 'approvals' : 'overview'} onTabChange={value => setParams(value === 'overview' ? {} : { tab: value }, { replace: true })} />;
 }

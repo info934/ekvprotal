@@ -17,6 +17,7 @@ import { formatProjectDate, loadProjectTasks, projectTaskIsOverdue, projectTaskS
 const taskStatusConfig = {
     'Nové': { color: 'text-blue-700', bg: 'bg-blue-50', dot: 'bg-blue-500' },
     'V řešení': { color: 'text-amber-800', bg: 'bg-amber-50', dot: 'bg-amber-500' },
+    'Blokováno': { color: 'text-red-800', bg: 'bg-red-50', dot: 'bg-red-500' },
     'Hotovo': { color: 'text-emerald-700', bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
     'Zrušeno': { color: 'text-slate-600', bg: 'bg-slate-100', dot: 'bg-slate-400' },
 };

@@ -32,7 +32,8 @@ const statusConfig = {
 
 
 const Documents = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedDocument = searchParams.get('document') || '';
   const linkedSearch = searchParams.get('search') || '';
   const { toast } = useToast();
   const { hasPermission, isSuperUser } = useAuth();
@@ -54,9 +55,11 @@ const Documents = () => {
     setLoading(true);
     setLoadError('');
     try {
+      if (linkedDocument && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(linkedDocument)) throw new Error('Odkaz na dokument není platný.');
       let query = supabase.from('documents').select('*, projects(name, code)');
-      if (searchTerm.trim()) query = query.ilike('name', `%${searchTerm.trim().replace(/[\\%_]/g, '\\$&')}%`);
-      if (selectedProject) {
+      if (linkedDocument) query = query.eq('id', linkedDocument);
+      if (!linkedDocument && searchTerm.trim()) query = query.ilike('name', `%${searchTerm.trim().replace(/[\\%_]/g, '\\$&')}%`);
+      if (!linkedDocument && selectedProject) {
         query = query.eq('project_id', selectedProject);
       } else if (!isSuperUser) {
         const { data: userProjects, error: projectsError } = await supabase.rpc('list_projects_safe');
@@ -76,7 +79,7 @@ const Documents = () => {
     } finally {
       if (currentRequest === requestId.current) setLoading(false);
     }
-  }, [searchTerm, selectedProject, isSuperUser]);
+  }, [searchTerm, selectedProject, isSuperUser, linkedDocument]);
 
   const fetchProjects = useCallback(async () => {
     let projectQuery;
@@ -236,13 +239,14 @@ const Documents = () => {
               type="text"
               placeholder="Hledat podle názvu dokumentu…"
               aria-label="Hledat podle názvu dokumentu"
+              disabled={Boolean(linkedDocument)}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="h-10 w-full rounded-md border border-slate-200 bg-white py-2 pl-10 pr-4 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
           </div>
           <div className="flex-grow sm:flex-grow-0">
-             <Select value={selectedProject || 'all'} onValueChange={(value) => setSelectedProject(value === 'all' ? undefined : value)}>
+             <Select disabled={Boolean(linkedDocument)} value={selectedProject || 'all'} onValueChange={(value) => setSelectedProject(value === 'all' ? undefined : value)}>
                 <SelectTrigger className="h-10 w-full bg-white sm:w-64">
                     <SelectValue placeholder="Všechny projekty" />
                 </SelectTrigger>
@@ -269,6 +273,7 @@ const Documents = () => {
           </div>
         </div>
 
+        {linkedDocument && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-blue-50 p-4"><p className="text-sm">Zobrazení konkrétního dokumentu z odkazu.</p><Button variant="outline" onClick={() => { setSearchTerm(''); setSelectedProject(undefined); setSearchParams(current => { const next = new URLSearchParams(current); next.delete('document'); next.delete('search'); return next; }); }}>Zobrazit všechny dokumenty</Button></div>}
         {loading && <div role="status" className="flex items-center justify-center gap-3 py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Načítám dokumenty…</div>}
         {!loading && loadError && (
           <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 text-center">
@@ -322,7 +327,7 @@ const Documents = () => {
         {!loading && !loadError && documents.length === 0 && (
           <div className="text-center py-12">
             <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-            <p className="font-medium">{searchTerm || selectedProject ? 'Pro tento výběr nejsou žádné dokumenty' : 'Zatím zde nejsou žádné dokumenty'}</p>
+            <p className="font-medium">{linkedDocument ? 'Dokument nebyl nalezen nebo k němu nemáte přístup' : searchTerm || selectedProject ? 'Pro tento výběr nejsou žádné dokumenty' : 'Zatím zde nejsou žádné dokumenty'}</p>
             <p className="mt-1 text-sm text-muted-foreground">{searchTerm || selectedProject ? 'Zkuste jiný název nebo zrušte filtr projektu.' : 'Dokumenty přidáte k projektu pomocí tlačítka Nový dokument.'}</p>
           </div>
         )}

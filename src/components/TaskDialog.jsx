@@ -31,7 +31,7 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
   const [allProjects, setAllProjects] = useState([]);
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [projectSearch, setProjectSearch] = useState('');
-  const [taskStatuses, setTaskStatuses] = useState(['Nové', 'V řešení', 'Hotovo', 'Zrušeno']);
+  const [taskStatuses, setTaskStatuses] = useState(['Nové', 'V řešení', 'Blokováno', 'Hotovo', 'Zrušeno']);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -51,7 +51,7 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
         if (error) {
             toast({ title: 'Chyba při načítání stavů úkolů', variant: 'destructive' });
         } else {
-            setTaskStatuses([...new Set(['Nové', 'V řešení', 'Hotovo', 'Zrušeno', ...(data || []).map(s => s.name)])]);
+            setTaskStatuses([...new Set(['Nové', 'V řešení', 'Blokováno', 'Hotovo', 'Zrušeno', ...(data || []).map(s => s.name)])]);
         }
     };
     fetchAllProjects();

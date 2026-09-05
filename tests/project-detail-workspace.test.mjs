@@ -33,7 +33,7 @@ test('overview orders real deadlines first and keeps malformed deadlines visible
 });
 
 test('custom and absent task statuses remain represented in the board', () => {
-  assert.deepEqual(projectTaskStatuses([{ status: 'Kontrola' }, { status: 'Kontrola' }, { status: null }, { status: 'Hotovo' }]), ['Nové', 'V řešení', 'Hotovo', 'Zrušeno', 'Kontrola', 'Bez stavu']);
+  assert.deepEqual(projectTaskStatuses([{ status: 'Kontrola' }, { status: 'Kontrola' }, { status: null }, { status: 'Hotovo' }]), ['Nové', 'V řešení', 'Blokováno', 'Hotovo', 'Zrušeno', 'Kontrola', 'Bez stavu']);
 });
 
 test('drag events cannot mutate an unknown task, another project, or a read-only board', () => {

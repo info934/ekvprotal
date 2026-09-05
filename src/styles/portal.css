@@ -54,8 +54,8 @@ button:focus-visible, a:focus-visible { outline: 2px solid #1469e8; outline-offs
 #portal-main { min-width: 0; outline: none; }
 .portal-skip-link { position: fixed; left: 12px; top: -80px; z-index: 100; background: #fff; color: #1469e8; padding: 12px; border-radius: 8px; }
 .portal-skip-link:focus { top: 12px; }
-.app-page, .app-page-wide { max-width: 1660px; margin-inline: auto; width: 100%; padding: 28px 36px; }
-.app-page > * + *, .app-page-wide > * + * { margin-top: 22px; }
+.app-page, .app-page-wide { max-width: 1660px; margin-inline: auto; width: 100%; padding: 20px 36px; }
+.app-page > * + *, .app-page-wide > * + * { margin-top: 16px; }
 .app-page .app-page, .app-page-wide .app-page-wide { padding: 0; }
 .portal-page-heading { padding: 0 0 4px; }
 .portal-record-header .app-page-wide { padding-bottom: 12px; }
@@ -118,13 +118,13 @@ button:focus-visible, a:focus-visible { outline: 2px solid #1469e8; outline-offs
 @media (max-width: 1023px) { .portal-desktop-nav { display: none; } .portal-workspace { margin-left: 0; } .portal-mobile-menu { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border-radius: 8px; } .portal-topbar { gap: 12px; } }
 @media (max-width: 639px) {
   :root { --portal-topbar-height: 60px; }
-  .app-page, .app-page-wide { padding: 22px 16px; }
+  .app-page, .app-page-wide { padding: 16px; }
   .portal-topbar { padding-inline: 10px; }
   .portal-breadcrumb { font-size: 12px; flex: 1; }
   .portal-breadcrumb > a:first-child, .portal-breadcrumb > svg:first-of-type { display: none; }
   .portal-search-trigger { width: 42px; height: 42px; padding: 10px; margin-left: 0; justify-content: center; border: 0; }
   .portal-search-trigger span, .portal-search-trigger kbd { display: none; }
-  .portal-page-heading h1 { font-size: 28px; }
+  .portal-page-heading h1 { font-size: 26px; }
   .portal-page-heading p { font-size: 14px; }
   .work-metrics { padding: 16px 0; margin-bottom: 18px; }
   .work-metrics span { font-size: 10px; padding-inline: 5px; }
@@ -154,3 +154,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid #1469e8; outline-offs
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 @media print { .portal-sidebar, .portal-topbar, .portal-desktop-nav { display: none !important; } .portal-workspace { margin-left: 0 !important; } .app-page, .app-page-wide { padding: 0; } }
+
+/* Dense operational pages: preserve readable controls, reduce decorative spacing. */
+.compact-workspace .portal-page-heading { gap: 0.75rem; margin-bottom: 0; }
+.compact-workspace .portal-page-heading h1 { font-size: 1.625rem; }
+.compact-workspace .portal-page-heading p { margin-top: 0.25rem; font-size: 0.875rem; line-height: 1.4; }
+.compact-workspace.app-page, .compact-workspace > div > .app-page { padding-top: 1rem; }

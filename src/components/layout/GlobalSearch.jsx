@@ -31,8 +31,8 @@ export default function GlobalSearch({ open, onOpenChange, searchRecords = defau
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="portal-search-dialog p-0 sm:max-w-2xl">
       <DialogTitle className="sr-only">Hledat v portálu</DialogTitle>
-      <DialogDescription className="sr-only">Hledejte zakázky, klienty a dokumenty podle názvu nebo čísla. Zobrazují se pouze záznamy, ke kterým máte přístup.</DialogDescription>
-      <div className="flex items-center gap-3 border-b px-5 py-5 pr-12"><Search className="h-5 w-5 text-slate-400" /><input autoFocus aria-label="Hledat zakázku, klienta nebo dokument" value={query} onChange={event => setQuery(event.target.value)} placeholder="Název, číslo zakázky nebo IČO…" className="min-w-0 flex-1 bg-transparent text-base outline-none" /></div>
+      <DialogDescription className="sr-only">Hledejte zakázky, úkoly, klienty, zaměstnance a dokumenty podle názvu nebo čísla. Zobrazují se pouze záznamy, ke kterým máte přístup.</DialogDescription>
+      <div className="flex items-center gap-3 border-b px-5 py-5 pr-12"><Search className="h-5 w-5 text-slate-400" /><input autoFocus aria-label="Hledat zakázku, úkol, klienta, zaměstnance nebo dokument" value={query} onChange={event => setQuery(event.target.value)} placeholder="Název, jméno, číslo zakázky nebo IČO…" className="min-w-0 flex-1 bg-transparent text-base outline-none" /></div>
       <div className="max-h-[60vh] overflow-y-auto p-2" aria-live="polite" aria-busy={state.loading}>
         {query.trim().length < 2 ? <><p className="px-3 py-2 text-xs text-slate-500">Přejít do modulu · pro hledání záznamů napište alespoň 2 znaky</p>{modules.map(item => <button type="button" key={item.path} className="portal-search-result" onClick={() => go(item.path)}><item.icon size={18} /><span>{item.label}</span><ArrowUpRight size={16} className="ml-auto text-slate-400" /></button>)}</> : <>
           {state.loading && <p className="flex items-center gap-2 p-6 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Hledám záznamy…</p>}

@@ -28,7 +28,7 @@ export default function PortalShell({ children, searchRecords }) {
       <header className="portal-topbar">
         <button type="button" className="portal-mobile-menu" aria-label="Otevřít menu" onClick={() => setMobileOpen(true)}><Menu size={22} /></button>
         <nav aria-label="Drobečková navigace" className="portal-breadcrumb"><Link to="/">Portál</Link><ChevronRight size={14} aria-hidden="true" />{location.pathname !== section.path ? <><Link to={section.path}>{section.label}</Link><ChevronRight size={14} aria-hidden="true" /><span>Detail</span></> : <span>{section.label}</span>}</nav>
-        <button type="button" className="portal-search-trigger" onClick={() => setSearchOpen(true)} aria-label="Hledat v portálu"><Search size={19} /><span>Hledat zakázku, klienta, dokument…</span><kbd>Ctrl K</kbd></button>
+        <button type="button" className="portal-search-trigger" onClick={() => setSearchOpen(true)} aria-label="Hledat v portálu"><Search size={19} /><span>Hledat zakázky, úkoly, lidi…</span><kbd>Ctrl K</kbd></button>
         <PortalNotifications />
       </header>
       <main id="portal-main" tabIndex={-1}>{children}</main>

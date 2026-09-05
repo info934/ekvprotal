@@ -1,3 +1,4 @@
+import MeetingNotes from '@/components/MeetingNotes';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { safeListReturnPath, taskIsDone, taskIsOpen, taskIsCancelled, taskProgress } from '@/lib/listWorkspaceState';
@@ -1031,7 +1032,7 @@ const ProjectDetail = () => {
 
     const progress = getProjectProgress();
     const availableTabs = [
-        'overview', 'team', 'tasks', 'plan', 'engineering', 'documents', 'contacts',
+        'overview', 'team', 'tasks', 'plan', 'engineering', 'meetings', 'documents', 'handover', 'contacts',
         ...(isAdmin ? ['finance'] : []),
     ];
     const requestedTab = location.hash.substring(1);
@@ -1039,10 +1040,10 @@ const ProjectDetail = () => {
     const openTab = value => navigate({ pathname: location.pathname, search: location.search, hash: `#${value}` }, { replace: true, state: location.state });
     const navigationGroups = [
         { label: 'Přehled', icon: FileText, tabs: [{ value: 'overview', label: 'Přehled' }] },
-        { label: 'Práce', icon: ClipboardList, tabs: [{ value: 'tasks', label: 'Úkoly' }, { value: 'plan', label: 'Plán' }, { value: 'engineering', label: 'Inženýring' }] },
+        { label: 'Práce', icon: ClipboardList, tabs: [{ value: 'tasks', label: 'Úkoly' }, { value: 'plan', label: 'Plán' }, { value: 'engineering', label: 'Inženýring' }, { value: 'meetings', label: 'Zápisy KD' }] },
         { label: 'Lidé', icon: Users, tabs: [{ value: 'team', label: 'Tým a dodavatelé' }, { value: 'contacts', label: 'Externí kontakty' }] },
         ...(isAdmin ? [{ label: 'Finance', icon: Wallet, tabs: [{ value: 'finance', label: 'Finance' }] }] : []),
-        { label: 'Dokumenty', icon: FileText, tabs: [{ value: 'documents', label: 'Dokumenty' }] },
+        { label: 'Dokumenty', icon: FileText, tabs: [{ value: 'documents', label: 'Soubory' }, { value: 'handover', label: 'Předání' }] },
     ];
 
     return (
@@ -1186,6 +1187,7 @@ const ProjectDetail = () => {
                         </CollapsibleSection>
                     </TabsContent>
 
+                    <TabsContent value="meetings"><MeetingNotes entityType="project" entityId={projectId} canEdit={canEdit} onOpenPlan={() => openTab('plan')} /></TabsContent>
                     <TabsContent value="tasks"><ProjectTasks projectId={projectId} project={project} tasks={tasks} members={members} canEdit={canEdit} onTaskUpdate={setTasks} loadError={operationalLoadError} onRetry={refreshData} /></TabsContent>
                     <TabsContent value="plan"><PlanningBoard entityType="project" entityId={projectId} embedded canEdit={canEdit} /></TabsContent>
                     <TabsContent value="engineering"><ProjectEngineering projectId={projectId} project={project} canEdit={canEdit} /></TabsContent>
@@ -1210,6 +1212,8 @@ const ProjectDetail = () => {
                             entity={project}
                             canEdit={canEdit}
                         />
+                    </TabsContent>
+                    <TabsContent value="handover">
                         <HandoverProtocolsTab
                             projectId={projectId}
                             project={project}

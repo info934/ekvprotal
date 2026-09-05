@@ -1,3 +1,4 @@
+import { validateMeetingNote } from '../lib/meetingNotes.js';
 import { createFixtures, ADMIN_ID, MEMBER_ID, AUTH_ADMIN_ID, AUTH_MEMBER_ID, uuid } from './fixtures.js';
 import { getPreviewRole } from './previewState.js';
 import { canReadEmployeeRow, employeeTables, employeeRpcs, runEmployeeRpc } from './employeePreview.js';
@@ -157,6 +158,19 @@ class PreviewQuery {
 }
 
 function rpc(name, args = {}) {
+  if (name === 'save_meeting_note') return new PreviewQuery(name, () => {
+    if (getPreviewRole() !== 'admin') return denied();
+    const row = { id: args.p_id, plan_id: args.p_plan_id, title: args.p_title, meeting_date: args.p_date, participants: args.p_participants, points: args.p_points, version: args.p_version + 1 };
+    const message = validateMeetingNote(row);
+    if (message) return { data:null, error:{message} };
+    if (!tables.planning_plans.some(p => p.plan_id===row.plan_id)) return denied();
+    if(row.points.some(p=>p.planning_item_id && !tables.planning_items.some(i=>i.id===p.planning_item_id && i.plan_id===row.plan_id)))return denied();
+    tables.meeting_notes ||= [];
+    const old=tables.meeting_notes.find(r=>r.id===row.id);
+    if ((old && (old.version!==args.p_version || old.plan_id!==row.plan_id)) || (!old && args.p_version!==0))return {data:null,error:{message:'Zápis mezitím upravil někdo jiný.'}};
+    if(old)Object.assign(old,clone(row));else tables.meeting_notes.push(clone(row));
+    return row;
+  },true);
   const projectId = args.p_project_id;
   const realizationId = args.p_realization_id || args.p_realizace_id;
   const one = source => new PreviewQuery(name, source, true);

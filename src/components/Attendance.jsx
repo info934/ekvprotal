@@ -314,36 +314,30 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-primary">Moje odpracovaná doba</p>
-          <h2 className="mt-1 text-xl font-semibold capitalize">{format(currentMonth, 'LLLL yyyy', { locale: cs })}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{isEditable ? 'Zapište hodiny k zakázkám. Hotový měsíc odešlete ke schválení.' : 'Stav měsíce a zaznamenané hodiny najdete níže.'}</p>
-        </div>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <AttendanceMonthControl value={currentMonth} onChange={setCurrentMonth} disabled={pending} />
         {isEditable && hasPermission('attendance', 'can_edit') && (
-          <Button className="h-11 w-full sm:w-auto" onClick={() => { setEditingRecord(null); setSelectedDialogDate(attendanceEntryDate(currentMonth)); setIsAttendanceDialogOpen(true); }}>
+          <Button className="h-10 w-full sm:w-auto" onClick={() => { setEditingRecord(null); setSelectedDialogDate(attendanceEntryDate(currentMonth)); setIsAttendanceDialogOpen(true); }}>
             <Plus className="mr-2 h-4 w-4" /> Zapsat odpracované hodiny
           </Button>
         )}
       </div>
-
-      <AttendanceMonthControl value={currentMonth} onChange={setCurrentMonth} disabled={pending} />
       <AttendanceLoadState loading={resource.loading} error={resource.error} onRetry={resource.refresh}>
       {resource.ready && <>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-slate-200 lg:grid-cols-4">
-        {[['Hodiny za měsíc', totalHours.toLocaleString('cs-CZ') + ' h'], ['Orientační odměna', isPrivateMode ? 'Skryto' : hourlyRate === null ? 'Sazba není dostupná' : formatCurrency(totalValue)], ['Dny se záznamem', daysWithAttendance], ['Zakázky', myWorkSummary.length]].map(([label, value]) => <div key={label} className="bg-white p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-2 text-xl font-semibold tabular-nums">{value}</p></div>)}
+        {[['Hodiny za měsíc', totalHours.toLocaleString('cs-CZ') + ' h'], ['Orientační odměna', isPrivateMode ? 'Skryto' : hourlyRate === null ? 'Sazba není dostupná' : formatCurrency(totalValue)], ['Dny se záznamem', daysWithAttendance], ['Zakázky', myWorkSummary.length]].map(([label, value]) => <div key={label} className="bg-white px-3 py-2"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-lg font-semibold tabular-nums">{value}</p></div>)}
       </div>
 
       <Card>
-        <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col xl:flex-row justify-between items-center gap-4">
+        <CardContent className="p-3">
+          <div className="flex flex-wrap justify-between items-center gap-2">
             <Badge variant={currentStatus.variant} className="text-sm px-3 py-1">
               <StatusIcon className="w-4 h-4 mr-2" />
               {currentStatus.label}
             </Badge>
 
-            <div className="flex w-full flex-wrap justify-center gap-2 xl:w-auto">
+            <div className="flex w-full flex-wrap justify-start gap-2 lg:w-auto">
               <Select value={typeFilter} onValueChange={setTypeFilter}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Filtr zobrazení" />
@@ -375,35 +369,7 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
                   Seznam
                 </Button>
               </div>
-              <Button onClick={handleExport} variant="outline" disabled={exporting || !resource.ready || filteredAttendance.length === 0}>
-                <Download className="w-4 h-4 mr-2" />
-                Export zobrazených
-              </Button>
-              {isEditable && hasPermission('attendance', 'can_edit') && (
-                <>
-                  {attendance.length > 0 && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="default" className="bg-green-600 hover:bg-green-700">
-                          <Send className="w-4 h-4 mr-2" /> Odeslat měsíc ke schválení
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent className="sm:max-w-2xl">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Odeslat docházku ke schválení?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Odesíláte celý měsíc bez ohledu na filtr. Záznamy zůstanou uzamčené i po schválení; úpravy jsou možné po stažení žádosti nebo vrácení administrátorem.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Zrušit</AlertDialogCancel>
-                          <AlertDialogAction onClick={handleSubmitForApproval} className="bg-green-600 hover:bg-green-700">Odeslat</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  )}
-                </>
-              )}
+
             </div>
           </div>
         </CardContent>
@@ -488,14 +454,14 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
         </motion.div>
       )}
 
-      {myWorkSummary.length > 0 && <details className="rounded-xl border bg-white p-5"><summary className="cursor-pointer text-sm font-semibold">Souhrn práce podle zakázek</summary><ul className="mt-4 divide-y">{myWorkSummary.map(item => <li key={item.id} className="flex justify-between gap-4 py-3 text-sm"><span>{item.name}<small className="ml-2 text-slate-500">{item.code || item.type}</small></span><strong className="whitespace-nowrap tabular-nums">{item.hours.toLocaleString('cs-CZ')} h</strong></li>)}</ul><p className="mt-3 text-xs text-slate-500">Orientační odměna používá aktuální hodinovou sazbu. Schválené částky najdete ve výplatách.</p></details>}
+
 
       {/* Main Calendar/List View */}
       {viewMode === 'calendar' ? (
         <Card>
-          <CardContent className="p-2 sm:p-6">
-            <p className="mb-4 text-sm text-slate-600">{isEditable ? 'Kliknutím na den přidáte odpracované hodiny. Záznamy vybraného dne najdete pod kalendářem.' : 'Měsíc je pouze pro čtení. Kliknutím na den zobrazíte jeho záznamy.'}</p>
-            <div className="grid grid-cols-7 gap-1 text-center font-bold text-muted-foreground mb-4 text-sm">
+          <CardContent className="p-2 sm:p-3">
+            <p className="mb-2 text-sm text-slate-600">{isEditable ? 'Kliknutím na den přidáte odpracované hodiny. Záznamy vybraného dne najdete pod kalendářem.' : 'Měsíc je pouze pro čtení. Kliknutím na den zobrazíte jeho záznamy.'}</p>
+            <div className="grid grid-cols-7 gap-1 text-center font-bold text-muted-foreground mb-2 text-sm">
               {['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'].map(d => <div key={d}>{d}</div>)}
             </div>
             <div className="grid grid-cols-7 gap-1 sm:gap-2">
@@ -568,6 +534,36 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
       ) : (
         <AttendanceRecordsTable records={filteredAttendance} pending={pending} onEdit={isEditable ? record => { setEditingRecord(record); setIsAttendanceDialogOpen(true); } : null} onDelete={isEditable ? setDeletingRecord : null} empty={attendance.length ? 'Vybranému filtru neodpovídá žádný záznam.' : 'Tento měsíc zatím nemáte zapsané hodiny. Začněte tlačítkem Zapsat odpracované hodiny.'} />
       )}
+<div className="flex flex-wrap items-center justify-end gap-2 rounded-lg border bg-white p-3" aria-label="Export a odeslání měsíce">              <Button onClick={handleExport} variant="outline" disabled={exporting || !resource.ready || filteredAttendance.length === 0}>
+                <Download className="w-4 h-4 mr-2" />
+                Export zobrazených
+              </Button>
+              {isEditable && hasPermission('attendance', 'can_edit') && (
+                <>
+                  {attendance.length > 0 && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="default" className="bg-green-600 hover:bg-green-700">
+                          <Send className="w-4 h-4 mr-2" /> Odeslat měsíc ke schválení
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="sm:max-w-2xl">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Odeslat docházku ke schválení?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Odesíláte celý měsíc bez ohledu na filtr. Záznamy zůstanou uzamčené i po schválení; úpravy jsou možné po stažení žádosti nebo vrácení administrátorem.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleSubmitForApproval} className="bg-green-600 hover:bg-green-700">Odeslat</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </>
+              )}</div>
+      {myWorkSummary.length > 0 && <details className="rounded-xl border bg-white p-5"><summary className="cursor-pointer text-sm font-semibold">Souhrn práce podle zakázek</summary><ul className="mt-4 divide-y">{myWorkSummary.map(item => <li key={item.id} className="flex justify-between gap-4 py-3 text-sm"><span>{item.name}<small className="ml-2 text-slate-500">{item.code || item.type}</small></span><strong className="whitespace-nowrap tabular-nums">{item.hours.toLocaleString('cs-CZ')} h</strong></li>)}</ul><p className="mt-3 text-xs text-slate-500">Orientační odměna používá aktuální hodinovou sazbu. Schválené částky najdete ve výplatách.</p></details>}
       </>}
       </AttendanceLoadState>
 
@@ -633,8 +629,8 @@ const Attendance = () => {
   }
 
   return (
-    <div className="app-page">
-      <div className="space-y-6">
+    <div className="app-page compact-workspace">
+      <div className="space-y-3">
         <PageHeader
           icon={Clock}
           title="Docházka"
@@ -688,8 +684,8 @@ const Attendance = () => {
         </motion.div>
 
         <Tabs value={searchParams.get('tab') === 'planning' ? 'planning' : canViewAdminTabs && ['approvals', 'submissions', 'global-attendance', ...(canViewReport ? ['reporting'] : [])].includes(searchParams.get('tab')) ? (searchParams.get('tab') === 'approvals' ? 'submissions' : searchParams.get('tab')) : 'my-attendance'} onValueChange={tab => setSearchParams(current => { const next = new URLSearchParams(current); next.set('tab', tab); return next; })} className="w-full">
-          <div className="glass-effect rounded-xl p-2 mb-6">
-            <TabsList className="w-full grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="border-b border-slate-200 mb-3 overflow-x-auto">
+            <TabsList className="w-max min-w-full flex justify-start">
               <TabsTrigger value="my-attendance" className="flex items-center gap-2">
                 <Clock className="w-4 h-4" />
                 <span className="hidden sm:inline">Moje docházka</span>
