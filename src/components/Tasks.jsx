@@ -1,6 +1,7 @@
+import UnifiedTaskQueue from '@/components/UnifiedTaskQueue';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { 
   ListTodo, Search, Plus, LayoutGrid, List,
   Clock, CheckCircle2, AlertCircle, Target,
@@ -700,4 +701,4 @@ const Tasks = () => {
   );
 };
 
-export default Tasks;
+export default function TasksPage() { const [params] = useSearchParams(); return params.get('view') === 'project' ? <Tasks /> : <UnifiedTaskQueue />; }

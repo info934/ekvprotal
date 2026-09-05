@@ -23,13 +23,14 @@ export function WorkEmpty({ children }) {
 export function MyWorkView({ data, loading, onRefresh, hasPermission, memberId, tab, onTabChange }) {
   const actions = [
     ['attendance', 'Zapsat docházku', '/attendance', Clock],
-    ['tasks', 'Moje úkoly', '/tasks', CheckSquare],
+    ['tasks', 'Moje úkoly', '/tasks?scope=mine', CheckSquare],
     ['projects', 'Nová zakázka', '/projects/new', FolderPlus, 'can_edit'],
     ['employee', 'Moje karta', memberId ? `/members/${memberId}` : '/members', User],
   ].filter(([module,,,, level]) => module === 'employee' || hasPermission(module, level || 'can_read'));
   return <div className="app-page work-home" aria-busy={loading}>
     <PageHeader title="Moje práce" description="Vše důležité pro váš pracovní den." actions={<NewRecordMenu />} />
     {data.error && <div role="alert" className="portal-inline-alert"><AlertCircle size={20} /><div className="flex-1">{data.error}</div><Button variant="outline" size="sm" onClick={onRefresh}><RefreshCw size={16} />Zkusit znovu</Button></div>}
+    {data.reminders?.map(item => <Link key={item.path} to={item.path} className="portal-inline-alert"><Clock size={20}/><span>{item.label}</span><ChevronRight size={16}/></Link>)}
     <Tabs value={tab} onValueChange={onTabChange}>
       <TabsList className="work-tabs"><TabsTrigger value="overview">Přehled</TabsTrigger><TabsTrigger value="approvals">Ke schválení</TabsTrigger></TabsList>
       <div className="work-metrics" aria-label="Souhrn práce">
@@ -37,8 +38,8 @@ export function MyWorkView({ data, loading, onRefresh, hasPermission, memberId, 
       </div>
       <TabsContent value="overview" className="work-content">
         <div className="work-main-column">
-          <WorkPanel title="Na řadě" action={hasPermission('tasks', 'can_read') && <Link to="/tasks" className="work-text-link">Všechny úkoly<ChevronRight size={16} /></Link>}>
-            {loading ? <div className="work-skeleton" aria-label="Načítám úkoly" /> : data.tasks.length ? <div className="work-task-list">{data.tasks.map(task => <Link className="work-task-row" key={task.id} to={task.project_id && hasPermission('projects', 'can_read') ? `/projects/${task.project_id}#tasks` : '/tasks'}>
+          <WorkPanel title="Moje nejbližší úkoly" action={hasPermission('tasks', 'can_read') && <Link to="/tasks?scope=mine" className="work-text-link">Všechny úkoly<ChevronRight size={16} /></Link>}>
+            {loading ? <div className="work-skeleton" aria-label="Načítám úkoly" /> : data.tasks.length ? <div className="work-task-list">{data.tasks.map(task => <Link className="work-task-row" key={task.id} to={task.path || (task.project_id && hasPermission('projects', 'can_read') ? `/projects/${task.project_id}#tasks` : '/tasks')}>
               <Circle size={18} strokeWidth={1.5} className="work-task-icon" aria-hidden="true" />
               <div className="work-task-name"><strong>{task.name}</strong><span>{[task.project?.code, task.project?.name].filter(Boolean).join(' · ') || 'Úkol'}</span></div>
               <span className={`work-due ${taskDateLabel(task.end_date) === 'Po termínu' ? 'is-overdue' : ''}`}>{taskDateLabel(task.end_date)}</span>

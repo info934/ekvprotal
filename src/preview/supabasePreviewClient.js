@@ -158,6 +158,16 @@ class PreviewQuery {
 }
 
 function rpc(name, args = {}) {
+  if(name==='create_meeting_point_task')return new PreviewQuery(name,()=>{
+   if(getPreviewRole()!=='admin')return denied();
+   const note=tables.meeting_notes?.find(n=>n.id===args.p_note_id),point=note?.points[args.p_point_index];
+   if(!note||note.version!==args.p_version||!point||point.planning_item_id)return {data:null,error:{message:'Zápis se změnil nebo bod již má úkol.'}};
+   if(!tables.members.some(m=>m.id===args.p_member_id)||!args.p_name?.trim()||!args.p_due)return {data:null,error:{message:'Vyplňte úkol, osobu a termín.'}};
+   const id=uuid(nextId++);tables.planning_items.push({id,plan_id:note.plan_id,item_type:'task',name:args.p_name,status:'planned',member_id:args.p_member_id,end_date:args.p_due,start_date:new Date().toLocaleDateString('sv-SE')});
+   point.kind='task';point.planning_item_id=id;note.version++;
+   tables.meeting_note_versions ||= [];tables.meeting_note_versions.push({note_id:note.id,version:note.version,snapshot:clone(note),created_at:new Date().toISOString()});
+   return clone(note);
+  },true);
   if (name === 'save_meeting_note') return new PreviewQuery(name, () => {
     if (getPreviewRole() !== 'admin') return denied();
     const row = { id: args.p_id, plan_id: args.p_plan_id, title: args.p_title, meeting_date: args.p_date, participants: args.p_participants, points: args.p_points, version: args.p_version + 1 };
@@ -169,6 +179,7 @@ function rpc(name, args = {}) {
     const old=tables.meeting_notes.find(r=>r.id===row.id);
     if ((old && (old.version!==args.p_version || old.plan_id!==row.plan_id)) || (!old && args.p_version!==0))return {data:null,error:{message:'Zápis mezitím upravil někdo jiný.'}};
     if(old)Object.assign(old,clone(row));else tables.meeting_notes.push(clone(row));
+    tables.meeting_note_versions ||= []; tables.meeting_note_versions.push({note_id:row.id,version:row.version,snapshot:clone(row),created_at:new Date().toISOString()});
     return row;
   },true);
   const projectId = args.p_project_id;

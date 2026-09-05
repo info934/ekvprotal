@@ -69,7 +69,7 @@ export function createFixtures() {
   ];
   const crm_commercial_documents = [{ id: uuid(1401), type: 'offer', title: 'Elektroinstalace základní školy', number: 'NAB-26-018', status: 'draft', subject_id: subjects[2].id, opportunity_id: crm_opportunities[0].id, total_without_vat: 320000, total_with_vat: 387200, created_at: timestamp(-2), valid_until: previewDate(14), issue_date: previewDate(-2), items: [] }];
   const planning_plans = projects.slice(0, 2).map((project, index) => ({ id: uuid(1501 + index), plan_id: uuid(1501 + index), entity_type: 'project', entity_id: project.id, name: project.name, entity_name: project.name, entity_code: project.code }));
-  const planning_items = project_tasks.slice(0, 4).map((task, index) => ({ ...task, id: uuid(1601 + index), plan_id: planning_plans[index % 2].id, item_type: 'task', start_at: `${task.start_date}T08:00:00`, end_at: `${task.end_date}T16:00:00`, status: task.status === 'Hotovo' ? 'done' : 'in_progress', sort_order: index, calendar_sync_enabled: false, calendar_link: null }));
+  const planning_items = project_tasks.slice(0, 4).map((task, index) => ({ ...task, legacy_project_task_id: task.id, id: uuid(1601 + index), plan_id: planning_plans[index % 2].id, item_type: 'task', start_at: `${task.start_date}T08:00:00`, end_at: `${task.end_date}T16:00:00`, status: task.status === 'Hotovo' ? 'done' : 'in_progress', sort_order: index, calendar_sync_enabled: false, calendar_link: null }));
   const tables = {
     members, subjects, projects, realizations, realizace_team_members, project_tasks, project_members, attendance, payouts, payout_items, documents,
     crm_opportunities, crm_commercial_documents, planning_plans, planning_items,
