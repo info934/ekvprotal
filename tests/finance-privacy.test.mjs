@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const result = await build({
-  entryPoints: [resolve(root, 'src/components/finance/FinanceWorkspace.jsx')],
+  stdin: { contents: "export * from '@/components/finance/FinanceWorkspace'; export {default as FinancialValueGuard} from '@/components/FinancialValueGuard';", resolveDir: root, loader: 'js' },
   bundle: true, write: false, platform: 'node', format: 'cjs', packages: 'external',
   plugins: [{ name: 'finance-auth-fixture', setup(builder) {
     builder.onResolve({ filter: /^@\/contexts\/SupabaseAuthContext$/ }, () => ({ path: 'auth', namespace: 'finance-fixture' }));
@@ -23,7 +23,7 @@ const result = await build({
 });
 const built = { exports: {} };
 new Function('require', 'module', 'exports', result.outputFiles[0].text)(createRequire(import.meta.url), built, built.exports);
-const { FinanceAmount, FinanceMetricStrip, FinanceStageFlow } = built.exports;
+const { FinanceAmount, FinanceMetricStrip, FinanceStageFlow, FinancialValueGuard } = built.exports;
 const render = (component, props) => renderToStaticMarkup(React.createElement(component, props));
 
 test('private amount suppresses both visible currency and exact value tooltip', () => {
@@ -52,4 +52,14 @@ test('private stage chart suppresses amount labels and ratios; invalid public am
   globalThis.__financePrivacyAuth = { isPrivateMode: false, userRole: 'admin' };
   const html = render(FinanceStageFlow, { stages: [{ label: 'A', value: NaN }, { label: 'B', value: 100 }] });
   assert.match(html, /Nedostupné/); assert.doesNotMatch(html, /NaN|Infinity/); assert.match(html, /width:100%/);
+});
+
+test('shared financial guard never renders private or unauthorized values in HTML', () => {
+ for (const auth of [{isPrivateMode:true,userRole:'admin'},{isPrivateMode:false,userRole:'worker'}]) {
+  globalThis.__financePrivacyAuth = auth;
+  const html = render(FinancialValueGuard, {value:'123456 Kč'});
+  assert.match(html,/Skryto/); assert.doesNotMatch(html,/123456|Kč/);
+ }
+ globalThis.__financePrivacyAuth = {isPrivateMode:false,userRole:'admin'};
+ assert.match(render(FinancialValueGuard,{value:'123456 Kč'}),/123456 Kč/);
 });

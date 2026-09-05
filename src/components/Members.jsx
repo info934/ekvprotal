@@ -31,7 +31,7 @@ const getCertificationStatus = certifications => ({
 const Members = () => {
     const { toast } = useToast();
     const navigate = useNavigate();
-    const { hasPermission, memberId, isSuperUser, isAdmin } = useAuth();
+    const { hasPermission, memberId, isSuperUser, isAdmin, isPrivateMode } = useAuth();
     const [members, setMembers] = useState([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingMember, setEditingMember] = useState(null);
@@ -58,7 +58,7 @@ const Members = () => {
     const pendingLoad=useRef(null);
     const canEdit = hasPermission('members', 'can_edit');
     const canAdmin = hasPermission('members', 'can_admin');
-    const canViewFinance = isAdmin;
+    const canViewFinance = isAdmin && !isPrivateMode;
 
     const fetchMembersAndRewards = useCallback(async () => {
         pendingLoad.current?.abort();
@@ -338,7 +338,7 @@ const Members = () => {
                                 </div>
                                 <div>
                                     <p className="text-sm text-muted-foreground" title="Čeká na schválení, doklad nebo úhradu; včetně hodinových výplat">Čekající výplaty</p>
-                                    <p className={cn("text-2xl font-bold", canViewFinance && "text-orange-600")}>{canViewFinance&&financeReady ? pendingPayouts.toLocaleString('cs-CZ') + ' Kč' : '—'}</p>
+                                    <p className={cn("text-2xl font-bold", canViewFinance && "text-orange-600")}>{isPrivateMode ? 'Skryto' : canViewFinance&&financeReady ? pendingPayouts.toLocaleString('cs-CZ') + ' Kč' : '—'}</p>
                                 </div>
                             </div>
                         </CardContent>
