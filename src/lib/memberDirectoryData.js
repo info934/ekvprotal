@@ -1,3 +1,4 @@
+import {employeeFinanceView} from './employeeWorkspaceData.js';
 import {fetchReportRows} from './reportData.js';
 const pendingStatuses = new Set(['pending', 'approved', 'invoice_uploaded']);
 export function pendingMemberPayouts(fixed, hourly) {
@@ -27,6 +28,19 @@ export async function loadMemberDirectory(client,{isAdmin,isSuperUser,memberId,s
   const rates=new Map(compensation.data.map(r=>[String(r.member_id),r.hourly_rate]));
   const rewards={},payouts=pendingMemberPayouts(payoutRows,hourlyRows);
   for(const r of assignments.data){const amount=Number(r.total_reward||0);if(!Number.isFinite(amount))throw new Error('Neplatná částka odměny.');rewards[r.member_id]=(rewards[r.member_id]||0)+Math.max(0,amount);}
-  return {members:members.map(m=>({...m,hourly_rate:rates.get(String(m.id))??null})),rewards,payouts,financeReady:true,financeError:''};
+  const remaining = {};
+  // Bound concurrency; use the same authorized entitlement RPC as the detail.
+  for (let start=0;start<members.length;start+=4) {
+   await Promise.all(members.slice(start,start+4).map(async member => {
+    if(signal?.aborted)throw new DOMException('Načítání přerušeno.','AbortError');
+    try {
+     const result=await withSignal(client.rpc('get_payout_availability',{p_member_id:member.id,p_edit_payout_id:null}));
+     if(result.error || !Array.isArray(result.data?.projects) || !Array.isArray(result.data?.realizations)) throw new Error('Nárok není dostupný.');
+     remaining[member.id]=employeeFinanceView({availability:{data:result.data}}).remaining;
+    } catch(error) {if(signal?.aborted)throw error;remaining[member.id]=null;}
+   }));
+  }
+  const balanceError=Object.values(remaining).some(value=>value===null);
+  return {remaining,members:members.map(m=>({...m,hourly_rate:rates.get(String(m.id))??null})),rewards,payouts,financeReady:true,financeError:balanceError?'Některé zbývající nároky se nepodařilo načíst. Obnovte přehled.':''};
  }catch(error){if(signal?.aborted)throw error;return {members,rewards:{},payouts:{},financeReady:false,financeError:'Finanční údaje se nepodařilo načíst. Seznam zaměstnanců je dostupný; finance obnovte opakováním načtení.'};}
 }

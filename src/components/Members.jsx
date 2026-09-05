@@ -36,6 +36,7 @@ const Members = () => {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingMember, setEditingMember] = useState(null);
     const [rewards, setRewards] = useState({});
+    const [remaining, setRemaining] = useState({});
     const [payouts, setPayouts] = useState({});
     const [params,setParams]=useSearchParams();
     const location=useLocation();
@@ -69,7 +70,7 @@ const Members = () => {
         try {
             const result=await loadMemberDirectory(supabase,{isAdmin,isSuperUser,memberId,signal:controller.signal});
             if(pendingLoad.current!==controller)return;
-            setMembers(result.members);setRewards(result.rewards);setPayouts(result.payouts);setFinanceReady(result.financeReady);setFinanceError(result.financeError);
+            setMembers(result.members);setRewards(result.rewards);setPayouts(result.payouts);setRemaining(result.remaining||{});setFinanceReady(result.financeReady);setFinanceError(result.financeError);
         } catch(error) {
             if(pendingLoad.current===controller)setLoadError('Seznam zaměstnanců se nepodařilo načíst. Zkontrolujte připojení a zkuste to znovu.');
         } finally {clearTimeout(timeout);if(pendingLoad.current===controller)setLoading(false);}
@@ -151,8 +152,9 @@ const Members = () => {
     });
 
     const totalMembers = members.length;
-    const totalPayouts = Object.values(payouts).reduce((sum, payout) => sum + payout, 0);
-    const pendingPayouts = totalPayouts;
+
+    const totalRemaining = members.some(m=>remaining[m.id]==null)?null:members.reduce((sum,m)=>sum+remaining[m.id],0);
+    const money = value => value == null ? 'Nedostupné' : value.toLocaleString('cs-CZ') + ' Kč';
     const membersWithExpiredCerts = members.filter(member => {
         return certificationState(member.member_certifications) === 'expired';
     }).length;
@@ -171,11 +173,11 @@ const Members = () => {
         const totalReward = rewards[memberId] || 0;
         const balance = payouts[memberId] || 0;
 
-        return { totalReward, balance };
+        return { totalReward, balance, outstanding:remaining[memberId] };
     };
 
     const MemberCard = ({ member }) => {
-        const { totalReward, balance } = renderMemberFinancials(member.id);
+        const { totalReward, balance, outstanding } = renderMemberFinancials(member.id);
         const certStatus = getCertificationStatus(member.member_certifications);
         const CertIcon = certStatus.icon;
 
@@ -253,6 +255,10 @@ const Members = () => {
                             <div className="flex justify-between items-center">
                                 <span className="text-xs text-muted-foreground">Projektové odměny:</span>
                                 <span className="text-sm font-semibold">{totalReward.toLocaleString('cs-CZ')} Kč</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs text-muted-foreground">Zbývá k vyplacení:</span>
+                                <span className="text-sm font-semibold">{money(outstanding)}</span>
                             </div>
                             <div className="flex justify-between items-center">
                                 <span className="text-xs text-muted-foreground">Čekající výplaty:</span>
@@ -337,8 +343,8 @@ const Members = () => {
                                     <Clock className="h-5 w-5 text-orange-600" />
                                 </div>
                                 <div>
-                                    <p className="text-sm text-muted-foreground" title="Čeká na schválení, doklad nebo úhradu; včetně hodinových výplat">Čekající výplaty</p>
-                                    <p className={cn("text-2xl font-bold", canViewFinance && "text-orange-600")}>{isPrivateMode ? 'Skryto' : canViewFinance&&financeReady ? pendingPayouts.toLocaleString('cs-CZ') + ' Kč' : '—'}</p>
+                                    <p className="text-sm text-muted-foreground" title="Nároky z projektů a realizací minus již vyplacené odměny. Čekající žádosti jsou stále zahrnuté.">Zbývá k vyplacení</p>
+                                    <p className={cn("text-2xl font-bold", canViewFinance && "text-orange-600")}>{isPrivateMode ? 'Skryto' : canViewFinance&&financeReady ? money(totalRemaining) : '—'}</p>
                                 </div>
                             </div>
                         </CardContent>
@@ -451,13 +457,13 @@ const Members = () => {
                                                 <TableHead>Certifikace</TableHead>
                                                 {canViewFinance && financeReady && <TableHead>Hodinová sazba</TableHead>}
                                                 {canViewFinance && financeReady && <TableHead>Projektové odměny</TableHead>}
-                                                {canViewFinance && financeReady && <TableHead>Čekající výplaty</TableHead>}
+                                                {canViewFinance && financeReady && <><TableHead>Zbývá k vyplacení</TableHead><TableHead>Čekající výplaty</TableHead></>}
                                                 <TableHead className="w-[50px]"></TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {filteredMembers.map(member => {
-                                                const { totalReward, balance } = renderMemberFinancials(member.id);
+                                                const { totalReward, balance, outstanding } = renderMemberFinancials(member.id);
                                                 const certStatus = getCertificationStatus(member.member_certifications);
                                                 const CertIcon = certStatus.icon;
 
@@ -492,6 +498,7 @@ const Members = () => {
                                                             </TableCell>
                                                         )}
                                                         {canViewFinance && financeReady && <TableCell>{totalReward.toLocaleString('cs-CZ')} Kč</TableCell>}
+                                                        {canViewFinance && financeReady && <TableCell className="font-semibold">{money(outstanding)}</TableCell>}
                                                         {canViewFinance && financeReady && <TableCell className={cn(
                                                             "font-semibold",
                                                             balance > 0 ? "text-amber-700" : "text-gray-500"

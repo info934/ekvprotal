@@ -200,7 +200,9 @@ export function employeeFinanceView(finance) {
     ...(fixed || []).map(row => ({ ...row, key: `fixed-${row.id}`, kind: 'Odměna', date: row.request_date })),
     ...(hourly || []).map(row => ({ ...row, key: `hourly-${row.id}`, kind: 'Hodinová odměna', amount: row.total_amount, date: row.created_at })),
   ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))) : null;
-  return { entitlements, payouts, payoutsComplete, available: sumEmployeeAmounts(entitlements, 'available'),
+  const remaining = entitlements === null || entitlements.some(row => row.total === null || row.paid === null)
+    ? null : entitlements.reduce((sum,row) => sum + Math.max(0,row.total - row.paid),0);
+  return { entitlements, payouts, payoutsComplete, remaining, available: sumEmployeeAmounts(entitlements, 'available'),
     paid: payoutsComplete ? sumEmployeeAmounts(payouts.filter(row => row.status === 'paid'), 'amount') : null,
     pending: payoutsComplete ? sumEmployeeAmounts(payouts.filter(row => ['pending', 'approved', 'invoice_uploaded'].includes(row.status)), 'amount') : null };
 }

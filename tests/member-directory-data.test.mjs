@@ -20,3 +20,14 @@ test('hourly load failure does not publish incomplete pending totals',async()=>{
  const result=await loadMemberDirectory(client({fail:'hourly_payout_requests'}),{isAdmin:true,isSuperUser:true});
  assert.equal(result.financeReady,false); assert.equal(result.members.length,1); assert.deepEqual(result.payouts,{});
 });
+
+test('directory reads remaining entitlement for each member from the detail source',async()=>{
+ const c=client(); const original=c.rpc;
+ c.rpc=(name,args)=>name==='get_payout_availability'?(assert.equal(args.p_member_id,'m'),Promise.resolve({data:{projects:[{total_reward:100,paid_payouts:30,available_balance:50,reserved_payouts:20}],realizations:[]}})):original(name,args);
+ const result=await loadMemberDirectory(c,{isAdmin:true,isSuperUser:true});
+ assert.equal(result.remaining.m,70);assert.equal(result.payouts.m,50);
+});
+test('failed entitlement lookup is unknown rather than zero',async()=>{
+ const result=await loadMemberDirectory(client({fail:'get_payout_availability'}),{isAdmin:true,isSuperUser:true});
+ assert.equal(result.remaining.m,null);assert.match(result.financeError,/nároky/);
+});

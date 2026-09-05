@@ -193,3 +193,10 @@ test('compensation currency is preserved and an absent currency never turns into
   assert.equal(formatEmployeeMoney(25, null), 'Měna není uvedena');
   assert.equal(formatEmployeeMoney(null, 'EUR'), 'Nedostupné');
 });
+
+test('remaining entitlement keeps reservations and subtracts only paid amounts across projects and realizations',()=>{
+ const view=employeeFinanceView({availability:{data:{projects:[{project_id:'p',total_reward:100000,paid_payouts:30000,reserved_payouts:20000,available_balance:50000}],realizations:[{id:'r',total_share:40000,paid_amount:10000,reserved_payouts:5000,available_share:25000}]}}});
+ assert.equal(view.remaining,100000); assert.equal(view.available,75000);
+ assert.equal(employeeFinanceView({}).remaining,null);
+ assert.equal(employeeFinanceView({availability:{data:{projects:[{total_reward:100,paid_payouts:null}],realizations:[]}}}).remaining,null);
+});
