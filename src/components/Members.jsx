@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { loadMemberDirectory } from '@/lib/memberDirectoryData';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, Plus, Edit2, Trash2, LayoutGrid, Rows, AlertTriangle, CheckCircle, Search, Filter, MoreHorizontal, Eye, Clock, Shield, Mail, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -43,86 +44,30 @@ const Members = () => {
     const [deleteCandidate,setDeleteCandidate]=useState(null);
     const [deleting,setDeleting]=useState(false);
 
+    const [loading,setLoading]=useState(true);
+    const [loadError,setLoadError]=useState('');
+    const [financeReady,setFinanceReady]=useState(false);
+    const [financeError,setFinanceError]=useState('');
+    const pendingLoad=useRef(null);
     const canEdit = hasPermission('members', 'can_edit');
     const canAdmin = hasPermission('members', 'can_admin');
     const canViewFinance = isAdmin;
 
     const fetchMembersAndRewards = useCallback(async () => {
-        const memberSelect = 'id, name, email, phone, role_id, auth_user_id, attendance_enabled, user_role, internal_note, languages, company, job_title, department, bio, avatar_url, language, notification_preferences, member_roles(name), member_certifications(expiry_date)';
-        let membersQuery = supabase
-            .from('members')
-            .select(memberSelect)
-            .order('name');
-
-        const { data: membersData, error: membersError } = await membersQuery;
-
-        if (membersError) {
-            toast({ title: "Chyba při načítání zaměstnanců", variant: "destructive" });
-            return;
-        }
-        let visibleMembers = membersData || [];
-        if (isAdmin) {
-            const { data: compensationRows, error: compensationError } = await supabase.rpc('list_member_compensations_admin');
-            if (compensationError) {
-                toast({ title: 'Chyba při načítání sazeb', description: compensationError.message, variant: 'destructive' });
-                return;
-            }
-            const compensationByMember = new Map((compensationRows || []).map((row) => [String(row.member_id), row]));
-            visibleMembers = visibleMembers.map((member) => ({
-                ...member,
-                hourly_rate: compensationByMember.get(String(member.id))?.hourly_rate || 0,
-            }));
-        }
-        setMembers(visibleMembers);
-
-        if (!canViewFinance) return;
-
-        const { data: assignmentsData, error: assignmentsError } = await supabase.rpc('get_member_project_rewards', {
-            p_member_id: isSuperUser ? null : memberId,
-        });
-
-        if (assignmentsError) {
-            toast({ title: "Chyba při načítání odměn", variant: "destructive", description: assignmentsError.message });
-            return;
-        }
-
-        const totalRewardsByMember = assignmentsData.reduce((acc, assignment) => {
-            const reward = Number(assignment.total_reward || 0);
-
-            acc[assignment.member_id] = (acc[assignment.member_id] || 0) + (reward > 0 ? reward : 0);
-            return acc;
-        }, {});
-
-        setRewards(totalRewardsByMember);
-
-        let payoutsQuery = supabase
-            .from('payouts')
-            .select('member_id, amount')
-            .in('status', ['paid', 'approved', 'invoice_uploaded', 'pending']);
-
-        if (!isSuperUser && memberId) {
-            payoutsQuery = payoutsQuery.eq('member_id', memberId);
-        }
-
-        const { data: payoutsData, error: payoutsError } = await payoutsQuery;
-
-        if (payoutsError) {
-            toast({ title: "Chyba při načítání výplat", variant: "destructive" });
-        } else {
-            const totalPaidByMember = payoutsData.reduce((acc, payout) => {
-                if (payout.member_id) {
-                    acc[payout.member_id] = (acc[payout.member_id] || 0) + (parseFloat(payout.amount) || 0);
-                }
-                return acc;
-            }, {});
-            setPayouts(totalPaidByMember);
-        }
-
-    }, [toast, isAdmin, isSuperUser, memberId, canViewFinance]);
-
-    useEffect(() => {
-        fetchMembersAndRewards();
-    }, [fetchMembersAndRewards]);
+        pendingLoad.current?.abort();
+        const controller=new AbortController();pendingLoad.current=controller;
+        setLoading(true);setLoadError('');setFinanceError('');setFinanceReady(false);
+        setMembers([]);setRewards({});setPayouts({});
+        const timeout=setTimeout(()=>controller.abort(),20000);
+        try {
+            const result=await loadMemberDirectory(supabase,{isAdmin,isSuperUser,memberId,signal:controller.signal});
+            if(pendingLoad.current!==controller)return;
+            setMembers(result.members);setRewards(result.rewards);setPayouts(result.payouts);setFinanceReady(result.financeReady);setFinanceError(result.financeError);
+        } catch(error) {
+            if(pendingLoad.current===controller)setLoadError('Seznam zaměstnanců se nepodařilo načíst. Zkontrolujte připojení a zkuste to znovu.');
+        } finally {clearTimeout(timeout);if(pendingLoad.current===controller)setLoading(false);}
+    }, [isAdmin,isSuperUser,memberId]);
+    useEffect(()=>{void fetchMembersAndRewards();return()=>{pendingLoad.current?.abort();pendingLoad.current=null;};},[fetchMembersAndRewards]);
 
     const handleSaveMember = async (memberData) => {
         const cleanedData = {
@@ -284,20 +229,21 @@ const Members = () => {
                     </DropdownMenu>
                 </div>
 
+                {!financeReady&&canViewFinance&&<p className="mb-3 text-xs text-slate-500">Finanční údaje nejsou dostupné.</p>}
                 <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Mail className="w-3 h-3" />
                         <span className="truncate">{member.email || 'Není nastaven'}</span>
                     </div>
 
-                    {canViewFinance && (
+                    {canViewFinance && financeReady && (
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <Clock className="w-3 h-3" />
                             <span>{member.hourly_rate ? `${Number(member.hourly_rate).toLocaleString('cs-CZ')} Kč/h` : 'Nenastavena'}</span>
                         </div>
                     )}
 
-                    {canViewFinance && (
+                    {canViewFinance && financeReady && (
                         <div className="pt-3 border-t space-y-2">
                             <div className="flex justify-between items-center">
                                 <span className="text-xs text-muted-foreground">Celková odměna:</span>
@@ -320,7 +266,7 @@ const Members = () => {
     };
 
     return (
-        <div className="app-page member-directory">
+        <div className="app-page member-directory" aria-busy={loading}>
             <div className="space-y-4">
                 <PageHeader
                     icon={Users}
@@ -348,6 +294,7 @@ const Members = () => {
                         </>
                     }
                 />
+                {(loadError||financeError)&&<div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"><p>{loadError||financeError}</p><Button variant="outline" disabled={loading} onClick={fetchMembersAndRewards}>Zkusit znovu</Button></div>}
                 {/* Stats Cards */}
                 <div className="directory-metrics grid grid-cols-2 lg:grid-cols-4 gap-3">
                     <Card>
@@ -358,7 +305,7 @@ const Members = () => {
                                 </div>
                                 <div>
                                     <p className="text-sm text-muted-foreground">Celkem zaměstnanců</p>
-                                    <p className="text-2xl font-bold">{totalMembers}</p>
+                                    <p className="text-2xl font-bold">{loading||loadError?'—':totalMembers}</p>
                                 </div>
                             </div>
                         </CardContent>
@@ -372,7 +319,7 @@ const Members = () => {
                                 </div>
                                 <div>
                                     <p className="text-sm text-muted-foreground">Pozice / kategorie</p>
-                                    <p className="text-2xl font-bold">{uniqueRolesCount}</p>
+                                    <p className="text-2xl font-bold">{loading||loadError?'—':uniqueRolesCount}</p>
                                 </div>
                             </div>
                         </CardContent>
@@ -386,7 +333,7 @@ const Members = () => {
                                 </div>
                                 <div>
                                     <p className="text-sm text-muted-foreground">K vyplacení</p>
-                                    <p className={cn("text-2xl font-bold", canViewFinance && "text-orange-600")}>{canViewFinance ? pendingPayouts.toLocaleString('cs-CZ') + ' Kč' : 'N/A'}</p>
+                                    <p className={cn("text-2xl font-bold", canViewFinance && "text-orange-600")}>{canViewFinance&&financeReady ? pendingPayouts.toLocaleString('cs-CZ') + ' Kč' : '—'}</p>
                                 </div>
                             </div>
                         </CardContent>
@@ -400,7 +347,7 @@ const Members = () => {
                                 </div>
                                 <div>
                                     <p className="text-sm text-muted-foreground">Expirované certifikace</p>
-                                    <p className="text-2xl font-bold text-red-600">{membersWithExpiredCerts}</p>
+                                    <p className="text-2xl font-bold text-red-600">{loading||loadError?'—':membersWithExpiredCerts}</p>
                                 </div>
                             </div>
                         </CardContent>
@@ -476,9 +423,9 @@ const Members = () => {
                     </Card>
                 )}
 
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500"><span role="status">Zobrazeno {filteredMembers.length} z {members.length} zaměstnanců</span>{(searchTerm||roleFilter!=='all'||certificationFilter!=='all')&&<Button variant="ghost" size="sm" onClick={()=>{setSearchTerm('');setRoleFilter('all');setCertificationFilter('all');}}>Zrušit filtry</Button>}</div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500"><span role="status">{loading?'Načítám zaměstnance…':loadError?'Seznam není dostupný':`Zobrazeno ${filteredMembers.length} z ${members.length} zaměstnanců`}</span>{(searchTerm||roleFilter!=='all'||certificationFilter!=='all')&&<Button variant="ghost" size="sm" onClick={()=>{setSearchTerm('');setRoleFilter('all');setCertificationFilter('all');}}>Zrušit filtry</Button>}</div>
                 {/* Content */}
-                {filteredMembers.length > 0 ? (
+                {loading ? <div role="status" className="rounded-xl border bg-white p-8 text-center text-slate-500">Načítám zaměstnance…</div> : loadError ? null : filteredMembers.length > 0 ? (
                     view === 'grid' ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <AnimatePresence>
@@ -497,9 +444,9 @@ const Members = () => {
                                                 <TableHead className="w-[250px]">Jméno</TableHead>
                                                 <TableHead>Pozice / kategorie</TableHead>
                                                 <TableHead>Certifikace</TableHead>
-                                                {canViewFinance && <TableHead>Hodinová sazba</TableHead>}
-                                                {canViewFinance && <TableHead>Celková odměna</TableHead>}
-                                                {canViewFinance && <TableHead>Zbývá k vyplacení</TableHead>}
+                                                {canViewFinance && financeReady && <TableHead>Hodinová sazba</TableHead>}
+                                                {canViewFinance && financeReady && <TableHead>Celková odměna</TableHead>}
+                                                {canViewFinance && financeReady && <TableHead>Zbývá k vyplacení</TableHead>}
                                                 <TableHead className="w-[50px]"></TableHead>
                                             </TableRow>
                                         </TableHeader>
@@ -534,13 +481,13 @@ const Members = () => {
                                                                 />
                                                             )}
                                                         </TableCell>
-                                                        {canViewFinance && (
+                                                        {canViewFinance && financeReady && (
                                                             <TableCell className="font-semibold">
                                                                 {member.hourly_rate ? `${Number(member.hourly_rate).toLocaleString('cs-CZ')} Kč` : 'Nenastavena'}
                                                             </TableCell>
                                                         )}
-                                                        {canViewFinance && <TableCell>{totalReward.toLocaleString('cs-CZ')} Kč</TableCell>}
-                                                        {canViewFinance && <TableCell className={cn(
+                                                        {canViewFinance && financeReady && <TableCell>{totalReward.toLocaleString('cs-CZ')} Kč</TableCell>}
+                                                        {canViewFinance && financeReady && <TableCell className={cn(
                                                             "font-semibold",
                                                             balance > 0 ? "text-green-600" : "text-gray-500"
                                                         )}>
