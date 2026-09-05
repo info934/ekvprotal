@@ -9,7 +9,7 @@ export default function Sidebar({ collapsed = false, onCollapse, onNavigate, mob
   const { user, userRole, hasPermission, signOut, isAdmin, isPrivateMode, togglePrivateMode } = useAuth();
   const { pathname } = useLocation();
   const [favorites, setFavorites] = useState(() => {
-    try { const saved = JSON.parse(localStorage.getItem('ekv-sidebar-favorites')); return Array.isArray(saved) ? saved.filter(path => ALL_PORTAL_NAVIGATION.some(item => item.path === path)) : []; } catch { return []; }
+    try { const saved = JSON.parse(localStorage.getItem('ekv-sidebar-favorites')); return Array.isArray(saved) ? [...new Set(saved.map(path => path === '/employee' ? '/members' : path))].filter(path => ALL_PORTAL_NAVIGATION.some(item => item.path === path)) : []; } catch { return []; }
   });
   useEffect(() => { try { localStorage.setItem('ekv-sidebar-favorites', JSON.stringify(favorites)); } catch { /* Navigation works without storage. */ } }, [favorites]);
   const toggleFavorite = path => setFavorites(current => current.includes(path) ? current.filter(value => value !== path) : [...current, path]);

@@ -174,7 +174,7 @@ export async function loadEmployeeFinance(client, { actorMemberId, targetMemberI
       return data;
     },
     rewards: () => fetchAllEmployeeRows(() => client.rpc('get_member_project_rewards', { p_member_id: targetMemberId }).order('project_id'), signal),
-    payouts: () => fetchAllEmployeeRows(() => client.from('payouts').select('id,member_id,amount,status,request_date').eq('member_id', targetMemberId).order('request_date', { ascending: false }).order('id'), signal),
+    payouts: () => fetchAllEmployeeRows(() => client.from('payouts').select('id,member_id,amount,status,request_date,reason,payout_items(id,amount,project_id,realization_id,realizace_id,projects(name),realizations:realizations!payout_items_realizace_id_fkey(name),realization:realizations!payout_items_realization_id_fkey(name))').eq('member_id', targetMemberId).order('request_date', { ascending: false }).order('id'), signal),
     hourly: () => fetchAllEmployeeRows(() => client.from('hourly_payout_requests').select('id,member_id,total_amount,status,created_at').eq('member_id', targetMemberId).order('created_at', { ascending: false }).order('id'), signal),
   };
   const names = Object.keys(definitions);
@@ -187,9 +187,9 @@ export function employeeFinanceView(finance) {
   const availability = finance?.availability?.data;
   const entitlements = availability ? [
     ...availability.projects.map(row => ({ id: row.project_id, kind: 'Projekt', name: row.project_name, code: row.project_code,
-      total: employeeFiniteAmount(row.total_reward), available: employeeFiniteAmount(row.available_balance), reserved: employeeFiniteAmount(row.reserved_payouts), paid: employeeFiniteAmount(row.paid_payouts), href: `/projects/${row.project_id}` })),
+      total: employeeFiniteAmount(row.total_reward), available: employeeFiniteAmount(row.available_balance), recommended: employeeFiniteAmount(row.recommended_available_balance ?? row.available_balance), reserved: employeeFiniteAmount(row.reserved_payouts), paid: employeeFiniteAmount(row.paid_payouts), href: `/projects/${row.project_id}` })),
     ...availability.realizations.map(row => ({ id: row.id, kind: 'Realizace', name: row.name, code: row.code,
-      total: employeeFiniteAmount(row.total_share), available: employeeFiniteAmount(row.available_share), reserved: employeeFiniteAmount(row.reserved_payouts), paid: employeeFiniteAmount(row.paid_amount), href: `/realizace/${row.id}` })),
+      total: employeeFiniteAmount(row.total_share), available: employeeFiniteAmount(row.available_share), recommended: employeeFiniteAmount(row.recommended_available_share ?? row.available_share), reserved: employeeFiniteAmount(row.reserved_payouts), paid: employeeFiniteAmount(row.paid_amount), href: `/realizace/${row.id}` })),
   ] : null;
   // Payout headers are the only source for paid/pending totals. Never sum reward
   // rows together with availability, or payout line items together with headers.

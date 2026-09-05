@@ -169,13 +169,17 @@ test('finance independently reports RPC errors and never manufactures zero from 
 });
 
 test('finance uses canonical availability once and payout headers once across both payout types', () => {
-  const finance = { availability: { data: { projects: [{ project_id: 'p', total_reward: 1000, available_balance: 700, paid_payouts: 200, reserved_payouts: 100 }], realizations: [{ id: 'r', total_share: 400, available_share: 300, paid_amount: 100, reserved_payouts: 0 }] } },
+  const finance = { availability: { data: { projects: [{ project_id: 'p', total_reward: 1000, available_balance: 700, recommended_available_balance: 0, paid_payouts: 200, reserved_payouts: 100 }], realizations: [{ id: 'r', total_share: 400, available_share: 300, paid_amount: 100, reserved_payouts: 0 }] } },
     rewards: { data: [{ project_id: 'p', total_reward: 1000, available_balance: 700 }] },
-    payouts: { data: [{ id: '1', amount: 200, status: 'paid' }, { id: '2', amount: 100, status: 'approved' }, { id: '3', amount: 5000, status: 'rejected' }] },
+    payouts: { data: [{ id: '1', amount: 200, status: 'paid', reason: 'Dokončená zakázka', payout_items: [{ id: 'item', project_id: 'p', amount: 200 }] }, { id: '2', amount: 100, status: 'approved' }, { id: '3', amount: 5000, status: 'rejected' }] },
     hourly: { data: [{ id: '4', total_amount: 50, status: 'paid' }, { id: '5', total_amount: 30, status: 'invoice_uploaded' }, { id: '6', total_amount: 9000, status: 'cancelled' }] } };
   const result = employeeFinanceView(finance);
   assert.equal(result.available, 1000); assert.equal(result.paid, 250); assert.equal(result.pending, 130);
   assert.equal(result.entitlements.length, 2); assert.equal(result.payouts.length, 6);
+  assert.equal(result.entitlements[0].recommended, 0, 'Zero funding coverage must not become the available balance');
+  assert.equal(result.entitlements[1].recommended, 300, 'Legacy coverage falls back to availability');
+  assert.deepEqual(result.payouts.find(row => row.id === '1').payout_items, finance.payouts.data[0].payout_items);
+  assert.equal(result.payouts.find(row => row.id === '1').reason, 'Dokončená zakázka');
   const partial = employeeFinanceView({ ...finance, hourly: { data: null, error: 'failed' } });
   assert.equal(partial.paid, null); assert.equal(partial.pending, null); assert.equal(partial.payouts.length, 3); assert.equal(partial.payoutsComplete, false);
   const hourlyOnly = employeeFinanceView({ ...finance, payouts: { data: null, error: 'failed' } });

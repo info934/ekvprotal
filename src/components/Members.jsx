@@ -345,11 +345,12 @@ const Members = () => {
                 <PageHeader
                     icon={Users}
                     title="Zaměstnanci"
-                    description={isSuperUser ? 'Správa zaměstnanců, jejich pozic, kategorií a odměn' : 'Váš profil, pozice a odměny'}
+                    description="Lidé, jejich práce, finance, vybavení a dokumenty. Každý zaměstnanec má jednu společnou kartu."
                     actions={
                         <>
+                            {memberId && <Button variant="outline" onClick={() => navigate(`/members/${memberId}`)}>Moje karta</Button>}
                             {isAdmin && (
-                                <Button variant="outline" onClick={() => navigate('/employee?tab=requests&scope=all')}>
+                                <Button variant="outline" onClick={() => navigate('/members?view=requests')}>
                                     <Clock className="w-4 h-4 mr-2" />
                                     Zaměstnanecké žádosti
                                 </Button>

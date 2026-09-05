@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ChevronLeft, User, Mail, Phone, DollarSign, Folder, FileText, Activity, AlertTriangle, CheckCircle2, XCircle, Upload, ClipboardList, Copy, CircleDot, BadgeCheck as CircleCheck, CalendarX, Briefcase, Award, Plus, Edit2, Trash2, Download, MessageSquare, ListTodo, Clock, Layers } from 'lucide-react';
+import { ChevronLeft, User, DollarSign, AlertTriangle, ClipboardList, Copy, CircleDot, BadgeCheck as CircleCheck, CalendarX, Briefcase, Award, Plus, Edit2, Trash2, Download, MessageSquare, ListTodo, Clock } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,9 +16,10 @@ import { useDropzone } from 'react-dropzone';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter } from "@/components/ui/alert-dialog";
 import MemberDialog from '@/components/MemberDialog';
 import SendMessageDialog from '@/components/SendMessageDialog';
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn, projectStatusConfig } from '@/lib/utils';
+import { projectStatusConfig } from '@/lib/utils';
 import { sendEmail } from '@/lib/email';
+import EmployeeCenter from '@/components/employee/EmployeeCenter';
+import EmployeeFinance from '@/components/employee/EmployeeFinance';
 
 const DetailSection = ({ title, icon: Icon, children, contentClassName = "" }) => (
   <motion.div
@@ -41,41 +42,6 @@ const InfoItem = ({ label, value, children }) => (
     {children || <p className="font-semibold">{value || '-'}</p>}
   </div>
 );
-
-const PayoutProjectsPopover = ({ items }) => (
-  <Popover>
-    <PopoverTrigger asChild>
-      <Button variant="link" size="sm" className="h-auto p-0 text-xs">
-        <Layers className="w-3 h-3 mr-1" />
-        {items.length} {items.length === 1 ? 'projekt' : items.length < 5 ? 'projekty' : 'projektů'}
-      </Button>
-    </PopoverTrigger>
-    <PopoverContent className="w-80">
-      <div className="space-y-4">
-        <h4 className="font-medium leading-none">Zahrnuté projekty</h4>
-        <div className="space-y-2">
-          {items.map(item => (
-            <div key={item.project_id || item.realization_id || item.realizace_id} className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground truncate pr-2">
-                {item.projects?.name || item.realizations?.name || item.realization?.name || 'N/A'}
-              </span>
-              <span className="font-semibold whitespace-nowrap">{parseFloat(item.amount).toLocaleString('cs-CZ')} Kč</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </PopoverContent>
-  </Popover>
-);
-
-
-const payoutStatusConfig = {
-  pending: { label: 'Čeká na schválení', icon: AlertTriangle, color: 'text-yellow-500', bg: 'bg-yellow-100' },
-  approved: { label: 'Čeká na fakturu', icon: Upload, color: 'text-blue-500', bg: 'bg-blue-100' },
-  invoice_uploaded: { label: 'Faktura nahrána', icon: FileText, color: 'text-purple-500', bg: 'bg-purple-100' },
-  paid: { label: 'Vyplaceno', icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-100' },
-  rejected: { label: 'Zamítnuto', icon: XCircle, color: 'text-red-500', bg: 'bg-red-100' }
-};
 
 const taskStatusConfig = {
   'Nové': { color: 'bg-blue-100 text-blue-800' },
@@ -170,16 +136,15 @@ const CertificationDialog = ({ isOpen, onClose, onSave, certification, memberId 
 
 const MemberDetail = () => {
   const { memberId } = useParams();
+  const [search, setSearch] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { hasPermission, user, isAdmin, memberId: currentMemberId } = useAuth();
   const [member, setMember] = useState(null);
   const [projects, setProjects] = useState([]);
-  const [projectRewards, setProjectRewards] = useState({});
-  const [payoutAvailability, setPayoutAvailability] = useState({ projects: [], realizations: [] });
-  const [payouts, setPayouts] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [orderRewards, setOrderRewards] = useState(null);
   const [certifications, setCertifications] = useState([]);
   const [isCertDialogOpen, setIsCertDialogOpen] = useState(false);
   const [isMemberDialogOpen, setIsMemberDialogOpen] = useState(false);
@@ -193,6 +158,21 @@ const MemberDetail = () => {
   const canEdit = useMemo(() => hasPermission('members', 'can_edit'), [hasPermission]);
   const canAdmin = useMemo(() => hasPermission('members', 'can_admin'), [hasPermission]);
   const canViewCompensation = isAdmin || String(currentMemberId) === String(memberId);
+  const tabs = { overview: 'Přehled', tasks: 'Práce', orders: 'Objednávky', records: 'Smlouvy a ověření', ...(canViewCompensation ? { assets: 'Majetek', requests: 'Žádosti', finance: 'Finance' } : {}) };
+  const requestedTab = ({ certifications: 'records', projects: 'finance' })[search.get('tab')] || search.get('tab');
+  const selectedTab = tabs[requestedTab] ? requestedTab : 'overview';
+  const changeTab = tab => { const next = new URLSearchParams(search); next.set('tab', tab); next.delete('new'); setSearch(next); };
+  useEffect(() => {
+    if (selectedTab !== 'orders' || !canViewCompensation) return;
+    const controller = new AbortController();
+    setOrderRewards(null);
+    supabase.rpc('get_member_project_rewards', { p_member_id: memberId }).abortSignal(controller.signal).then(({ data, error }) => {
+      if (controller.signal.aborted) return;
+      if (error) toast({ title: 'Ceny objednávek se nepodařilo načíst', description: error.message, variant: 'destructive' });
+      else setOrderRewards(Object.fromEntries((data || []).map(row => [row.project_id, row.total_reward])));
+    });
+    return () => controller.abort();
+  }, [selectedTab, canViewCompensation, memberId, toast]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -221,46 +201,6 @@ const MemberDetail = () => {
 
     if (!projectError) setProjects(projectAssignments.filter(Boolean));
 
-    const { data: projectRewardRows, error: projectRewardsError } = canViewCompensation
-      ? await supabase.rpc('get_member_project_rewards', { p_member_id: memberId })
-      : { data: [], error: null };
-    if (projectRewardsError) {
-      toast({ title: 'Chyba při načítání projektových odměn', variant: 'destructive', description: projectRewardsError.message });
-      setProjectRewards({});
-    } else {
-      const rewardsByProject = (projectRewardRows || []).reduce((acc, row) => {
-        acc[row.project_id] = row;
-        return acc;
-      }, {});
-      setProjectRewards(rewardsByProject);
-    }
-
-    const { data: availabilityData, error: availabilityError } = canViewCompensation
-      ? await supabase.rpc('get_payout_availability', { p_member_id: memberId, p_edit_payout_id: null })
-      : { data: { projects: [], realizations: [] }, error: null };
-    if (availabilityError) {
-      toast({ title: 'Chyba při načítání nároků k výplatě', variant: 'destructive', description: availabilityError.message });
-      setPayoutAvailability({ projects: [], realizations: [] });
-    } else {
-      setPayoutAvailability({
-        projects: availabilityData?.projects || [],
-        realizations: availabilityData?.realizations || [],
-      });
-    }
-
-    const { data: payoutsData, error: payoutsError } = canViewCompensation
-      ? await supabase
-        .from('payouts')
-        .select('*, payout_items(*, projects(name), realizations:realizations!payout_items_realizace_id_fkey(name), realization:realizations!payout_items_realization_id_fkey(name))')
-        .eq('member_id', memberId)
-        .order('request_date', { ascending: false })
-      : { data: [], error: null };
-    if (payoutsError) {
-      toast({ title: 'Chyba při načítání výplat', variant: 'destructive', description: payoutsError.message });
-    } else {
-      setPayouts(payoutsData);
-    }
-
     const { data: tasksData, error: tasksError } = await supabase.from('project_tasks').select('*, projects(name)').eq('member_id', memberId).order('end_date', { ascending: true });
     if (!tasksError) setTasks(tasksData);
 
@@ -271,111 +211,9 @@ const MemberDetail = () => {
     if (!certsError) setCertifications(certsData);
 
     setLoading(false);
-  }, [currentMemberId, isAdmin, memberId, toast]);
+  }, [canViewCompensation, memberId, toast]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  const getProjectReward = (projectAssignment) => {
-    if (!projectAssignment || !projectAssignment.project) return 0;
-    return Number(projectRewards[projectAssignment.project_id]?.total_reward || 0);
-  };
-
-  const getOrderPrice = (order) => {
-    const projectAssignment = projects.find(p => p.project_id === order.project_id);
-    return getProjectReward(projectAssignment);
-  };
-
-  const getPaidAmount = (projectId) => {
-    if (projectRewards[projectId]) return Number(projectRewards[projectId].paid_amount || 0);
-    let totalPaid = 0;
-    payouts.forEach(payout => {
-      if (payout.status === 'paid') {
-        payout.payout_items.forEach(item => {
-          if (item.project_id === projectId) {
-            totalPaid += parseFloat(item.amount) || 0;
-          }
-        });
-      }
-    });
-    return totalPaid;
-  };
-
-  const getRemainingReward = (projectAssignment) => {
-    if (!projectAssignment || !projectAssignment.project) return 0;
-    if (projectRewards[projectAssignment.project_id]) {
-      return Number(projectRewards[projectAssignment.project_id].available_balance || 0);
-    }
-    const totalReward = getProjectReward(projectAssignment);
-    const paidAmount = getPaidAmount(projectAssignment.project_id);
-    return totalReward - paidAmount;
-  };
-
-  const getTotalRewards = () => {
-    return projects.reduce((sum, pa) => sum + getProjectReward(pa), 0);
-  };
-
-  const getTotalPaid = () => {
-    return payouts
-      .filter(p => p.status === 'paid')
-      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-  };
-
-  const payoutEntitlements = useMemo(() => [
-    ...(payoutAvailability.projects || []).map((project) => ({
-      id: project.project_id,
-      type: 'Projekt',
-      name: project.project_name,
-      code: project.project_code,
-      status: project.project_status,
-      total: Number(project.total_reward || 0),
-      reserved: Number(project.reserved_payouts || 0),
-      paid: Number(project.paid_payouts || 0),
-      available: Number(project.available_balance || 0),
-      recommended: Number(project.recommended_available_balance ?? project.available_balance ?? 0),
-      href: `/projects/${project.project_id}`,
-    })),
-    ...(payoutAvailability.realizations || []).map((realization) => ({
-      id: realization.id,
-      type: 'Realizace',
-      name: realization.name,
-      code: realization.code || null,
-      status: realization.status,
-      total: Number(realization.total_share || 0),
-      reserved: Number(realization.reserved_payouts || 0),
-      paid: Number(realization.paid_amount || 0),
-      available: Number(realization.available_share || 0),
-      recommended: Number(realization.recommended_available_share ?? realization.available_share ?? 0),
-      href: `/realizace/${realization.id}`,
-    })),
-  ], [payoutAvailability]);
-
-  const totalAvailableForPayout = useMemo(
-    () => payoutEntitlements.reduce((sum, entitlement) => sum + entitlement.available, 0),
-    [payoutEntitlements]
-  );
-  const totalRecommendedForPayout = useMemo(
-    () => payoutEntitlements.reduce((sum, entitlement) => sum + entitlement.recommended, 0),
-    [payoutEntitlements]
-  );
-
-  const payoutItemsSummary = useMemo(() => {
-    const rows = [];
-    payouts.forEach((payout) => {
-      const payoutDate = payout.request_date ? format(new Date(payout.request_date), 'MM.yyyy') : '-';
-      payout.payout_items.forEach((item) => {
-        const name = item.projects?.name || item.realizations?.name || item.realization?.name || 'N/A';
-        rows.push({
-          key: `${payout.id}-${item.project_id || item.realization_id || item.realizace_id}`,
-          name,
-          type: item.project_id ? 'Projekt' : 'Realizace',
-          period: payoutDate,
-          amount: parseFloat(item.amount) || 0,
-          status: payout.status,
-        });
-      });
-    });
-    return rows;
-  }, [payouts]);
 
   const handleSaveCertification = async (certData) => {
     const dataToUpsert = { ...certData };
@@ -487,7 +325,7 @@ const MemberDetail = () => {
 
   return (
     <div className="app-page">
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-start justify-between gap-4 2xl:flex-row 2xl:items-center">
         <div>
           <Link to="/members" className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary mb-4">
             <ChevronLeft className="w-4 h-4" /> Zpět na zaměstnance
@@ -496,10 +334,11 @@ const MemberDetail = () => {
             <User className="w-8 h-8" />
             {member.name}
           </h1>
-          <p className="text-muted-foreground">Detailní přehled zaměstnance, jeho pozice, projektů, financí a certifikací.</p>
+          <p className="text-muted-foreground">Kontakty, práce, finance a zaměstnanecká evidence na jedné kartě.</p>
         </div>
-        <div className="flex-shrink-0 flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          {(isAdmin || String(currentMemberId) === String(memberId)) && <Button variant="outline" asChild><Link to={`/employees/${memberId}`}><Briefcase className="mr-2 h-4 w-4" />Zaměstnanecká karta</Link></Button>}
+        <div className="flex w-full flex-wrap items-center gap-2 2xl:w-auto">
+          {isAdmin && <Button variant="outline" asChild><Link to="/members?view=requests"><ClipboardList className="mr-2 h-4 w-4" />Žádosti ke schválení</Link></Button>}
+          {String(currentMemberId) === String(memberId) && <Button variant="outline" asChild><Link to={`/members/${memberId}?tab=requests&new=request`}>Nová žádost</Link></Button>}
           {canEdit && <Button variant="outline" onClick={() => setIsMessageDialogOpen(true)} className="w-full sm:w-auto"><MessageSquare className="w-4 h-4 mr-2" />Poslat zprávu</Button>}
           {canEdit && <Button onClick={() => setIsMemberDialogOpen(true)} className="w-full sm:w-auto"><Edit2 className="w-4 h-4 mr-2" />Upravit</Button>}
           {canAdmin && (
@@ -508,18 +347,14 @@ const MemberDetail = () => {
         </div>
       </motion.div>
 
-      <Tabs defaultValue="overview" className="w-full">
+      <Tabs value={selectedTab} onValueChange={changeTab} className="w-full">
         <div className="glass-effect rounded-xl p-2 mb-6">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
-            <TabsTrigger value="overview">Základní info</TabsTrigger>
-            <TabsTrigger value="tasks">Úkoly</TabsTrigger>
-            <TabsTrigger value="orders">Objednávky</TabsTrigger>
-            <TabsTrigger value="certifications">Certifikace</TabsTrigger>
-            <TabsTrigger value="projects">Finance</TabsTrigger>
+          <TabsList aria-label="Karta zaměstnance" className="flex h-auto w-full flex-wrap justify-start gap-1">
+            {Object.entries(tabs).map(([value, label]) => <TabsTrigger key={value} value={value}>{label}</TabsTrigger>)}
           </TabsList>
         </div>
 
-        <TabsContent value="overview" className="glass-effect rounded-xl p-6">
+        <TabsContent value="overview" className="space-y-6 rounded-xl border bg-white p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <InfoItem label="Pozice / kategorie" value={member.member_roles ? member.member_roles.name : 'Není nastaveno'} />
             <InfoItem label="Email" value={member.email} />
@@ -547,9 +382,13 @@ const MemberDetail = () => {
               <InfoItem label="Interní poznámka / Dostupnost" value={member.internal_note} />
             </div>
           </div>
+          {canViewCompensation && <EmployeeCenter embedded targetId={memberId} tab="overview" />}
         </TabsContent>
 
-        <TabsContent value="tasks" className="glass-effect rounded-xl p-6">
+        <TabsContent value="tasks" className="rounded-xl border bg-white p-6">
+          <DetailSection title="Přiřazené projekty" icon={Briefcase}>
+            {projects.length ? <ul className="divide-y">{projects.filter(row => row.project).map(row => <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-3"><Link className="font-medium text-blue-700 hover:underline" to={`/projects/${row.project_id}`}>{row.project.name}<span className="ml-2 text-xs text-slate-500">{row.project.code}</span></Link><span className="text-sm text-slate-500">{projectStatusConfig[row.project.status]?.label || row.project.status}</span></li>)}</ul> : <p className="text-sm text-muted-foreground">Žádné přiřazené projekty.</p>}
+          </DetailSection>
           <DetailSection title="Přiřazené úkoly" icon={ListTodo} contentClassName="max-h-96 overflow-y-auto pr-2">
             {tasks.length > 0 ? (
               <Table>
@@ -591,7 +430,7 @@ const MemberDetail = () => {
                   return (
                     <TableRow key={order.id}>
                       <TableCell><Link to={`/projects/${order.project_id}`} className="font-medium hover:text-purple-600">{order.projects?.name || 'N/A'}</Link></TableCell>
-                      <TableCell>{getOrderPrice(order).toLocaleString('cs-CZ')} Kč</TableCell>
+                      <TableCell>{canViewCompensation && orderRewards?.[order.project_id] != null ? `${Number(orderRewards[order.project_id]).toLocaleString('cs-CZ')} Kč` : '—'}</TableCell>
                       <TableCell>{format(parseISO(order.created_at), 'd.M.yyyy')}</TableCell>
                       <TableCell><div className={`inline-flex items-center gap-2 text-sm font-medium ${config.color}`}><Icon className="w-4 h-4" />{config.label}</div></TableCell>
                       <TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => copyOrderLink(order.unique_token)}><Copy className="w-4 h-4" /></Button></TableCell>
@@ -603,7 +442,10 @@ const MemberDetail = () => {
           ) : <p className="text-muted-foreground text-center py-4">Žádné objednávky.</p>}
         </TabsContent>
 
-        <TabsContent value="certifications" className="glass-effect rounded-xl p-6">
+        <TabsContent value="assets"><EmployeeCenter embedded targetId={memberId} tab="assets" /></TabsContent>
+        <TabsContent value="requests"><EmployeeCenter embedded targetId={memberId} tab="requests" /></TabsContent>
+        <TabsContent value="records" className="space-y-6 rounded-xl border bg-white p-6">
+          {canViewCompensation && <EmployeeCenter embedded targetId={memberId} tab="records" />}
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-bold flex items-center gap-2"><Award className="w-5 h-5 gradient-text" /> Certifikace a oprávnění</h3>
             {canEdit && <Button onClick={() => { setEditingCert(null); setIsCertDialogOpen(true); }}><Plus className="w-4 h-4 mr-2" />Přidat</Button>}
@@ -631,237 +473,8 @@ const MemberDetail = () => {
           ) : <p className="text-muted-foreground text-center py-4">Žádné certifikace nebyly přidány.</p>}
         </TabsContent>
 
-        <TabsContent value="projects" className="space-y-6">
-          {/* Finanční přehled */}
-          <div className="glass-effect rounded-xl p-6">
-            <DetailSection title="Finanční přehled" icon={DollarSign}>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200 shadow-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <DollarSign className="w-5 h-5 text-purple-600" />
-                    <span className="text-sm font-medium text-purple-800">Hodinová sazba</span>
-                  </div>
-                  <p className="text-2xl font-bold text-purple-900">
-                    {member.hourly_rate ? `${member.hourly_rate.toLocaleString('cs-CZ')} Kč/h` : 'Není nastavena'}
-                  </p>
-                </div>
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Briefcase className="w-5 h-5 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-800">Odměny z projektů</span>
-                  </div>
-                  <p className="text-2xl font-bold text-blue-900">{getTotalRewards().toLocaleString('cs-CZ')} Kč</p>
-                </div>
-                <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle2 className="w-5 h-5 text-green-600" />
-                    <span className="text-sm font-medium text-green-800">Vyplaceno</span>
-                  </div>
-                  <p className="text-2xl font-bold text-green-900">{getTotalPaid().toLocaleString('cs-CZ')} Kč</p>
-                </div>
-                <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Clock className="w-5 h-5 text-orange-600" />
-                    <span className="text-sm font-medium text-orange-800">K výplatě nyní</span>
-                  </div>
-                  <p className="text-2xl font-bold text-orange-900">{totalAvailableForPayout.toLocaleString('cs-CZ')} Kč</p>
-                  {totalRecommendedForPayout < totalAvailableForPayout && (
-                    <p className="mt-1 text-xs text-orange-700">Kryté úhradami: {totalRecommendedForPayout.toLocaleString('cs-CZ')} Kč</p>
-                  )}
-                </div>
-              </div>
-            </DetailSection>
-          </div>
-
-          <div className="glass-effect rounded-xl p-6">
-            <DetailSection title="Nároky k výplatě" icon={Layers} contentClassName="max-h-96 overflow-auto pr-2">
-              <p className="text-sm text-muted-foreground">
-                Souhrn aktivních nároků z projektů i realizací. Částka odpovídá stejnému výpočtu jako při založení žádosti o výplatu.
-              </p>
-              {payoutEntitlements.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Zdroj</TableHead>
-                      <TableHead>Stav</TableHead>
-                      <TableHead className="text-right">Nárok</TableHead>
-                      <TableHead className="text-right">Rezervováno</TableHead>
-                      <TableHead className="text-right">Vyplaceno</TableHead>
-                      <TableHead className="text-right">K výplatě</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {payoutEntitlements.map((entitlement) => (
-                      <TableRow key={`${entitlement.type}-${entitlement.id}`}>
-                        <TableCell>
-                          <Link to={entitlement.href} className="font-medium hover:text-primary">
-                            {entitlement.name || 'Bez názvu'}
-                          </Link>
-                          <div className="text-xs text-muted-foreground">
-                            {entitlement.type}{entitlement.code ? ` · ${entitlement.code}` : ''}
-                          </div>
-                        </TableCell>
-                        <TableCell>{entitlement.status || '—'}</TableCell>
-                        <TableCell className="text-right">{entitlement.total.toLocaleString('cs-CZ')} Kč</TableCell>
-                        <TableCell className="text-right text-amber-700">{entitlement.reserved.toLocaleString('cs-CZ')} Kč</TableCell>
-                        <TableCell className="text-right text-emerald-700">{entitlement.paid.toLocaleString('cs-CZ')} Kč</TableCell>
-                        <TableCell className="text-right font-semibold text-primary">
-                          {entitlement.available.toLocaleString('cs-CZ')} Kč
-                          {entitlement.recommended < entitlement.available && (
-                            <div className="text-xs font-normal text-muted-foreground">kryto: {entitlement.recommended.toLocaleString('cs-CZ')} Kč</div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <p className="py-4 text-center text-sm text-muted-foreground">Aktuálně nejsou žádné nároky připravené k výplatě.</p>
-              )}
-            </DetailSection>
-          </div>
-
-          {/* Projekty s detailními informacemi */}
-          <div className="glass-effect rounded-xl p-6">
-            <DetailSection title="Přiřazené projekty" icon={Briefcase} contentClassName="max-h-96 overflow-y-auto pr-2">
-              {projects.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Projekt</TableHead>
-                      <TableHead>Stav</TableHead>
-                      <TableHead className="text-right">Celková odměna</TableHead>
-                      <TableHead className="text-right">Vyplaceno</TableHead>
-                      <TableHead className="text-right">Zbývající odměna</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {projects.map(pa => {
-                      if (!pa.project) return null;
-                      const totalReward = getProjectReward(pa);
-                      const paidAmount = getPaidAmount(pa.project_id);
-                      const remainingReward = getRemainingReward(pa);
-                      return (
-                        <TableRow key={pa.project.id}>
-                          <TableCell>
-                            <Link to={`/projects/${pa.project.id}`} className="font-medium hover:text-purple-600">
-                              {pa.project.name}
-                            </Link>
-                            <div className="text-xs text-muted-foreground">{pa.project.code}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className={`px-2 py-1 inline-block rounded-full text-xs font-medium border ${projectStatusConfig[pa.project.status]?.color}`}>
-                              {projectStatusConfig[pa.project.status]?.label}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {totalReward > 0 ? totalReward.toLocaleString('cs-CZ') + ' Kč' : 'N/A'}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className={paidAmount > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}>
-                              {paidAmount.toLocaleString('cs-CZ')} Kč
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className={remainingReward > 0 ? "text-orange-600 font-semibold" : remainingReward < 0 ? "text-red-600 font-semibold" : "text-muted-foreground"}>
-                              {remainingReward.toLocaleString('cs-CZ')} Kč
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              ) : <p className="text-muted-foreground text-center py-4">Žádné přiřazené projekty.</p>}
-            </DetailSection>
-          </div>
-
-          {/* Historie výplat */}
-          <div className="glass-effect rounded-xl p-6">
-            <DetailSection title="Historie výplat" icon={DollarSign} contentClassName="max-h-96 overflow-y-auto pr-2">
-              {payouts.length > 0 ? (
-                <div className="space-y-3">
-                  {payouts.map(payout => {
-                    const config = payoutStatusConfig[payout.status] || {};
-                    const Icon = config.icon || AlertTriangle;
-                    return (
-                      <div key={payout.id} className="bg-white/50 dark:bg-slate-800/50 border p-4 rounded-lg">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <div className="font-semibold">Výplata</div>
-                              <div className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${config.bg} ${config.color}`}>
-                                <Icon className="w-3 h-3" />
-                                {config.label}
-                              </div>
-                            </div>
-                            {payout.payout_items.length > 0 && (
-                              <PayoutProjectsPopover items={payout.payout_items} />
-                            )}
-                            <p className="text-xs text-muted-foreground">
-                              Požadavek: {format(new Date(payout.request_date), 'd.M.yyyy')}
-                            </p>
-                            {payout.reason && (
-                              <p className="text-xs text-muted-foreground mt-1 italic">
-                                Poznámka: {payout.reason}
-                              </p>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <span className="font-bold text-lg gradient-text">
-                              {(payout.amount || 0).toLocaleString('cs-CZ')} Kč
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : <p className="text-muted-foreground text-center py-4">Žádné výplaty.</p>}
-            </DetailSection>
-          </div>
-
-          {/* Výplaty po projektech */}
-          <div className="glass-effect rounded-xl p-6">
-            <DetailSection title="Výplaty po projektech" icon={Layers} contentClassName="max-h-96 overflow-y-auto pr-2">
-              {payoutItemsSummary.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Projekt / realizace</TableHead>
-                      <TableHead>Období</TableHead>
-                      <TableHead className="text-right">Částka</TableHead>
-                      <TableHead>Stav</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {payoutItemsSummary.map((row) => {
-                      const config = payoutStatusConfig[row.status] || {};
-                      const Icon = config.icon || AlertTriangle;
-                      return (
-                        <TableRow key={row.key}>
-                          <TableCell>
-                            <div className="font-medium">{row.name}</div>
-                            <div className="text-xs text-muted-foreground">{row.type}</div>
-                          </TableCell>
-                          <TableCell>{row.period}</TableCell>
-                          <TableCell className="text-right">{row.amount.toLocaleString('cs-CZ')} Kč</TableCell>
-                          <TableCell>
-                            <div className={`inline-flex items-center gap-2 text-xs font-medium ${config.color}`}>
-                              <Icon className="w-3 h-3" />
-                              {config.label || row.status}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              ) : (
-                <p className="text-muted-foreground text-center py-4">Žádné položky výplat.</p>
-              )}
-            </DetailSection>
-          </div>
+        <TabsContent value="finance" className="space-y-6">
+          <EmployeeFinance key={memberId} memberId={memberId} />
         </TabsContent>
       </Tabs>
 

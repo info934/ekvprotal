@@ -14,7 +14,9 @@ import { LogOut, RefreshCw } from 'lucide-react';
 const Dashboard = lazy(() => import('@/components/Dashboard'));
 const WorkspaceLanding = lazy(() => import('@/components/WorkspaceLanding'));
 const MyWork = lazy(() => import('@/components/MyWork'));
-const EmployeeCenter = lazy(() => import('@/components/employee/EmployeeCenter'));
+const EmployeesHome = lazy(() => import('@/components/employee/EmployeeRoutes').then(module => ({ default: module.EmployeesHome })));
+const EmployeeDetailRoute = lazy(() => import('@/components/employee/EmployeeRoutes').then(module => ({ default: module.EmployeeDetailRoute })));
+const LegacyEmployeeRedirect = lazy(() => import('@/components/employee/EmployeeRoutes').then(module => ({ default: module.LegacyEmployeeRedirect })));
 const Projects = lazy(() => import('@/components/Projects'));
 const Documents = lazy(() => import('@/components/Documents'));
 const CRM = lazy(() => import('@/components/CRM'));
@@ -27,8 +29,6 @@ const PayoutFormPage = lazy(() => import('@/components/PayoutFormPage'));
 const HourlyPayoutRequestsAdmin = lazy(() => import('@/components/HourlyPayoutRequestsAdmin'));
 const AuditLog = lazy(() => import('@/components/AuditLog'));
 const ProjectDetail = lazy(() => import('@/components/ProjectDetail'));
-const Members = lazy(() => import('@/components/Members'));
-const MemberDetail = lazy(() => import('@/components/MemberDetail'));
 const Settings = lazy(() => import('@/components/Settings'));
 const Reports = lazy(() => import('@/components/Reports'));
 const Auth = lazy(() => import('@/components/Auth'));
@@ -172,8 +172,8 @@ function AppContent() {
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/" element={<MyWork />} />
-                  <Route path="/employee" element={<EmployeeCenter />} />
-                  <Route path="/employees/:employeeMemberId" element={<EmployeeCenter />} />
+                  <Route path="/employee" element={<LegacyEmployeeRedirect />} />
+                  <Route path="/employees/:employeeMemberId" element={<LegacyEmployeeRedirect />} />
                   <Route path="/workspaces" element={<WorkspaceLanding />} />
                   <Route path="/dashboard" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />
                   <Route path="/projects" element={<PrivateRoute module="projects"><Projects /></PrivateRoute>} />
@@ -212,8 +212,8 @@ function AppContent() {
                   <Route path="/attendance" element={<PrivateRoute module="attendance"><Attendance /></PrivateRoute>} />
                   <Route path="/subjects" element={<PrivateRoute module="subjects"><Subjects /></PrivateRoute>} />
                   <Route path="/subjects/:subjectId" element={<PrivateRoute module="subjects"><SubjectDetail /></PrivateRoute>} />
-                  <Route path="/members" element={<PrivateRoute module="members"><Members /></PrivateRoute>} />
-                  <Route path="/members/:memberId" element={<PrivateRoute module="members"><MemberDetail /></PrivateRoute>} />
+                  <Route path="/members" element={<EmployeesHome />} />
+                  <Route path="/members/:memberId" element={<EmployeeDetailRoute />} />
                   
                   <Route path="/payouts" element={<PrivateRoute module="payouts"><Payouts /></PrivateRoute>} />
                   <Route path="/payouts/new" element={<PrivateRoute module="payouts" level="can_edit"><PayoutFormPage /></PrivateRoute>} />
