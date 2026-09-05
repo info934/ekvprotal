@@ -643,7 +643,7 @@ const RealizaceDetail = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="meetings"><MeetingNotes entityType="realizace" entityId={realizaceId} canEdit={canEdit} onOpenPlan={() => setActiveTab('plan')} /></TabsContent>
+          <TabsContent value="meetings"><MeetingNotes entityTitle={realization.name} entityType="realization" entityId={realizaceId} canEdit={canEdit} onOpenPlan={() => setActiveTab('plan')} /></TabsContent>
           <TabsContent value="plan">
             <PlanningBoard entityType="realization" entityId={realizaceId} embedded canEdit={canEdit} />
           </TabsContent>
