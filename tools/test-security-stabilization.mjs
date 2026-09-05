@@ -174,13 +174,13 @@ function deliveryHarness(databaseOptions = {}, provider = async () => Response.j
     './fetch.ts': { fetchWithTimeout: async (_url, init) => {
       sends += 1;
       assert.equal(init.headers['Idempotency-Key'], 'test-event:person@example.invalid');
-      return provider();
+      return provider(init);
     } },
   });
   return {
-    send: () => sendTrackedEmail({ admin: db.client, resendApiKey: 'test-only', from: 'sender@example.invalid',
+    send: (extra = {}) => sendTrackedEmail({ admin: db.client, resendApiKey: 'test-only', from: 'sender@example.invalid',
       to: ['person@example.invalid'], subject: 'Test', html: '<p>Test</p>', idempotencyKey: 'test-event',
-      workflowType: 'test', entityType: 'test', eventType: 'test' }),
+      workflowType: 'test', entityType: 'test', eventType: 'test', ...extra }),
     sends: () => sends, row: db.row,
   };
 }
@@ -246,4 +246,15 @@ test('definite provider rejection is failed and can retry with the same idempote
   assert.equal(harness.row().status, 'failed');
   assert.equal((await harness.send()).success, true);
   assert.equal(harness.row().attempts, 2);
+});
+
+test('tracked email forwards report attachment without changing recipients', async () => {
+  const attachments = [{ filename: 'report.csv', content: 'dGVzdA==' }];
+  const harness = deliveryHarness({}, async init => {
+    const payload = JSON.parse(init.body);
+    assert.deepEqual(payload.attachments, attachments);
+    assert.deepEqual(payload.to, ['person@example.invalid']);
+    return Response.json({ id: 'attachment-email' });
+  });
+  assert.equal((await harness.send({ attachments })).success, true);
 });

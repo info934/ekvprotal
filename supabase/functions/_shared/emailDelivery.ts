@@ -7,6 +7,7 @@ type DeliveryInput = {
   to: string[];
   subject: string;
   html: string;
+  attachments?: { filename: string; content: string }[];
   idempotencyKey: string;
   workflowType: string;
   entityType: string;
@@ -92,7 +93,8 @@ export const sendTrackedEmail = async (input: DeliveryInput) => {
         Authorization: `Bearer ${input.resendApiKey}`,
         "Idempotency-Key": key,
       },
-      body: JSON.stringify({ from: input.from, to: recipients, subject: input.subject, html: input.html }),
+      body: JSON.stringify({ from: input.from, to: recipients, subject: input.subject, html: input.html,
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}) }),
     });
     // fetchWithTimeout bounds response headers; bound body consumption as well.
     let bodyTimer: ReturnType<typeof setTimeout> | undefined;

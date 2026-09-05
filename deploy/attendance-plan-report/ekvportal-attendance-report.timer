@@ -1,0 +1,14 @@
+[Unit]
+Description=Check monthly EKV attendance report eligibility hourly
+
+[Timer]
+# The function sends only at month end, from 18:00 Europe/Prague.
+# Hourly checks allow retries; the persisted monthly key prevents duplicates.
+OnCalendar=*-*-* *:00:00 Europe/Prague
+Persistent=true
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=ekvportal-attendance-report.service
+
+[Install]
+WantedBy=timers.target
