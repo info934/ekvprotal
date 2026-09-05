@@ -1470,9 +1470,9 @@ const CrmDashboardInsights = ({
           <CardHeader className="crm-panel-header">
             <CardTitle className="flex items-center gap-2 text-base">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
-              Freeze readiness CRM
+              Kontrola obchodních případů
             </CardTitle>
-            <CardDescription>Operativní signály, které musí být před freeze jasné a bez tichých regresí.</CardDescription>
+            <CardDescription>Úkoly a rizika, které potřebují pozornost před uzavřením obchodu.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-md border border-amber-200 bg-amber-50/70 p-3">
@@ -1488,7 +1488,9 @@ const CrmDashboardInsights = ({
             <div className="rounded-md border border-blue-200 bg-blue-50/70 p-3">
               <p className="text-xs font-semibold uppercase text-blue-800">Rozpracované doklady</p>
               <p className="mt-1 text-2xl font-semibold text-blue-950">{openDocuments.length}</p>
-              <p className="mt-1 truncate text-xs text-blue-800">{draftOffers.length} návrhů nabídek</p>
+              <p className="mt-1 truncate text-xs text-blue-800">
+                {draftOffers.length} {draftOffers.length === 1 ? 'návrh nabídky' : (draftOffers.length >= 2 && draftOffers.length <= 4 ? 'návrhy nabídek' : 'návrhů nabídek')}
+              </p>
             </div>
             <div className="rounded-md border border-emerald-200 bg-emerald-50/70 p-3">
               <p className="text-xs font-semibold uppercase text-emerald-800">Aktivní produkty</p>
@@ -1567,7 +1569,7 @@ const CrmDashboardInsights = ({
           <CardHeader className="crm-panel-header">
             <CardTitle className="flex items-center gap-2 text-base">
               <Target className="h-4 w-4 text-primary" />
-              Největší otevřené příležitosti
+              Největší otevřené obchodní případy
             </CardTitle>
             <CardDescription>Obchody s nejvyšší hodnotou, které mají vliv na pipeline.</CardDescription>
           </CardHeader>
@@ -1586,7 +1588,7 @@ const CrmDashboardInsights = ({
                 <TableBody>
                   {topOpportunities.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">Zatím žádné otevřené příležitosti.</TableCell>
+                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">Zatím nejsou žádné otevřené obchodní případy.</TableCell>
                     </TableRow>
                   ) : topOpportunities.map((opportunity) => {
                     const stage = getStage(opportunity.stage, stages);
@@ -2419,7 +2421,7 @@ const CRM = () => {
     if (error) {
       setSavingOpportunity(false);
       toast({
-        title: 'Příležitost se nepodařilo uložit',
+        title: 'Obchodní případ se nepodařilo uložit',
         description: error.message,
         variant: 'destructive',
       });
@@ -2427,7 +2429,7 @@ const CRM = () => {
     }
 
     setSavingOpportunity(false);
-    toast({ title: opportunityForm.id ? 'CRM příležitost aktualizována' : 'CRM příležitost uložena' });
+    toast({ title: opportunityForm.id ? 'Obchodní případ aktualizován' : 'Obchodní případ uložen' });
     setOpportunityDialogOpen(false);
     if (isCreatingOpportunityPage && isNewOpportunity) {
       navigate('/crm/opportunities');
@@ -2541,13 +2543,13 @@ const CRM = () => {
         <PageHeader
           icon={Contact}
           title="CRM"
-          description="Obchodní vrstva nad subjekty, kontakty, projekty a připravenou pipeline."
+          description="Obchodní přehled propojující klienty, kontakty, projekty, nabídky a objednávky."
           actions={
             <div className="flex flex-wrap gap-2">
               {canEditCrm && !isCreatingOpportunityPage && (
                 <Button onClick={() => navigate('/crm/opportunities/new')} disabled={!crmTablesReady}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Nová příležitost
+                  Nový obchodní případ
                 </Button>
               )}
               <Button asChild variant="secondary">
@@ -2587,7 +2589,7 @@ const CRM = () => {
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>CRM pipeline čeká na databázové migrace</AlertTitle>
             <AlertDescription>
-              Adresář subjektů a kontakty fungují. Příležitosti, aktivity a editace pipeline se odemknou po aplikaci CRM migrací na databázi.
+              Adresář subjektů a kontakty fungují. Obchodní případy, aktivity a editace pipeline se odemknou po aplikaci CRM migrací na databázi.
             </AlertDescription>
           </Alert>
         )}
@@ -2597,7 +2599,7 @@ const CRM = () => {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard icon={Building2} title="Subjekty celkem" value={metrics.subjects} description="Zákazníci, dodavatelé, investoři a úřady" />
           <MetricCard icon={Users} title="Zákazníci" value={metrics.customers} description={`${metrics.investors} investorů, ${metrics.suppliers} dodavatelů`} />
-          <MetricCard icon={Target} title="Otevřené příležitosti" value={crmTablesReady ? metrics.opportunities : '-'} description={crmTablesReady ? formatCurrency(metrics.pipelineValue) : 'Čeká na migraci'} tone="warning" />
+          <MetricCard icon={Target} title="Otevřené obchodní případy" value={crmTablesReady ? metrics.opportunities : '-'} description={crmTablesReady ? formatCurrency(metrics.pipelineValue) : 'Čeká na migraci'} tone="warning" />
           <MetricCard icon={CircleDollarSign} title="Vážená pipeline" value={crmTablesReady ? formatCurrency(metrics.weightedPipeline) : '-'} description={`${metrics.contacts} kontaktů v projektech`} tone="success" />
         </div>
 
@@ -2912,7 +2914,7 @@ const CRM = () => {
                       <Input
                         value={opportunityQuery}
                         onChange={(event) => setOpportunityQuery(event.target.value)}
-                        placeholder="Hledat..."
+                        placeholder="Hledat kód, předmět, klienta nebo IČO…"
                         className="h-9 bg-white pl-9"
                       />
                     </div>
@@ -3222,7 +3224,7 @@ const CRM = () => {
         <Dialog open={opportunityDialogOpen} onOpenChange={setOpportunityDialogOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{opportunityForm.id ? 'Upravit CRM příležitost' : 'Nová CRM příležitost'}</DialogTitle>
+              <DialogTitle>{opportunityForm.id ? 'Upravit obchodní případ' : 'Nový obchodní případ'}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSaveOpportunity} className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2">
@@ -3362,7 +3364,7 @@ const CRM = () => {
                   Zrušit
                 </Button>
                 <Button type="submit" disabled={savingOpportunity || !crmTablesReady}>
-                  {savingOpportunity ? 'Ukládám...' : (opportunityForm.id ? 'Uložit změny' : 'Uložit příležitost')}
+                  {savingOpportunity ? 'Ukládám…' : (opportunityForm.id ? 'Uložit změny' : 'Uložit obchodní případ')}
                 </Button>
               </DialogFooter>
             </form>

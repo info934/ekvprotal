@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Ban, Calculator, Copy, FileText, Link2, MoreHorizontal, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -36,12 +36,16 @@ import {
 } from '@/lib/crmItemPayloads';
 import { cn } from '@/lib/utils';
 import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
+import { commercialDocumentMatchesSearch, getCommercialDocumentTotals } from '@/lib/crmCommercialDocuments';
 
 const documentTypeConfig = {
   offer: {
     title: 'Nabídky',
     detailTitle: 'Detail nabídky',
     singular: 'Nabídka',
+    description: 'Přehled nabídek, jejich hodnoty, stavu a návaznosti na klienta a obchodní případ.',
+    summaryTitle: 'Přehled nabídek',
+    summaryDescription: 'Rychlá kontrola rozpracovaných nabídek, platnosti a obchodního výsledku.',
     icon: Package,
     listPath: '/crm/offers',
     detailPath: (document) => `/crm/offers/${getCrmRecordRef(document)}`,
@@ -51,6 +55,9 @@ const documentTypeConfig = {
     title: 'Objednávky',
     detailTitle: 'Detail objednávky',
     singular: 'Objednávka',
+    description: 'Přehled objednávek, jejich hodnoty, stavu a návaznosti na klienta a obchodní případ.',
+    summaryTitle: 'Přehled objednávek',
+    summaryDescription: 'Rychlá kontrola objednávek, jejich stavu a obchodního výsledku.',
     icon: ShoppingCart,
     listPath: '/crm/orders',
     detailPath: (document) => `/crm/orders/${getCrmRecordRef(document)}`,
@@ -71,6 +78,12 @@ const formatCurrency = formatMoney;
 const formatDate = (value) => {
   if (!value) return '-';
   return new Intl.DateTimeFormat('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
+};
+
+const formatRecordCount = (count) => {
+  if (count === 1) return '1 záznam';
+  if (count >= 2 && count <= 4) return `${count} záznamy`;
+  return `${count} záznamů`;
 };
 
 const formatCommercialDocumentTitle = (title) => (
@@ -109,6 +122,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const Icon = config.icon;
   const { documentId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { hasPermission } = useAuth();
   const canEdit = hasPermission('crm', 'can_edit');
@@ -118,7 +132,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [documentTemplates, setDocumentTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('default');
   const [numbering, setNumbering] = useState(() => normalizeCrmNumbering(Object.values(DEFAULT_CRM_NUMBERING)));
-  const [query, setQuery] = useState('');
+  const query = searchParams.get('q') || '';
+  const statusFilter = searchParams.get('status') || 'all';
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
@@ -268,18 +283,18 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     return () => fetchRequestRef.current.controller?.abort();
   }, [fetchData]);
 
-  const filteredDocuments = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return documents;
-    return documents.filter((document) => [
-      document.number,
-      document.title,
-      document.subject?.name,
-      document.opportunity?.number,
-      document.opportunity?.title,
-      document.opportunity?.subject?.name,
-    ].filter(Boolean).some((value) => String(value).toLowerCase().includes(needle)));
-  }, [documents, query]);
+  const updateListFilter = (key, value) => {
+    const next = new URLSearchParams(searchParams);
+    if (!value || value === 'all') next.delete(key);
+    else next.set(key, value);
+    setSearchParams(next, { replace: true });
+  };
+
+  const filteredDocuments = useMemo(() => documents.filter((document) => (
+    commercialDocumentMatchesSearch(document, query) &&
+    (statusFilter === 'all' || document.status === statusFilter)
+  )), [documents, query, statusFilter]);
+  const hasActiveFilters = Boolean(query.trim()) || statusFilter !== 'all';
 
   const documentSummary = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -288,7 +303,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       const isSent = document.status === 'sent';
       const isExpired = Boolean(document.valid_until && document.valid_until < today && !['accepted', 'closed', 'rejected', 'cancelled', 'deleted'].includes(document.status));
       const hasItems = Number(document._item_count || 0) > 0 || (document.items || []).length > 0;
-      const totals = calculateCrmTotals(document.items || []);
+      const totals = getCommercialDocumentTotals(document);
       return {
         total: acc.total + 1,
         draft: acc.draft + (isDraft ? 1 : 0),
@@ -342,7 +357,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     actions: 'text-right',
   };
   const renderListCell = (document, columnId) => {
-    const totals = calculateCrmTotals(document.items || []);
+    const totals = getCommercialDocumentTotals(document);
     switch (columnId) {
       case 'number':
         return document.number || '-';
@@ -1039,7 +1054,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       <PageHeader
         icon={Icon}
         title={config.title}
-        description="Tabulkový seznam CRM dokumentů napojených na obchodní případy."
+        description={config.description}
         actions={(
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={fetchData} disabled={loading}>
@@ -1061,7 +1076,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           <DialogHeader>
             <DialogTitle>{config.createLabel}</DialogTitle>
             <DialogDescription>
-              Vyberte, jestli se dokument napoji na existujici obchodni pripad, nebo jestli se ma rovnou zalozit novy OP.
+              Vyberte, zda dokument přiřadíte k existujícímu obchodnímu případu, nebo spolu s ním založíte nový.
             </DialogDescription>
           </DialogHeader>
 
@@ -1075,8 +1090,8 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   createMode === 'existing' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white'
                 )}
               >
-                <div className="font-semibold text-slate-950">Priradit k existujicimu OP</div>
-                <div className="mt-1 text-sm text-slate-500">Dokument prevezme subjekt, polozky a hodnotu z vybraneho obchodniho pripadu.</div>
+                <div className="font-semibold text-slate-950">Přiřadit k existujícímu případu</div>
+                <div className="mt-1 text-sm text-slate-500">Dokument převezme klienta, položky a hodnotu z vybraného obchodního případu.</div>
               </button>
               <button
                 type="button"
@@ -1086,17 +1101,17 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   createMode === 'new' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white'
                 )}
               >
-                <div className="font-semibold text-slate-950">Vytvořit nový OP</div>
-                <div className="mt-1 text-sm text-slate-500">Nejdriv se zalozi novy obchodni pripad a dokument se na nej automaticky napoji.</div>
+                <div className="font-semibold text-slate-950">Vytvořit nový obchodní případ</div>
+                <div className="mt-1 text-sm text-slate-500">Nejdříve se založí nový obchodní případ a dokument se k němu automaticky připojí.</div>
               </button>
             </div>
 
             {createMode === 'existing' ? (
               <div className="space-y-2">
-                <Label>Obchodni pripad</Label>
+                <Label>Obchodní případ</Label>
                 <Select value={createOpportunityId} onValueChange={setCreateOpportunityId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Vyberte obchodni pripad" />
+                    <SelectValue placeholder="Vyberte obchodní případ" />
                   </SelectTrigger>
                   <SelectContent>
                     {opportunities.map((opportunity) => (
@@ -1107,14 +1122,14 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   </SelectContent>
                 </Select>
                 {opportunities.length === 0 && (
-                  <p className="text-sm text-amber-700">Zatim neni dostupny zadny obchodni pripad. Prepnete na zalozeni noveho OP.</p>
+                  <p className="text-sm text-amber-700">Zatím není dostupný žádný obchodní případ. Založte nový společně s dokumentem.</p>
                 )}
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2 sm:col-span-2">
-                  <Label>Nazev obchodniho pripadu</Label>
-                  <Input value={createOpportunityTitle} onChange={(event) => setCreateOpportunityTitle(event.target.value)} placeholder="Napr. FVE - Rodinny dum" />
+                  <Label>Název obchodního případu</Label>
+                  <Input value={createOpportunityTitle} onChange={(event) => setCreateOpportunityTitle(event.target.value)} placeholder="Např. FVE – Rodinný dům" />
                 </div>
                 <div className="sm:col-span-2">
                   <SubjectSelect
@@ -1124,16 +1139,16 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                       setCreateSubject(subject);
                     }}
                     label="Subjekt"
-                    placeholder="Vybrat nebo zalozit subjekt..."
+                    placeholder="Vybrat nebo založit klienta..."
                     disabled={saving}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Odhad hodnoty bez DPH</Label>
+                  <Label>Odhadovaná hodnota bez DPH</Label>
                   <Input type="number" min="0" value={createOpportunityValue} onChange={(event) => setCreateOpportunityValue(event.target.value)} />
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                  Novy OP dostane cislo {formatCrmNumber(numbering, 'opportunity')} a dokument cislo {formatCrmNumber(numbering, type)}.
+                  Nový obchodní případ dostane číslo {formatCrmNumber(numbering, 'opportunity')} a dokument číslo {formatCrmNumber(numbering, type)}.
                   {createSubject?.name ? <div className="mt-1 font-medium text-slate-800">Klient: {createSubject.name}</div> : null}
                 </div>
               </div>
@@ -1143,7 +1158,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={saving}>Zrušit</Button>
             <Button type="button" onClick={handleCreateDocument} disabled={saving || (createMode === 'existing' ? !createOpportunityId : (!createOpportunityTitle.trim() || !createSubjectId))}>
-              {saving ? 'Vytvarim...' : config.createLabel}
+              {saving ? 'Vytvářím…' : config.createLabel}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1151,10 +1166,10 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
       <Card className="crm-panel">
         <CardHeader className="crm-panel-header">
-          <CardTitle className="text-base">Freeze kontrola dokladů</CardTitle>
-          <CardDescription>Rychlý stav rozpracovaných nabídek/objednávek před uzavřením baseline.</CardDescription>
+          <CardTitle className="text-base">{config.summaryTitle}</CardTitle>
+          <CardDescription>{config.summaryDescription}</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-7">
+        <CardContent className="grid grid-cols-2 gap-3 p-4 xl:grid-cols-7">
           {[
             { label: 'Návrhy', value: documentSummary.draft, tone: 'amber' },
             { label: 'Odesláno', value: documentSummary.sent, tone: 'blue' },
@@ -1185,15 +1200,68 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       <Card className="crm-panel overflow-hidden">
         <CardHeader className="border-b border-slate-200 bg-white px-4 py-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative w-full lg:w-96">
+            <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+              <div className="relative w-full lg:w-96">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Hledat číslo, klienta, OP..." className="pl-9" />
+                <Input value={query} onChange={(event) => updateListFilter('q', event.target.value)} placeholder="Hledat číslo, klienta, IČO nebo obchodní případ…" className="pl-9" />
+              </div>
+              <Select value={statusFilter} onValueChange={(value) => updateListFilter('status', value)}>
+                <SelectTrigger className="w-full sm:w-48" aria-label="Filtrovat podle stavu">
+                  <SelectValue placeholder="Všechny stavy" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Všechny stavy</SelectItem>
+                  {documentStatuses.map((status) => (
+                    <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {hasActiveFilters ? (
+                <Button type="button" variant="ghost" onClick={() => setSearchParams({}, { replace: true })}>Vymazat filtry</Button>
+              ) : null}
             </div>
-            <p className="text-sm text-muted-foreground">{filteredDocuments.length} záznamů v seznamu</p>
+            <p className="text-sm text-muted-foreground">{formatRecordCount(filteredDocuments.length)} v seznamu</p>
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          <div className="space-y-3 p-3 md:hidden">
+            {loading ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">Načítám…</p>
+            ) : filteredDocuments.length === 0 ? (
+              <div className="py-8 text-center">
+                <p className="text-sm font-medium text-slate-700">{hasActiveFilters ? 'Žádný dokument neodpovídá filtrům.' : 'Zatím zde nejsou žádné dokumenty.'}</p>
+                {hasActiveFilters ? <Button type="button" variant="link" onClick={() => setSearchParams({}, { replace: true })}>Vymazat filtry</Button> : null}
+              </div>
+            ) : filteredDocuments.map((document) => {
+              const totals = getCommercialDocumentTotals(document);
+              return (
+                <article key={document.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => navigate(config.detailPath(document))}>
+                      <span className="text-sm font-semibold text-primary">{document.number || '-'}</span>
+                      <h3 className="mt-1 truncate font-semibold text-slate-950">{formatCommercialDocumentTitle(document.title) || config.singular}</h3>
+                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Badge variant="outline" className={cn('font-semibold', getStatusBadgeClass(document.status))}>
+                        {documentStatuses.find((status) => status.value === document.status)?.label || document.status}
+                      </Badge>
+                      {renderListCell(document, 'actions')}
+                    </div>
+                  </div>
+                  <button type="button" className="mt-3 grid w-full grid-cols-2 gap-x-4 gap-y-3 text-left text-sm" onClick={() => navigate(config.detailPath(document))}>
+                    <span><span className="block text-xs text-muted-foreground">Klient</span><strong className="font-medium text-slate-800">{document.subject?.name || document.opportunity?.subject?.name || '-'}</strong></span>
+                    <span><span className="block text-xs text-muted-foreground">Cena bez DPH</span><strong className="font-semibold text-slate-950">{formatCurrency(totals.total)}</strong></span>
+                    <span><span className="block text-xs text-muted-foreground">Obchodní případ</span><strong className="font-medium text-slate-800">{document.opportunity?.number || '-'}</strong></span>
+                    <span><span className="block text-xs text-muted-foreground">Marže</span><strong className="font-semibold text-emerald-700">{formatCurrency(totals.margin_total)} · {formatPercent(totals.margin_percent)}</strong></span>
+                    <span><span className="block text-xs text-muted-foreground">Vytvořeno</span><strong className="font-medium text-slate-800">{formatDate(document.created_at)}</strong></span>
+                    <span><span className="block text-xs text-muted-foreground">Platnost do</span><strong className="font-medium text-slate-800">{formatDate(document.valid_until)}</strong></span>
+                  </button>
+                </article>
+              );
+            })}
+          </div>
           <ManagedTableSection
+            className="hidden md:block"
             title={config.title}
             count={filteredDocuments.length}
             toolbar={(
@@ -1219,7 +1287,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                 {loading ? (
                   <TableRow><TableCell colSpan={visibleListColumns.length} className="h-24 text-center text-muted-foreground">Načítám...</TableCell></TableRow>
                 ) : filteredDocuments.length === 0 ? (
-                  <TableRow><TableCell colSpan={visibleListColumns.length} className="h-24 text-center text-muted-foreground">Žádné záznamy.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={visibleListColumns.length} className="h-24 text-center text-muted-foreground">{hasActiveFilters ? 'Žádný dokument neodpovídá filtrům.' : 'Zatím zde nejsou žádné dokumenty.'}</TableCell></TableRow>
                 ) : filteredDocuments.map((document) => (
                   <TableRow
                     key={document.id}
