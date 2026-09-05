@@ -49,6 +49,7 @@ import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip } from '@/comp
 import { formatMoney } from '@/lib/financePresentation';
 import { RecordMetricGrid, RecordWorkspaceHeader, RecordWorkspaceNavigation, RecordWorkspaceSection } from '@/components/ui/record-workspace';
 import { formatProjectDate, projectTaskIsOverdue, projectTaskOverview, loadProjectTasks } from '@/lib/projectDetailWorkspace';
+import ProjectBonuses from '@/components/finance/ProjectBonuses';
 import FinancialSettingsCard from '@/components/finance/FinancialSettingsCard';
 import {
     createTimedAbortController,
@@ -896,7 +897,7 @@ const ProjectDetail = () => {
         const costsBeforePaidPayouts = toAmount(summary.costs_before_paid_payouts);
         const costsAfterPaidPayouts = toAmount(summary.costs_after_paid_payouts);
         const teamBudgetAfterPaidPayouts = toAmount(summary.team_budget_after_paid_payouts) + laborReplacementAdjustment;
-        const unallocatedBudget = rewardBaseBudget - teamRewards;
+        const unallocatedBudget = rewardBaseBudget - (authoritativeRewards ? authoritativeRewards.reduce((sum, reward) => sum + toAmount(reward.gross_reward), 0) : teamRewards);
 
         return {
             ...fallbackFinancials,
@@ -1244,6 +1245,7 @@ const ProjectDetail = () => {
                             { label: 'Plánovaná marže', value: <FinanceAmount value={financials.plannedMargin ?? financials.projectProfit} />, detail: 'Hodnota minus plánovaný rozpočet', tone: Number(financials.plannedMargin || 0) < 0 ? 'negative' : 'positive', icon: DollarSign },
                         ]} />}
                         <FinanceDefinitionNote>Nerozdělený rozpočet je týmový základ po nákladech a naplánovaných odměnách; není totožný s limitem dostupným pro výplatu, který navíc zohledňuje rezervované žádosti. Režie je samostatná plánovaná rezerva a její detail najdete v části Náklady v přehledu připsaných režií.</FinanceDefinitionNote>
+                        <ProjectBonuses key={projectId} projectId={projectId} members={members} available={Math.max(0, Math.floor(financials.unallocatedBudget * 100) / 100)} disabled={!!financeLoadError} onSaved={refreshData} />
                         <FinancialSettingsCard
                             entityType="project"
                             entityId={projectId}

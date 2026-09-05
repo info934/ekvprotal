@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Menu, Search, ChevronRight } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import GlobalSearch from './GlobalSearch';
+import PortalNotifications from './PortalNotifications';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { getPortalSection } from '@/lib/portalNavigation';
 
@@ -28,6 +29,7 @@ export default function PortalShell({ children, searchRecords }) {
         <button type="button" className="portal-mobile-menu" aria-label="Otevřít menu" onClick={() => setMobileOpen(true)}><Menu size={22} /></button>
         <nav aria-label="Drobečková navigace" className="portal-breadcrumb"><Link to="/">Portál</Link><ChevronRight size={14} aria-hidden="true" />{location.pathname !== section.path ? <><Link to={section.path}>{section.label}</Link><ChevronRight size={14} aria-hidden="true" /><span>Detail</span></> : <span>{section.label}</span>}</nav>
         <button type="button" className="portal-search-trigger" onClick={() => setSearchOpen(true)} aria-label="Hledat v portálu"><Search size={19} /><span>Hledat zakázku, klienta, dokument…</span><kbd>Ctrl K</kbd></button>
+        <PortalNotifications />
       </header>
       <main id="portal-main" tabIndex={-1}>{children}</main>
     </div>
