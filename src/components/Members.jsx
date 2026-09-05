@@ -2,7 +2,7 @@ import { loadMemberDirectory } from '@/lib/memberDirectoryData';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, Plus, Edit2, Trash2, LayoutGrid, Rows, AlertTriangle, CheckCircle, Search, Filter, MoreHorizontal, Eye, Clock, Shield, Mail, RefreshCw } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -10,7 +10,7 @@ import MemberDialog from '@/components/MemberDialog';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { certificationState, matchesCertification } from '@/lib/memberDirectory';
+import { certificationState, matchesCertification, directoryFilters } from '@/lib/memberDirectory';
 import { isRecordActivation } from '@/lib/listWorkspaceState';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -37,10 +37,17 @@ const Members = () => {
     const [editingMember, setEditingMember] = useState(null);
     const [rewards, setRewards] = useState({});
     const [payouts, setPayouts] = useState({});
-    const [view, setView] = useState('grid');
-    const [searchTerm, setSearchTerm] = useState('');
-    const [roleFilter, setRoleFilter] = useState('all');
-    const [certificationFilter, setCertificationFilter] = useState('all');
+    const [params,setParams]=useSearchParams();
+    const location=useLocation();
+    const filters=directoryFilters(params);
+    const view=filters.view,searchTerm=filters.q,roleFilter=filters.role,certificationFilter=filters.cert;
+    const updateFilter=(key,value)=>setParams(previous=>{const next=new URLSearchParams(previous);if(!value||value==='all'||(key==='view'&&value==='grid'))next.delete(key);else next.set(key,value);return next;},{replace:true});
+    const setView=value=>updateFilter('view',value);
+    const setSearchTerm=value=>updateFilter('q',value);
+    const setRoleFilter=value=>updateFilter('role',value);
+    const setCertificationFilter=value=>updateFilter('cert',value);
+    const resetFilters=()=>setParams(previous=>{const next=new URLSearchParams(previous);['q','role','cert'].forEach(key=>next.delete(key));return next;},{replace:true});
+    const openMember=id=>navigate(`/members/${id}`,{state:{returnTo:location.pathname+location.search}});
     const [deleteCandidate,setDeleteCandidate]=useState(null);
     const [deleting,setDeleting]=useState(false);
 
@@ -181,8 +188,8 @@ const Members = () => {
                 whileHover={{ y: -2 }}
                 className="group bg-white border rounded-xl p-4 cursor-pointer hover:shadow-md hover:border-primary/50 transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                 role="link" tabIndex={0} aria-label={`Otevřít kartu ${member.name}`}
-                onKeyDown={event=>{if(isRecordActivation(event)){event.preventDefault();navigate(`/members/${member.id}`);}}}
-                onClick={event=>{if(isRecordActivation(event))navigate(`/members/${member.id}`);}}
+                onKeyDown={event=>{if(isRecordActivation(event)){event.preventDefault();openMember(member.id);}}}
+                onClick={event=>{if(isRecordActivation(event))openMember(member.id);}}
             >
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex-1 min-w-0">
@@ -206,7 +213,7 @@ const Members = () => {
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => navigate(`/members/${member.id}`)}>
+                            <DropdownMenuItem onClick={() => openMember(member.id)}>
                                 <Eye className="h-4 w-4 mr-2" />
                                 Zobrazit
                             </DropdownMenuItem>
@@ -423,7 +430,7 @@ const Members = () => {
                     </Card>
                 )}
 
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500"><span role="status">{loading?'Načítám zaměstnance…':loadError?'Seznam není dostupný':`Zobrazeno ${filteredMembers.length} z ${members.length} zaměstnanců`}</span>{(searchTerm||roleFilter!=='all'||certificationFilter!=='all')&&<Button variant="ghost" size="sm" onClick={()=>{setSearchTerm('');setRoleFilter('all');setCertificationFilter('all');}}>Zrušit filtry</Button>}</div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500"><span role="status">{loading?'Načítám zaměstnance…':loadError?'Seznam není dostupný':`Zobrazeno ${filteredMembers.length} z ${members.length} zaměstnanců`}</span>{(searchTerm||roleFilter!=='all'||certificationFilter!=='all')&&<Button variant="ghost" size="sm" onClick={resetFilters}>Zrušit filtry</Button>}</div>
                 {/* Content */}
                 {loading ? <div role="status" className="rounded-xl border bg-white p-8 text-center text-slate-500">Načítám zaměstnance…</div> : loadError ? null : filteredMembers.length > 0 ? (
                     view === 'grid' ? (
@@ -461,8 +468,8 @@ const Members = () => {
                                                         key={member.id}
                                                         className="cursor-pointer hover:bg-muted/50 transition-colors group"
                                                         tabIndex={0} aria-label={`Otevřít kartu ${member.name}`}
-                                                        onKeyDown={event=>{if(isRecordActivation(event)){event.preventDefault();navigate(`/members/${member.id}`);}}}
-                                                        onClick={event=>{if(isRecordActivation(event))navigate(`/members/${member.id}`);}}
+                                                        onKeyDown={event=>{if(isRecordActivation(event)){event.preventDefault();openMember(member.id);}}}
+                                                        onClick={event=>{if(isRecordActivation(event))openMember(member.id);}}
                                                     >
                                                         <TableCell>
                                                             <div className="font-medium">{member.name}</div>
@@ -501,7 +508,7 @@ const Members = () => {
                                                                     </Button>
                                                                 </DropdownMenuTrigger>
                                                                 <DropdownMenuContent align="end">
-                                                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/members/${member.id}`); }}>
+                                                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openMember(member.id); }}>
                                                                         <Eye className="h-4 w-4 mr-2" />
                                                                         Zobrazit
                                                                     </DropdownMenuItem>

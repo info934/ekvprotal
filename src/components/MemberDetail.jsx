@@ -1,5 +1,6 @@
+import { safeListReturnPath } from '@/lib/listWorkspaceState';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft, User, DollarSign, AlertTriangle, ClipboardList, Copy, CircleDot, BadgeCheck as CircleCheck, CalendarX, Briefcase, Award, Plus, Edit2, Trash2, Download, MessageSquare, ListTodo, Clock } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -138,6 +139,8 @@ const MemberDetail = () => {
   const { memberId } = useParams();
   const [search, setSearch] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = safeListReturnPath(location.state?.returnTo, '/members');
   const { toast } = useToast();
   const { hasPermission, user, isAdmin, memberId: currentMemberId } = useAuth();
   const [member, setMember] = useState(null);
@@ -261,7 +264,7 @@ const MemberDetail = () => {
       toast({ title: "Chyba při mazání zaměstnance", variant: "destructive" });
     } else {
       toast({ title: "Zaměstnanec smazán" });
-      navigate('/members');
+      navigate(returnTo);
     }
   };
 
@@ -327,7 +330,7 @@ const MemberDetail = () => {
     <div className="app-page">
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-start justify-between gap-4 2xl:flex-row 2xl:items-center">
         <div>
-          <Link to="/members" className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary mb-4">
+          <Link to={returnTo} className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary mb-4">
             <ChevronLeft className="w-4 h-4" /> Zpět na zaměstnance
           </Link>
           <h1 className="text-3xl sm:text-4xl font-bold gradient-text mb-2 flex items-center gap-3">

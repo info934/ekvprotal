@@ -12,3 +12,8 @@ export function matchesCertification(certifications,filter,today){
  const state=certificationState(certifications,today);
  return filter==='all'||(filter==='valid'?['valid','soon'].includes(state):state===filter);
 }
+
+export function directoryFilters(search){
+ const p=new URLSearchParams(search);
+ return {view:p.get('view')==='table'?'table':'grid',q:(p.get('q')||'').slice(0,250),role:(p.get('role')||'all').slice(0,200),cert:['valid','expired','soon','none'].includes(p.get('cert'))?p.get('cert'):'all'};
+}

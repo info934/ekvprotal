@@ -6,3 +6,9 @@ test('certification remains valid throughout its expiration date',()=>{assert.eq
 test('expired and upcoming certificates are distinct filters',()=>{assert.equal(certificationState([{expiry_date:'2026-09-04'}],today),'expired');assert.equal(certificationState([{expiry_date:'2026-10-05'}],today),'soon');assert.equal(certificationState([{expiry_date:'2026-10-06'}],today),'valid');assert.equal(matchesCertification([{expiry_date:'2026-09-10'}],'valid',today),true);});
 test('expired certificate takes priority over future ones',()=>assert.equal(certificationState([{expiry_date:'2027-01-01'},{expiry_date:'2026-01-01'}],today),'expired'));
 test('no certificates differs from a certificate with unlimited validity',()=>{assert.equal(certificationState([],today),'none');assert.equal(certificationState([{expiry_date:null}],today),'valid');});
+import {directoryFilters} from '../src/lib/memberDirectory.js';
+test('directory filters survive URL roundtrip and reject unknown modes',()=>{
+ assert.deepEqual(directoryFilters('?view=table&q=Anna&role=Bez%20pozice&cert=soon'),{view:'table',q:'Anna',role:'Bez pozice',cert:'soon'});
+ assert.deepEqual(directoryFilters('?view=bad&cert=bad'),{view:'grid',q:'',role:'all',cert:'all'});
+ assert.equal(directoryFilters('?q='+ 'a'.repeat(400)).q.length,250);
+});
