@@ -31,6 +31,14 @@ const statusConfig = {
 };
 
 
+const documentTypeLabel = doc => doc.type === 'project' ? 'Projektový dokument' : doc.type || 'Typ neuveden';
+const documentDateLabel = doc => doc.created_at && Number.isFinite(Date.parse(doc.created_at)) ? format(new Date(doc.created_at), 'd.M.yyyy') : 'Datum neuvedeno';
+const DocumentStatus = ({ document }) => {
+  const key = ['Zápis z KD', 'Příloha'].includes(document.type) ? document.type : document.status;
+  const config = statusConfig[key] || { label: document.status || 'Stav neuveden', color: 'bg-slate-50 text-slate-600 border-slate-200' };
+  return <span className={'inline-flex rounded-full border px-2 py-1 text-xs font-medium ' + config.color}>{config.label}</span>;
+};
+
 const Documents = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const linkedDocument = searchParams.get('document') || '';
@@ -287,7 +295,23 @@ const Documents = () => {
             <Button variant="outline" className="mt-4" onClick={fetchDocuments}><RefreshCw className="mr-2 h-4 w-4" />Zkusit znovu</Button>
           </div>
         )}
-        {!loading && !loadError && documents.length > 0 && <div className="overflow-x-auto">
+        {!loading && !loadError && documents.length > 0 && <>
+          <ul aria-label="Dokumenty" className="space-y-3 md:hidden">
+            {documents.map(doc => <li key={doc.id} className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="break-words text-sm font-semibold text-slate-900">{doc.name || 'Dokument bez názvu'}</h2>
+              <p className="mt-1 break-words text-xs text-muted-foreground">{doc.projects?.code || 'Projekt neuveden'}{doc.projects?.name ? ' · ' + doc.projects.name : ''}</p>
+              <dl className="my-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <div><dt className="text-muted-foreground">Typ dokumentu</dt><dd className="mt-0.5 break-words">{documentTypeLabel(doc)}</dd></div>
+                <div><dt className="text-muted-foreground">Verze</dt><dd className="mt-0.5 break-words">{doc.version || '—'}</dd></div>
+                <div className="col-span-2"><dt className="text-muted-foreground">Nahráno</dt><dd className="mt-0.5">{documentDateLabel(doc)}</dd></div>
+              </dl>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                <DocumentStatus document={doc}/>
+                {(doc.file_path || doc.external_web_url) ? <Button size="sm" variant="outline" aria-label={'Stáhnout ' + doc.name} onClick={() => handleDownloadFile(doc)}><Download className="mr-2 h-4 w-4"/>Stáhnout</Button> : <span className="text-xs text-muted-foreground">Soubor není připojen</span>}
+              </div>
+            </li>)}
+          </ul>
+          <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
                 <TableRow>
@@ -302,18 +326,16 @@ const Documents = () => {
             </TableHeader>
             <TableBody>
                 {documents.map((doc) => {
-                    const statusKey = doc.type === 'Zápis z KD' || doc.type === 'Příloha' ? doc.type : doc.status;
-                    const config = statusConfig[statusKey] || {label:doc.status||'Stav neuveden',color:'bg-slate-50 text-slate-600 border-slate-200'};
                     return (
                         <TableRow key={doc.id}>
                             <TableCell className="font-medium">{doc.name}</TableCell>
                             <TableCell>{doc.projects?.code}</TableCell>
                             <TableCell>{doc.version || '—'}</TableCell>
-                            <TableCell>{doc.type === 'project' ? 'Projektový dokument' : doc.type || 'Typ neuveden'}</TableCell>
+                            <TableCell>{documentTypeLabel(doc)}</TableCell>
                             <TableCell>
-                                <span className={`px-2 py-1 text-xs font-medium rounded-full border ${config.color}`}>{config.label}</span>
+                                <DocumentStatus document={doc}/>
                             </TableCell>
-                            <TableCell>{doc.created_at&&Number.isFinite(Date.parse(doc.created_at))?format(new Date(doc.created_at), 'd.M.yyyy'):'Datum neuvedeno'}</TableCell>
+                            <TableCell>{documentDateLabel(doc)}</TableCell>
                             <TableCell className="text-right">
                                 {!doc.file_path&&!doc.external_web_url&&<span className="text-xs text-slate-500">Soubor není připojen</span>}
                                 {(doc.file_path || doc.external_web_url) && (
@@ -327,7 +349,7 @@ const Documents = () => {
                 })}
             </TableBody>
           </Table>
-        </div>}
+        </div></>}
 
         {!loading && !loadError && documents.length === 0 && (
           <div className="text-center py-12">
