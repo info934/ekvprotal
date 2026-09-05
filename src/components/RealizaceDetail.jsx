@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { safeListReturnPath } from '@/lib/listWorkspaceState';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs";
-import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FileSignature, FolderOpen, GanttChart, Wallet, FileText, AlertTriangle } from 'lucide-react';
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FolderOpen, GanttChart, Wallet, FileText, AlertTriangle, Users, EyeOff } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -29,10 +30,9 @@ import { deleteStoredFile, uploadRealizationCostInvoice } from '@/lib/documentSt
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import PlanningBoard from '@/components/PlanningBoard';
 import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
-import { RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
+import { RecordWorkspaceHeader, RecordWorkspaceNavigation, RecordWorkspaceSection } from '@/components/ui/record-workspace';
 import EkvLoader from '@/components/ui/ekv-loader';
 import { calculateRealizationRewardAllocation } from '@/domain/financials';
-import { formatMoney } from '@/lib/financePresentation';
 import FinancialSettingsCard from '@/components/finance/FinancialSettingsCard';
 import {
   createTimedAbortController,
@@ -40,7 +40,6 @@ import {
   isRequestTimeoutError,
 } from '@/lib/requestControl';
 
-const formatCurrency = formatMoney;
 const toNumber = (value) => {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : 0;
@@ -60,7 +59,7 @@ const RealizaceDetail = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { hasPermission, userRole } = useAuth();
+  const { hasPermission, userRole, isPrivateMode } = useAuth();
 
   const [realization, setRealization] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -82,20 +81,35 @@ const RealizaceDetail = () => {
   const [isCostDialogOpen, setIsCostDialogOpen] = useState(false);
   const [editingCost, setEditingCost] = useState(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [financeSection, setFinanceSection] = useState('summary');
 
   // Get visibility rules
   const { canViewAmounts, canViewCosts, canViewProfit } = getFinancialVisibility(userRole);
   const availableTabs = useMemo(() => [
     'overview',
     'plan',
+    'team',
     ...(canViewCosts ? ['finance'] : []),
     'orders',
     'documents',
     'handover',
   ], [canViewCosts]);
+  const workspaceGroups = [
+    { label: 'Přehled', icon: LayoutDashboard, tabs: [{ value: 'overview', label: 'Přehled' }] },
+    { label: 'Práce', icon: GanttChart, tabs: [{ value: 'plan', label: 'Plán' }, { value: 'orders', label: 'Objednávky' }] },
+    { label: 'Lidé', icon: Users, tabs: [{ value: 'team', label: 'Tým realizace' }] },
+    ...(canViewCosts ? [{ label: 'Finance', icon: DollarSign, tabs: [{ value: 'finance', label: 'Finance' }] }] : []),
+    { label: 'Dokumenty', icon: FolderOpen, tabs: [{ value: 'documents', label: 'Soubory' }, { value: 'handover', label: 'Předání' }] },
+  ];
+  const financeSections = [
+    { value: 'summary', label: 'Souhrn', icon: PieChart },
+    { value: 'billing', label: 'Fakturace', icon: FileText },
+    { value: 'costs', label: 'Náklady', icon: ShoppingCart },
+    { value: 'rewards', label: 'Odměny', icon: Wallet },
+  ];
   const requestedTab = location.hash.substring(1);
   const activeTab = availableTabs.includes(requestedTab) ? requestedTab : 'overview';
-  const setActiveTab = useCallback((value) => navigate(`#${value}`, { replace: true }), [navigate]);
+  const setActiveTab = useCallback((value) => navigate(`#${value}`, { replace: true, state: location.state }), [navigate, location.state]);
 
   // Strictly disable edit for 'user' role
   const canEdit = hasPermission('realizace', 'can_edit') && userRole !== 'user';
@@ -138,7 +152,7 @@ const RealizaceDetail = () => {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-7 px-2 gap-1">
+          <Button variant="ghost" size="sm" className="min-h-11 px-2 gap-1" aria-label={`Změnit stav: ${status.label}`} disabled={isUpdatingStatus}>
             <MemoBadge variant={status.variant} className="max-w-[160px] truncate text-xs" title={status.label}>
               {status.label}
             </MemoBadge>
@@ -247,6 +261,7 @@ const RealizaceDetail = () => {
         setFinancialSummary(null);
       } else {
         setFinancialSummary(financialSummaryRes.data || null);
+        if (shouldLoadFinancialSummary && !financialSummaryRes.data) setFinanceLoadError('Finanční souhrn není dostupný.');
       }
       if (laborSummaryRes.error) {
         console.error('realization_labor_financial_summary failed:', laborSummaryRes.error.message);
@@ -335,6 +350,7 @@ const RealizaceDetail = () => {
         setExtraCosts(extraRes.data || []);
       }
       setFinancialSummary(financialSummaryRes.data || null);
+        if (shouldLoadFinancialSummary && !financialSummaryRes.data) setFinanceLoadError('Finanční souhrn není dostupný.');
       setLaborFinancialSummary(laborSummaryRes.data || null);
       return true;
     } catch (error) {
@@ -355,6 +371,7 @@ const RealizaceDetail = () => {
   useEffect(() => {
     loadedRealizationIdRef.current = null;
     setRealization(null);
+    setFinanceSection('summary');
     void fetchData({ showLoader: true });
     return () => {
       loadRequestRef.current.controller?.abort();
@@ -565,6 +582,7 @@ const RealizaceDetail = () => {
 
   const handleLinkProjectUpdate = (newProjectId, linkedProject = null) => {
     setLinkedProjectId(newProjectId);
+    setRealization(current => current ? { ...current, linked_project_id: newProjectId } : current);
     setLinkedProjectCode(linkedProject?.code || null);
   };
 
@@ -578,8 +596,9 @@ const RealizaceDetail = () => {
     <div>
       <RecordWorkspaceHeader
         title={realization.name}
-        subtitle={[realization.code, realization.location_address || 'Adresa neuvedena'].filter(Boolean).join(' · ')}
-        onBack={() => navigate('/realizace')}
+        subtitle={realization.code}
+        onBack={() => navigate(safeListReturnPath(location.state?.returnTo, '/realizace'))}
+        backLabel="Zpět na realizace"
         status={renderStatusMenu()}
         actions={canEdit && (
           <Button size="sm" onClick={() => navigate(`/realizace/${realizaceId}/edit`)}>
@@ -590,18 +609,11 @@ const RealizaceDetail = () => {
 
       <div className="app-page-wide">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
-          <RecordWorkspaceTabsList>
-            <TabsTrigger value="overview" className="flex items-center gap-2"><LayoutDashboard className="w-4 h-4" /> Přehled</TabsTrigger>
-            <TabsTrigger value="plan" className="flex items-center gap-2"><GanttChart className="w-4 h-4" /> Plán</TabsTrigger>
-            {canViewCosts && <TabsTrigger value="finance" className="flex items-center gap-2"><DollarSign className="w-4 h-4" /> Finance</TabsTrigger>}
-            <TabsTrigger value="orders" className="flex items-center gap-2"><ShoppingCart className="w-4 h-4" /> Objednávky</TabsTrigger>
-            <TabsTrigger value="documents" className="flex items-center gap-2"><FolderOpen className="w-4 h-4" /> Dokumenty</TabsTrigger>
-            <TabsTrigger value="handover" className="flex items-center gap-2"><FileSignature className="w-4 h-4" /> Předání</TabsTrigger>
-          </RecordWorkspaceTabsList>
+          <RecordWorkspaceNavigation groups={workspaceGroups} activeTab={activeTab} onTabChange={setActiveTab} ariaLabel="Sekce realizace" />
 
           <TabsContent value="overview">
             <div className="space-y-6">
-              {canViewAmounts && !financeLoadError && (
+              {canViewAmounts && !isPrivateMode && financialSummary && !financeLoadError && (
                 <FinancialHealthAlert
                   baseAmount={totalRevenue}
                   remainingAmount={calculatedFinancials.teamBudget}
@@ -614,13 +626,16 @@ const RealizaceDetail = () => {
               )}
               <RealizaceOverview
                 realization={realization}
-                financialSnapshot={{ teamBudget: calculatedFinancials.teamBudget }}
+                linkedProjectCode={linkedProjectCode}
+                canEdit={canEdit}
+                onEdit={() => navigate(`/realizace/${realizaceId}/edit`)}
               />
               {userRole === 'admin' && (
                 <BillingOverviewSummary
+                  compact
                   entityType="realization"
                   entityId={realizaceId}
-                  onOpenDetails={() => setActiveTab('finance')}
+                  onOpenDetails={() => { setFinanceSection('billing'); setActiveTab('finance'); }}
                 />
               )}
             </div>
@@ -630,28 +645,44 @@ const RealizaceDetail = () => {
             <PlanningBoard entityType="realization" entityId={realizaceId} embedded canEdit={canEdit} />
           </TabsContent>
 
+          <TabsContent value="team">
+            <RealizaceTeam realizaceId={realizaceId} />
+          </TabsContent>
+
           {canViewCosts && (
-            <TabsContent value="finance" className="space-y-6">
+            <TabsContent value="finance" className="space-y-5">
+              {isPrivateMode ? (
+                <div className="flex items-start gap-3 rounded-xl border bg-muted/40 p-5" role="status">
+                  <EyeOff className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                  <div><h2 className="font-semibold">Finance jsou v soukromém režimu skryté</h2><p className="mt-1 text-sm text-muted-foreground">Pro prohlížení částek a úpravy finančních údajů vypněte soukromý režim v postranním menu.</p></div>
+                </div>
+              ) : <>
                 {financeLoadError && (
                   <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert">
                     <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
                     <div>
-                      <p className="font-semibold">Finanční data nejsou autoritativně dostupná</p>
+                      <p className="font-semibold">Finanční přehled se nepodařilo načíst</p>
                       <p className="mt-1 text-red-700">Výpočty z databáze se nepodařilo načíst. Finanční změny jsou do obnovení dat pozastavené.</p>
+                      <Button variant="outline" className="mt-3 min-h-11" onClick={refreshFinancialData}>Zkusit znovu</Button>
                     </div>
                   </div>
                 )}
-                {!financeLoadError && <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
+                {!financeLoadError && hasFinancialSummary && <>
+                <nav aria-label="Finanční přehledy realizace" className="flex flex-wrap gap-2">
+                  {financeSections.map(({ value, label, icon: Icon }) => <Button key={value} type="button" variant={financeSection === value ? 'secondary' : 'ghost'} className="min-h-11 gap-2" aria-pressed={financeSection === value} aria-controls={`realization-finance-${value}`} onClick={() => setFinanceSection(value)}><Icon className="h-4 w-4" />{label}</Button>)}
+                </nav>
+                <RecordWorkspaceSection active={financeSection === 'summary'} id="realization-finance-summary" aria-label="Finanční souhrn" className="space-y-5">
+                <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
                   { label: 'Výnos zakázky bez DPH', value: <FinanceAmount value={totalRevenue} />, detail: 'Smlouva a schválené vícepráce', tone: 'neutral', icon: DollarSign },
                   { label: 'Skutečné náklady', value: <FinanceAmount value={grandTotalCosts} />, detail: 'Včetně vyplacených odměn', tone: 'neutral', icon: Download },
-                  { label: 'Nerozdělený budget', value: <FinanceAmount value={rewardAllocation.unallocatedBudget} />, detail: 'Po nákladech a naplánovaných podílech', tone: Number(rewardAllocation.unallocatedBudget || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
+                  { label: 'Zbývá rozdělit týmu', value: <FinanceAmount value={rewardAllocation.unallocatedBudget} />, detail: 'Po nákladech a naplánovaných podílech', tone: Number(rewardAllocation.unallocatedBudget || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
                   { label: 'Režie realizace', value: <FinanceAmount value={calculatedFinancials.overheadAmount} />, detail: `${Number(realization.overhead_percent || 0).toLocaleString('cs-CZ')} % z výnosu`, tone: 'warning', icon: FileText },
                   { label: 'Rezervované výplaty', value: <FinanceAmount value={reservedPayouts} />, detail: 'Závazek, zatím ne náklad', tone: Number(reservedPayouts || 0) ? 'warning' : 'neutral', icon: Clock },
                   { label: 'Vyplacené odměny', value: <FinanceAmount value={paidPayoutCosts} />, detail: 'Součást skutečných nákladů', tone: 'neutral', icon: DollarSign },
                   { label: 'Plánovaná marže', value: <FinanceAmount value={calculatedFinancials.profitAmount} />, detail: `${Number(realization.profit_margin_percent || 0).toLocaleString('cs-CZ')} % z výnosu`, tone: Number(calculatedFinancials.profitAmount || 0) < 0 ? 'negative' : 'positive', icon: PieChart },
                   { label: 'Provozní zůstatek', value: <FinanceAmount value={profitAvailable} />, detail: 'Výnos minus skutečné náklady', tone: Number(profitAvailable || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
-                ]} />}
-                <FinanceDefinitionNote>Nerozdělený budget je týmový základ po skutečných nákladech a naplánovaných podílech. Režie zůstává oddělenou rezervou firmy; rezervované výplaty snižují dostupný limit, ale do skutečných nákladů vstoupí až po vyplacení.</FinanceDefinitionNote>
+                ]} />
+                <FinanceDefinitionNote>Částka k rozdělení týmu zbývá po odečtení skutečných nákladů a naplánovaných podílů. Režie zůstává oddělenou rezervou firmy; rezervované výplaty snižují dostupný limit, ale do skutečných nákladů vstoupí až po vyplacení.</FinanceDefinitionNote>
                 {userRole === 'admin' && (
                   <FinancialSettingsCard
                     entityType="realization"
@@ -661,7 +692,11 @@ const RealizaceDetail = () => {
                     onSaved={fetchData}
                   />
                 )}
-                {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} entityCode={linkedProjectCode} enableContractAnalysis showFinancialSummary={false} />}
+                </RecordWorkspaceSection>
+                <RecordWorkspaceSection active={financeSection === 'billing'} id="realization-finance-billing" aria-label="Fakturace realizace">
+                  {userRole === 'admin' && <BillingTracker entityType="realization" entityId={realizaceId} entityCode={realization.code} enableContractAnalysis showFinancialSummary={false} />}
+                </RecordWorkspaceSection>
+                <RecordWorkspaceSection active={financeSection === 'costs'} id="realization-finance-costs" aria-label="Náklady realizace" className="space-y-5">
                 <RealizaceExtraCosts
                   realizaceId={realizaceId}
                   extraCosts={extraCosts}
@@ -670,7 +705,7 @@ const RealizaceDetail = () => {
                 />
 
                 <Card>
-                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="space-y-1">
                       <CardTitle>Manuální náklady realizace</CardTitle>
                       <CardDescription>Evidence faktur, materiálů a ostatních výdajů</CardDescription>
@@ -686,15 +721,16 @@ const RealizaceDetail = () => {
                       <div className="relative w-full max-w-sm">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
-                          placeholder="Hledat náklad..."
+                          placeholder="Hledat náklad nebo dodavatele…"
+                          aria-label="Hledat náklad nebo dodavatele"
                           className="pl-9"
                           value={costSearch}
                           onChange={e => setCostSearch(e.target.value)}
                         />
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-slate-500 md:ml-auto">
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 md:ml-auto">
                         <span>{filteredCosts.length} záznamů</span>
-                        <span className="font-semibold text-slate-900">Manuální náklady {formatCurrency(totalManualCosts)}</span>
+                        <span className="font-semibold text-slate-900">Manuální náklady <FinanceAmount value={totalManualCosts} /></span>
                       </div>
                     </div>
 
@@ -719,12 +755,12 @@ const RealizaceDetail = () => {
                                 <TableCell className="font-medium">{cost.description}</TableCell>
                                 <TableCell>{cost.supplier?.name || '-'}</TableCell>
                                 <TableCell className="font-mono text-xs">{cost.variable_symbol || '-'}</TableCell>
-                                <TableCell className="text-right font-bold">{formatCurrency(cost.amount)}</TableCell>
+                                <TableCell className="text-right font-bold"><FinanceAmount value={cost.amount} /></TableCell>
                                 <TableCell className="text-right">
                                   {cost.invoice_url && (
                                     <button
                                       type="button"
-                                      className="inline-flex items-center text-blue-600 hover:underline"
+                                      className="inline-flex min-h-11 items-center text-blue-600 hover:underline"
                                       onClick={async () => {
                                         try {
                                           const invoiceIsLocal = cost.invoice_storage_metadata?.storageRole === 'realization_cost_invoice';
@@ -753,12 +789,12 @@ const RealizaceDetail = () => {
                                 <TableCell className="text-right">
                                   {canEdit && (
                                     <div className="flex justify-end gap-1">
-                                      <Button variant="ghost" size="icon" onClick={() => { setEditingCost(cost); setIsCostDialogOpen(true); }}>
+                                      <Button variant="ghost" size="icon" aria-label={`Upravit náklad: ${cost.description}`} onClick={() => { setEditingCost(cost); setIsCostDialogOpen(true); }}>
                                         <Edit2 className="w-4 h-4" />
                                       </Button>
                                       <AlertDialog>
                                         <AlertDialogTrigger asChild>
-                                          <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600">
+                                          <Button variant="ghost" size="icon" aria-label={`Smazat náklad: ${cost.description}`} className="text-red-500 hover:text-red-600">
                                             <Trash2 className="w-4 h-4" />
                                           </Button>
                                         </AlertDialogTrigger>
@@ -787,30 +823,31 @@ const RealizaceDetail = () => {
                 <section className="space-y-4 border-t border-slate-200 pt-5">
                   <div>
                     <h3 className="text-base font-semibold text-slate-950">Hodinové náklady</h3>
-                    <p className="mt-1 text-sm text-slate-500">Detail odpracovaného času je součástí nákladů realizace a již nemá samostatnou hlavní záložku.</p>
+                    <p className="mt-1 text-sm text-slate-500">Odpracovaný čas a jeho náklad podle pracovníků.</p>
                   </div>
                   <RealizaceHourlyCosts
                     realizaceId={realizaceId}
                     linkedProjectId={linkedProjectId}
                     onLinkProject={handleLinkProjectUpdate}
-                    distributionAmount={calculatedFinancials.teamBudget}
                   />
                 </section>
 
+                </RecordWorkspaceSection>
                 {canViewProfit && (
-                  <section className="space-y-4 border-t border-slate-200 pt-5">
+                  <RecordWorkspaceSection active={financeSection === 'rewards'} id="realization-finance-rewards" aria-label="Odměny týmu" className="space-y-4">
                     <div>
                       <h3 className="text-base font-semibold text-slate-950">Rozdělení výsledku a odměn</h3>
-                      <p className="mt-1 text-sm text-slate-500">Administrační detail odměn navazuje na stejný finanční základ jako souhrn výše.</p>
+                      <p className="mt-1 text-sm text-slate-500">Nastavte podíly členů a zkontrolujte, kolik z týmového rozpočtu zbývá rozdělit.</p>
                     </div>
                     <RealizaceProfitSharing
                       realizaceId={realizaceId}
                       distributionAmount={calculatedFinancials.teamBudget}
+                      onSaved={refreshFinancialData}
                       sponsorDeductions={laborFinancialSummary?.sponsor_deductions || []}
                       isCompleted={['Dokončeno', 'Předáno'].includes(realization.status)}
                       canEdit={canEdit && !financeLoadError}
                     />
-                  </section>
+                  </RecordWorkspaceSection>
                 )}
 
                 <RealizaceCostDialog
@@ -819,6 +856,8 @@ const RealizaceDetail = () => {
                   onSave={handleSaveCost}
                   costData={editingCost}
                 />
+                </>}
+              </>}
             </TabsContent>
           )}
 
@@ -826,7 +865,6 @@ const RealizaceDetail = () => {
             <RealizaceOrdersTab
               realizaceId={realizaceId}
               realization={realization}
-              distributionAmount={calculatedFinancials.teamBudget}
             />
           </TabsContent>
 

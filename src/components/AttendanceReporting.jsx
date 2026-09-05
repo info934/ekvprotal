@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
 import { cs } from 'date-fns/locale';
@@ -43,6 +43,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { sendEmail } from '@/lib/email';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
+import { loadAttendanceReport } from '@/lib/attendanceWorkspace';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useAttendanceResource } from '@/hooks/useAttendanceResource';
+import { AttendanceLoadState, AttendanceMonthControl } from './AttendanceWorkspaceParts';
 
 const STATUS_CONFIG = {
   draft: { label: 'Koncept', className: 'border-slate-200 bg-slate-100 text-slate-700', icon: FileText, tone: 'slate' },
@@ -99,11 +103,17 @@ const applyNumberFormat = (sheet, columns, fromRow, toRow, formatCode) => {
 
 const AttendanceReporting = () => {
   const { toast } = useToast();
+  const { isPrivateMode } = useAuth();
+  const privateMoney = value => isPrivateMode ? 'Skryto' : formatCurrency(value);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [loading, setLoading] = useState(true);
-  const [records, setRecords] = useState([]);
-  const [submissions, setSubmissions] = useState([]);
-  const [members, setMembers] = useState([]);
+  const loader = useCallback(signal => loadAttendanceReport(supabase, { month: currentMonth, signal }), [currentMonth]);
+  const resource = useAttendanceResource('attendance-report:' + format(currentMonth, 'yyyy-MM'), loader);
+  const loading = !resource.ready;
+  const records = resource.data?.records || [];
+  const submissions = resource.data?.submissions || [];
+  const members = resource.data?.members || [];
+  const sendingRef = useRef(false);
+  const [exporting, setExporting] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState([]);
   const [memberSearch, setMemberSearch] = useState('');
   const [accountingEmail, setAccountingEmail] = useState('');
@@ -112,93 +122,12 @@ const AttendanceReporting = () => {
   const [sendingEmail, setSendingEmail] = useState(false);
 
   useEffect(() => {
-    const fetchInitialData = async () => {
-      const [membersResult, compensationResult] = await Promise.all([
-        supabase
-          .from('members')
-          .select('id, name')
-          .eq('attendance_enabled', true)
-          .order('name'),
-        supabase.rpc('list_member_compensations_admin'),
-      ]);
-      const { data: membersData, error: membersError } = membersResult;
-
-      if (membersError) {
-        toast({ title: 'Chyba při načítání pracovníků', description: membersError.message, variant: 'destructive' });
-      }
-
-      if (compensationResult.error) {
-        toast({ title: 'Chyba při načítání sazeb', description: compensationResult.error.message, variant: 'destructive' });
-      }
-      const compensationByMember = new Map(
-        (compensationResult.data || []).map((item) => [String(item.member_id), Number(item.hourly_rate || 0)])
-      );
-      setMembers((membersData || []).map((member) => ({
-        ...member,
-        hourly_rate: compensationByMember.get(String(member.id)) || 0,
-      })));
-
-      const { data: settingsData } = await supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'accounting_email')
-        .maybeSingle();
-
-      if (settingsData?.value) {
-        setAccountingEmail(settingsData.value);
-        setTempEmail(settingsData.value);
-      }
-    };
-
-    fetchInitialData();
-  }, [toast]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      const startDate = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
-      const endDate = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
-
-      const [attendanceResult, submissionsResult] = await Promise.all([
-        supabase
-          .from('attendance')
-          .select(`
-            id,
-            date,
-            hours,
-            description,
-            members:members!attendance_member_id_fkey(id, name),
-            projects (id, name, code),
-            realizations (id, name)
-          `)
-          .gte('date', startDate)
-          .lte('date', endDate)
-          .order('date', { ascending: true }),
-        supabase
-          .from('attendance_submissions')
-          .select('id, member_id, status, total_hours, month_date, submitted_at, approved_at')
-          .eq('month_date', startDate)
-      ]);
-
-      if (attendanceResult.error) {
-        toast({ title: 'Chyba při načítání docházky', description: attendanceResult.error.message, variant: 'destructive' });
-        setRecords([]);
-      } else {
-        setRecords(attendanceResult.data || []);
-      }
-
-      if (submissionsResult.error) {
-        toast({ title: 'Chyba při načítání stavů', description: submissionsResult.error.message, variant: 'destructive' });
-        setSubmissions([]);
-      } else {
-        setSubmissions(submissionsResult.data || []);
-      }
-
-      setLoading(false);
-    };
-
-    fetchData();
-  }, [currentMonth, toast]);
+    let active = true;
+    supabase.from('app_settings').select('value').eq('key', 'accounting_email').maybeSingle().then(({ data }) => {
+      if (active && data?.value) { setAccountingEmail(data.value); setTempEmail(data.value); }
+    });
+    return () => { active = false; };
+  }, []);
 
   const selectedSet = useMemo(() => new Set(selectedMemberIds), [selectedMemberIds]);
   const hasMemberFilter = selectedMemberIds.length > 0;
@@ -225,7 +154,7 @@ const AttendanceReporting = () => {
 
   const filteredRecords = useMemo(() => {
     if (!hasMemberFilter) return records;
-    return records.filter((record) => selectedSet.has(record.members?.id));
+    return records.filter((record) => selectedSet.has(record.member_id));
   }, [records, selectedSet, hasMemberFilter]);
 
   const aggregatedData = useMemo(() => {
@@ -246,7 +175,7 @@ const AttendanceReporting = () => {
     });
 
     filteredRecords.forEach((record) => {
-      const memberId = record.members?.id || 'unknown';
+      const memberId = record.member_id || 'unknown';
       if (!grouped.has(memberId)) {
         const submission = submissionByMember.get(memberId);
         grouped.set(memberId, {
@@ -310,8 +239,8 @@ const AttendanceReporting = () => {
 
     const summaryRows = [
       [`Docházka - souhrn za ${monthLabel}`],
-      [],
-      ['Pracovník', 'Stav docházky', 'Sazba (Kč/h)', 'Odpracované hodiny', 'Náklady celkem (Kč)', 'Počet záznamů']
+      ['Orientační odměny při aktuálních sazbách, včetně neschválených hodin. Závazné výplaty ověřte v modulu Výplaty.'],
+      ['Pracovník', 'Stav docházky', 'Sazba (Kč/h)', 'Odpracované hodiny', 'Orientační odměna (Kč)', 'Počet záznamů']
     ];
 
     aggregatedData.forEach((item) => {
@@ -339,11 +268,11 @@ const AttendanceReporting = () => {
     const detailRows = [
       [`Docházka - detail po dnech za ${monthLabel}`],
       [],
-      ['Datum', 'Pracovník', 'Stav měsíce', 'Typ', 'Projekt / realizace', 'Kód', 'Popis', 'Hodiny', 'Sazba (Kč/h)', 'Náklady (Kč)']
+      ['Datum', 'Pracovník', 'Stav měsíce', 'Typ', 'Projekt / realizace', 'Kód', 'Popis', 'Hodiny', 'Sazba (Kč/h)', 'Orientační odměna (Kč)']
     ];
 
     filteredRecords.forEach((record) => {
-      const memberId = record.members?.id;
+      const memberId = record.member_id;
       const submission = submissionByMember.get(memberId);
       const status = submission?.status || 'missing';
       const hours = Number(record.hours || 0);
@@ -377,6 +306,7 @@ const AttendanceReporting = () => {
       ['Schváleno', statusCounts.approved || 0],
       ['Ke schválení', statusCounts.submitted || 0],
       ['Zamítnuto', statusCounts.rejected || 0],
+      ['Vráceno k úpravě', statusCounts.returned || 0],
       ['Koncept', statusCounts.draft || 0],
       ['Neodesláno', statusCounts.missing || 0],
       [],
@@ -403,9 +333,13 @@ const AttendanceReporting = () => {
   };
 
   const handleExport = async () => {
-    const XLSX = await loadXlsx();
-    const fileName = `Reporting_Dochazka_${format(currentMonth, 'MM-yyyy')}.xlsx`;
-    XLSX.writeFile(buildWorkbook(XLSX), fileName);
+    if (!resource.ready || exporting) return;
+    setExporting(true);
+    try {
+      const XLSX = await loadXlsx();
+      XLSX.writeFile(buildWorkbook(XLSX), 'Reporting_Dochazka_' + format(currentMonth, 'MM-yyyy') + '.xlsx');
+    } catch (error) { toast({ title: 'Export se nepodařil', description: error.message, variant: 'destructive' }); }
+    finally { setExporting(false); }
   };
 
   const buildEmailContent = (monthStr) => {
@@ -420,7 +354,7 @@ const AttendanceReporting = () => {
     `).join('');
 
     const detailRows = filteredRecords.slice(0, 80).map((record) => {
-      const memberId = record.members?.id;
+      const memberId = record.member_id;
       const status = submissionByMember.get(memberId)?.status || 'missing';
       const target = record.projects?.code
         ? `${record.projects.code} - ${record.projects.name}`
@@ -446,7 +380,7 @@ const AttendanceReporting = () => {
           <div style="font-size:22px;font-weight:800;color:#111827;margin-top:6px;">${totals.hours.toFixed(1)} h</div>
         </div>
         <div style="padding:14px;border:1px solid #bbf7d0;border-radius:10px;background:#f0fdf4;">
-          <div style="font-size:12px;color:#166534;font-weight:700;text-transform:uppercase;">Celkové náklady</div>
+          <div style="font-size:12px;color:#166534;font-weight:700;text-transform:uppercase;">Orientační odměny</div>
           <div style="font-size:22px;font-weight:800;color:#14532d;margin-top:6px;">${formatCurrency(totals.cost)}</div>
         </div>
         <div style="padding:14px;border:1px solid #e9d5ff;border-radius:10px;background:#faf5ff;">
@@ -493,11 +427,12 @@ const AttendanceReporting = () => {
       </table>
 
       ${filteredRecords.length > 80 ? '<p style="margin-top:10px;color:#64748b;font-size:12px;">Zobrazeno prvních 80 řádků. Kompletní detail je v příloze.</p>' : ''}
-      <p style="margin-top:24px;color:#64748b;font-size:12px;">V příloze je kompletní Excel soubor se souhrnem, detailem po dnech a kontrolou stavů.</p>
+      <p style="margin-top:24px;color:#64748b;font-size:12px;">Částky jsou orientační při aktuálních sazbách a zahrnují i neschválené hodiny. Závazné výplaty ověřte v modulu Výplaty. V příloze je kompletní Excel soubor se souhrnem, detailem po dnech a kontrolou stavů.</p>
     `;
   };
 
   const handleSendEmail = async () => {
+    if (!resource.ready || sendingRef.current) return;
     const emailToSend = tempEmail.trim() || accountingEmail.trim();
 
     if (!isValidEmailList(emailToSend)) {
@@ -509,6 +444,7 @@ const AttendanceReporting = () => {
       return;
     }
 
+    sendingRef.current = true;
     setSendingEmail(true);
 
     try {
@@ -537,6 +473,7 @@ const AttendanceReporting = () => {
     } catch (error) {
       toast({ title: 'Chyba při odesílání', description: error.message, variant: 'destructive' });
     } finally {
+      sendingRef.current = false;
       setSendingEmail(false);
     }
   };
@@ -546,17 +483,7 @@ const AttendanceReporting = () => {
       <Card className="overflow-hidden rounded-xl border-slate-200 bg-white shadow-sm">
         <CardContent className="p-4">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>
-                <ChevronLeft className="h-5 w-5" />
-              </Button>
-              <h2 className="w-48 text-center text-2xl font-bold capitalize text-slate-900">
-                {format(currentMonth, 'LLLL yyyy', { locale: cs })}
-              </h2>
-              <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}>
-                <ChevronRight className="h-5 w-5" />
-              </Button>
-            </div>
+            <AttendanceMonthControl value={currentMonth} onChange={setCurrentMonth} disabled={sendingEmail || exporting} />
 
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               <Popover>
@@ -603,13 +530,13 @@ const AttendanceReporting = () => {
                   setTempEmail(accountingEmail);
                   setIsEmailDialogOpen(true);
                 }}
-                disabled={aggregatedData.length === 0}
+                disabled={!resource.ready || exporting || sendingEmail || aggregatedData.length === 0}
                 className="gap-2"
               >
                 <Mail className="h-4 w-4" />
                 Poslat emailem
               </Button>
-              <Button variant="outline" onClick={handleExport} disabled={aggregatedData.length === 0} className="gap-2 bg-white">
+              <Button variant="outline" onClick={handleExport} disabled={!resource.ready || exporting || sendingEmail || aggregatedData.length === 0} className="gap-2 bg-white">
                 <Download className="h-4 w-4" />
                 Export XLSX
               </Button>
@@ -618,19 +545,11 @@ const AttendanceReporting = () => {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <DataVizMetricCard icon={Calculator} label="Celkem hodin" value={loading ? '...' : `${totals.hours.toFixed(1)} h`} tone="blue" />
-        <DataVizMetricCard icon={DollarSign} label="Celkové náklady" value={loading ? '...' : formatCurrency(totals.cost)} tone="emerald" />
-        <DataVizMetricCard icon={Users} label="Průměrná sazba" value={loading ? '...' : `${formatCurrency(averageRate)} /h`} tone="violet" />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <DataVizMetricCard icon={ShieldCheck} label="Schváleno" value={loading ? '...' : statusCounts.approved} tone="green" />
-        <DataVizMetricCard icon={Hourglass} label="Ke schválení" value={loading ? '...' : statusCounts.submitted} tone="orange" />
-        <DataVizMetricCard icon={AlertTriangle} label="Zamítnuto" value={loading ? '...' : statusCounts.rejected} tone="red" />
-        <DataVizMetricCard icon={Hourglass} label="Vráceno k úpravě" value={loading ? '...' : statusCounts.returned} tone="orange" />
-        <DataVizMetricCard icon={FileText} label="Neodesláno / koncept" value={loading ? '...' : (statusCounts.missing || 0) + (statusCounts.draft || 0)} tone="slate" />
-      </div>
+      <AttendanceLoadState loading={resource.loading} error={resource.error} onRetry={resource.refresh}>
+      {resource.ready && <>
+      <p className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">Částky v reportu jsou orientační odměny při aktuálních sazbách v Kč. Zahrnuté jsou i neodeslané a neschválené hodiny; závazné výplaty ověřte v modulu Výplaty.</p>
+      <div className="grid gap-px overflow-hidden rounded-xl border bg-slate-200 md:grid-cols-3">{[['Celkem hodin', totals.hours.toLocaleString('cs-CZ') + ' h'], ['Orientační odměny', privateMoney(totals.cost)], ['Průměrná sazba', privateMoney(averageRate) + ' /h']].map(([label, value]) => <div key={label} className="bg-white p-5"><p className="text-xs text-slate-500">{label}</p><p className="mt-2 text-xl font-semibold tabular-nums">{value}</p></div>)}</div>
+      <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl border bg-white px-5 py-4 text-sm">{[['Schváleno', statusCounts.approved], ['Ke schválení', statusCounts.submitted], ['Zamítnuto', statusCounts.rejected], ['Vráceno k úpravě', statusCounts.returned], ['Neodesláno / koncept', (statusCounts.missing || 0) + (statusCounts.draft || 0)]].map(([label, value]) => <span key={label} className="text-slate-600"><strong className="mr-2 text-slate-900">{value || 0}</strong>{label}</span>)}</div>
 
       <Card className="overflow-hidden rounded-xl border-slate-200 bg-white shadow-sm">
         <CardHeader className="border-b border-slate-200 bg-white">
@@ -653,7 +572,7 @@ const AttendanceReporting = () => {
                     <TableHead className="h-11 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Hodinová sazba</TableHead>
                     <TableHead className="h-11 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Odpracováno</TableHead>
                     <TableHead className="h-11 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Záznamů</TableHead>
-                    <TableHead className="h-11 px-5 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Celkové náklady</TableHead>
+                    <TableHead className="h-11 px-5 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Orientační odměny</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -661,10 +580,10 @@ const AttendanceReporting = () => {
                     <TableRow key={row.memberId} className="border-slate-100 hover:bg-slate-50/70">
                       <TableCell className="px-5 font-semibold text-slate-900">{row.name}</TableCell>
                       <TableCell><StatusBadge status={row.status} /></TableCell>
-                      <TableCell className="text-right text-slate-600">{formatCurrency(row.rate)} /h</TableCell>
+                      <TableCell className="text-right text-slate-600">{privateMoney(row.rate)} /h</TableCell>
                       <TableCell className="text-right font-semibold tabular-nums text-slate-900">{row.totalHours.toFixed(1)} h</TableCell>
                       <TableCell className="text-right tabular-nums text-slate-600">{row.recordCount}</TableCell>
-                      <TableCell className="px-5 text-right font-bold tabular-nums text-emerald-700">{formatCurrency(row.totalCost)}</TableCell>
+                      <TableCell className="px-5 text-right font-bold tabular-nums text-emerald-700">{privateMoney(row.totalCost)}</TableCell>
                     </TableRow>
                   ))}
                   <TableRow className="border-t-2 border-slate-200 bg-slate-100 font-bold">
@@ -673,7 +592,7 @@ const AttendanceReporting = () => {
                     <TableCell className="text-right">-</TableCell>
                     <TableCell className="text-right text-lg text-blue-700">{totals.hours.toFixed(1)} h</TableCell>
                     <TableCell className="text-right">{filteredRecords.length}</TableCell>
-                    <TableCell className="px-5 text-right text-lg text-emerald-700">{formatCurrency(totals.cost)}</TableCell>
+                    <TableCell className="px-5 text-right text-lg text-emerald-700">{privateMoney(totals.cost)}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
@@ -681,6 +600,9 @@ const AttendanceReporting = () => {
           )}
         </CardContent>
       </Card>
+
+      </>}
+      </AttendanceLoadState>
 
       <AlertDialog open={isEmailDialogOpen} onOpenChange={setIsEmailDialogOpen}>
         <AlertDialogContent className="sm:max-w-2xl">

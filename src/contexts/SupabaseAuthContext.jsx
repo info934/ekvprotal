@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { AuthContext } from '@/contexts/AuthContext';
+import { getAuthPermissionRefresh } from '@/lib/authPermissionRefresh';
 import {
   combineAbortSignals,
   createTimedAbortController,
@@ -8,7 +10,7 @@ import {
   isRequestTimeoutError,
 } from '@/lib/requestControl';
 
-const AuthContext = createContext(undefined);
+export { useAuth } from '@/contexts/AuthContext';
 
 // Cache for permissions and user data
 const cache = {
@@ -73,6 +75,8 @@ export const AuthProvider = ({ children }) => {
   const isSuperUser = useMemo(() => userRole === 'admin' || userRole === 'super_manager', [userRole]);
 
   const clearState = useCallback(() => {
+    authEventRunIdRef.current += 1;
+    permissionAbortRef.current?.abort();
     currentUserIdRef.current = null;
     permissionsLoadedUserIdRef.current = null;
     permissionsLoadingUserIdRef.current = null;
@@ -169,8 +173,6 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    setPermissionsReady(false);
-
     const requestSignal = () => combineAbortSignals(runSignal, AbortSignal.timeout(8000));
     const assertCurrentRun = () => {
       if (runSignal?.aborted || currentUserIdRef.current !== currentUser.id) {
@@ -186,7 +188,7 @@ export const AuthProvider = ({ children }) => {
           .eq('auth_user_id', currentUser.id)
           .maybeSingle()
           .abortSignal(requestSignal());
-        if (error && error.code !== 'PGRST116' && error.code !== '42P01') throw error;
+        if (error && error.code !== 'PGRST116') throw error;
         return data;
       });
       assertCurrentRun();
@@ -311,6 +313,12 @@ export const AuthProvider = ({ children }) => {
       if (runSignal?.aborted || isRequestAbortError(error)) throw error;
       console.error("An unexpected error occurred during permission fetch:", error);
 
+      if (error.details === 'ACCOUNT_DISABLED' || error.message === 'Account is disabled.') {
+        toast({ title: 'Účet je deaktivovaný', description: 'Kontaktujte administrátora portálu.', variant: 'destructive' });
+        await signOut();
+        return;
+      }
+
       if (error.message?.includes('JWT') || error.message?.includes('token')) {
         toast({ 
           title: 'Relace vypršela',
@@ -340,8 +348,10 @@ export const AuthProvider = ({ children }) => {
 
     if (invalidateCache) clearCache();
     setAuthError(null);
-    setPermissionsReady(false);
-    if (foreground) setLoading(true);
+    if (foreground) {
+      setPermissionsReady(false);
+      setLoading(true);
+    }
 
     try {
       await fetchPermissions(currentUser, permissionRequest.signal);
@@ -359,6 +369,12 @@ export const AuthProvider = ({ children }) => {
         ? 'Načítání oprávnění překročilo časový limit. Zkontrolujte připojení a zkuste to znovu.'
         : 'Oprávnění se nepodařilo načíst. Zkuste akci zopakovat.';
       setAuthError(message);
+      // A failed background refresh must never keep stale administrator access.
+      setPermissionsReady(false);
+      setPermissions({});
+      setIsAdmin(false);
+      setUserRole(null);
+      permissionsLoadedUserIdRef.current = null;
       toast({
         title: 'Načítání oprávnění selhalo',
         description: message,
@@ -384,6 +400,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     let isMounted = true;
+    let permissionLoadTimer;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, nextSession) => {
@@ -397,47 +414,40 @@ export const AuthProvider = ({ children }) => {
         setUser(nextUser);
 
         if (event === 'SIGNED_OUT' || !nextUser) {
+          clearTimeout(permissionLoadTimer);
           clearState();
           return;
         }
 
         currentUserIdRef.current = nextUserId;
 
-        // A refreshed access token does not change application permissions.
-        // Keeping the route mounted prevents all page queries from running again.
-        if (
-          event === 'TOKEN_REFRESHED'
-          && nextUserId === previousUserId
-          && permissionsLoadedUserIdRef.current === nextUserId
-        ) {
-          return;
-        }
-
-        const identityChanged = nextUserId !== previousUserId;
-        if (
-          event !== 'USER_UPDATED'
-          && !identityChanged
-          && permissionsLoadingUserIdRef.current === nextUserId
-        ) {
-          return;
-        }
-        const mustReload = identityChanged
-          || event === 'INITIAL_SESSION'
-          || event === 'USER_UPDATED'
-          || permissionsLoadedUserIdRef.current !== nextUserId;
-
-        if (!mustReload) return;
-
-        const invalidateCache = identityChanged || event === 'USER_UPDATED';
-        void loadPermissionsForUser(nextUser, {
-          foreground: true,
-          invalidateCache,
+        const refreshOptions = getAuthPermissionRefresh({
+          event,
+          userId: nextUserId,
+          previousUserId,
+          loadedUserId: permissionsLoadedUserIdRef.current,
+          loadingUserId: permissionsLoadingUserIdRef.current,
         });
+        if (!refreshOptions) return;
+
+        if (refreshOptions.foreground) {
+          setPermissionsReady(false);
+          setLoading(true);
+        }
+        clearTimeout(permissionLoadTimer);
+        // Leave Supabase's synchronous auth callback before issuing authenticated
+        // requests. Refreshes revalidate in the background without remounting routes.
+        permissionLoadTimer = setTimeout(() => {
+          if (isMounted && currentUserIdRef.current === nextUserId) {
+            void loadPermissionsForUser(nextUser, refreshOptions);
+          }
+        }, 0);
       }
     );
 
     return () => {
       isMounted = false;
+      clearTimeout(permissionLoadTimer);
       authEventRunIdRef.current += 1;
       permissionAbortRef.current?.abort();
       subscription?.unsubscribe();
@@ -474,12 +484,4 @@ export const AuthProvider = ({ children }) => {
   }), [user, session, loading, authError, permissionsReady, permissions, isAdmin, memberId, userRole, isSuperUser, hasPermission, signOut, signIn, signInWithSso, retryPermissions, isPrivateMode, togglePrivateMode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
 };

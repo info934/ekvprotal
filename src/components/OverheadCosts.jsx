@@ -51,6 +51,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import OverheadCostForm from '@/components/OverheadCostForm';
 import MonthlyAllocation from '@/components/MonthlyAllocation';
 import PageHeader from '@/components/ui/page-header';
+import { clampPage } from '@/lib/operationsHelpers';
 
 const formatCurrency = formatMoney;
 
@@ -313,8 +314,12 @@ const OverheadCostsList = () => {
     }, [costs, searchTerm, filters]);
 
     const hasActiveFilters = searchTerm.trim() !== '' || filters.type !== 'all' || filters.category !== 'all';
-    const paginatedCosts = filteredCosts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-    const totalPages = Math.ceil(filteredCosts.length / itemsPerPage);
+    const visiblePage = clampPage(currentPage, filteredCosts.length, itemsPerPage);
+    const paginatedCosts = filteredCosts.slice((visiblePage - 1) * itemsPerPage, visiblePage * itemsPerPage);
+    const totalPages = Math.max(1, Math.ceil(filteredCosts.length / itemsPerPage));
+
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, filters.type, filters.category, itemsPerPage]);
+    useEffect(() => { setCurrentPage(visiblePage); }, [visiblePage]);
 
     const AllocationKeyPreview = ({ value }) => {
         if (!value || !value.allocations || value.allocations.length === 0) {
@@ -519,18 +524,18 @@ const OverheadCostsList = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                        disabled={currentPage === 1}
+                        disabled={visiblePage === 1}
                     >
                         <ChevronLeft className="w-4 h-4" /> Předchozí
                     </Button>
                     <span className="text-sm text-muted-foreground">
-                        Stránka {currentPage} z {totalPages}
+                        Stránka {visiblePage} z {totalPages}
                     </span>
                     <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                        disabled={currentPage === totalPages}
+                        disabled={visiblePage === totalPages}
                     >
                         Další <ChevronRight className="w-4 h-4" />
                     </Button>

@@ -39,6 +39,8 @@ import {
     calculateRealizationProjectionStats,
 } from '@/domain/realizationProjections';
 import { ListViewModeToggle, ListWorkspaceToolbar } from '@/components/ui/list-workspace';
+import { usePersistentListState } from '@/hooks/usePersistentListState';
+import { compareListRecords, fetchAllListRows, isRecordActivation } from '@/lib/listWorkspaceState';
 
 const statusConfig = {
     'Připravuje se': { variant: 'info', label: 'Připravuje se' },
@@ -50,6 +52,8 @@ const statusConfig = {
 };
 
 const formatDateShort = (date) => date ? format(new Date(date), 'd.M.yyyy') : 'Neuvedeno';
+const realizationListStatuses = Object.keys(statusConfig);
+const realizationListSorts = ['created_at', 'name', 'planned_end_date', 'start_date'];
 
 const chartPalette = ['#2563eb', '#f59e0b', '#10b981', '#ef4444', '#64748b', '#8b5cf6'];
 
@@ -276,18 +280,22 @@ const RealizationExecutiveDashboard = ({ canViewAmounts, chartData, stats }) => 
 );
 
 const Realizace = () => {
+    const { hasPermission, userRole, user, memberId } = useAuth();
     const [realizations, setRealizations] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [searchValue, setSearchValue] = useState('');
+    const [loadError, setLoadError] = useState('');
+    const [analysisOpen, setAnalysisOpen] = useState(false);
+    const { state: listState, update: updateList, openRecord } = usePersistentListState({ scope: 'realizace', userId: user?.id || memberId, statuses: realizationListStatuses, sorts: realizationListSorts, ready: !loading });
+    const { q: searchValue, status: statusFilter, view: viewMode } = listState;
+    const setSearchValue = q => updateList({ q });
+    const setStatusFilter = status => updateList({ status });
+    const setViewMode = view => updateList({ view });
     const debouncedSearchTerm = useDebouncedValue(searchValue, 300);
-    const [statusFilter, setStatusFilter] = useState('all');
-    const [viewMode, setViewMode] = useState('kanban');
     const [updatingRealizationId, setUpdatingRealizationId] = useState(null);
     const [draggingRealizationId, setDraggingRealizationId] = useState(null);
     const [dragOverStatusKey, setDragOverStatusKey] = useState(null);
     const { toast } = useToast();
     const navigate = useNavigate();
-    const { hasPermission, userRole } = useAuth();
     const statusOrder = useMemo(() => Object.keys(statusConfig), []);
     
     const { canViewAmounts } = getFinancialVisibility(userRole);
@@ -301,6 +309,7 @@ const Realizace = () => {
         { id: 'type', label: 'Typ' },
         { id: 'status', label: 'Stav' },
         { id: 'start', label: 'Start' },
+        { id: 'deadline', label: 'Dokončení' },
         { id: 'lead', label: 'Vedoucí' },
         canViewAmounts && { id: 'contract', label: 'Smlouva' },
         { id: 'actions', label: 'Akce', hideable: false },
@@ -325,18 +334,20 @@ const Realizace = () => {
 
     const fetchRealizations = useCallback(async () => {
         setLoading(true);
-        const { data, error } = await supabase.rpc('list_realizations_safe');
-
-        if (error) {
+        setLoadError('');
+        try {
+            const data = await fetchAllListRows((from, to) => supabase.rpc('list_realizations_safe').order('id').range(from, to));
+            setRealizations(data);
+        } catch (error) {
+            setLoadError(error.message || 'Zkuste načtení zopakovat.');
             toast({
                 title: 'Chyba při načítání realizací',
                 description: error.message,
                 variant: 'destructive'
             });
-        } else {
-            setRealizations(data || []);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     }, [toast]);
 
     useEffect(() => {
@@ -438,6 +449,8 @@ const Realizace = () => {
                 return renderStatusMenu(r);
             case 'start':
                 return formatDateShort(r.start_date);
+            case 'deadline':
+                return formatDateShort(r.planned_end_date);
             case 'lead':
                 return r.lead_person?.name || '-';
             case 'contract':
@@ -500,12 +513,13 @@ const Realizace = () => {
         const q = debouncedSearchTerm.toLowerCase();
         const searchMatch = debouncedSearchTerm === '' ||
             (r.name || '').toLowerCase().includes(q) ||
+            (r.code || '').toLowerCase().includes(q) ||
             (r.investor?.name || '').toLowerCase().includes(q) ||
             (r.type || '').toLowerCase().includes(q);
 
         const statusMatch = statusFilter === 'all' || r.status === statusFilter;
         return searchMatch && statusMatch;
-    });
+    }).sort((a, b) => compareListRecords(a, b, listState.sort, listState.dir));
 
     const stats = useMemo(() => calculateRealizationProjectionStats(realizations), [realizations]);
 
@@ -523,7 +537,7 @@ const Realizace = () => {
             <PageHeader
                 icon={HardHat}
                 title="Realizace"
-                description="Správa stavebních zakázek a projektů"
+                description="Průběh staveb, jejich tým a nejbližší termíny."
                 actions={
                     <>
                     <Button variant="outline" onClick={fetchRealizations}><RefreshCw className="w-4 h-4 mr-2" /> Aktualizovat</Button>
@@ -534,7 +548,16 @@ const Realizace = () => {
                 }
             />
 
-            <RealizationExecutiveDashboard canViewAmounts={canViewAmounts} chartData={chartData} stats={stats} />
+            {!loading && !loadError && <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border bg-white px-5 py-4 text-sm">
+              <span><strong className="mr-1">{realizations.length}</strong> realizací</span>
+              <button type="button" className="text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => setStatusFilter('Probíhá')}><strong className="mr-1 text-foreground">{realizations.filter(item => item.status === 'Probíhá').length}</strong> probíhá</button>
+              <button type="button" className="text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => setStatusFilter('Pozastaveno')}><strong className="mr-1 text-foreground">{realizations.filter(item => item.status === 'Pozastaveno').length}</strong> pozastaveno</button>
+              <span className="text-muted-foreground sm:ml-auto" aria-live="polite">Ve výběru {filteredRealizations.length}</span>
+            </div>}
+            {!loading && !loadError && <details className="rounded-xl border bg-white" open={analysisOpen} onToggle={event => setAnalysisOpen(event.currentTarget.open)}>
+              <summary className="cursor-pointer px-5 py-4 text-sm font-medium">Analýza zakázek <span className="ml-2 text-xs font-normal text-muted-foreground">Finance, vývoj a rozdělení podle stavu</span></summary>
+              {analysisOpen && <div className="border-t p-4"><RealizationExecutiveDashboard canViewAmounts={canViewAmounts} chartData={chartData} stats={stats} /></div>}
+            </details>}
 
             <ListWorkspaceToolbar
                 primary={(
@@ -542,7 +565,8 @@ const Realizace = () => {
                     <div className="relative flex-1 md:max-w-sm">
                         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
-                            placeholder="Hledat..."
+                            placeholder="Hledat název, typ nebo investora…"
+                            aria-label="Hledat realizaci"
                             className="pl-9"
                             value={searchValue}
                             onChange={e => setSearchValue(e.target.value)}
@@ -557,9 +581,22 @@ const Realizace = () => {
                             ))}
                         </SelectContent>
                     </Select>
+                    {(searchValue || statusFilter !== 'all') && <Button variant="ghost" size="sm" onClick={() => updateList({ q: '', status: 'all' })}>Zrušit filtry</Button>}
                     </>
                 )}
                 secondary={(
+                    <>
+                    <Select value={`${listState.sort}:${listState.dir}`} onValueChange={value => { const [sort, dir] = value.split(':'); updateList({ sort, dir }); }}>
+                      <SelectTrigger aria-label="Řazení realizací" className="w-[180px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="created_at:desc">Nejnovější nejdříve</SelectItem>
+                        <SelectItem value="created_at:asc">Nejstarší nejdříve</SelectItem>
+                        <SelectItem value="name:asc">Název A–Z</SelectItem>
+                        <SelectItem value="name:desc">Název Z–A</SelectItem>
+                        <SelectItem value="planned_end_date:asc">Nejbližší dokončení</SelectItem>
+                        <SelectItem value="start_date:asc">Začátek realizace</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <ListViewModeToggle
                         value={viewMode}
                         onChange={setViewMode}
@@ -569,11 +606,14 @@ const Realizace = () => {
                             { value: 'kanban', label: 'Zobrazit realizace jako kanban', icon: Columns },
                         ]}
                     />
+                    </>
                 )}
             />
 
             {loading ? (
                 <div className="text-center py-12 text-muted-foreground">Načítání dat...</div>
+            ) : loadError ? (
+                <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-6"><p className="font-semibold">Realizace se nepodařilo načíst</p><p className="mt-1 text-sm text-muted-foreground">{loadError}</p><Button variant="outline" className="mt-3" onClick={fetchRealizations}>Zkusit znovu</Button></div>
             ) : viewMode === 'table' ? (
                 <ManagedTableSection
                     title="Realizace"
@@ -605,13 +645,13 @@ const Realizace = () => {
                                     <TableRow
                                       key={r.id}
                                       className="cursor-pointer bg-white hover:bg-blue-50/35"
-                                      onClick={() => navigate(`/realizace/${r.id}`)}
+                                      onClick={event => { if (!event || isRecordActivation(event)) openRecord(`/realizace/${r.id}`); }}
                                       role="link"
                                       tabIndex={0}
                                       onKeyDown={(event) => {
-                                        if (event.key === 'Enter' || event.key === ' ') {
+                                        if (isRecordActivation(event)) {
                                           event.preventDefault();
-                                          navigate(`/realizace/${r.id}`);
+                                          openRecord(`/realizace/${r.id}`);
                                         }
                                       }}
                                     >
@@ -633,13 +673,13 @@ const Realizace = () => {
                             <Card
                               key={r.id}
                               className="cursor-pointer border-l-4 transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 group"
-                              onClick={() => navigate(`/realizace/${r.id}`)}
+                              onClick={event => { if (!event || isRecordActivation(event)) openRecord(`/realizace/${r.id}`); }}
                               role="link"
                               tabIndex={0}
                               onKeyDown={(event) => {
-                                if (event.key === 'Enter' || event.key === ' ') {
+                                if (isRecordActivation(event)) {
                                   event.preventDefault();
-                                  navigate(`/realizace/${r.id}`);
+                                  openRecord(`/realizace/${r.id}`);
                                 }
                               }}
                             >
@@ -729,7 +769,10 @@ const Realizace = () => {
                                                     "bg-white border rounded-lg p-3 hover:shadow-sm transition-shadow cursor-pointer min-w-0",
                                                     draggingRealizationId === item.id && "opacity-60"
                                                 )}
-                                                onClick={() => navigate(`/realizace/${item.id}`)}
+                                                onClick={event => { if (!event || isRecordActivation(event)) openRecord(`/realizace/${item.id}`); }}
+                                                role="link" tabIndex={0}
+                                                aria-label={`Otevřít realizaci ${item.name}`}
+                                                onKeyDown={event => { if (isRecordActivation(event)) { event.preventDefault(); openRecord(`/realizace/${item.id}`); } }}
                                                 draggable={canEdit}
                                                 onDragStart={(event) => {
                                                     if (!canEdit) return;

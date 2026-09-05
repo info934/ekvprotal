@@ -2,17 +2,25 @@ import React from 'react';
 import { AlertTriangle, EyeOff, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { financeMetricTones, formatMoney } from '@/lib/financePresentation';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { toFiniteAmount } from '@/domain/financials';
 
-export const FinanceAmount = ({ value, currency = 'CZK', exact = false, className }) => (
+export const FinanceAmount = ({ value, currency = 'CZK', exact = false, className }) => {
+  const { isPrivateMode } = useAuth();
+  if (isPrivateMode) return <span className={cn('whitespace-nowrap', className)} aria-label="Finanční údaj je skrytý">Skryto</span>;
+  return (
   <span
     className={cn('whitespace-nowrap tabular-nums', className)}
     title={formatMoney(value, { maximumFractionDigits: 2, currency })}
   >
     {formatMoney(value, { maximumFractionDigits: exact ? 2 : 0, currency })}
   </span>
-);
+  );
+};
 
-export const FinanceMetricStrip = ({ metrics = [], className }) => (
+export const FinanceMetricStrip = ({ metrics = [], className }) => {
+  const { isPrivateMode } = useAuth();
+  return (
   <div className={cn('grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6', className)}>
     {metrics.map((metric) => {
       const Icon = metric.icon;
@@ -22,21 +30,24 @@ export const FinanceMetricStrip = ({ metrics = [], className }) => (
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="text-[11px] font-semibold uppercase text-slate-500">{metric.label}</div>
-              <div className="mt-1 truncate text-lg font-bold tracking-normal" title={metric.valueTitle || undefined}>
-                {metric.value}
+              <div className="mt-1 truncate text-lg font-bold tracking-normal" title={isPrivateMode ? undefined : metric.valueTitle || undefined}>
+                {isPrivateMode ? 'Skryto' : metric.value}
               </div>
             </div>
             {Icon && <Icon className="mt-0.5 h-4 w-4 shrink-0 opacity-70" aria-hidden="true" />}
           </div>
-          {metric.detail && <div className="mt-1 text-xs leading-4 text-slate-600">{metric.detail}</div>}
+          {metric.detail && !isPrivateMode && <div className="mt-1 text-xs leading-4 text-slate-600">{metric.detail}</div>}
         </div>
       );
     })}
   </div>
-);
+  );
+};
 
 export const FinanceStageFlow = ({ stages = [], className }) => {
-  const max = Math.max(...stages.map((stage) => Math.abs(Number(stage.value || 0))), 1);
+  const { isPrivateMode } = useAuth();
+  if (isPrivateMode) return <FinanceVisibilityNotice message="Finanční průběh je skrytý v soukromém režimu." />;
+  const max = Math.max(...stages.map((stage) => Math.abs(toFiniteAmount(stage.value) ?? 0)), 1);
   return (
     <div className={cn('overflow-x-auto rounded-lg border border-slate-200 bg-slate-50/60 p-3', className)}>
       <div className="grid min-w-[680px] gap-2" style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(130px, 1fr))` }}>
@@ -47,9 +58,9 @@ export const FinanceStageFlow = ({ stages = [], className }) => {
               {index < stages.length - 1 && <span className="text-slate-300" aria-hidden="true">→</span>}
             </div>
             <div className="mt-1 font-semibold tabular-nums text-slate-950">{stage.displayValue ?? formatMoney(stage.value)}</div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
-              <div className={cn('h-full rounded-full', stage.barClassName || 'bg-blue-600')} style={{ width: `${Math.min(100, Math.abs(Number(stage.value || 0)) / max * 100)}%` }} />
-            </div>
+            {toFiniteAmount(stage.value) !== null && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div className={cn('h-full rounded-full', stage.barClassName || 'bg-blue-600')} style={{ width: `${Math.min(100, Math.abs(Number(stage.value)) / max * 100)}%` }} />
+            </div>}
           </div>
         ))}
       </div>

@@ -11,7 +11,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import {
   Briefcase,
@@ -29,12 +28,6 @@ import { cs } from 'date-fns/locale';
 
 const languageOptions = ['Čeština', 'Angličtina', 'Němčina', 'Slovenština', 'Polština'];
 
-const notificationLabels = {
-  orders: 'Objednávky',
-  realizations: 'Realizace',
-  projects: 'Projekty',
-  tasks: 'Úkoly',
-};
 
 const getInitials = (name) => {
   if (!name) return '?';
@@ -426,37 +419,18 @@ const SettingsProfile = () => {
           <Card>
             <CardHeader>
               <CardTitle>Notifikace a rozhraní</CardTitle>
-              <CardDescription>Osobní preference uložené ve stejném profilu zaměstnance.</CardDescription>
+              <CardDescription>Dostupná nastavení vašeho pracovního prostředí.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
-              {Object.entries(notificationLabels).map(([key, label]) => (
-                <div key={key} className="flex items-center justify-between gap-4 rounded-lg border p-3">
-                  <Label htmlFor={`notif-${key}`} className="font-medium">{label}</Label>
-                  <Switch
-                    id={`notif-${key}`}
-                    checked={profile.notification_preferences?.[key] ?? true}
-                    onCheckedChange={(checked) => setProfile((current) => ({
-                      ...current,
-                      notification_preferences: { ...current.notification_preferences, [key]: checked },
-                    }))}
-                  />
-                </div>
-              ))}
+              <div className="rounded-xl border bg-muted/40 p-4">
+                <p className="font-medium">Doručování notifikací</p>
+                <p className="mt-1 text-sm text-muted-foreground">Oznámení se nyní řídí pravidly jednotlivých modulů. Individuální vypínání oznámení zatím není dostupné.</p>
+              </div>
 
               <div className="space-y-1.5">
                 <Label>Jazyk rozhraní</Label>
-                <Select
-                  value={profile.language || 'cs'}
-                  onValueChange={(value) => setProfile((current) => ({ ...current, language: value }))}
-                >
-                  <SelectTrigger className="max-w-sm">
-                    <SelectValue placeholder="Vyberte jazyk" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cs">Čeština</SelectItem>
-                    <SelectItem value="en">English</SelectItem>
-                  </SelectContent>
-                </Select>
+                <p className="text-sm">Čeština</p>
+                <p className="text-sm text-muted-foreground">Portál je v současnosti dostupný v češtině.</p>
               </div>
             </CardContent>
           </Card>

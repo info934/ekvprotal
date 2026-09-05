@@ -440,6 +440,7 @@ const Subjects = () => {
       const { error } = await supabase.from('subjects').update(data).eq('id', editingSubject.id);
       if (error) {
         toast({ title: 'Chyba při úpravě subjektu', description: error.message, variant: 'destructive' });
+        return false;
       } else {
         toast({ title: '✅ Subjekt úspěšně upraven!' });
         fetchSubjects();
@@ -448,6 +449,7 @@ const Subjects = () => {
       const { error } = await supabase.from('subjects').insert([data]);
       if (error) {
         toast({ title: 'Chyba při ukládání subjektu', description: error.message, variant: 'destructive' });
+        return false;
       } else {
         toast({ title: '✅ Subjekt úspěšně vytvořen!' });
         fetchSubjects();

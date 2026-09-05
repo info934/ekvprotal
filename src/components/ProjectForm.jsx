@@ -23,6 +23,7 @@ import SubjectSelect from '@/components/SubjectSelect';
 import { parseApiError } from '@/lib/apiValidation';
 import PageHeader from '@/components/ui/page-header';
 import { ensureEntityFolder } from '@/lib/documentStorageService';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 
 const ProjectForm = () => {
     const { projectId } = useParams();
@@ -42,6 +43,7 @@ const ProjectForm = () => {
         watch, 
         setValue,
         reset,
+        getValues,
         formState: { errors, isSubmitting } 
     } = useForm({
         resolver: zodResolver(useMemo(() => createProjectSchema({ requireFinance: isAdmin }), [isAdmin])),
@@ -76,6 +78,19 @@ const ProjectForm = () => {
     const [templates, setTemplates] = useState([]);
     const [loadingTemplates, setLoadingTemplates] = useState(false);
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
+
+    const unsaved = useUnsavedChanges({
+        draftKey: `project:${user?.id || memberId}:${projectId || `new:${sourceOpportunityId || 'standalone'}`}`,
+        snapshot: { values: watch(), investorIsClient, selectedTemplateId },
+        readSnapshot: () => ({ values: getValues(), investorIsClient, selectedTemplateId }),
+        ready: !loading,
+        busy: isSubmitting,
+        onRestore: draft => {
+            reset(draft.values);
+            setInvestorIsClient(Boolean(draft.investorIsClient));
+            setSelectedTemplateId(draft.selectedTemplateId || '');
+        },
+    });
 
     const watchInvestorId = watch('investor_id');
 
@@ -113,6 +128,7 @@ const ProjectForm = () => {
     }, [user, isEditing]);
 
     const fetchData = useCallback(async () => {
+        setLoading(true);
         try {
             const [typesRes, stagesRes, patternRes] = await Promise.all([
                 supabase.from('project_types').select('id, name').order('name'),
@@ -228,6 +244,7 @@ const ProjectForm = () => {
                 });
                 if (error) throw error;
                 toast({ title: 'Projekt úspěšně aktualizován', variant: 'default' }); 
+                unsaved.markSaved();
                 navigate(`/projects/${projectId}`);
             } else {
                 let { data: newProject, error } = await supabase.rpc('save_project_safe', {
@@ -273,6 +290,7 @@ const ProjectForm = () => {
                 }
 
                 toast({ title: 'Projekt úspěšně vytvořen', variant: 'default' }); 
+                unsaved.markSaved();
                 navigate(`/projects/${newProject.id}`);
             }
         } catch (error) {
@@ -298,6 +316,7 @@ const ProjectForm = () => {
             const { error } = await supabase.from('projects').delete().eq('id', projectId);
             if (error) throw error;
             toast({ title: 'Projekt byl smazán' });
+            unsaved.markSaved();
             navigate('/projects');
         } catch (error) {
              const msg = parseApiError(error);
@@ -309,18 +328,19 @@ const ProjectForm = () => {
 
     return (
         <div className="app-page-wide pb-20">
+            {unsaved.dialogs}
             <PageHeader
                 icon={Briefcase}
                 title={isEditing ? 'Upravit projekt' : 'Založit nový projekt'}
                 actions={
-                    <Button variant="ghost" onClick={() => navigate(isEditing ? `/projects/${projectId}` : '/projects')} className="text-slate-500 hover:text-slate-800">
+                    <Button variant="ghost" onClick={() => unsaved.requestLeave(isEditing ? `/projects/${projectId}` : '/projects')} className="text-slate-500 hover:text-slate-800">
                         <ChevronLeft className="w-4 h-4 mr-2" /> Zpět
                     </Button>
                 }
                 className="mb-6"
             />
             <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="hidden">
-                 <Button variant="ghost" onClick={() => navigate(isEditing ? `/projects/${projectId}` : '/projects')} className="mb-4 text-slate-500 hover:text-slate-800">
+                 <Button variant="ghost" onClick={() => unsaved.requestLeave(isEditing ? `/projects/${projectId}` : '/projects')} className="mb-4 text-slate-500 hover:text-slate-800">
                     <ChevronLeft className="w-4 h-4 mr-2" /> Zpět
                 </Button>
                 <h1 className="text-3xl font-bold mb-6 flex items-center gap-3 text-slate-800">
@@ -331,6 +351,7 @@ const ProjectForm = () => {
                 </h1>
             </motion.div>
 
+            {unsaved.dirty && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Máte neuložené změny. Uložte je pomocí tlačítka na konci formuláře.</p>}
             <form onSubmit={handleSubmit(onSubmit, onFormError)} className="space-y-6">
                 {sourceOpportunity && (
                     <Card className="border-emerald-200 bg-emerald-50/80 shadow-sm">
@@ -343,7 +364,7 @@ const ProjectForm = () => {
                                     {sourceOpportunity.title} {sourceOpportunity.subject?.name ? `- ${sourceOpportunity.subject.name}` : ''}
                                 </p>
                             </div>
-                            <Button type="button" variant="outline" onClick={() => navigate(crmOpportunityPath(sourceOpportunity))}>
+                            <Button type="button" variant="outline" onClick={() => unsaved.requestLeave(crmOpportunityPath(sourceOpportunity))}>
                                 Zpet na OP
                             </Button>
                         </CardContent>
@@ -579,7 +600,7 @@ const ProjectForm = () => {
                     )}
                     </div>
                     <div className="flex gap-3 w-full sm:w-auto">
-                        <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => navigate(isEditing ? `/projects/${projectId}` : '/projects')}>
+                        <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => unsaved.requestLeave(isEditing ? `/projects/${projectId}` : '/projects')}>
                             Zrušit
                         </Button>
                         <Button type="submit" disabled={isSubmitting} className="w-full sm:w-auto min-w-[140px] shadow-sm">

@@ -3,19 +3,19 @@ import { cn } from '@/lib/utils';
 
 const PageHeader = ({ icon: Icon, title, description, actions, meta, className }) => {
   return (
-    <header className={cn("flex min-w-0 flex-col gap-4 border-b border-slate-200/90 bg-white/90 px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-5", className)}>
+    <header className={cn("portal-page-heading flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between", className)}>
       <div className="flex min-w-0 items-start gap-3">
         {Icon && (
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10 text-primary shadow-inner">
+          <div className="sr-only" aria-hidden="true">
             <Icon className="h-5 w-5" />
           </div>
         )}
         <div className="min-w-0">
-          <h1 className="break-words text-2xl font-semibold tracking-tight text-slate-950 sm:text-[1.65rem]">
+          <h1 className="break-words text-[28px] font-semibold leading-tight tracking-tight text-slate-950 sm:text-[32px]">
             {title}
           </h1>
           {description && (
-            <p className="mt-1 max-w-2xl text-wrap text-sm leading-5 text-slate-600">
+            <p className="mt-2 max-w-2xl text-wrap text-[15px] leading-6 text-slate-500">
               {description}
             </p>
           )}

@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { corsHeaders } from '../_shared/cors.ts';
 import { fetchWithTimeout } from '../_shared/fetch.ts';
+import { assertActiveAccount } from '../_shared/accountStatus.ts';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -18,7 +19,11 @@ const errorJson = (error: unknown) => {
   let status = 500;
   let code = 'unexpected_error';
 
-  if (/Admin|Authentication|session|Not allowed/i.test(message)) {
+  const explicitStatus = error && typeof error === 'object' && 'status' in error ? Number(error.status) : null;
+  if (explicitStatus === 403 || explicitStatus === 503) {
+    status = explicitStatus;
+    code = explicitStatus === 403 ? 'forbidden' : 'account_verification_unavailable';
+  } else if (/Admin|Authentication|session|Not allowed/i.test(message)) {
     status = 403;
     code = 'forbidden';
   } else if (/not configured|not connected|není připojen|není nakonfigurován/i.test(message)) {
@@ -111,6 +116,7 @@ const authenticateAdmin = async (req: Request) => {
   const db = serviceClient();
   const { data: authData, error: authError } = await db.auth.getUser(jwt);
   if (authError || !authData.user) throw new Error('Invalid session.');
+  await assertActiveAccount(db, authData.user.id);
   const { data: member } = await db.from('members').select('user_role').eq('auth_user_id', authData.user.id).maybeSingle();
   if (member?.user_role !== 'admin') throw new Error('Admin access required.');
   return { db, user: authData.user };
@@ -249,6 +255,7 @@ const callback = async (url: URL) => {
     .select('*').eq('state_hash', stateHash).is('consumed_at', null).gt('expires_at', new Date().toISOString()).maybeSingle();
   if (!oauthState) return Response.redirect(`${fallback}?googleDrive=invalid_state`, 302);
   try {
+    await assertActiveAccount(db, oauthState.user_id);
     const tokens = await exchangeCode(code);
     const profileResponse = await fetchWithTimeout('https://openidconnect.googleapis.com/v1/userinfo', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },

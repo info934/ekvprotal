@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plus, Search, FileText, Download } from 'lucide-react';
+import { Plus, Search, FileText, Download, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -31,40 +32,51 @@ const statusConfig = {
 
 
 const Documents = () => {
+  const [searchParams] = useSearchParams();
+  const linkedSearch = searchParams.get('search') || '';
   const { toast } = useToast();
   const { hasPermission, isSuperUser } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [projects, setProjects] = useState([]);
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [projectSearch, setProjectSearch] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(linkedSearch);
   const [selectedProject, setSelectedProject] = useState(undefined);
   const [isDocDialogOpen, setIsDocDialogOpen] = useState(false);
   const [docDialogPayload, setDocDialogPayload] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const requestId = useRef(0);
+  useEffect(() => { setSearchTerm(linkedSearch); }, [linkedSearch]);
 
   const fetchDocuments = useCallback(async () => {
-    let query = supabase.from('documents').select('*, projects(name, code)');
-    
-    if (searchTerm) {
-      query = query.or(`name.ilike.%${searchTerm}%,projects.name.ilike.%${searchTerm}%`);
-    }
-
-    if (selectedProject) {
-      query = query.eq('project_id', selectedProject);
-    } else if (!isSuperUser) {
-        const { data: userProjects } = await supabase.rpc('list_projects_safe');
-        const projectIds = userProjects.map(p => p.id);
+    const currentRequest = ++requestId.current;
+    setLoading(true);
+    setLoadError('');
+    try {
+      let query = supabase.from('documents').select('*, projects(name, code)');
+      if (searchTerm.trim()) query = query.ilike('name', `%${searchTerm.trim().replace(/[\\%_]/g, '\\$&')}%`);
+      if (selectedProject) {
+        query = query.eq('project_id', selectedProject);
+      } else if (!isSuperUser) {
+        const { data: userProjects, error: projectsError } = await supabase.rpc('list_projects_safe');
+        if (projectsError) throw projectsError;
+        const projectIds = (userProjects || []).map(project => project.id);
+        if (!projectIds.length) {
+          if (currentRequest === requestId.current) setDocuments([]);
+          return;
+        }
         query = query.in('project_id', projectIds);
+      }
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) throw error;
+      if (currentRequest === requestId.current) setDocuments(data || []);
+    } catch (error) {
+      if (currentRequest === requestId.current) setLoadError(error.message || 'Zkontrolujte připojení a zkuste načtení znovu.');
+    } finally {
+      if (currentRequest === requestId.current) setLoading(false);
     }
-
-    const { data, error } = await query.order('created_at', { ascending: false });
-
-    if (error) {
-      toast({ title: 'Chyba při načítání dokumentů', variant: 'destructive' });
-    } else {
-      setDocuments(data);
-    }
-  }, [searchTerm, selectedProject, toast, isSuperUser]);
+  }, [searchTerm, selectedProject, isSuperUser]);
 
   const fetchProjects = useCallback(async () => {
     let projectQuery;
@@ -86,7 +98,8 @@ const Documents = () => {
   }, [fetchProjects]);
   
   useEffect(() => {
-    fetchDocuments();
+    const timer = setTimeout(fetchDocuments, 200);
+    return () => { clearTimeout(timer); requestId.current += 1; };
   }, [fetchDocuments]);
 
   useEffect(() => {
@@ -95,8 +108,8 @@ const Documents = () => {
     } else {
         setFilteredProjects(
             projects.filter(p => 
-                p.name.toLowerCase().includes(projectSearch.toLowerCase()) || 
-                p.code.toLowerCase().includes(projectSearch.toLowerCase())
+                (p.name || '').toLowerCase().includes(projectSearch.toLowerCase()) ||
+                (p.code || '').toLowerCase().includes(projectSearch.toLowerCase())
             )
         );
     }
@@ -221,7 +234,8 @@ const Documents = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Hledat dokumenty..."
+              placeholder="Hledat podle názvu dokumentu…"
+              aria-label="Hledat podle názvu dokumentu"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="h-10 w-full rounded-md border border-slate-200 bg-white py-2 pl-10 pr-4 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
@@ -255,7 +269,16 @@ const Documents = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {loading && <div role="status" className="flex items-center justify-center gap-3 py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Načítám dokumenty…</div>}
+        {!loading && loadError && (
+          <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 text-center">
+            <AlertCircle className="mx-auto mb-3 h-7 w-7 text-destructive" />
+            <p className="font-semibold">Dokumenty se nepodařilo načíst</p>
+            <p className="mt-1 text-sm text-muted-foreground">{loadError}</p>
+            <Button variant="outline" className="mt-4" onClick={fetchDocuments}><RefreshCw className="mr-2 h-4 w-4" />Zkusit znovu</Button>
+          </div>
+        )}
+        {!loading && !loadError && documents.length > 0 && <div className="overflow-x-auto">
           <Table>
             <TableHeader>
                 <TableRow>
@@ -284,7 +307,7 @@ const Documents = () => {
                             <TableCell>{format(new Date(doc.created_at), 'd.M.yyyy')}</TableCell>
                             <TableCell className="text-right">
                                 {(doc.file_path || doc.external_web_url) && (
-                                    <Button variant="ghost" size="icon" onClick={() => handleDownloadFile(doc)}>
+                                    <Button variant="ghost" size="icon" aria-label={`Stáhnout ${doc.name}`} onClick={() => handleDownloadFile(doc)}>
                                        <Download className="w-5 h-5"/>
                                     </Button>
                                 )}
@@ -294,12 +317,13 @@ const Documents = () => {
                 })}
             </TableBody>
           </Table>
-        </div>
+        </div>}
 
-        {documents.length === 0 && (
+        {!loading && !loadError && documents.length === 0 && (
           <div className="text-center py-12">
             <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">Žádné dokumenty nenalezeny</p>
+            <p className="font-medium">{searchTerm || selectedProject ? 'Pro tento výběr nejsou žádné dokumenty' : 'Zatím zde nejsou žádné dokumenty'}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{searchTerm || selectedProject ? 'Zkuste jiný název nebo zrušte filtr projektu.' : 'Dokumenty přidáte k projektu pomocí tlačítka Nový dokument.'}</p>
           </div>
         )}
       </div>

@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Users, Plus, UserMinus, Edit2, Briefcase, Coins, AlertTriangle } from 'lucide-react';
+import { Users, Plus, UserMinus, Edit2, Briefcase, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from '@/components/ui/label';
@@ -14,15 +14,17 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { formatCurrency } from '@/lib/utils';
+import { formatRealizationDate, realizationAssignmentState } from '@/lib/realizationOverview';
 
-const RealizaceTeam = ({ realizaceId, teamBudget }) => {
+const RealizaceTeam = ({ realizaceId }) => {
     const { toast } = useToast();
     const { userRole } = useAuth();
     const [teamMembers, setTeamMembers] = useState([]);
     const [availableMembers, setAvailableMembers] = useState([]);
     const [rewardedMemberIds, setRewardedMemberIds] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
     
@@ -46,6 +48,7 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
 
     const fetchData = useCallback(async () => {
         setLoading(true);
+        setLoadError(false);
         try {
             // Fetch current team
             const { data: teamData, error: teamError } = await supabase
@@ -75,10 +78,9 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
 
             // Fetch all members for selection
             const [{ data: allMembers, error: membersError }, { data: profitShares, error: sharesError }] = await Promise.all([
-              supabase
-                .from('members')
-                .select('id, name, member_roles(name)')
-                .order('name'),
+              userRole === 'admin'
+                ? supabase.from('members').select('id, name, member_roles(name)').order('name')
+                : Promise.resolve({ data: [], error: null }),
               userRole === 'admin'
                 ? supabase.from('realization_reward_plans').select('member_id').eq('realizace_id', realizaceId)
                 : Promise.resolve({ data: [], error: null }),
@@ -92,6 +94,7 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
             setRewardedMemberIds((profitShares || []).map((share) => share.member_id));
 
         } catch (error) {
+            setLoadError(true);
             console.error('Error fetching team:', error);
             toast({ title: 'Chyba při načítání týmu', description: error.message, variant: 'destructive' });
         } finally {
@@ -227,10 +230,12 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
 
     // Filter out members already in the team
     const selectableMembers = availableMembers.filter(
-        m => !teamMembers.some(tm => tm.member.id === m.id)
+        m => !teamMembers.some(tm => tm.member?.id === m.id)
     );
 
-    const isBudgetPositive = teamBudget >= 0;
+    const currentMembers = teamMembers.filter(item => realizationAssignmentState(item) !== 'ended');
+    const historicalMembers = teamMembers.filter(item => realizationAssignmentState(item) === 'ended');
+    const visibleMembers = showHistory ? historicalMembers : currentMembers;
     const today = new Date().toISOString().slice(0, 10);
     const sponsorOptions = teamMembers.filter((item) => (
         rewardedMemberIds.includes(item.member?.id)
@@ -283,50 +288,46 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
 
     return (
         <Card className="h-full flex flex-col">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                     <CardTitle className="text-lg flex items-center gap-2">
                         <Users className="w-5 h-5 text-blue-600" /> Členové týmu
                     </CardTitle>
-                    <CardDescription>Správa týmu a odpovědností</CardDescription>
+                    <CardDescription>Členové, odpovědnosti a platnost přiřazení.{canEdit ? ' Podíly a odměny jsou ve Financích.' : ' Vlastní odměnu najdete v Přehledu.'}</CardDescription>
                 </div>
                 {canEdit && (
-                    <Button size="sm" variant="outline" onClick={() => setIsAddOpen(true)}>
-                        <Plus className="w-4 h-4 mr-2" /> Přidat
+                    <Button className="min-h-11" size="sm" variant="outline" disabled={loading || loadError} onClick={() => setIsAddOpen(true)}>
+                        <Plus className="w-4 h-4 mr-2" /> Přidat člena
                     </Button>
                 )}
             </CardHeader>
             <CardContent className="flex-1">
-                {teamBudget !== undefined && (
-                     <div className={`mb-4 p-2 rounded-md border flex items-center justify-between ${isBudgetPositive ? 'bg-blue-50 border-blue-100' : 'bg-red-50 border-red-100'}`}>
-                         <span className={`text-xs font-medium flex items-center gap-1 ${isBudgetPositive ? 'text-blue-700' : 'text-red-700'}`}>
-                             <Coins className="w-3 h-3"/> Týmový rozpočet:
-                         </span>
-                         <span className={`text-sm font-bold ${isBudgetPositive ? 'text-blue-800' : 'text-red-800'}`}>
-                            {formatCurrency(teamBudget)}
-                         </span>
-                     </div>
-                )}
+                <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Platnost členů týmu">
+                    <Button variant={!showHistory ? 'secondary' : 'ghost'} className="min-h-11" aria-pressed={!showHistory} onClick={() => setShowHistory(false)}>Aktuální a plánovaní ({currentMembers.length})</Button>
+                    <Button variant={showHistory ? 'secondary' : 'ghost'} className="min-h-11" aria-pressed={showHistory} onClick={() => setShowHistory(true)}>Historie ({historicalMembers.length})</Button>
+                </div>
 
                 {loading ? (
                     <div className="text-center py-4 text-muted-foreground">Načítání týmu...</div>
-                ) : teamMembers.length === 0 ? (
+                ) : loadError ? (
+                    <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Tým se nepodařilo načíst. <Button variant="link" onClick={fetchData}>Zkusit znovu</Button></div>
+                ) : visibleMembers.length === 0 ? (
                     <div className="text-center py-8 bg-slate-50 rounded-lg border border-dashed">
                         <Users className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
-                        <p className="text-sm text-muted-foreground">Zatím nebyli přiřazeni žádní členové týmu.</p>
+                        <p className="text-sm text-muted-foreground">{showHistory ? 'Žádná ukončená přiřazení.' : 'Realizace zatím nemá aktivní ani plánované členy týmu.'}</p>
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {teamMembers.map((item) => (
-                            <div key={item.id} className="flex items-start justify-between p-3 rounded-lg border bg-card hover:bg-accent/5 transition-colors">
-                                <div className="flex gap-3">
+                        {visibleMembers.map((item) => (
+                            <div key={item.id} className="flex min-w-0 flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="flex min-w-0 gap-3">
                                     <Avatar>
                                         <AvatarImage src={item.member?.avatar_url} />
                                         <AvatarFallback>{item.member?.name?.charAt(0) || '?'}</AvatarFallback>
                                     </Avatar>
-                                    <div>
-                                        <div className="font-medium flex items-center gap-2">
-                                            {item.member?.name}
+                                    <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2 break-words font-medium">
+                                            {item.member?.name || 'Člen není dostupný'}
                                             {item.member?.member_roles?.name && (
                                                 <Badge variant="secondary" className="text-[10px] h-5">
                                                     {item.member.member_roles.name}
@@ -336,7 +337,7 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                                         {item.responsibility ? (
                                             <div className="text-sm text-blue-700 mt-1 flex items-start gap-1.5 bg-blue-50 px-2 py-1 rounded w-fit">
                                                 <Briefcase className="w-3 h-3 mt-0.5 shrink-0" />
-                                                <span className="whitespace-pre-wrap">{item.responsibility}</span>
+                                                <span className="whitespace-pre-wrap break-words">{item.responsibility}</span>
                                             </div>
                                         ) : (
                                             <div className="text-sm text-muted-foreground italic mt-1">
@@ -351,11 +352,11 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                                             </div>
                                         )}
                                         <div className="mt-1 text-xs text-muted-foreground">
-                                            Platnost: {item.valid_from || 'neuvedeno'} – {item.valid_to || 'bez omezení'}
+                                            Platnost: {formatRealizationDate(item.valid_from)} – {formatRealizationDate(item.valid_to, 'bez omezení')}
                                         </div>
-                                        {item.ended_at && (
+                                        {realizationAssignmentState(item) !== 'active' && (
                                             <Badge variant="outline" className="mt-2 border-slate-300 text-slate-600">
-                                                Přiřazení ukončeno
+                                                {realizationAssignmentState(item) === 'planned' ? 'Plánované přiřazení' : 'Platnost skončila'}
                                             </Badge>
                                         )}
                                     </div>
@@ -364,7 +365,7 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                                 {canEdit && (
                                     <div className="flex items-center gap-1">
                                         {!item.ended_at && (
-                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(item)}>
+                                            <Button variant="ghost" size="icon" className="h-11 w-11" aria-label={`Upravit přiřazení: ${item.member?.name || 'člen'}`} onClick={() => openEdit(item)}>
                                                 <Edit2 className="w-4 h-4 text-muted-foreground hover:text-foreground" />
                                             </Button>
                                         )}
@@ -372,7 +373,8 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                className="h-8 w-8 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                                                className="h-11 w-11 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                                                aria-label={`Ukončit přiřazení: ${item.member?.name || 'člen'}`}
                                                 onClick={() => openEndAssignment(item)}
                                                 title="Ukončit platnost přiřazení"
                                             >
@@ -456,10 +458,6 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                         <DialogTitle>Přidat člena týmu</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
-                        <div className={`p-3 rounded-md mb-2 flex items-center justify-between ${isBudgetPositive ? 'bg-blue-50 border border-blue-100' : 'bg-red-50 border border-red-100'}`}>
-                            <span className="text-sm font-medium">Dostupný týmový rozpočet:</span>
-                            <span className={`font-bold ${isBudgetPositive ? 'text-blue-700' : 'text-red-700'}`}>{formatCurrency(teamBudget)}</span>
-                        </div>
                         <div className="space-y-2">
                             <Label>Člen týmu</Label>
                             <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
@@ -502,10 +500,6 @@ const RealizaceTeam = ({ realizaceId, teamBudget }) => {
                         <DialogTitle>Upravit odpovědnost</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
-                         <div className={`p-3 rounded-md mb-2 flex items-center justify-between ${isBudgetPositive ? 'bg-blue-50 border border-blue-100' : 'bg-red-50 border border-red-100'}`}>
-                            <span className="text-sm font-medium">Dostupný týmový rozpočet:</span>
-                            <span className={`font-bold ${isBudgetPositive ? 'text-blue-700' : 'text-red-700'}`}>{formatCurrency(teamBudget)}</span>
-                        </div>
                         <div className="space-y-2">
                             <Label>Odpovědnost / Úkol</Label>
                             <Textarea 

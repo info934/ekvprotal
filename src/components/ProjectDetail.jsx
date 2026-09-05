@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import { safeListReturnPath, taskIsDone, taskIsOpen, taskIsCancelled, taskProgress } from '@/lib/listWorkspaceState';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { format, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs";
-import { Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle, Clock, History, GanttChart } from 'lucide-react';
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Edit2, Trash2, DollarSign, Users, ClipboardList, Plus, BookOpen, Link2, Save, Target, Calendar, User, FileText, ChevronDown, ChevronUp, Briefcase, Wallet, Contact, UserCheck, Loader2, Copy, AlertTriangle, Clock, History, GanttChart, MoreHorizontal } from 'lucide-react';
 import AssignMemberDialog from '@/components/AssignMemberDialog';
 import AssignSubcontractorDialog from '@/components/AssignSubcontractorDialog';
 import ProjectCostDialog from '@/components/ProjectCostDialog';
@@ -47,8 +47,8 @@ import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import PlanningBoard from '@/components/PlanningBoard';
 import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
 import { formatMoney } from '@/lib/financePresentation';
-import { RecordMetricGrid, RecordWorkspaceHeader, RecordWorkspaceTabsList } from '@/components/ui/record-workspace';
-import { RecordAttentionList, RecordOverviewGrid, RecordOverviewItem, RecordOverviewPanel } from '@/components/ui/record-overview';
+import { RecordMetricGrid, RecordWorkspaceHeader, RecordWorkspaceNavigation, RecordWorkspaceSection } from '@/components/ui/record-workspace';
+import { formatProjectDate, projectTaskIsOverdue, projectTaskOverview, loadProjectTasks } from '@/lib/projectDetailWorkspace';
 import FinancialSettingsCard from '@/components/finance/FinancialSettingsCard';
 import {
     createTimedAbortController,
@@ -62,9 +62,13 @@ const StatCard = ({ title, value, icon: Icon, color = "default", subtitle, progr
 
   return (
     <div className="relative">
-      <DataVizMetricCard icon={Icon} label={title} value={value} detail={subtitle} tone={tone} className={typeof progress === 'number' ? 'pb-8' : undefined} />
+      <div className="flex min-h-14 items-center justify-between gap-3 px-4 py-3 sm:hidden">
+        <span className="text-xs font-medium text-slate-500">{title}</span>
+        <strong className="text-right text-lg font-semibold tabular-nums text-slate-950">{value}</strong>
+      </div>
+      <DataVizMetricCard icon={Icon} label={title} value={value} detail={subtitle} tone={tone} className={cn('hidden sm:flex', typeof progress === 'number' && 'pb-8')} />
       {typeof progress === 'number' && (
-        <div className="absolute inset-x-4 bottom-4 h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className="absolute inset-x-4 bottom-4 hidden h-2 overflow-hidden rounded-full bg-slate-100 sm:block">
           <div className={cn('h-full rounded-full transition-all', barTone)} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
         </div>
       )}
@@ -91,9 +95,35 @@ const InfoCard = ({ label, value, subValue, icon: Icon, isLink = false, to = '#'
     </div>
 );
 
-const completedTaskStatuses = new Set(['done', 'completed', 'hotovo', 'dokončeno']);
-const isTaskDone = (task) => completedTaskStatuses.has(String(task?.status || '').toLocaleLowerCase('cs-CZ'));
-const isTaskOverdue = (task) => Boolean(task?.end_date) && new Date(`${task.end_date}T23:59:59`) < new Date() && !isTaskDone(task);
+export const ProjectOverviewPanels = ({ project, tasks = [], onOpenTab, onOpenTask, descriptionPanel, operationalLoadError }) => {
+    const { overdue, missingDates, upcoming } = projectTaskOverview(tasks);
+    const fields = [
+        { label: 'Hlavní projektant', value: project.project_manager?.name || 'Nepřiřazen', to: project.project_manager?.id ? `/members/${project.project_manager.id}` : null },
+        { label: 'Termín dokončení', value: formatProjectDate(project.completion_date, 'Není stanoven') },
+        { label: 'Investor', value: project.investor?.name || 'Neuveden', to: project.investor?.id ? `/subjects/${project.investor.id}` : null },
+        { label: 'Zadavatel', value: project.client?.name || 'Neuveden', to: project.client?.id ? `/subjects/${project.client.id}` : null },
+        { label: 'Stupeň dokumentace', value: project.stage?.name || 'Neuveden' },
+    ];
+    return <div className="grid items-start gap-5 xl:grid-cols-2">
+        <div className="space-y-5">
+            <Card><CardHeader className="px-5 pb-3 pt-5"><h2 className="text-base font-semibold">Základní informace</h2></CardHeader><CardContent className="px-5 pb-5">
+                <dl className="grid gap-x-6 sm:grid-cols-2">{fields.map(field => <div key={field.label} className="min-w-0 border-b border-slate-100 py-3">
+                    <dt className="text-xs text-muted-foreground">{field.label}</dt><dd className="mt-1 break-words text-sm font-medium">{field.to ? <Link to={field.to} className="text-primary hover:underline">{field.value}</Link> : field.value}</dd>
+                </div>)}</dl>
+            </CardContent></Card>
+            {descriptionPanel}
+        </div>
+        <Card><CardHeader className="flex-row flex-wrap items-center justify-between gap-2 px-5 pb-3 pt-5"><h2 className="text-base font-semibold">Nejbližší úkoly</h2><Button variant="ghost" size="sm" onClick={() => onOpenTab('tasks')}>Otevřít úkoly</Button></CardHeader><CardContent className="px-5 pb-5">
+            {!operationalLoadError && (overdue.length > 0 || missingDates.length > 0) && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                <p className="flex items-center gap-2 font-medium"><AlertTriangle className="h-4 w-4 shrink-0" />Je potřeba doplnit plán práce</p>
+                <p className="mt-1">{[overdue.length > 0 && `${overdue.length} po termínu`, missingDates.length > 0 && `${missingDates.length} bez platného termínu`].filter(Boolean).join(' · ')}. Upravte termíny nebo dokončené úkoly uzavřete.</p>
+            </div>}
+            {operationalLoadError ? <p className="text-sm text-muted-foreground">Úkoly se nepodařilo načíst.</p> : upcoming.length ? <div className="divide-y rounded-lg border">{upcoming.map(task => <button type="button" key={task.id} onClick={() => onOpenTask ? onOpenTask(task) : onOpenTab('tasks')} className="flex min-h-[64px] w-full items-start gap-3 px-4 py-3 text-left text-sm hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary">
+                <ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="block break-words font-medium text-primary">{task.name}</span><span className="mt-1 block text-xs text-muted-foreground">{task.member?.name || 'Řešitel nepřiřazen'}</span></span><span className={cn('shrink-0 text-xs', projectTaskIsOverdue(task) ? 'font-medium text-amber-700' : 'text-muted-foreground')}>{formatProjectDate(task.end_date, 'Bez termínu', 'd. M.')}</span>
+            </button>)}</div> : <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Projekt nemá otevřené úkoly. Další práci naplánujete v záložce Úkoly.</p>}
+        </CardContent></Card>
+    </div>;
+};
 
 const StatusBadge = ({ status, config }) => (
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors", config?.color || "bg-gray-100 text-gray-800")}>
@@ -105,15 +135,15 @@ const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = true, a
     const [isOpen, setIsOpen] = useState(defaultOpen);
     return (
         <Card>
-            <CardHeader className="cursor-pointer hover:bg-gray-50 transition-colors p-4" onClick={() => setIsOpen(!isOpen)}>
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+            <CardHeader className="p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <button type="button" aria-expanded={isOpen} className="flex min-h-[44px] flex-1 items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => setIsOpen(!isOpen)}>
                         {Icon && <Icon className="h-5 w-5 text-primary" />}
                         <h3 className="text-lg font-semibold">{title}</h3>
-                    </div>
+                    </button>
                     <div className="flex items-center gap-2">
                         {actions && <div onClick={(e) => e.stopPropagation()}>{actions}</div>}
-                        {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        <Button variant="ghost" size="icon" aria-label={`${isOpen ? 'Sbalit' : 'Rozbalit'} ${title}`} aria-expanded={isOpen} onClick={() => setIsOpen(!isOpen)}>{isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</Button>
                     </div>
                 </div>
             </CardHeader>
@@ -160,6 +190,7 @@ const ProjectDetail = () => {
     const [itemToDelete, setItemToDelete] = useState(null);
     
     const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+    const [financeSection, setFinanceSection] = useState('summary');
 
     const canEdit = useMemo(() => hasPermission('projects', 'can_edit'), [hasPermission]);
     const canViewHistory = isAdmin;
@@ -190,7 +221,7 @@ const ProjectDetail = () => {
         return (
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-7 px-2 gap-1">
+                    <Button variant="ghost" size="sm" aria-label="Změnit stav projektu" className="min-h-11 px-2 gap-1">
                         <Badge className={cn("font-normal max-w-[160px] truncate text-xs", projectStatusConfig[project.status]?.color)} title={label}>
                             {label}
                         </Badge>
@@ -252,7 +283,7 @@ const ProjectDetail = () => {
             const [membersRes, subcontractorsRes, tasksRes, costsRes, linksRes, overheadCostsRes, payoutItemsRes, financialSummaryRes, laborSummaryRes] = await Promise.all([
                 supabase.rpc('list_project_members_safe', { p_project_id: projectId }).abortSignal(request.signal),
                 supabase.rpc('list_project_subcontractors_safe', { p_project_id: projectId }).abortSignal(request.signal),
-                supabase.from('project_tasks').select('*').eq('project_id', projectId).abortSignal(request.signal),
+                loadProjectTasks(supabase, projectId, request.signal).then(data => ({ data, error: null }), error => ({ data: [], error })),
                 costsPromise,
                 supabase.from('project_links').select('*').eq('project_id', projectId).abortSignal(request.signal),
                 overheadCostsPromise,
@@ -992,7 +1023,7 @@ const ProjectDetail = () => {
         });
     }, []);
 
-    const getProjectProgress = useCallback(() => tasks.length ? Math.round(tasks.filter(t => t.status === 'Hotovo').length / tasks.length * 100) : 0, [tasks]);
+    const getProjectProgress = useCallback(() => taskProgress(tasks), [tasks]);
 
     if (loading) return <EkvLoader title="Načítám detail projektu" description="Synchronizuji tým, úkoly, dokumenty a finance." />;
     if (!project) return <div className="p-8 text-center"><h1 className="text-2xl font-bold">Projekt nenalezen</h1></div>;
@@ -1000,62 +1031,51 @@ const ProjectDetail = () => {
     const progress = getProjectProgress();
     const availableTabs = [
         'overview', 'team', 'tasks', 'plan', 'engineering', 'documents', 'contacts',
-        ...(canViewFinance ? ['finance'] : []),
+        ...(isAdmin ? ['finance'] : []),
     ];
     const requestedTab = location.hash.substring(1);
     const activeTab = availableTabs.includes(requestedTab) ? requestedTab : 'overview';
+    const openTab = value => navigate({ pathname: location.pathname, search: location.search, hash: `#${value}` }, { replace: true, state: location.state });
+    const navigationGroups = [
+        { label: 'Přehled', icon: FileText, tabs: [{ value: 'overview', label: 'Přehled' }] },
+        { label: 'Práce', icon: ClipboardList, tabs: [{ value: 'tasks', label: 'Úkoly' }, { value: 'plan', label: 'Plán' }, { value: 'engineering', label: 'Inženýring' }] },
+        { label: 'Lidé', icon: Users, tabs: [{ value: 'team', label: 'Tým a dodavatelé' }, { value: 'contacts', label: 'Externí kontakty' }] },
+        ...(isAdmin ? [{ label: 'Finance', icon: Wallet, tabs: [{ value: 'finance', label: 'Finance' }] }] : []),
+        { label: 'Dokumenty', icon: FileText, tabs: [{ value: 'documents', label: 'Dokumenty' }] },
+    ];
 
     return (
         <div>
             <RecordWorkspaceHeader
                 title={project.name}
                 subtitle={project.code}
-                onBack={() => navigate('/projects')}
+                onBack={() => navigate(safeListReturnPath(location.state?.returnTo, '/projects'))}
+                backLabel="Zpět na projekce"
                 status={renderStatusMenu()}
                 actions={(
                     <>
-                        {canViewHistory && (
-                            <Button variant="outline" size="sm" onClick={() => navigate(`/projects/${projectId}/history`)}>
-                                <History className="mr-2 h-4 w-4" />Historie
-                            </Button>
-                        )}
-                        {canEdit && (
-                            <>
-                                <Button variant="outline" size="sm" onClick={() => setIsTemplateModalOpen(true)}>
-                                    <Copy className="mr-2 h-4 w-4" />Uložit jako šablonu
-                                </Button>
-                                <Button size="sm" onClick={() => navigate(`/projects/${projectId}/edit`)}>
-                                    <Edit2 className="mr-2 h-4 w-4" />Upravit
-                                </Button>
-                            </>
-                        )}
+                        {canEdit && <Button size="sm" onClick={() => navigate(`/projects/${projectId}/edit`)}><Edit2 className="mr-2 h-4 w-4" />Upravit</Button>}
+                        {(canEdit || canViewHistory) && <DropdownMenu>
+                            <DropdownMenuTrigger asChild><Button variant="outline" size="sm" aria-label="Další akce projektu"><MoreHorizontal className="mr-2 h-4 w-4" />Další</Button></DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                {canViewHistory && <DropdownMenuItem onSelect={() => navigate(`/projects/${projectId}/history`)}><History className="mr-2 h-4 w-4" />Historie změn</DropdownMenuItem>}
+                                {canEdit && <DropdownMenuItem onSelect={() => setIsTemplateModalOpen(true)}><Copy className="mr-2 h-4 w-4" />Uložit jako šablonu</DropdownMenuItem>}
+                            </DropdownMenuContent>
+                        </DropdownMenu>}
                     </>
                 )}
             />
 
             <div className="app-page-wide">
-                <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-                  <RecordMetricGrid className="mb-4">
-                    {!isPrivateMode && <StatCard title={canViewFinance ? 'Hodnota zakázky bez DPH' : 'Moje odměna'} value={canViewFinance ? `${(project.price || 0).toLocaleString('cs-CZ')} Kč` : myRewardDisplay} icon={DollarSign} color="success" />}
-                    <StatCard title="Pokrok projektu" value={`${progress}%`} icon={Target} color={progress > 80 ? "success" : progress > 50 ? "warning" : "danger"} />
-                    <StatCard title="Členové týmu" value={members.length} icon={Users} color="info" />
-                    <StatCard title="Dokončení" value={project.completion_date ? format(parseISO(project.completion_date), 'd. M. yyyy') : "Není"} icon={Calendar} />
-                  </RecordMetricGrid>
-                </motion.div>
-
-                <Tabs value={activeTab} onValueChange={(value) => navigate(`#${value}`, { replace: true })} className="space-y-4">
-                    <RecordWorkspaceTabsList>
-                        <TabsTrigger value="overview" className="flex items-center gap-2"><FileText className="w-4 h-4" />Přehled</TabsTrigger>
-                        <TabsTrigger value="team" className="flex items-center gap-2"><Users className="w-4 h-4" />Tým</TabsTrigger>
-                        <TabsTrigger value="tasks" className="flex items-center gap-2"><ClipboardList className="w-4 h-4" />Úkoly</TabsTrigger>
-                        <TabsTrigger value="plan" className="flex items-center gap-2"><GanttChart className="w-4 h-4" />Plán</TabsTrigger>
-                        <TabsTrigger value="engineering" className="flex items-center gap-2"><Briefcase className="w-4 h-4" />Inženýring</TabsTrigger>
-                        <TabsTrigger value="documents" className="flex items-center gap-2"><FileText className="w-4 h-4" />Dokumenty</TabsTrigger>
-                        <TabsTrigger value="contacts" className="flex items-center gap-2"><Contact className="w-4 h-4" />Kontakty</TabsTrigger>
-                        {canViewFinance && <TabsTrigger value="finance" className="flex items-center gap-2"><DollarSign className="w-4 h-4" />Finance</TabsTrigger>}
-                    </RecordWorkspaceTabsList>
+                <Tabs value={activeTab} onValueChange={openTab} className="space-y-4">
+                    <RecordWorkspaceNavigation groups={navigationGroups} activeTab={activeTab} onTabChange={openTab} />
 
                     <TabsContent value="overview" className="space-y-6">
+                        <RecordMetricGrid className="xl:grid-cols-3">
+                            <StatCard title="Pokrok práce" value={operationalLoadError ? '—' : tasks.some(task => !taskIsCancelled(task)) ? `${progress}%` : 'Bez úkolů'} subtitle={operationalLoadError ? 'Data nejsou dostupná' : `${tasks.filter(taskIsDone).length} dokončených z ${tasks.filter(task => !taskIsCancelled(task)).length} úkolů`} icon={Target} progress={operationalLoadError ? undefined : progress} />
+                            <StatCard title="Projektový tým" value={operationalLoadError ? '—' : members.length} subtitle="Přiřazení členové • správa v části Lidé" icon={Users} />
+                            {!isAdmin && !isPrivateMode ? <StatCard title="Moje odměna" value={myRewardDisplay} subtitle="Moje přiřazení na projektu" icon={Wallet} /> : <StatCard title="Subdodavatelé" value={operationalLoadError ? '—' : subcontractors.length} subtitle="Zapojené firmy • správa v části Lidé" icon={Briefcase} />}
+                        </RecordMetricGrid>
                         {operationalLoadError && (
                             <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
                                 <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
@@ -1067,66 +1087,29 @@ const ProjectDetail = () => {
                                 {...projectFinancialHealth}
                             />
                         )}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            <InfoCard label="Hlavní projektant" value={project.project_manager?.name || 'N/A'} subValue={project.project_manager?.email} icon={UserCheck} isLink={!!project.project_manager} to={`/members/${project.project_manager?.id}`} />
-                            <InfoCard label="Investor" value={project.investor?.name || 'N/A'} icon={Users} isLink={!!project.investor} to={`/subjects/${project.investor?.id}`} />
-                            <InfoCard label="Zadavatel" value={project.client?.name || 'N/A'} icon={User} isLink={!!project.client} to={`/subjects/${project.client?.id}`} />
-                            <InfoCard label="Stupeň dokumentace" value={project.stage?.name || 'N/A'} icon={FileText} />
-                        </div>
-                        <RecordOverviewPanel
-                            title="Stav projektu"
-                            description="Stav úkolů a termínů bez opakování horních KPI."
-                            badge={<Badge variant="outline" className="w-fit border-slate-200 bg-slate-50 text-slate-700">{project.stage?.name || 'Bez stupně dokumentace'}</Badge>}
-                            aside={(
-                                <RecordAttentionList items={[
-                                    {
-                                        label: 'Úkoly po termínu',
-                                        value: tasks.filter(isTaskOverdue).length,
-                                        tone: tasks.some(isTaskOverdue) ? 'warning' : 'neutral',
-                                    },
-                                    {
-                                        label: 'Úkoly bez termínu',
-                                        value: tasks.filter((task) => !task.end_date).length,
-                                        tone: tasks.some((task) => !task.end_date) ? 'warning' : 'neutral',
-                                    },
-                                    { label: 'Otevřené úkoly', value: tasks.filter((task) => !isTaskDone(task)).length, tone: 'neutral' },
-                                ]} />
-                            )}
-                        >
-                            <RecordOverviewGrid>
-                                <RecordOverviewItem icon={ClipboardList} label="Úkoly celkem" value={tasks.length} detail="Evidované úkoly projektu" />
-                                <RecordOverviewItem icon={Target} label="Dokončeno" value={tasks.filter(isTaskDone).length} detail={`${tasks.filter((task) => !isTaskDone(task)).length} zbývá`} tone="positive" />
-                                <RecordOverviewItem icon={AlertTriangle} label="Po termínu" value={tasks.filter(isTaskOverdue).length} detail="Vyžaduje pozornost" tone={tasks.some(isTaskOverdue) ? 'warning' : 'neutral'} />
-                            </RecordOverviewGrid>
-                        </RecordOverviewPanel>
-                        {isAdmin && (
+                        <ProjectOverviewPanels
+                            project={project}
+                            tasks={tasks}
+                            operationalLoadError={operationalLoadError}
+                            onOpenTab={openTab}
+                            onOpenTask={task => { const params = new URLSearchParams(location.search); params.set('task', task.id); navigate({ pathname: location.pathname, search: params.toString(), hash: '#tasks' }, { state: location.state }); }}
+                            descriptionPanel={<CollapsibleSection title="Popis projektu" icon={BookOpen}>
+                            {canEdit && !isEditingBrief && <Button variant="outline" size="sm" aria-label="Upravit popis projektu" onClick={() => setIsEditingBrief(true)} className="float-right"><Edit2 className="h-4 w-4" /></Button>}
+                            {isEditingBrief ? (
+                                <div className="space-y-2"><Textarea aria-label="Popis projektu" value={briefContent} onChange={(e) => setBriefContent(e.target.value)} rows={5} /><div className="flex gap-2"><Button onClick={() => { handleSaveGeneric('projects', { brief: briefContent }, project.id, () => setIsEditingBrief(false), null); }}><Save className="h-4 w-4 mr-2" />Uložit</Button><Button variant="ghost" onClick={() => { setBriefContent(project.brief || ''); setIsEditingBrief(false); }}>Zrušit</Button></div></div>
+                            ) : (<p className="text-muted-foreground whitespace-pre-wrap">{briefContent || 'Není zadán.'}</p>)}
+                        </CollapsibleSection>}
+                        />
+                        {canViewFinance && (
                             <BillingOverviewSummary
+                                compact
                                 entityType="project"
                                 entityId={projectId}
-                                onOpenDetails={() => navigate('#finance', { replace: true })}
+                                onOpenDetails={() => { setFinanceSection('billing'); openTab('finance'); }}
                             />
                         )}
-                        <CollapsibleSection title="Popis projektu" icon={BookOpen}>
-                            {canEdit && <Button variant="outline" size="sm" onClick={() => setIsEditingBrief(true)} className="float-right"><Edit2 className="h-4 w-4" /></Button>}
-                            {isEditingBrief ? (
-                                <div className="space-y-2"><Textarea value={briefContent} onChange={(e) => setBriefContent(e.target.value)} rows={5} /><div className="flex gap-2"><Button onClick={() => { handleSaveGeneric('projects', { brief: briefContent }, project.id, () => setIsEditingBrief(false), null); }}><Save className="h-4 w-4 mr-2" />Uložit</Button><Button variant="ghost" onClick={() => setIsEditingBrief(false)}>Zrušit</Button></div></div>
-                            ) : (<p className="text-muted-foreground whitespace-pre-wrap">{briefContent || 'Není zadán.'}</p>)}
-                        </CollapsibleSection>
-                        <CollapsibleSection title="Související odkazy" icon={Link2} actions={canEdit && <Button size="sm" onClick={() => { setEditingLink(null); setIsLinkDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat odkaz</Button>}>
-                            {projectLinks.length > 0 ? (
-                                <div className="space-y-2">
-                                    {projectLinks.map(link => (
-                                        <div key={link.id} className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50">
-                                            <div><a href={link.url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline">{link.description || link.url}</a><p className="text-xs text-muted-foreground">{link.url}</p></div>
-                                            {canEdit && <div className="flex gap-2">
-                                                <Button variant="ghost" size="icon" onClick={() => { setEditingLink(link); setIsLinkDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
-                                                <Button variant="ghost" size="icon" onClick={() => requestDeleteLink(link)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                                            </div>}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (<p className="text-muted-foreground">Žádné odkazy nebyly přidány.</p>)}
-                        </CollapsibleSection>
+
+
                     </TabsContent>
                     
                     <TabsContent value="team" className="space-y-6">
@@ -1135,7 +1118,7 @@ const ProjectDetail = () => {
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Jméno</TableHead>
-                                        <TableHead>Email</TableHead>
+                                        <TableHead>Kontakt</TableHead>
                                         {canViewFinance && <TableHead>Odměna</TableHead>}
                                         <TableHead className="text-right">Akce</TableHead>
                                     </TableRow>
@@ -1144,17 +1127,17 @@ const ProjectDetail = () => {
                                     {members.length > 0 ? members.map(m => (
                                         <TableRow key={m.id}>
                                             <TableCell className="font-medium">{m.member?.name}</TableCell>
-                                            <TableCell>{m.member?.email}</TableCell>
+                                            <TableCell><div className="space-y-1 text-sm">{m.member?.email && <a className="block text-primary hover:underline" href={`mailto:${m.member.email}`}>{m.member.email}</a>}{m.member?.phone && <a className="block text-primary hover:underline" href={`tel:${m.member.phone}`}>{m.member.phone}</a>}{!m.member?.email && !m.member?.phone && <span className="text-muted-foreground">Není doplněn</span>}</div></TableCell>
                                             {canViewFinance && (
                                                 <TableCell className="max-w-[760px] whitespace-normal text-sm leading-5">
-                                                    {formatReward(m, rewardCalculationBudget)}
+                                                    <details><summary className="cursor-pointer py-2 text-primary">Odměna a podíl</summary><div className="pt-2">{formatReward(m, rewardCalculationBudget)}</div></details>
                                                 </TableCell>
                                             )}
                                             <TableCell className="text-right">
                                                 {isAdmin && (
                                                     <>
-                                                        <Button variant="ghost" size="icon" onClick={() => { setEditingMember(m); setIsMemberDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
-                                                        <Button variant="ghost" size="icon" onClick={() => requestDeleteMember(m)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                                                        <Button variant="ghost" size="icon" aria-label={`Upravit člena ${m.member?.name || 'týmu'}`} onClick={() => { setEditingMember(m); setIsMemberDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
+                                                        <Button variant="ghost" size="icon" aria-label={`Ukončit přiřazení ${m.member?.name || 'člena'}`} onClick={() => requestDeleteMember(m)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                                                     </>
                                                 )}
                                             </TableCell>
@@ -1180,14 +1163,14 @@ const ProjectDetail = () => {
                                 <TableBody>
                                     {subcontractors.length > 0 ? subcontractors.map(s => (
                                         <TableRow key={s.id}>
-                                            <TableCell className="font-medium">{s.subject?.name}</TableCell>
+                                            <TableCell><p className="font-medium">{s.subject?.name}</p>{s.subject?.contact_person && <p className="mt-1 text-xs text-muted-foreground">{s.subject.contact_person}</p>}{s.subject?.email && <a className="mt-1 block text-sm text-primary hover:underline" href={`mailto:${s.subject.email}`}>{s.subject.email}</a>}{s.subject?.phone && <a className="mt-1 block text-sm text-primary hover:underline" href={`tel:${s.subject.phone}`}>{s.subject.phone}</a>}</TableCell>
                                             <TableCell>{s.scope_of_work}</TableCell>
                                             {canViewFinance && <TableCell>{(s.price || 0).toLocaleString('cs-CZ')} Kč</TableCell>}
                                             <TableCell className="text-right">
                                                 {isAdmin && (
                                                     <>
-                                                        <Button variant="ghost" size="icon" onClick={() => { setEditingSubcontractor(s); setIsSubcontractorDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
-                                                        <Button variant="ghost" size="icon" onClick={() => requestDeleteSubcontractor(s)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                                                        <Button variant="ghost" size="icon" aria-label={`Upravit dodavatele ${s.subject?.name || 'firmy'}`} onClick={() => { setEditingSubcontractor(s); setIsSubcontractorDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
+                                                        <Button variant="ghost" size="icon" aria-label={`Odebrat dodavatele ${s.subject?.name || 'firmy'}`} onClick={() => requestDeleteSubcontractor(s)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                                                     </>
                                                 )}
                                             </TableCell>
@@ -1202,10 +1185,25 @@ const ProjectDetail = () => {
                         </CollapsibleSection>
                     </TabsContent>
 
-                    <TabsContent value="tasks"><ProjectTasks projectId={projectId} project={project} tasks={tasks} members={members} canEdit={canEdit} onTaskUpdate={setTasks} /></TabsContent>
+                    <TabsContent value="tasks"><ProjectTasks projectId={projectId} project={project} tasks={tasks} members={members} canEdit={canEdit} onTaskUpdate={setTasks} loadError={operationalLoadError} onRetry={refreshData} /></TabsContent>
                     <TabsContent value="plan"><PlanningBoard entityType="project" entityId={projectId} embedded canEdit={canEdit} /></TabsContent>
                     <TabsContent value="engineering"><ProjectEngineering projectId={projectId} project={project} canEdit={canEdit} /></TabsContent>
                     <TabsContent value="documents" className="space-y-6">
+                        <CollapsibleSection title="Související odkazy" icon={Link2} actions={canEdit && <Button size="sm" onClick={() => { setEditingLink(null); setIsLinkDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat odkaz</Button>}>
+                            {projectLinks.length > 0 ? (
+                                <div className="space-y-2">
+                                    {projectLinks.map(link => (
+                                        <div key={link.id} className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50">
+                                            <div className="min-w-0 flex-1 break-words"><a href={link.url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline">{link.description || link.url}</a><p className="text-xs text-muted-foreground">{link.url}</p></div>
+                                            {canEdit && <div className="flex gap-2">
+                                                <Button variant="ghost" size="icon" aria-label="Upravit odkaz" onClick={() => { setEditingLink(link); setIsLinkDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
+                                                <Button variant="ghost" size="icon" aria-label="Smazat odkaz" onClick={() => requestDeleteLink(link)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                                            </div>}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (<p className="text-muted-foreground">Žádné odkazy nebyly přidány.</p>)}
+                        </CollapsibleSection>
                         <SharePointFolderBrowser
                             entityType="project"
                             entity={project}
@@ -1220,6 +1218,7 @@ const ProjectDetail = () => {
                     </TabsContent>
                     <TabsContent value="contacts"><ProjectContacts projectId={projectId} /></TabsContent>
 
+                    {isAdmin && !canViewFinance && <TabsContent value="finance"><Card><CardContent className="p-6"><h2 className="font-semibold">Finanční údaje jsou skryté</h2><p className="mt-2 text-sm text-muted-foreground">Pro zobrazení rozpočtu, fakturace a nákladů vypněte soukromý režim.</p></CardContent></Card></TabsContent>}
                     {canViewFinance && <TabsContent value="finance" className="space-y-6">
                         {financeLoadError && (
                             <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert">
@@ -1230,17 +1229,21 @@ const ProjectDetail = () => {
                                 </div>
                             </div>
                         )}
+                        <div className="flex flex-wrap gap-2 rounded-xl border bg-white p-2" role="group" aria-label="Sekce financí projektu">
+                            {[{ value: 'summary', label: 'Souhrn' }, { value: 'billing', label: 'Fakturace' }, { value: 'costs', label: 'Náklady' }].map(section => <Button key={section.value} variant={financeSection === section.value ? 'secondary' : 'ghost'} aria-pressed={financeSection === section.value} onClick={() => setFinanceSection(section.value)}>{section.label}</Button>)}
+                        </div>
+                        <RecordWorkspaceSection active={financeSection === 'summary'} aria-label="Finanční souhrn projektu" className="space-y-5">
                         {!financeLoadError && <FinanceMetricStrip className="2xl:grid-cols-4" metrics={[
                             { label: 'Evidovaná hodnota zakázky bez DPH', value: <FinanceAmount value={financials.price ?? project.price} />, detail: 'Základ projektového rozpočtu', tone: 'neutral', icon: DollarSign },
-                            { label: 'Plánovaný projektový budget', value: <FinanceAmount value={financials.totalBudget} />, detail: `${project.budget_percentage}% z hodnoty`, tone: 'plan', icon: Wallet },
+                            { label: 'Plánovaný projektový rozpočet', value: <FinanceAmount value={financials.totalBudget} />, detail: `${project.budget_percentage}% z hodnoty`, tone: 'plan', icon: Wallet },
                             { label: 'Skutečné náklady', value: <FinanceAmount value={financials.costsAfterPaidPayouts} />, detail: 'Včetně vyplacených odměn', tone: 'neutral', icon: ClipboardList },
-                            { label: 'Nerozdělený budget', value: <FinanceAmount value={financials.unallocatedBudget} />, detail: 'Po nákladech a plánovaných odměnách', tone: Number(financials.unallocatedBudget || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
+                            { label: 'Nerozdělený rozpočet', value: <FinanceAmount value={financials.unallocatedBudget} />, detail: 'Po nákladech a plánovaných odměnách', tone: Number(financials.unallocatedBudget || 0) < 0 ? 'negative' : 'positive', icon: Wallet },
                             { label: 'Režie projektu', value: <FinanceAmount value={financials.overheadBudget} />, detail: `Zbývá ${formatCurrency(financials.remainingOverheadBudget)} po alokaci`, tone: Number(financials.remainingOverheadBudget || 0) < 0 ? 'negative' : 'warning', icon: ClipboardList },
                             { label: 'Rezervované výplaty', value: <FinanceAmount value={financials.reservedPayouts} />, detail: 'Závazek, zatím ne náklad', tone: Number(financials.reservedPayouts || 0) ? 'warning' : 'neutral', icon: Clock },
                             { label: 'Dostupné pro výplatu', value: <FinanceAmount value={financials.availableForPayout} />, detail: 'Po kontrolách a rezervacích', tone: Number(financials.availableForPayout || 0) < 0 ? 'negative' : 'positive', icon: Users },
-                            { label: 'Plánovaná marže', value: <FinanceAmount value={financials.plannedMargin ?? financials.projectProfit} />, detail: 'Hodnota minus plánovaný budget', tone: Number(financials.plannedMargin || 0) < 0 ? 'negative' : 'positive', icon: DollarSign },
+                            { label: 'Plánovaná marže', value: <FinanceAmount value={financials.plannedMargin ?? financials.projectProfit} />, detail: 'Hodnota minus plánovaný rozpočet', tone: Number(financials.plannedMargin || 0) < 0 ? 'negative' : 'positive', icon: DollarSign },
                         ]} />}
-                        <FinanceDefinitionNote>Nerozdělený budget je týmový základ po nákladech a naplánovaných odměnách; není totožný s limitem dostupným pro výplatu, který navíc zohledňuje rezervované žádosti. Režie je samostatná plánovaná rezerva a její detail je uveden pouze v přehledu připsaných režií níže.</FinanceDefinitionNote>
+                        <FinanceDefinitionNote>Nerozdělený rozpočet je týmový základ po nákladech a naplánovaných odměnách; není totožný s limitem dostupným pro výplatu, který navíc zohledňuje rezervované žádosti. Režie je samostatná plánovaná rezerva a její detail najdete v části Náklady v přehledu připsaných režií.</FinanceDefinitionNote>
                         <FinancialSettingsCard
                             entityType="project"
                             entityId={projectId}
@@ -1248,7 +1251,9 @@ const ProjectDetail = () => {
                             disabled={!!financeLoadError}
                             onSaved={refreshData}
                         />
-                        <BillingTracker entityType="project" entityId={projectId} entityCode={project.code} enableContractAnalysis={isAdmin} showFinancialSummary={false} />
+                        </RecordWorkspaceSection>
+                        <RecordWorkspaceSection active={financeSection === 'billing'} aria-label="Fakturace projektu"><BillingTracker entityType="project" entityId={projectId} entityCode={project.code} enableContractAnalysis={isAdmin} showFinancialSummary={false} /></RecordWorkspaceSection>
+                        <RecordWorkspaceSection active={financeSection === 'costs'} aria-label="Náklady projektu" className="space-y-5">
                         <CollapsibleSection title="Ostatní náklady" icon={DollarSign} actions={canEdit && <Button size="sm" disabled={!!financeLoadError} onClick={() => { setEditingCost(null); setIsCostDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Přidat náklad</Button>}>
                             <Table className="finance-table">
                                 <TableHeader><TableRow><TableHead>Popis</TableHead><TableHead>Odečíst z</TableHead><TableHead>Částka bez DPH</TableHead><TableHead>Faktura</TableHead><TableHead className="text-right">Akce</TableHead></TableRow></TableHeader>
@@ -1295,7 +1300,7 @@ const ProjectDetail = () => {
                                                             </button>
                                                         ) : '—'}
                                                     </TableCell>
-                                                    <TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => { setEditingCost(cost); setIsCostDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => requestDeleteCost(cost)}><Trash2 className="h-4 w-4 text-red-500" /></Button></TableCell>
+                                                    <TableCell className="text-right"><Button variant="ghost" size="icon" aria-label={`Upravit náklad ${cost.description || 'projektu'}`} onClick={() => { setEditingCost(cost); setIsCostDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" aria-label={`Smazat náklad ${cost.description || 'projektu'}`} onClick={() => requestDeleteCost(cost)}><Trash2 className="h-4 w-4 text-red-500" /></Button></TableCell>
                                                 </TableRow>
                                             ))}
                                             {financeDerivedRows.map((row) => (
@@ -1323,6 +1328,7 @@ const ProjectDetail = () => {
                                 </TableFooter>
                             </Table>
                         </CollapsibleSection>
+                        </RecordWorkspaceSection>
                     </TabsContent>}
                 </Tabs>
             </div>

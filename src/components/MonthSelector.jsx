@@ -1,40 +1,16 @@
-import React, { useMemo } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { format, subMonths, startOfMonth } from 'date-fns';
-import { cs } from 'date-fns/locale';
+import React from 'react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-const MonthSelector = ({ value, onChange }) => {
-  const months = useMemo(() => {
-    const result = [];
-    const currentDate = new Date();
-    for (let i = 0; i < 12; i++) {
-      const date = subMonths(currentDate, i);
-      const start = startOfMonth(date).toISOString();
-      const label = format(date, 'LLLL yyyy', { locale: cs });
-      // Capitalize first letter of month
-      const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
-      result.push({ value: start, label: capitalizedLabel });
-    }
-    return result;
-  }, []);
-
-  return (
-    <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-slate-700">Vyberte měsíc</label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-[250px] bg-white">
-          <SelectValue placeholder="Vyberte měsíc" />
-        </SelectTrigger>
-        <SelectContent>
-          {months.map((month) => (
-            <SelectItem key={month.value} value={month.value}>
-              {month.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-};
-
-export default MonthSelector;
+export default function MonthSelector({ value, onChange }) {
+  const changeInput = event => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(event.currentTarget.value) && Number(event.currentTarget.value.slice(0,4)) > 0) onChange(`${event.currentTarget.value}-01`); };
+  const step = offset => {
+    const [year, month] = value.split('-').map(Number);
+    const index = year * 12 + month - 1 + offset;
+    const nextYear = Math.floor(index / 12);
+    if (nextYear < 1 || nextYear > 9999) return;
+    onChange(`${String(nextYear).padStart(4, '0')}-${String(index % 12 + 1).padStart(2, '0')}-01`);
+  };
+  return <div className="flex min-w-0 flex-col gap-2"><label htmlFor="hourly-payout-month" className="text-sm font-medium text-slate-700">Měsíc odměny</label><div className="flex min-w-0 gap-2"><Button variant="outline" size="icon" aria-label="Předchozí měsíc odměny" onClick={() => step(-1)}><ChevronLeft className="h-4 w-4" /></Button><Input id="hourly-payout-month" type="month" className="w-full min-w-0 sm:w-[190px]" value={value?.slice(0,7) || ''} onInput={changeInput} onChange={changeInput} /><Button variant="outline" size="icon" aria-label="Následující měsíc odměny" onClick={() => step(1)}><ChevronRight className="h-4 w-4" /></Button></div></div>;
+}

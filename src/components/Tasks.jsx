@@ -72,11 +72,12 @@ const taskStatusConfig = {
     icon: CheckCircle2,
     variant: 'success'
   },
+  'Zrušeno': { color: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400', titleColor: 'text-slate-600', icon: AlertCircle, variant: 'secondary' },
 };
 
 const TaskCard = ({ task, onDragStart, onClick }) => {
   const { hasPermission } = useAuth();
-  const isTaskPast = isPast(new Date(task.end_date)) && task.status !== 'Hotovo';
+  const isTaskPast = isPast(new Date(task.end_date)) && !['Hotovo', 'Zrušeno'].includes(task.status);
   const config = taskStatusConfig[task.status] || taskStatusConfig['Nové'];
   const StatusIcon = config.icon;
 
@@ -224,7 +225,7 @@ const TaskTable = ({ tasks, onTaskClick }) => {
                         </TableHeader>
                         <TableBody>
                             {tasks.map((task) => {
-                                const isTaskPast = isPast(new Date(task.end_date)) && task.status !== 'Hotovo';
+                                const isTaskPast = isPast(new Date(task.end_date)) && !['Hotovo', 'Zrušeno'].includes(task.status);
                                 const config = taskStatusConfig[task.status] || taskStatusConfig['Nové'];
                                 const StatusIcon = config.icon;
 
@@ -355,6 +356,7 @@ const Tasks = () => {
         const { error } = await supabase.from('project_tasks').update(taskData).eq('id', editingTask.id);
         if (error) {
             toast({ title: 'Chyba při úpravě úkolu', description: error.message, variant: 'destructive' });
+            return false;
         } else {
             if(originalStatus !== newStatus){
                 await logAction('update_task_status', {
@@ -372,6 +374,7 @@ const Tasks = () => {
         const { error } = await supabase.from('project_tasks').insert([taskData]);
         if (error) {
             toast({ title: 'Chyba při ukládání úkolu', description: error.message, variant: 'destructive' });
+            return false;
         } else {
             toast({ title: '✅ Úkol úspěšně vytvořen!' });
             fetchTasks();
@@ -389,6 +392,7 @@ const Tasks = () => {
     const { error } = await supabase.from('project_tasks').delete().eq('id', taskId);
     if (error) {
       toast({ title: 'Chyba při mazání úkolu', description: error.message, variant: 'destructive' });
+      return false;
     } else {
       toast({ title: '🗑️ Úkol smazán' });
       fetchTasks();
@@ -445,7 +449,7 @@ const Tasks = () => {
     const newTasks = tasks.filter(t => t.status === 'Nové').length;
     const inProgressTasks = tasks.filter(t => t.status === 'V řešení').length;
     const completedTasks = tasks.filter(t => t.status === 'Hotovo').length;
-    const overdueTasks = tasks.filter(t => isPast(new Date(t.end_date)) && t.status !== 'Hotovo').length;
+    const overdueTasks = tasks.filter(t => isPast(new Date(t.end_date)) && !['Hotovo', 'Zrušeno'].includes(t.status)).length;
 
     return {
       totalTasks,
@@ -570,6 +574,7 @@ const Tasks = () => {
                       <SelectItem value="Nové">Nové</SelectItem>
                       <SelectItem value="V řešení">V řešení</SelectItem>
                       <SelectItem value="Hotovo">Hotovo</SelectItem>
+                      <SelectItem value="Zrušeno">Zrušeno</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -618,7 +623,7 @@ const Tasks = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="grid grid-cols-1 gap-4 lg:grid-cols-3"
+              className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4"
             >
               {Object.entries(tasksByStatus).map(([status, tasksInStatus]) => (
                 <StatusColumn 

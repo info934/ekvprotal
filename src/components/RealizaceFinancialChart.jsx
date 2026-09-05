@@ -2,61 +2,55 @@ import React, { useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { BarChart3 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
-import { useToast } from '@/components/ui/use-toast';
-import { format, parseISO } from 'date-fns';
-import { cs } from 'date-fns/locale';
 import { DataVizCard, DATAVIZ_COLORS, DataVizEmptyState, formatVizCurrency, VizTooltip } from '@/components/ui/data-viz';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { aggregateFinancialPeriods, fetchAllFinancialRows, getFinanceErrorMessage } from '@/lib/financePresentation';
+import { FinanceVisibilityNotice } from '@/components/finance/FinanceWorkspace';
+import { Button } from '@/components/ui/button';
 
 const RealizaceFinancialChart = () => {
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
+  const [error, setError] = useState(null);
+  const [reload, setReload] = useState(0);
+  const { userRole, isPrivateMode } = useAuth();
+  const allowed = userRole === 'admin';
 
   useEffect(() => {
+    const controller = new AbortController();
+    setChartData([]);
+    setError(null);
+    if (!allowed) { setLoading(false); return () => controller.abort(); }
     const fetchChartData = async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('realizace_financials')
-        .select('period, actual_revenue, actual_costs, actual_profit')
-        .order('period', { ascending: true });
-
-      if (error) {
-        toast({ title: 'Chyba načítání dat pro graf', variant: 'destructive', description: error.message });
-      } else {
-        const monthlyData = (data || []).reduce((acc, item) => {
-          const month = format(parseISO(item.period), 'yyyy-MM');
-          if (!acc[month]) {
-            acc[month] = {
-              month,
-              name: format(parseISO(item.period), 'MMM yyyy', { locale: cs }),
-              revenue: 0,
-              costs: 0,
-              profit: 0,
-            };
-          }
-          acc[month].revenue += Number(item.actual_revenue) || 0;
-          acc[month].costs += Number(item.actual_costs) || 0;
-          acc[month].profit += Number(item.actual_profit) || 0;
-          return acc;
-        }, {});
-
-        setChartData(Object.values(monthlyData));
+      try {
+        const rows = await fetchAllFinancialRows(() => supabase.from('realizace_financials').select('id,period,actual_revenue,actual_costs,actual_profit').order('period').order('id'), controller.signal);
+        const data = aggregateFinancialPeriods(rows).map(row => ({ ...row, name: new Date(`${row.month}-01T12:00:00Z`).toLocaleDateString('cs-CZ', { month: 'short', year: 'numeric', timeZone: 'UTC' }) }));
+        if (!controller.signal.aborted) setChartData(data);
+      } catch (loadError) {
+        if (!controller.signal.aborted) setError(getFinanceErrorMessage(loadError, 'Graf nelze sestavit z úplných a platných finančních záznamů. Obnovte data.'));
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchChartData();
-  }, [toast]);
+    return () => controller.abort();
+  }, [allowed, reload]);
+
+  if (!allowed || isPrivateMode) return <FinanceVisibilityNotice message={isPrivateMode ? 'Finanční graf je skrytý v soukromém režimu.' : 'Finanční graf je dostupný administrátorovi.'} />;
 
   return (
     <DataVizCard
-      title="Finanční vývoj realizací"
-      description="Měsíční přehled příjmů, nákladů a zisku. Hodnoty jsou agregované podle období."
+      title="Zaznamenané výsledky po měsících"
+      description="Součet periodických finančních záznamů realizací. Nejde o plánované smluvní výnosy."
       icon={BarChart3}
       contentClassName="h-[360px]"
     >
       {loading ? (
         <DataVizEmptyState label="Načítám data grafu..." className="h-full" />
+      ) : error ? (
+        <div className="space-y-4 p-4"><p role="alert" className="text-sm text-red-800">{error}</p><Button variant="outline" onClick={() => setReload(value => value + 1)}>Zkusit znovu</Button></div>
       ) : chartData.length === 0 ? (
         <DataVizEmptyState label="Žádné finanční hodnoty k zobrazení." className="h-full" />
       ) : (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Download, Clock, Edit, Trash2, ChevronLeft, ChevronRight, Users, Send,
@@ -27,9 +27,14 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import PageHeader from '@/components/ui/page-header';
 import AttendanceDialog from './AttendanceDialog';
+import { useSearchParams } from 'react-router-dom';
+import { attendanceEntryDate } from '@/lib/operationsHelpers';
 import { sendAttendanceApprovalRequestEmail } from '@/lib/email';
 import { deleteAttendanceRecord, deleteAttendanceSubmission, saveAttendanceRecords, submitAttendanceMonth, withdrawAttendanceSubmission } from '@/lib/attendanceWorkflowService';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
+import { attendanceMonthEditable, loadAttendanceMonth, filterAttendanceRows, groupAttendanceWork, sumAttendanceHours } from '@/lib/attendanceWorkspace';
+import { useAttendanceResource } from '@/hooks/useAttendanceResource';
+import { AttendanceLoadState, AttendanceMonthControl, AttendanceRecordsTable } from './AttendanceWorkspaceParts';
 
 const metricToneFromColor = (color = '') => {
   if (color.includes('green')) return 'emerald';
@@ -66,92 +71,48 @@ const statusConfig = {
 
 const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
   const { toast } = useToast();
-  const { hasPermission } = useAuth();
-  const [attendance, setAttendance] = useState([]);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [submission, setSubmission] = useState(null);
-  const [viewMode, setViewMode] = useState('calendar'); // 'calendar' or 'list'
+  const { hasPermission, isPrivateMode } = useAuth();
+  const [monthParams, setMonthParams] = useSearchParams();
+  const requestedMonth = (monthParams.get('month') || '').slice(0, 7);
+  const monthKey = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth) ? requestedMonth : format(new Date(), 'yyyy-MM');
+  const currentMonth = useMemo(() => new Date(`${monthKey}-01T12:00:00`), [monthKey]);
+  const setCurrentMonth = date => setMonthParams(current => { const next = new URLSearchParams(current); next.set('month', format(date, 'yyyy-MM')); return next; });
+  const [viewMode, setViewMode] = useState('list');
   const [typeFilter, setTypeFilter] = useState('all'); // 'all', 'project', 'realization'
-  const [hourlyRate, setHourlyRate] = useState(0);
+  const [hourlyRate, setHourlyRate] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   // Edit/Delete/Add state
   const [isAttendanceDialogOpen, setIsAttendanceDialogOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [deletingRecord, setDeletingRecord] = useState(null);
   const [selectedDialogDate, setSelectedDialogDate] = useState(null);
+  const [pending, setPending] = useState(false);
+  const [recordsRevision, setRecordsRevision] = useState(0);
+  const busy = useRef(false);
+  const loader = useCallback(signal => loadAttendanceMonth(supabase, { memberId, month: currentMonth, signal }), [memberId, currentMonth]);
+  const resource = useAttendanceResource(`${memberId}:${format(currentMonth, 'yyyy-MM')}`, loader, Boolean(memberId && attendanceEnabled));
+  const attendance = resource.data?.records || [];
+  const submission = resource.data?.submission || null;
 
-  const isEditable = !submission || submission.status === 'draft' || submission.status === 'rejected' || submission.status === 'returned';
-  const canManageSubmission = submission && submission.status !== 'approved';
+  const isEditable = attendanceMonthEditable(submission, resource.ready) && (hasPermission('attendance', 'can_edit') || hasPermission('attendance', 'can_admin')) && !pending;
+  const canManageSubmission = resource.ready && (hasPermission('attendance', 'can_edit') || hasPermission('attendance', 'can_admin')) && submission && submission.status !== 'approved' && !pending;
 
   useEffect(() => {
     let isMounted = true;
     const fetchHourlyRate = async () => {
+      setHourlyRate(null);
       if (!memberId) return;
-      const { data: compensationData } = await supabase.rpc('get_member_compensation', { p_member_id: memberId });
-      if (isMounted && compensationData) setHourlyRate(compensationData.hourly_rate || 0);
+      const { data: compensationData, error } = await supabase.rpc('get_member_compensation', { p_member_id: memberId });
+      if (isMounted) setHourlyRate(error || compensationData?.hourly_rate == null || compensationData.currency !== 'CZK' || !Number.isFinite(Number(compensationData.hourly_rate)) ? null : Number(compensationData.hourly_rate));
     };
     fetchHourlyRate();
     return () => { isMounted = false; };
   }, [memberId]);
 
-  const fetchAttendanceAndSubmission = useCallback(async () => {
-    if (!memberId) return;
-
-    const startDate = startOfMonth(currentMonth);
-    const endDate = endOfMonth(currentMonth);
-    const formattedStartDate = format(startDate, 'yyyy-MM-dd');
-    const formattedEndDate = format(endDate, 'yyyy-MM-dd');
-
-    const [submissionRes, attendanceRes] = await Promise.all([
-      supabase
-        .from('attendance_submissions')
-        .select('*')
-        .eq('member_id', memberId)
-        .eq('month_date', formattedStartDate)
-        .maybeSingle(),
-      supabase
-        .from('attendance')
-        .select('*, projects(name, code), realizations(name)')
-        .eq('member_id', memberId)
-        .gte('date', formattedStartDate)
-        .lte('date', formattedEndDate)
-        .order('date', { ascending: false })
-    ]);
-
-    return { submissionRes, attendanceRes };
-  }, [memberId, currentMonth]);
-
-  useEffect(() => {
-    let isMounted = true;
-    const loadData = async () => {
-      try {
-        const result = await fetchAttendanceAndSubmission();
-
-        if (!isMounted || !result) return;
-
-        const { submissionRes, attendanceRes } = result;
-
-        if (submissionRes.error) {
-          toast({ title: 'Chyba při načítání stavu docházky', description: submissionRes.error.message, variant: 'destructive' });
-        } else {
-          setSubmission(submissionRes.data);
-        }
-
-        if (attendanceRes.error) {
-          toast({ title: 'Chyba při načítání docházky', description: attendanceRes.error.message, variant: 'destructive' });
-        } else {
-          setAttendance(attendanceRes.data || []);
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    loadData();
-    return () => { isMounted = false; };
-  }, [fetchAttendanceAndSubmission, toast]);
-
-  const handleSaveAttendance = async (recordData) => {
+  const handleSaveAttendance = async (recordData, options) => {
+    if (busy.current || !isEditable) throw new Error('Zápis nyní není dostupný. Obnovte stav měsíce.');
+    busy.current = true; setPending(true);
     const isBatchInsert = Array.isArray(recordData);
 
     try {
@@ -163,7 +124,8 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
         ? recordData.map((row) => ({ ...row, member_id: row.member_id || memberId }))
         : { ...recordData, member_id: recordData.member_id || memberId };
 
-      await saveAttendanceRecords(payload, editingRecord?.id || null);
+      await saveAttendanceRecords(payload, editingRecord?.id || null, options);
+      setRecordsRevision(value => value + 1);
 
       if (Array.isArray(recordData)) {
         toast({ title: `Přidáno záznamů: ${recordData.length}` });
@@ -173,37 +135,34 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
       setIsAttendanceDialogOpen(false);
       setEditingRecord(null);
 
-      // Refresh
-      const result = await fetchAttendanceAndSubmission();
-      if (result) {
-        if (result.submissionRes.data) setSubmission(result.submissionRes.data);
-        if (result.attendanceRes.data) setAttendance(result.attendanceRes.data);
-      }
+      resource.refresh();
     } catch (error) {
-      toast({ title: 'Chyba při ukládání', description: error.message, variant: 'destructive' });
-    }
+      throw error;
+    } finally { busy.current = false; setPending(false); }
   };
 
   const handleDeleteConfirmed = async () => {
-    if (!deletingRecord) return;
+    if (!deletingRecord || busy.current || !isEditable) return;
+    busy.current = true; setPending(true);
     try {
       await deleteAttendanceRecord(deletingRecord.id);
+      setRecordsRevision(value => value + 1);
       toast({ title: 'Záznam smazán' });
-      const result = await fetchAttendanceAndSubmission();
-      if (result) {
-        if (result.attendanceRes.data) setAttendance(result.attendanceRes.data);
-      }
+      resource.refresh();
     } catch (error) {
       toast({ title: 'Chyba při mazání', description: error.message, variant: 'destructive' });
-    }
+    } finally { busy.current = false; setPending(false); }
     setDeletingRecord(null);
   }
 
   const handleSubmitForApproval = async () => {
+    if (busy.current || !isEditable || !attendance.length) return;
+    busy.current = true; setPending(true);
     const month_date = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
 
     try {
       const savedSubmission = await submitAttendanceMonth(memberId, month_date);
+      resource.refresh();
       const totalHours = Number(savedSubmission?.total_hours || attendance.reduce((sum, record) => sum + Number(record.hours), 0));
 
       try {
@@ -233,46 +192,35 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
         console.error('Failed to send attendance approval email:', emailError);
         toast({ title: 'Docházka byla odeslána', description: 'Změna je uložená, e-mailová notifikace ale selhala.', variant: 'warning' });
       }
-      const result = await fetchAttendanceAndSubmission();
-      if (result) {
-        if (result.submissionRes.data) setSubmission(result.submissionRes.data);
-        if (result.attendanceRes.data) setAttendance(result.attendanceRes.data);
-      }
     } catch (error) {
       toast({ title: 'Chyba při odesílání ke schválení', description: error.message, variant: 'destructive' });
-    }
+    } finally { busy.current = false; setPending(false); }
   };
 
   const handleWithdrawSubmission = async () => {
-    if (!submission?.id || submission.status === 'approved') return;
+    if (!submission?.id || submission.status === 'approved' || busy.current) return;
+    busy.current = true; setPending(true);
 
     try {
       await withdrawAttendanceSubmission(submission.id);
       toast({ title: 'Žádost stažena k úpravě', description: 'Docházku můžete znovu upravovat a poté odeslat ke schválení.' });
-      const result = await fetchAttendanceAndSubmission();
-      if (result) {
-        setSubmission(result.submissionRes.data || null);
-        if (result.attendanceRes.data) setAttendance(result.attendanceRes.data);
-      }
+      resource.refresh();
     } catch (error) {
       toast({ title: 'Žádost se nepodařilo stáhnout', description: error.message, variant: 'destructive' });
-    }
+    } finally { busy.current = false; setPending(false); }
   };
 
   const handleDeleteSubmission = async () => {
-    if (!submission?.id || submission.status === 'approved') return;
+    if (!submission?.id || submission.status === 'approved' || busy.current) return;
+    busy.current = true; setPending(true);
 
     try {
       await deleteAttendanceSubmission(submission.id);
       toast({ title: 'Žádost smazána', description: 'Docházkové záznamy zůstaly zachované a můžete je dál upravovat.' });
-      const result = await fetchAttendanceAndSubmission();
-      if (result) {
-        setSubmission(result.submissionRes.data || null);
-        if (result.attendanceRes.data) setAttendance(result.attendanceRes.data);
-      }
+      resource.refresh();
     } catch (error) {
       toast({ title: 'Žádost se nepodařilo smazat', description: error.message, variant: 'destructive' });
-    }
+    } finally { busy.current = false; setPending(false); }
   };
 
   const handleDayClick = (day) => {
@@ -286,56 +234,30 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
   };
 
   const handleExport = async () => {
-    const XLSX = await loadXlsx();
-    const totalHours = attendance.reduce((sum, record) => sum + Number(record.hours), 0);
-
-    const exportData = attendance.map(record => ({
-      'Datum': format(new Date(record.date), 'd.M.yyyy'),
-      'Typ': record.project_id ? 'Projekt' : 'Realizace',
-      'Název': record.projects?.name || record.realizations?.name || 'Neznámý',
-      'Kód': record.projects?.code || '-',
-      'Počet hodin': Number(record.hours).toFixed(2),
-      'Popis': record.description,
-      'Částka': hourlyRate ? (Number(record.hours) * hourlyRate).toFixed(2) : '-'
-    }));
-
-    const summaryData = [{}, { 'Datum': 'Celkem hodin', 'Počet hodin': totalHours.toFixed(2) }];
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    XLSX.utils.sheet_add_json(worksheet, summaryData, { skipHeader: true, origin: -1 });
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Docházka');
-    XLSX.writeFile(workbook, `moje_dochazka_${format(currentMonth, 'MM-yyyy')}.xlsx`);
-    toast({ title: '✅ Export úspěšně vygenerován!' });
+    if (!resource.ready || exporting || !filteredAttendance.length) return;
+    setExporting(true);
+    try {
+      const XLSX = await loadXlsx();
+      const exportData = filteredAttendance.map(record => ({
+        'Datum': format(new Date(record.date), 'd.M.yyyy'),
+        'Typ': record.project_id ? 'Projekt' : record.realization_id ? 'Realizace' : 'Bez přiřazení',
+        'Název': record.projects?.name || record.realizations?.name || 'Bez přiřazení',
+        'Kód': record.projects?.code || '', 'Počet hodin': Number(record.hours), 'Popis': record.description,
+        'Orientační odměna při aktuální sazbě (Kč)': hourlyRate === null ? 'Sazba není dostupná' : Number(record.hours) * hourlyRate,
+      }));
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      XLSX.utils.sheet_add_json(worksheet, [{}, { 'Datum': 'Celkem zobrazené hodiny', 'Počet hodin': sumAttendanceHours(filteredAttendance) }], { skipHeader: true, origin: -1 });
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Docházka');
+      XLSX.writeFile(workbook, `moje_dochazka_${format(currentMonth, 'MM-yyyy')}.xlsx`);
+      toast({ title: 'Export byl vytvořen', description: 'Soubor obsahuje záznamy odpovídající aktuálnímu filtru.' });
+    } catch (error) { toast({ title: 'Export se nepodařilo vytvořit', description: error.message, variant: 'destructive' }); }
+    finally { setExporting(false); }
   };
 
-  const filteredAttendance = useMemo(() => {
-    if (typeFilter === 'all') return attendance;
-    if (typeFilter === 'project') return attendance.filter(a => a.project_id);
-    if (typeFilter === 'realization') return attendance.filter(a => a.realizace_id);
-    return attendance;
-  }, [attendance, typeFilter]);
+  const filteredAttendance = useMemo(() => filterAttendanceRows(attendance, { type: typeFilter }), [attendance, typeFilter]);
 
-  const myWorkSummary = useMemo(() => {
-    const summary = {};
-    attendance.forEach(r => {
-      const key = r.project_id ? `p_${r.project_id}` : `r_${r.realizace_id}`;
-
-      if (!summary[key]) {
-        summary[key] = {
-          id: key,
-          type: r.project_id ? 'Projekt' : 'Realizace',
-          name: r.projects?.name || r.realizations?.name || 'Neznámý',
-          code: r.projects?.code || '',
-          hours: 0,
-          cost: 0
-        };
-      }
-      const hrs = Number(r.hours || 0);
-      summary[key].hours += hrs;
-      summary[key].cost += hrs * hourlyRate;
-    });
-    return Object.values(summary).sort((a, b) => b.hours - a.hours);
-  }, [attendance, hourlyRate]);
+  const myWorkSummary = useMemo(() => groupAttendanceWork(attendance), [attendance]);
 
   const totalHours = useMemo(() => {
     return attendance.reduce((sum, record) => sum + Number(record.hours), 0);
@@ -375,7 +297,7 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
   const mondayOffset = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1;
   const emptyDays = Array.from({ length: mondayOffset });
 
-  const currentStatus = submission ? statusConfig[submission.status] : statusConfig.draft;
+  const currentStatus = submission ? statusConfig[submission.status] || { label: 'Neznámý stav', icon: AlertTriangle, variant: 'warning' } : statusConfig.draft;
   const StatusIcon = currentStatus.icon;
 
   if (!attendanceEnabled) {
@@ -390,60 +312,35 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
 
   return (
     <div className="space-y-6">
-      <YearlyAttendanceSummary memberId={memberId} attendanceEnabled={attendanceEnabled} />
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary">Moje odpracovaná doba</p>
+          <h2 className="mt-1 text-xl font-semibold capitalize">{format(currentMonth, 'LLLL yyyy', { locale: cs })}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{isEditable ? 'Zapište hodiny k zakázkám. Hotový měsíc odešlete ke schválení.' : 'Stav měsíce a zaznamenané hodiny najdete níže.'}</p>
+        </div>
+        {isEditable && hasPermission('attendance', 'can_edit') && (
+          <Button className="h-11 w-full sm:w-auto" onClick={() => { setEditingRecord(null); setSelectedDialogDate(attendanceEntryDate(currentMonth)); setIsAttendanceDialogOpen(true); }}>
+            <Plus className="mr-2 h-4 w-4" /> Zapsat odpracované hodiny
+          </Button>
+        )}
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard
-          icon={Timer}
-          title="Celkem hodin"
-          value={totalHours.toFixed(1)}
-          subtitle="za měsíc"
-          color="text-blue-600"
-        />
-        <StatCard
-          icon={Wallet}
-          title="Celková hodnota"
-          value={formatCurrency(totalValue)}
-          subtitle="odhadovaná cena"
-          color="text-green-600"
-        />
-        <StatCard
-          icon={Calendar}
-          title="Dny s docházkou"
-          value={daysWithAttendance}
-          subtitle={`z ${workingDays} pracovních`}
-          color="text-purple-600"
-        />
-        <StatCard
-          icon={Target}
-          title="Průměr denně"
-          value={averageHoursPerDay}
-          subtitle="hodin"
-          color="text-orange-600"
-        />
+      <AttendanceMonthControl value={currentMonth} onChange={setCurrentMonth} disabled={pending} />
+      <AttendanceLoadState loading={resource.loading} error={resource.error} onRetry={resource.refresh}>
+      {resource.ready && <>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-slate-200 lg:grid-cols-4">
+        {[['Hodiny za měsíc', totalHours.toLocaleString('cs-CZ') + ' h'], ['Orientační odměna', isPrivateMode ? 'Skryto' : hourlyRate === null ? 'Sazba není dostupná' : formatCurrency(totalValue)], ['Dny se záznamem', daysWithAttendance], ['Zakázky', myWorkSummary.length]].map(([label, value]) => <div key={label} className="bg-white p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-2 text-xl font-semibold tabular-nums">{value}</p></div>)}
       </div>
 
       <Card>
-        <CardContent className="p-6">
-          <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-4">
-              <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} aria-label="Předchozí měsíc docházky">
-                <ChevronLeft className="w-5 h-5" />
-              </Button>
-              <h2 className="text-2xl font-bold text-center w-48 capitalize">
-                {format(currentMonth, 'LLLL yyyy', { locale: cs })}
-              </h2>
-              <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} aria-label="Další měsíc docházky">
-                <ChevronRight className="w-5 h-5" />
-              </Button>
-            </div>
-
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex flex-col xl:flex-row justify-between items-center gap-4">
             <Badge variant={currentStatus.variant} className="text-sm px-3 py-1">
               <StatusIcon className="w-4 h-4 mr-2" />
               {currentStatus.label}
             </Badge>
 
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex w-full flex-wrap justify-center gap-2 xl:w-auto">
               <Select value={typeFilter} onValueChange={setTypeFilter}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Filtr zobrazení" />
@@ -460,6 +357,7 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
                   variant={viewMode === 'calendar' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setViewMode('calendar')}
+                  aria-pressed={viewMode === 'calendar'}
                 >
                   <Calendar className="w-4 h-4 mr-2" />
                   Kalendář
@@ -468,32 +366,30 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
                   variant={viewMode === 'list' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setViewMode('list')}
+                  aria-pressed={viewMode === 'list'}
                 >
                   <FileText className="w-4 h-4 mr-2" />
                   Seznam
                 </Button>
               </div>
-              <Button onClick={handleExport} variant="outline" disabled={attendance.length === 0}>
+              <Button onClick={handleExport} variant="outline" disabled={exporting || !resource.ready || filteredAttendance.length === 0}>
                 <Download className="w-4 h-4 mr-2" />
-                Export
+                Export zobrazených
               </Button>
               {isEditable && hasPermission('attendance', 'can_edit') && (
                 <>
-                  <Button onClick={() => { setEditingRecord(null); setSelectedDialogDate(new Date()); setIsAttendanceDialogOpen(true); }}>
-                    <Plus className="w-4 h-4 mr-2" /> Přidat
-                  </Button>
                   {attendance.length > 0 && (
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="default" className="bg-green-600 hover:bg-green-700">
-                          <Send className="w-4 h-4 mr-2" /> Odeslat
+                          <Send className="w-4 h-4 mr-2" /> Odeslat měsíc ke schválení
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent className="sm:max-w-2xl">
                         <AlertDialogHeader>
                           <AlertDialogTitle>Odeslat docházku ke schválení?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Po odeslání již nebudete moci docházku pro tento měsíc upravovat, dokud nebude schválena nebo zamítnuta.
+                            Odesíláte celý měsíc bez ohledu na filtr. Záznamy zůstanou uzamčené i po schválení; úpravy jsou možné po stažení žádosti nebo vrácení administrátorem.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -589,55 +485,17 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
         </motion.div>
       )}
 
-      {/* Work Summary for User */}
-      {myWorkSummary.length > 0 && (
-        <Card className="bg-slate-50 border-slate-200">
-          <CardHeader className="py-4">
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" /> Souhrn činností
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[100px]">Typ</TableHead>
-                    <TableHead>Název</TableHead>
-                    <TableHead className="text-right">Hodiny</TableHead>
-                    {hourlyRate > 0 && <TableHead className="text-right">Odměna</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {myWorkSummary.map(item => (
-                    <TableRow key={item.id} className="hover:bg-slate-100">
-                      <TableCell>
-                        <Badge variant={item.type === 'Projekt' ? 'default' : 'secondary'}>{item.type}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{item.name}</div>
-                        {item.code && <div className="text-xs text-muted-foreground">{item.code}</div>}
-                      </TableCell>
-                      <TableCell className="text-right font-bold">{item.hours.toFixed(1)}h</TableCell>
-                      {hourlyRate > 0 && <TableCell className="text-right text-muted-foreground">{formatCurrency(item.cost)}</TableCell>}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {myWorkSummary.length > 0 && <details className="rounded-xl border bg-white p-5"><summary className="cursor-pointer text-sm font-semibold">Souhrn práce podle zakázek</summary><ul className="mt-4 divide-y">{myWorkSummary.map(item => <li key={item.id} className="flex justify-between gap-4 py-3 text-sm"><span>{item.name}<small className="ml-2 text-slate-500">{item.code || item.type}</small></span><strong className="whitespace-nowrap tabular-nums">{item.hours.toLocaleString('cs-CZ')} h</strong></li>)}</ul><p className="mt-3 text-xs text-slate-500">Orientační odměna používá aktuální hodinovou sazbu. Schválené částky najdete ve výplatách.</p></details>}
 
       {/* Main Calendar/List View */}
       {viewMode === 'calendar' ? (
         <Card>
-          <CardContent className="p-6">
+          <CardContent className="p-2 sm:p-6">
             <div className="grid grid-cols-7 gap-1 text-center font-bold text-muted-foreground mb-4 text-sm">
               {['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'].map(d => <div key={d}>{d}</div>)}
             </div>
-            <div className="grid grid-cols-7 gap-2">
-              {emptyDays.map((_, i) => <div key={`empty-${i}`} className="h-32" />)}
+            <div className="grid grid-cols-7 gap-1 sm:gap-2">
+              {emptyDays.map((_, i) => <div key={`empty-${i}`} className="h-24 sm:h-32" />)}
               {monthDays.map(day => {
                 // Filter records for this day AND based on typeFilter
                 const dayAttendance = filteredAttendance.filter(a => isSameDay(new Date(a.date), day));
@@ -648,20 +506,22 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
                 const hasHours = dayHours > 0;
 
                 return (
-                  <motion.div
+                  <motion.button
+                    type="button"
                     key={day.toString()}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => handleDayClick(day)}
+                    aria-label={`${format(day, 'd. MMMM yyyy', { locale: cs })}, ${dayHours.toFixed(1)} hodin${isEditable ? ', přidat záznam' : ''}`}
                     className={cn(
-                      "h-32 rounded-xl border p-3 flex flex-col justify-between transition-all duration-200 cursor-pointer relative group",
+                      "h-24 sm:h-32 min-w-0 rounded-xl border p-1 sm:p-3 text-left flex flex-col justify-between transition-all duration-200 cursor-pointer relative group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                       isWeekend ? "bg-slate-50/50" : "bg-white",
                       hasHours && "border-blue-200 bg-blue-50/30",
                       isTodayDate && "border-primary ring-2 ring-primary ring-offset-2",
                       "hover:shadow-md hover:border-primary/50"
                     )}
                   >
-                    <div className="flex justify-between items-start">
+                    <div className="flex flex-col sm:flex-row justify-between items-start gap-1">
                       <span className={cn(
                         "font-bold text-sm rounded-full w-7 h-7 flex items-center justify-center",
                         isTodayDate ? "bg-primary text-primary-foreground" : "text-slate-600",
@@ -694,93 +554,19 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
                         </div>
                       )}
                     </div>
-                  </motion.div>
+                  </motion.button>
                 )
               })}
             </div>
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Seznam záznamů
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {filteredAttendance.length > 0 ? (
-              <div className="space-y-3">
-                {filteredAttendance.map(record => (
-                  <motion.div
-                    key={record.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        {record.project_id ? (
-                          <Badge variant="default" className="flex items-center gap-1"><Briefcase className="w-3 h-3" /> {record.projects?.code}</Badge>
-                        ) : (
-                          <Badge variant="secondary" className="flex items-center gap-1"><HardHat className="w-3 h-3" /> Realizace</Badge>
-                        )}
-                        <span className="font-medium">{record.projects?.name || record.realizations?.name}</span>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {format(new Date(record.date), 'd. M. yyyy', { locale: cs })}</span>
-                        {record.description && <span className="flex items-center gap-1 line-clamp-1"><FileText className="w-3 h-3" /> {record.description}</span>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      {hourlyRate > 0 && (
-                        <div className="text-right hidden sm:block">
-                          <div className="text-sm font-semibold text-slate-700">
-                            {formatCurrency(Number(record.hours) * hourlyRate)}
-                          </div>
-                        </div>
-                      )}
-                      <div className="text-right w-20">
-                        <div className="text-lg font-bold text-blue-600">
-                          {Number(record.hours).toFixed(1)}h
-                        </div>
-                      </div>
-                      {isEditable && (
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => { setEditingRecord(record); setIsAttendanceDialogOpen(true); }}
-                            title="Upravit"
-                            aria-label={`Upravit docházku ${format(new Date(record.date), 'd.M.yyyy')}`}
-                          >
-                            <Edit2 className="w-4 h-4 text-slate-500" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setDeletingRecord(record)}
-                            title="Smazat"
-                            aria-label={`Smazat docházku ${format(new Date(record.date), 'd.M.yyyy')}`}
-                            className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground">Žádné záznamy pro tento výběr.</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <AttendanceRecordsTable records={filteredAttendance} pending={pending} onEdit={isEditable ? record => { setEditingRecord(record); setIsAttendanceDialogOpen(true); } : null} onDelete={isEditable ? setDeletingRecord : null} empty={attendance.length ? 'Vybranému filtru neodpovídá žádný záznam.' : 'Tento měsíc zatím nemáte zapsané hodiny. Začněte tlačítkem Zapsat odpracované hodiny.'} />
       )}
+      </>}
+      </AttendanceLoadState>
+
+      <details className="rounded-xl border bg-white p-4"><summary className="cursor-pointer font-medium text-slate-700">Roční souhrn docházky</summary><div className="mt-4"><YearlyAttendanceSummary memberId={memberId} attendanceEnabled={attendanceEnabled} revision={recordsRevision} /></div></details>
 
       {/* Edit/Add Dialog */}
       <AttendanceDialog
@@ -788,23 +574,23 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
         onClose={() => setIsAttendanceDialogOpen(false)}
         onSave={handleSaveAttendance}
         record={editingRecord}
-        isAdmin={isAdmin}
+        isAdmin={false}
         memberId={memberId}
         initialDate={selectedDialogDate}
       />
 
       {/* Delete Confirmation */}
-      <AlertDialog open={!!deletingRecord} onOpenChange={() => setDeletingRecord(null)}>
+      <AlertDialog open={!!deletingRecord} onOpenChange={open => { if (!open && !pending) setDeletingRecord(null); }}>
         <AlertDialogContent className="sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>Smazat záznam?</AlertDialogTitle>
             <AlertDialogDescription>
-              Opravdu chcete smazat tento záznam docházky?
+              {deletingRecord?.date} · {deletingRecord?.hours} h. Záznam se odečte z měsíčního součtu a nelze jej obnovit.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Zrušit</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirmed} className="bg-destructive hover:bg-destructive/90">
+            <AlertDialogAction disabled={pending} onClick={event => { event.preventDefault(); handleDeleteConfirmed(); }} className="bg-destructive hover:bg-destructive/90">
               Smazat
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -817,34 +603,19 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
 
 
 const Attendance = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { user, hasPermission, memberId, userRole } = useAuth();
-  const [attendanceEnabled, setAttendanceEnabled] = useState(false);
+  const loadMember = useCallback(async signal => {
+    const { data, error } = await supabase.from('members').select('id,attendance_enabled').eq('auth_user_id', user.id).maybeSingle().abortSignal(signal);
+    if (error) throw error;
+    return data;
+  }, [user?.id]);
+  const memberResource = useAttendanceResource('attendance-access:' + user?.id, loadMember, Boolean(user?.id));
+  const attendanceEnabled = memberResource.data?.attendance_enabled === true;
 
-  useEffect(() => {
-    let isMounted = true;
-    const getMemberInfo = async () => {
-      if (user) {
-        const { data: memberData, error: memberError } = await supabase
-          .from('members')
-          .select('id, attendance_enabled')
-          .eq('auth_user_id', user.id)
-          .single();
-
-        if (!isMounted) return;
-
-        if (memberError && memberError.code !== 'PGRST116') {
-          // Silent error for admins without member profile
-        } else if (memberData) {
-          setAttendanceEnabled(memberData.attendance_enabled);
-        }
-      }
-    };
-    getMemberInfo();
-    return () => { isMounted = false; };
-  }, [user, toast]);
-
-  const canViewAdminTabs = userRole === 'admin' || userRole === 'super_manager';
+  const canViewReport = userRole === 'admin';
+  const canViewAdminTabs = userRole === 'admin' || userRole === 'super_manager' || hasPermission('attendance', 'can_admin');
 
   if (!hasPermission('attendance', 'can_read')) {
     return (
@@ -862,14 +633,10 @@ const Attendance = () => {
         <PageHeader
           icon={Clock}
           title="Docházka"
-          description="Přehled vaší odpracované doby a správa docházky"
+          description="Hodiny, zakázky a schválení měsíce na jednom místě."
           actions={
             <>
-              <Badge variant="info" className="text-sm px-3 py-1">
-                <Timer className="w-4 h-4 mr-2" />
-                Aktivní sledování
-              </Badge>
-              {attendanceEnabled ? (
+              {memberResource.loading ? <Badge variant="secondary">Načítám nastavení</Badge> : memberResource.error ? <Badge variant="warning">Nastavení není dostupné</Badge> : attendanceEnabled ? (
                 <Badge variant="success" className="text-sm px-3 py-1">
                   <CheckCircle className="w-4 h-4 mr-2" />
                   Povoleno
@@ -915,7 +682,7 @@ const Attendance = () => {
           </div>
         </motion.div>
 
-        <Tabs defaultValue="my-attendance" className="w-full">
+        <Tabs value={canViewAdminTabs && ['approvals', 'submissions', 'global-attendance', ...(canViewReport ? ['reporting'] : [])].includes(searchParams.get('tab')) ? (searchParams.get('tab') === 'approvals' ? 'submissions' : searchParams.get('tab')) : 'my-attendance'} onValueChange={tab => setSearchParams(current => { const next = new URLSearchParams(current); next.set('tab', tab); return next; })} className="w-full">
           <div className="glass-effect rounded-xl p-2 mb-6">
             <TabsList className="w-full grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4">
               <TabsTrigger value="my-attendance" className="flex items-center gap-2">
@@ -935,24 +702,24 @@ const Attendance = () => {
                     <span className="hidden sm:inline">Celkový přehled</span>
                     <span className="sm:hidden">Přehled</span>
                   </TabsTrigger>
-                  <TabsTrigger value="reporting" className="flex items-center gap-2">
+                  {canViewReport && <TabsTrigger value="reporting" className="flex items-center gap-2">
                     <FileBarChart className="w-4 h-4" />
-                    <span className="hidden sm:inline">Reporting</span>
+                    <span className="hidden sm:inline">Podklady a export</span>
                     <span className="sm:hidden">Report</span>
-                  </TabsTrigger>
+                  </TabsTrigger>}
                 </>
               )}
             </TabsList>
           </div>
 
           <TabsContent value="my-attendance" className="mt-6">
-            <MyAttendance memberId={memberId} isAdmin={canViewAdminTabs} attendanceEnabled={attendanceEnabled} />
+            <AttendanceLoadState loading={memberResource.loading} error={memberResource.error} onRetry={memberResource.refresh}>{memberResource.ready && <MyAttendance memberId={memberId} isAdmin={canViewAdminTabs} attendanceEnabled={attendanceEnabled} />}</AttendanceLoadState>
           </TabsContent>
 
           {canViewAdminTabs && (
             <>
               <TabsContent value="submissions" className="mt-6">
-                <div className="glass-effect rounded-xl p-6">
+                <div className="space-y-4">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Send className="w-5 h-5" />
@@ -965,7 +732,7 @@ const Attendance = () => {
                 </div>
               </TabsContent>
               <TabsContent value="global-attendance" className="mt-6">
-                <div className="glass-effect rounded-xl p-6">
+                <div className="space-y-4">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Users className="w-5 h-5" />
@@ -977,11 +744,11 @@ const Attendance = () => {
                   </CardContent>
                 </div>
               </TabsContent>
-              <TabsContent value="reporting" className="mt-6">
-                <div className="glass-effect rounded-xl p-6">
+              {canViewReport && <TabsContent value="reporting" className="mt-6">
+                <div className="space-y-4">
                   <AttendanceReporting />
                 </div>
-              </TabsContent>
+              </TabsContent>}
             </>
           )}
         </Tabs>

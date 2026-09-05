@@ -10,8 +10,8 @@ import { Label } from '@/components/ui/label';
 const fieldDefinitions = {
   project: [
     { key: 'price', label: 'Hodnota zakázky bez DPH', min: 0.01, max: null, step: 0.01, suffix: 'Kč' },
-    { key: 'budget_percentage', label: 'Projektový budget', min: 0, max: 100, step: 0.1, suffix: '%' },
-    { key: 'overhead_percentage', label: 'Režie z budgetu', min: 0, max: 100, step: 0.1, suffix: '%' },
+    { key: 'budget_percentage', label: 'Projektový rozpočet', min: 0, max: 100, step: 0.1, suffix: '%' },
+    { key: 'overhead_percentage', label: 'Režie z rozpočtu', min: 0, max: 100, step: 0.1, suffix: '%' },
   ],
   realization: [
     { key: 'contract_amount', label: 'Smluvní hodnota bez DPH', min: 0.01, max: null, step: 0.01, suffix: 'Kč' },
@@ -31,7 +31,7 @@ const FinancialSettingsCard = ({ entityType, entityId, values, disabled = false,
 
   useEffect(() => {
     setFormValues(normalizeValues(entityType, values));
-  }, [entityType, values?.price, values?.budget_percentage, values?.overhead_percentage, values?.contract_amount, values?.profit_margin_percent, values?.overhead_percent]);
+  }, [entityType, entityId, values?.price, values?.budget_percentage, values?.overhead_percentage, values?.contract_amount, values?.profit_margin_percent, values?.overhead_percent]);
 
   const fields = fieldDefinitions[entityType];
 
@@ -55,7 +55,7 @@ const FinancialSettingsCard = ({ entityType, entityId, values, disabled = false,
       const idKey = entityType === 'project' ? 'p_project_id' : 'p_realization_id';
       const { data, error } = await supabase.rpc(rpcName, { [idKey]: entityId, p_values: formValues });
       if (error) throw error;
-      toast({ title: 'Finanční nastavení uloženo', description: 'Souhrny byly přepočítány z autoritativních dat.' });
+      toast({ title: 'Finanční nastavení uloženo', description: 'Rozpočet a finanční souhrny byly aktualizovány.' });
       await onSaved?.(data);
     } catch (error) {
       toast({ title: 'Finanční nastavení se nepodařilo uložit', description: error.message, variant: 'destructive' });
@@ -67,8 +67,8 @@ const FinancialSettingsCard = ({ entityType, entityId, values, disabled = false,
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Nastavení finančního modelu</CardTitle>
-        <CardDescription>Kanonické vstupy může měnit pouze administrátor. Každá změna se ukládá do auditu.</CardDescription>
+        <CardTitle className="text-base">Nastavení rozpočtu</CardTitle>
+        <CardDescription>Výchozí částky a procenta pro výpočet rozpočtu a odměn. Změny jsou zaznamenány v historii.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto] lg:items-end">
         {fields.map(({ key, label, min, max, step, suffix }) => (

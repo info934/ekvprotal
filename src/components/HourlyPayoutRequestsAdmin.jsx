@@ -1,649 +1,172 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { format } from 'date-fns';
-import { cs } from 'date-fns/locale';
-import {
-  AlertTriangle,
-  CheckCircle,
-  Download,
-  Eye,
-  FileWarning,
-  Loader2,
-  Search,
-  Upload,
-  Wallet,
-  XCircle
-} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { AlertTriangle, CheckCircle, Download, Eye, FileWarning, Loader2, RefreshCw, Search, Upload, Wallet, XCircle } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { sendHourlyPayoutPaidEmail, sendPayoutApprovalEmail, sendPayoutRejectionEmail } from '@/lib/email';
-import { logPayoutAction } from '@/lib/payoutLogger';
+import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import { uploadInvoiceDocument } from '@/lib/documentStorageService';
-import { auditInvoiceUrls } from '@/lib/invoiceAudit';
-import {
-  approveHourlyPayoutRequestWorkflow,
-  getHourlyPayoutDiscrepancies,
-  markHourlyPayoutPaid,
-  rejectHourlyPayoutRequestWorkflow,
-  uploadHourlyPayoutInvoice,
-} from '@/lib/hourlyPayoutWorkflowService';
+import { uploadHourlyPayoutInvoice } from '@/lib/hourlyPayoutWorkflowService';
+import { loadHourlyAdminWorkspace, saveHourlyAdminAction } from '@/lib/hourlyAdminWorkspace';
+import { OPEN_PAYOUT_STATUSES, PAYOUT_STATUSES } from '@/lib/payoutWorkspaceData';
+import { getFinanceErrorMessage } from '@/lib/financePresentation';
+import { toFiniteAmount } from '@/domain/financials';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { formatCurrency, PayoutPanel, PayoutStatusBadge } from '@/components/payouts/PayoutShared';
+import PayoutRequestsTable from '@/components/payouts/PayoutRequestsTable';
+import ForwardInvoiceDialog from '@/components/payouts/ForwardInvoiceDialog';
+import ConfirmActionDialog from '@/components/ui/confirm-action-dialog';
 import HourlyPayoutRequestDialog from './HourlyPayoutRequestDialog';
 import AdminHourlyPayoutApprovalDialog from './AdminHourlyPayoutApprovalDialog';
 import HourlyPayoutApprovalAuditLog from './HourlyPayoutApprovalAuditLog';
-import { sendAdminPayoutNotification } from '@/lib/payoutEmailService';
-import {
-  formatCurrency,
-  formatHours,
-  PayoutPanel,
-  PayoutStatusBadge
-} from '@/components/payouts/PayoutShared';
-import PayoutRequestsTable from '@/components/payouts/PayoutRequestsTable';
-import ForwardInvoiceDialog from '@/components/payouts/ForwardInvoiceDialog';
-import { getHourlyPayoutDisplay } from '@/lib/hourlyPayoutDisplay';
 
-const InvoiceLink = ({ request, onDownload, isDownloading }) => {
-  if (!request?.invoice_url) {
-    return <span className="text-xs text-slate-400">Faktura zatím není nahraná</span>;
-  }
+const typeLabels = { regular: 'Běžná', supplement: 'Doplatek', correction: 'Oprava' };
+const statusLabels = { pending: 'Čeká na schválení', approved: 'Schváleno', invoice_uploaded: 'Faktura nahrána', paid: 'Vyplaceno', rejected: 'Zamítnuto', cancelled: 'Stornováno' };
+const EMPTY_ROWS = [];
+const hours = value => toFiniteAmount(value) === null ? 'Nedostupné' : `${Number(value).toLocaleString('cs-CZ', { maximumFractionDigits: 2 })} h`;
 
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() => onDownload(request)}
-      disabled={isDownloading}
-      className="h-8 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-    >
-      {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-      {isDownloading ? 'Stahuji...' : 'Stáhnout'}
-    </Button>
-  );
-};
-
-const requestTypeLabels = {
-  regular: 'Běžná',
-  supplement: 'Doplatek',
-  correction: 'Oprava',
-};
-
-const HourlyPayoutRequestsAdmin = () => {
+export default function HourlyPayoutRequestsAdmin() {
+  const { user, memberId, hasPermission, isPrivateMode, permissionsReady, loading: authLoading } = useAuth();
   const { toast } = useToast();
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const canAdmin = hasPermission('payouts', 'can_admin');
+  const actorKey = `${user?.id || ''}:${memberId || ''}:${canAdmin}`;
+  const liveActor = useRef(actorKey); liveActor.current = actorKey;
+  const [state, setState] = useState({ key: null, rows: [], loading: true, error: null, discrepancyError: null });
   const [searchTerm, setSearchTerm] = useState('');
   const [processingId, setProcessingId] = useState(null);
-  const [selectedAuditRequest, setSelectedAuditRequest] = useState(null);
-  const [downloadingInvoiceUrl, setDownloadingInvoiceUrl] = useState(null);
-  const [invoiceForwardDialog, setInvoiceForwardDialog] = useState({ open: false, payout: null });
+  const [approval, setApproval] = useState(null);
+  const [decision, setDecision] = useState(null);
+  const [payment, setPayment] = useState(null);
+  const [paymentError, setPaymentError] = useState(null);
+  const [downloading, setDownloading] = useState(null);
+  const [forward, setForward] = useState(null);
+  const requestRef = useRef({ id: 0, controller: null });
+  const inFlight = useRef(false);
+  const statusFilter = searchParams.get('tab') === 'hourly_admin' && PAYOUT_STATUSES.includes(searchParams.get('status')) ? searchParams.get('status') : 'all';
+  const setStatusFilter = value => { const next = new URLSearchParams(searchParams); next.set('tab', 'hourly_admin'); if (value === 'all') next.delete('status'); else next.set('status', value); setSearchParams(next); };
+  const money = value => isPrivateMode ? 'Skryto' : formatCurrency(value);
+  const rows = state.key === actorKey ? state.rows : EMPTY_ROWS;
+  const loading = authLoading || !permissionsReady || state.key !== actorKey || state.loading;
+  useEffect(() => {
+    setProcessingId(null); setDownloading(null); setApproval(null); setDecision(null); setPayment(null); setForward(null); setPaymentError(null);
+  }, [actorKey]);
 
-  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState(null);
-
-  const [isApprovalDialogOpen, setIsApprovalDialogOpen] = useState(false);
-  const [approvalRequest, setApprovalRequest] = useState(null);
-
-  const fetchRequests = async () => {
-    setLoading(true);
+  const fetchRequests = useCallback(async () => {
+    requestRef.current.controller?.abort();
+    if (!user?.id || !canAdmin) return;
+    const controller = new AbortController();
+    const id = requestRef.current.id + 1; requestRef.current = { controller, id };
+    setState({ key: actorKey, rows: [], loading: true, error: null, discrepancyError: null });
     try {
-      const [requestsResult, discrepancies] = await Promise.all([
-        supabase
-          .from('hourly_payout_requests')
-          .select(`
-            *,
-            members:members!hourly_payout_requests_member_id_fkey(name, email, auth_user_id),
-            projects(name, code)
-          `)
-          .order('created_at', { ascending: false }),
-        getHourlyPayoutDiscrepancies().catch((error) => {
-          console.warn('Hourly payout discrepancy load failed:', error);
-          return [];
-        })
-      ]);
-
-      const { data, error } = requestsResult;
-      if (error) throw error;
-
-      const discrepancyById = new Map(discrepancies.map((item) => [item.request_id, item]));
-      setRequests((data || []).map((request) => ({
-        ...request,
-        discrepancy: discrepancyById.get(request.id) || null,
-        display: getHourlyPayoutDisplay(request),
-      })));
+      const result = await loadHourlyAdminWorkspace(supabase, { actorId: user.id, memberId, canAdmin, signal: controller.signal });
+      if (requestRef.current.id === id && !controller.signal.aborted) setState({ key: actorKey, ...result, loading: false, error: null });
     } catch (error) {
-      console.error('Error fetching hourly payout requests:', error);
-      toast({ title: 'Chyba', description: 'Nepodařilo se načíst hodinové žádosti.', variant: 'destructive' });
-    } finally {
-      setLoading(false);
+      if (requestRef.current.id === id && !controller.signal.aborted) setState({ key: actorKey, rows: [], loading: false, discrepancyError: null, error: getFinanceErrorMessage(error, 'Hodinové žádosti nejsou dostupné. Obnovte přehled.') });
     }
-  };
+  }, [actorKey, user?.id, memberId, canAdmin]);
 
   useEffect(() => {
-    fetchRequests();
-    const channel = supabase
-      .channel('hourly_admin_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'hourly_payout_requests' }, fetchRequests)
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+    if (!permissionsReady || authLoading || !canAdmin || !user?.id) return undefined;
+    void fetchRequests();
+    const channel = supabase.channel(`hourly_admin_${user.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'hourly_payout_requests' }, fetchRequests).subscribe();
+    return () => { requestRef.current.controller?.abort(); void supabase.removeChannel(channel); };
+  }, [fetchRequests, permissionsReady, authLoading, canAdmin, user?.id]);
 
-  const filteredRequests = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-    return requests.filter((request) => {
-      const statusMatches = statusFilter === 'all' || request.status === statusFilter;
-      const searchMatches =
-        !normalizedSearch ||
-        request.members?.name?.toLowerCase().includes(normalizedSearch) ||
-        request.projects?.name?.toLowerCase().includes(normalizedSearch) ||
-        request.display?.searchText?.toLowerCase().includes(normalizedSearch) ||
-        `${request.payout_month || ''}/${request.payout_year || ''}`.includes(normalizedSearch);
+  const filtered = useMemo(() => {
+    const needle = searchTerm.trim().toLocaleLowerCase('cs-CZ');
+    return rows.filter(row => (statusFilter === 'all' || row.status === statusFilter) && (!needle || [row.members?.name, row.members?.email, row.display?.searchText, row.projects?.code].filter(Boolean).join(' ').toLocaleLowerCase('cs-CZ').includes(needle)));
+  }, [rows, searchTerm, statusFilter]);
 
-      return statusMatches && searchMatches;
-    });
-  }, [requests, searchTerm, statusFilter]);
-
-  const handleDownloadInvoice = async (request) => {
-    if (!request?.invoice_url) return;
-    setDownloadingInvoiceUrl(request.invoice_url);
-
-    const { success, error } = await downloadInvoiceFromStorage({
-      provider: request.invoice_storage_provider,
-      connectionId: request.invoice_storage_connection_id,
-      bucket: request.invoice_storage_metadata?.bucket || 'invoices',
-      filePath: request.invoice_url,
-      fileId: request.invoice_external_file_id,
-      fileName: request.invoice_storage_metadata?.originalFileName || 'faktura',
-      entityType: 'invoice',
-      entityId: request.id,
-      accessEntityType: 'hourly_payout',
-      accessEntityId: request.id,
-    });
-    if (success) {
-      toast({ title: 'Staženo', description: 'Soubor faktury byl stažen.' });
-    } else {
-      toast({ title: 'Chyba stahování', description: error || 'Nepodařilo se stáhnout fakturu.', variant: 'destructive' });
-    }
-
-    setDownloadingInvoiceUrl(null);
+  const sendNotifications = async (action, request, saved, options) => {
+    const notifications = [];
+    if (action === 'approve') {
+      notifications.push(sendPayoutApprovalEmail({ payoutId: request.id, payoutType: 'hourly', memberId: request.member_id, amount: saved.total_amount, approved_without_invoice: options.withoutInvoice }));
+      notifications.push(sendAdminPayoutNotification({ memberName: request.members?.name || 'Pracovník', amount: saved.total_amount, action: 'Schválení hodinové žádosti', entityId: request.id, entityType: 'hourly_payout_requests', eventType: 'approved' }));
+    } else if (action === 'reject') notifications.push(sendPayoutRejectionEmail({ payoutId: request.id, payoutType: 'hourly', memberId: request.member_id, amount: saved.total_amount, reason: options.note }));
+    else if (action === 'paid') notifications.push(sendHourlyPayoutPaidEmail({ requestId: request.id, memberId: request.member_id, amount: saved.total_amount }));
+    const results = await Promise.allSettled(notifications);
+    return results.every(result => result.status === 'fulfilled' && result.value?.success === true);
   };
 
-
-  const handleAdminInvoiceUpload = async (request, file) => {
-    if (!request || !file) return;
-
-    if (request.status !== 'approved' || request.invoice_url || request.approved_without_invoice) {
-      toast({
-        title: 'Fakturu ted nelze nahrat',
-        description: 'Fakturu lze nahrat pouze ke schvalene zadosti, ktera jeste nema fakturu a neni schvalena bez faktury.',
-        variant: 'warning'
-      });
-      return;
-    }
-
-    const maxSize = 10 * 1024 * 1024;
-    if (file.size > maxSize) {
-      toast({ title: 'Soubor je prilis velky', description: 'Maximalni velikost faktury je 10 MB.', variant: 'destructive' });
-      return;
-    }
-
-    const fileExt = file.name.split('.').pop()?.toLowerCase() || 'pdf';
-    const allowedExt = ['pdf', 'jpg', 'jpeg', 'png'];
-    if (!allowedExt.includes(fileExt)) {
-      toast({ title: 'Nepodporovaný typ souboru', description: 'Použijte PDF, JPG nebo PNG.', variant: 'destructive' });
-      return;
-    }
-
-    setProcessingId(request.id);
-    await logPayoutAction('hourly_admin_invoice_upload_attempt', request.id, { fileName: file.name, fileSize: file.size });
-
+  const runAction = async (request, action, options = {}) => {
+    if (inFlight.current || !user?.id || !canAdmin || liveActor.current !== actorKey || request?._scope !== actorKey) throw new Error('Operaci nyní nelze provést. Obnovte přehled.');
+    inFlight.current = true; setProcessingId(request.id);
     try {
-      const storedInvoice = await uploadInvoiceDocument({
-        file,
-        recordId: request.id,
-        projectReference: request.display?.projectReference || request.projects?.code || request.project_id,
-        category: 'hodinove-vyplaty',
-        accessEntityType: 'hourly_payout',
-        accessEntityId: request.id,
-      });
+      const saved = await saveHourlyAdminAction(supabase, request, action, options, { actorId: user.id, canAdmin });
+      if (liveActor.current !== actorKey) return saved;
+      // Once the RPC has committed, notification trouble must not turn a saved
+      // decision into a failed form that invites an unsafe repeated submission.
+      let notified = false;
+      try { notified = await sendNotifications(action, request, saved, options); } catch { notified = false; }
+      if (liveActor.current !== actorKey) return saved;
+      toast({ title: action === 'paid' ? 'Úhrada byla zaznamenána' : action === 'cancel' ? 'Žádost byla stornována' : action === 'approve' ? 'Žádost byla schválena' : 'Žádost byla zamítnuta', description: notified ? 'Změna je uložena.' : 'Změna je uložena, ale odeslání e-mailu se nepodařilo potvrdit.', variant: notified ? 'default' : 'warning' });
+      if (action === 'paid' && request.invoice_url) setForward({ ...request, ...saved, members: request.members, _scope: actorKey });
+      await fetchRequests();
+      return saved;
+    } finally { inFlight.current = false; if (liveActor.current === actorKey) setProcessingId(null); }
+  };
+
+  const download = async request => {
+    if (!request.invoice_url || !canAdmin || liveActor.current !== actorKey) return;
+    setDownloading(request.id);
+    try {
+      const result = await downloadInvoiceFromStorage({ provider: request.invoice_storage_provider, connectionId: request.invoice_storage_connection_id, bucket: request.invoice_storage_metadata?.bucket || 'invoices', filePath: request.invoice_url, fileId: request.invoice_external_file_id, fileName: request.invoice_storage_metadata?.originalFileName || 'faktura', entityType: 'invoice', entityId: request.id, accessEntityType: 'hourly_payout', accessEntityId: request.id });
+      if (!result.success) throw new Error(result.error || 'Soubor se nepodařilo stáhnout.');
+    } catch (error) { toast({ title: 'Stažení faktury se nezdařilo', description: getFinanceErrorMessage(error), variant: 'destructive' }); }
+    finally { if (liveActor.current === actorKey) setDownloading(null); }
+  };
+
+  const upload = async (request, file) => {
+    if (!file || inFlight.current || !canAdmin || !user?.id || liveActor.current !== actorKey) return;
+    if (request.status !== 'approved' || request.invoice_url || request.approved_without_invoice) return;
+    if (file.size > 10 * 1024 * 1024 || !/\.(pdf|jpe?g|png)$/i.test(file.name)) { toast({ title: 'Použijte PDF, JPG nebo PNG do 10 MB.', variant: 'destructive' }); return; }
+    inFlight.current = true; setProcessingId(request.id);
+    try {
+      const stored = await uploadInvoiceDocument({ file, recordId: request.id, projectReference: request.display?.projectReference || request.projects?.code || request.project_id, category: 'hodinove-vyplaty', accessEntityType: 'hourly_payout', accessEntityId: request.id });
       try {
-        await uploadHourlyPayoutInvoice(request.id, storedInvoice);
-      } catch (dbError) {
-        if (storedInvoice.cleanup) await storedInvoice.cleanup().catch(console.error);
-        throw dbError;
+        if (liveActor.current !== actorKey) throw new Error('Přihlášení se během nahrávání změnilo.');
+        await uploadHourlyPayoutInvoice(request.id, stored);
       }
-
-      await logPayoutAction('hourly_admin_invoice_upload_success', request.id, {
-        invoiceUrl: storedInvoice.dbUrl,
-        provider: storedInvoice.provider,
-        externalFileId: storedInvoice.fileId || null,
-      });
-      await sendAdminPayoutNotification({
-        memberName: request.members?.name || 'Pracovnik',
-        amount: request.total_amount || 0,
-        action: 'Faktura nahrána administrátorem k hodinové žádosti',
-        entityId: request.id,
-        entityType: 'hourly_payout_requests',
-        eventType: 'invoice_uploaded',
-      }).catch((error) => console.error('[HourlyPayoutRequestsAdmin] Admin upload notification failed:', error));
-
-      toast({ title: 'Faktura nahrana', description: 'Zadost je pripravena ke kontrole a vyplaceni.' });
-      fetchRequests();
-    } catch (error) {
-      console.error('Hourly admin invoice upload failed:', error);
-      await logPayoutAction('hourly_admin_invoice_upload_failure', request.id, { error: error.message });
-      toast({ title: 'Chyba nahravani faktury', description: error.message, variant: 'destructive' });
-    } finally {
-      setProcessingId(null);
-    }
+      catch (error) { if (stored.cleanup) await stored.cleanup().catch(() => {}); throw error; }
+      if (liveActor.current !== actorKey) return;
+      toast({ title: 'Faktura byla přiložena', description: 'Žádost je připravená ke kontrole a zaevidování úhrady.' });
+      await fetchRequests();
+    } catch (error) { if (liveActor.current === actorKey) toast({ title: 'Fakturu se nepodařilo přiložit', description: getFinanceErrorMessage(error), variant: 'destructive' }); }
+    finally { inFlight.current = false; if (liveActor.current === actorKey) setProcessingId(null); }
   };
 
-  const openApprovalDialog = (request) => {
-    setApprovalRequest(request);
-    setIsApprovalDialogOpen(true);
-  };
-
-  const handleApproveConfirm = async (requestId, adminNote, approvedWithoutInvoice) => {
-    setProcessingId(requestId);
-
-    try {
-      const approvedRequest = await approveHourlyPayoutRequestWorkflow(requestId, adminNote, approvedWithoutInvoice);
-      const memberName = approvalRequest?.members?.name || 'Pracovník';
-      const amount = approvedRequest?.total_amount || approvalRequest?.total_amount || 0;
-      const [memberEmailResult, adminEmailResult] = await Promise.all([
-        sendPayoutApprovalEmail({
-          payoutId: requestId,
-          payoutType: 'hourly',
-          memberId: approvalRequest?.member_id,
-          amount,
-          approved_without_invoice: approvedWithoutInvoice,
-        }),
-        sendAdminPayoutNotification({
-          memberName,
-          amount,
-          action: 'Schválení hodinové žádosti',
-          entityId: requestId,
-          entityType: 'hourly_payout_requests',
-          eventType: 'approved',
-        }),
-      ]);
-
-      if (!memberEmailResult.success || !adminEmailResult.success) {
-        toast({
-          title: 'Notifikace se nepodařilo odeslat',
-          description: 'Žádost byla schválena, ale emailový krok selhal.',
-          variant: 'warning'
-        });
-      } else {
-        toast({ title: 'Schváleno', description: 'Hodinová žádost byla schválena.' });
-      }
-      fetchRequests();
-    } catch (error) {
-      toast({ title: 'Chyba', description: `Nepodařilo se schválit žádost: ${error.message}`, variant: 'destructive' });
-    }
-
-    setProcessingId(null);
-    setIsApprovalDialogOpen(false);
-    setApprovalRequest(null);
-  };
-
-  const openRejectDialog = (request) => {
-    setSelectedRequest(request);
-    setIsRejectDialogOpen(true);
-  };
-
-  const handleRejectConfirm = async (reason) => {
-    if (!selectedRequest) return;
-    setProcessingId(selectedRequest.id);
-    await logPayoutAction('reject_attempt', selectedRequest.id, { reason });
-
-    try {
-      await rejectHourlyPayoutRequestWorkflow(selectedRequest.id, reason);
-      await logPayoutAction('reject_success', selectedRequest.id);
-      const notification = await sendPayoutRejectionEmail({
-        payoutId: selectedRequest.id,
-        payoutType: 'hourly',
-        memberId: selectedRequest.member_id,
-        amount: selectedRequest.total_amount,
-        reason,
-      });
-      toast(notification?.success
-        ? { title: 'Zamítnuto', description: 'Hodinová žádost byla zamítnuta a zaměstnanec byl informován.' }
-        : { title: 'Žádost byla zamítnuta', description: 'Stav je uložený, ale e-mail se nepodařilo potvrdit.', variant: 'warning' });
-      fetchRequests();
-    } catch (error) {
-      await logPayoutAction('reject_failure', selectedRequest.id, { error: error.message });
-      toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
-    } finally {
-      setProcessingId(null);
-      setIsRejectDialogOpen(false);
-      setSelectedRequest(null);
-    }
-  };
-
-  const handleMarkAsPaid = async (request) => {
-    const canMarkAsPaid = request.invoice_url || request.approved_without_invoice;
-
-    if (!canMarkAsPaid) {
-      toast({
-        title: 'Chybí faktura',
-        description: 'Nelze označit jako vyplacené bez nahrané faktury nebo schválení bez faktury.',
-        variant: 'warning'
-      });
-      return;
-    }
-
-    setProcessingId(request.id);
-    await logPayoutAction('mark_paid_attempt', request.id);
-
-    try {
-      const paidRequest = await markHourlyPayoutPaid(request.id);
-      const notification = await sendHourlyPayoutPaidEmail({
-        requestId: request.id,
-        memberId: request.member_id,
-        amount: paidRequest?.total_amount || request.total_amount,
-      });
-
-      await logPayoutAction('mark_paid_success', request.id);
-      toast(notification?.success
-        ? { title: 'Vyplaceno', description: 'Žádost byla uzavřena a zaměstnanec byl informován e-mailem.' }
-        : { title: 'Žádost byla uzavřena', description: 'Stav je uložený, ale e-mail se nepodařilo potvrdit.', variant: 'warning' });
-      if (request.invoice_url) {
-        setInvoiceForwardDialog({
-          open: true,
-          payout: { ...request, ...paidRequest, invoice_url: request.invoice_url, members: request.members },
-        });
-      }
-      fetchRequests();
-    } catch (err) {
-      console.error('Error marking hourly payout as paid:', err);
-      await logPayoutAction('mark_paid_failure', request.id, { error: err.message });
-      toast({ title: 'Chyba', description: 'Nepodařilo se označit žádost jako vyplacenou.', variant: 'destructive' });
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
-  const handleRunAudit = async () => {
-    toast({ title: 'Spouštím audit URL', description: 'Kontroluji cesty faktur v databázi.' });
-    const result = await auditInvoiceUrls();
-    if (result.success) {
-      toast({
-        title: 'Audit dokončen',
-        description: `Zkontrolováno ${result.total} URL. Varování: ${result.warnings}.`,
-        variant: result.warnings > 0 ? 'warning' : 'default'
-      });
-    } else {
-      toast({ title: 'Chyba auditu', description: result.error, variant: 'destructive' });
-    }
-  };
-
+  const withScope = row => ({ ...row, _scope: actorKey });
   const columns = [
-    {
-      key: 'date',
-      header: 'Datum',
-      headerClassName: 'h-11 px-5 text-xs font-bold uppercase tracking-wide text-slate-500',
-      cellClassName: 'px-5 font-medium text-slate-600',
-      render: (request) => format(new Date(request.created_at), 'dd. MM. yyyy', { locale: cs }),
-    },
-    {
-      key: 'worker',
-      header: 'Pracovník',
-      render: (request) => (
-        <>
-          <div className="font-semibold text-slate-950">{request.members?.name || 'Neznámý pracovník'}</div>
-          {request.members?.email && <div className="text-xs text-slate-500">{request.members.email}</div>}
-        </>
-      ),
-    },
-    {
-      key: 'period',
-      header: 'Období / projekt',
-      cellClassName: 'text-sm text-slate-600',
-      render: (request) => request.payout_month && request.payout_year
-        ? `Žádost za ${request.payout_month}/${request.payout_year}`
-        : request.projects?.name || 'Měsíční žádost',
-    },
-    {
-      key: 'context',
-      header: 'Kontext',
-      cellClassName: 'text-sm text-slate-600',
-      render: (request) => (
-        <div className="max-w-[360px]">
-          <div className="font-semibold text-slate-950">{request.display?.assignmentLabel || request.projects?.name || 'Bez vazby na projekt'}</div>
-          {request.display?.assignmentDetail && (
-            <div className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-400">{request.display.assignmentDetail}</div>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'hours',
-      header: 'Hodiny',
-      headerClassName: 'h-11 text-right text-xs font-bold uppercase tracking-wide text-slate-500',
-      cellClassName: 'text-right',
-      render: (request) => (
-        <>
-          <div className="font-semibold tabular-nums text-slate-950">{formatHours(request.total_hours || request.hours)}</div>
-          <div className="text-xs text-slate-500">{formatCurrency(request.hourly_rate)}/h</div>
-        </>
-      ),
-    },
-    {
-      key: 'amount',
-      header: 'Celkem',
-      headerClassName: 'h-11 text-right text-xs font-bold uppercase tracking-wide text-slate-500',
-      cellClassName: 'text-right font-bold tabular-nums text-slate-950',
-      render: (request) => formatCurrency(request.total_amount),
-    },
-    {
-      key: 'status',
-      header: 'Stav',
-      render: (request) => (
-        <div className="flex flex-col items-start gap-1">
-          <PayoutStatusBadge status={request.status} />
-          <Badge variant="outline" className="h-7 rounded-full border-slate-200 bg-slate-50 px-2.5 text-slate-600">
-            {requestTypeLabels[request.request_type] || 'Běžná'}
-          </Badge>
-          {request.discrepancy?.has_discrepancy && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="outline" className="h-7 cursor-help gap-1.5 rounded-full border-red-200 bg-red-50 px-2.5 text-red-700">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    Nesoulad
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Snapshot {formatHours(request.discrepancy.snapshot_total_hours)} / aktuálně {formatHours(request.discrepancy.current_total_hours)}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          {request.approved_without_invoice && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="outline" className="h-7 cursor-help gap-1.5 rounded-full border-amber-200 bg-amber-50 px-2.5 text-amber-700">
-                    <FileWarning className="h-3.5 w-3.5" />
-                    Bez faktury
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>Schváleno bez nutnosti faktury</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'invoice',
-      header: 'Faktura',
-      render: (request) => (
-        <div className="space-y-2">
-          <InvoiceLink
-            request={request}
-            onDownload={handleDownloadInvoice}
-            isDownloading={downloadingInvoiceUrl === request.invoice_url}
-          />
-          {request.admin_note && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="link" className="h-auto p-0 text-xs text-slate-600">Poznámka administrátora</Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80 text-sm">
-                <div className="mb-1 font-semibold text-slate-950">Poznámka</div>
-                <p className="text-slate-600">{request.admin_note}</p>
-              </PopoverContent>
-            </Popover>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'actions',
-      header: 'Akce',
-      headerClassName: 'h-11 px-5 text-right text-xs font-bold uppercase tracking-wide text-slate-500',
-      cellClassName: 'px-5 text-right',
-      render: (request) => (
-        <div className="flex items-center justify-end gap-2">
-          <Popover open={selectedAuditRequest === request.id} onOpenChange={(open) => setSelectedAuditRequest(open ? request.id : null)}>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-950" title="Historie schválení">
-                <Eye className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-96 p-0" align="end">
-              <div className="border-b bg-slate-50 p-4 font-semibold text-slate-950">Detail schválení</div>
-              <div className="max-h-[300px] overflow-y-auto p-4">
-                <HourlyPayoutApprovalAuditLog requestId={request.id} />
-              </div>
-            </PopoverContent>
-          </Popover>
-
-          {request.status === 'pending' && (
-            <>
-              <Button size="sm" variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" onClick={() => openApprovalDialog(request)} disabled={processingId === request.id}>
-                {processingId === request.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="mr-1 h-4 w-4" />}
-                Schválit
-              </Button>
-              <Button size="icon" variant="outline" className="h-8 w-8 border-red-200 bg-red-50 text-red-700 hover:bg-red-100" onClick={() => openRejectDialog(request)} disabled={processingId === request.id}>
-                <XCircle className="h-4 w-4" />
-              </Button>
-            </>
-          )}
-          {request.status === 'approved' && !request.invoice_url && !request.approved_without_invoice && (
-            <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-700 shadow-sm transition hover:bg-blue-100">
-              <Upload className="h-4 w-4" />
-              Nahrat fakturu
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png"
-                className="hidden"
-                disabled={processingId === request.id}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = '';
-                  handleAdminInvoiceUpload(request, file);
-                }}
-              />
-            </label>
-          )}
-          {['approved', 'invoice_uploaded'].includes(request.status) && (
-            <Button
-              size="sm"
-              onClick={() => handleMarkAsPaid(request)}
-              disabled={processingId === request.id || (!request.invoice_url && !request.approved_without_invoice)}
-              className="bg-emerald-600 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {processingId === request.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Wallet className="mr-1 h-4 w-4" />}
-              Vyplatit
-            </Button>
-          )}
-        </div>
-      ),
-    },
+    { key: 'worker', header: 'Pracovník', render: row => <div className="min-w-0 break-words lg:min-w-[150px]"><p className="font-semibold text-slate-900">{row.members?.name || 'Pracovník'}</p><p className="mt-1 text-xs text-slate-500">{row.members?.email}</p></div> },
+    { key: 'context', header: 'Období a práce', render: row => <div className="min-w-0 max-w-[300px] lg:min-w-[180px]"><p className="font-medium text-slate-900">{row.display?.periodLabel}</p><p className="mt-1 break-words text-xs text-slate-500">{row.display?.assignmentLabel}</p><span className="text-xs text-slate-400">{typeLabels[row.request_type] || 'Běžná žádost'}</span></div> },
+    { key: 'hours', header: 'Hodiny a sazba', cellClassName: 'text-right', render: row => <><p className="whitespace-nowrap font-medium tabular-nums">{hours(row.total_hours ?? row.hours)}</p><p className="whitespace-nowrap text-xs text-slate-500">{money(row.hourly_rate)} / hod</p></> },
+    { key: 'amount', header: 'Celkem', cellClassName: 'text-right font-semibold tabular-nums whitespace-nowrap', render: row => money(row.total_amount) },
+    { key: 'status', header: 'Stav', render: row => <div className="min-w-[150px] space-y-2"><PayoutStatusBadge status={row.status} approvedWithoutInvoice={row.approved_without_invoice} />{row.status === 'approved' && row.approved_without_invoice && <p className="text-xs text-amber-800">Schváleno bez faktury</p>}{row.discrepancy?.has_discrepancy && <p className="flex items-center gap-1 text-xs text-red-800"><AlertTriangle className="h-3.5 w-3.5" />Nesoulad s docházkou</p>}{(row.cancellation_reason || row.rejection_reason || row.admin_note) && <Popover><PopoverTrigger asChild><Button variant="link" size="sm" className="h-auto p-0 text-xs">{['rejected', 'cancelled'].includes(row.status) ? 'Důvod rozhodnutí' : 'Poznámka'}</Button></PopoverTrigger><PopoverContent className="max-w-[calc(100vw-2rem)] whitespace-pre-wrap break-words text-sm">{row.cancellation_reason || row.rejection_reason || row.admin_note}</PopoverContent></Popover>}</div> },
+    { key: 'invoice', header: 'Doklad', render: row => row.invoice_url ? <Button size="sm" variant="outline" disabled={downloading === row.id} onClick={() => download(row)} aria-label={`Stáhnout fakturu: ${row.members?.name || 'pracovník'}`}>{downloading === row.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}Faktura</Button> : row.approved_without_invoice ? <span className="flex items-center gap-1 text-xs text-amber-800"><FileWarning className="h-4 w-4" />Výjimka z dokladu</span> : <span className="text-xs text-slate-400">Nepřiložen</span> },
+    { key: 'actions', header: 'Akce', cellClassName: 'text-right', render: row => <div className="flex min-w-[180px] flex-wrap items-center justify-end gap-2">
+      <Popover><PopoverTrigger asChild><Button variant="ghost" size="icon" aria-label={`Historie schválení: ${row.members?.name || 'pracovník'}`}><Eye className="h-4 w-4" /></Button></PopoverTrigger><PopoverContent className="w-96 max-w-[calc(100vw-2rem)] p-4" align="end"><div className="max-h-[320px] overflow-y-auto"><HourlyPayoutApprovalAuditLog requestId={row.id} /></div></PopoverContent></Popover>
+      {row.status === 'pending' && <><Button size="sm" variant="outline" disabled={Boolean(processingId)} onClick={() => setApproval(withScope(row))}><CheckCircle className="mr-1 h-4 w-4" />Schválit</Button><Button size="icon" variant="ghost" disabled={Boolean(processingId)} aria-label={`Zamítnout žádost: ${row.members?.name || 'pracovník'}`} onClick={() => setDecision({ request: withScope(row), action: 'reject' })}><XCircle className="h-4 w-4 text-red-700" /></Button></>}
+      {row.status === 'approved' && !row.invoice_url && !row.approved_without_invoice && <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-md border border-blue-200 px-3 py-2 text-xs font-medium text-blue-700 focus-within:ring-2 focus-within:ring-blue-600"><Upload className="h-4 w-4" />Přiložit fakturu<input type="file" aria-label={`Přiložit fakturu: ${row.members?.name || 'pracovník'}`} accept=".pdf,.jpg,.jpeg,.png" className="absolute inset-0 w-full cursor-pointer opacity-0" disabled={Boolean(processingId)} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void upload(row, file); }} /></label>}
+      {['approved', 'invoice_uploaded'].includes(row.status) && <Button size="sm" disabled={Boolean(processingId) || (!row.invoice_url && !row.approved_without_invoice)} onClick={() => { setPayment(withScope(row)); setPaymentError(null); }}><Wallet className="mr-1 h-4 w-4" />Zaznamenat úhradu</Button>}
+      {OPEN_PAYOUT_STATUSES.includes(row.status) && <Button size="sm" variant="ghost" disabled={Boolean(processingId)} onClick={() => setDecision({ request: withScope(row), action: 'cancel' })}>Stornovat</Button>}
+    </div> },
   ];
-
-  return (
-    <div className="space-y-6">
-      <PayoutPanel
-        title="Schvalování hodinové mzdy"
-        description="Stejný princip jako u úkolových výplat: schválení, faktura, vyplacení."
-        actions={
-          <>
-            <Button variant="outline" size="sm" onClick={handleRunAudit} className="gap-2 bg-white">
-              <Search className="h-4 w-4 text-slate-500" />
-              Audit URL
-            </Button>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full bg-white sm:w-[220px]">
-                <SelectValue placeholder="Filtr stavu" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Všechny žádosti</SelectItem>
-                <SelectItem value="pending">Čeká na schválení</SelectItem>
-                <SelectItem value="approved">Čeká na fakturu</SelectItem>
-                <SelectItem value="invoice_uploaded">Faktura nahrána</SelectItem>
-                <SelectItem value="paid">Vyplaceno</SelectItem>
-                <SelectItem value="rejected">Zamítnuto</SelectItem>
-              </SelectContent>
-            </Select>
-          </>
-        }
-      >
-        <div className="border-b border-slate-200 p-4">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Hledat pracovníka, projekt nebo období..."
-              className="pl-9"
-            />
-          </div>
-        </div>
-
-        <PayoutRequestsTable
-          columns={columns}
-          emptyDescription="Aktuální filtry nevrátily žádný záznam."
-          emptyTitle="Žádné hodinové žádosti"
-          getRowKey={(request) => request.id}
-          items={filteredRequests}
-          loading={loading}
-          loadingLabel="Načítám hodinové žádosti..."
-        />
-      </PayoutPanel>
-
-      <AdminHourlyPayoutApprovalDialog
-        isOpen={isApprovalDialogOpen}
-        onClose={() => setIsApprovalDialogOpen(false)}
-        request={approvalRequest}
-        onConfirm={handleApproveConfirm}
-      />
-
-      <HourlyPayoutRequestDialog
-        isOpen={isRejectDialogOpen}
-        onClose={() => setIsRejectDialogOpen(false)}
-        onConfirm={handleRejectConfirm}
-        isSubmitting={processingId !== null}
-      />
-
-      <ForwardInvoiceDialog
-        open={invoiceForwardDialog.open}
-        onOpenChange={(open) => setInvoiceForwardDialog((current) => ({ open, payout: open ? current.payout : null }))}
-        payout={invoiceForwardDialog.payout}
-        type="hourly"
-      />
-    </div>
-  );
-};
-
-export default HourlyPayoutRequestsAdmin;
+  if (!authLoading && permissionsReady && (!user?.id || !canAdmin)) return <p role="alert" className="rounded-xl border bg-white p-6 text-sm text-slate-600">Správa hodinových výplat je dostupná přihlášenému administrátorovi výplat.</p>;
+  return <div className="space-y-5"><PayoutPanel title="Schvalování hodinových výplat" description="Ověřte žádost, zkontrolujte doklad a zaznamenejte už provedenou úhradu." actions={<><Button variant="outline" size="sm" onClick={fetchRequests} disabled={loading || Boolean(processingId)}><RefreshCw className="mr-1 h-4 w-4" />Obnovit</Button><Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger aria-label="Filtrovat hodinové výplaty podle stavu" className="w-full sm:w-[210px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Všechny stavy</SelectItem>{Object.entries(statusLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></>}>
+    <div className="border-b p-4"><div className="relative max-w-md"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input aria-label="Hledat hodinové žádosti" className="pl-9" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Pracovník, projekt nebo období…" /></div></div>
+    {state.key === actorKey && state.discrepancyError && <p role="alert" className="m-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{state.discrepancyError}</p>}
+    <PayoutRequestsTable columns={columns} items={filtered} getRowKey={row => row.id} loading={loading} error={state.key === actorKey ? state.error : null} loadingLabel="Načítám hodinové žádosti…" emptyTitle="Žádné hodinové žádosti" emptyDescription="Tomuto filtru neodpovídá žádná načtená žádost." />
+  </PayoutPanel>
+    {approval?._scope === actorKey && <AdminHourlyPayoutApprovalDialog isOpen request={approval} onClose={() => { if (!inFlight.current) setApproval(null); }} onConfirm={(_id, note, withoutInvoice) => runAction(approval, 'approve', { note, withoutInvoice })} />}
+    {decision?.request?._scope === actorKey && <HourlyPayoutRequestDialog key={`${decision.request.id}-${decision.action}`} isOpen mode={decision.action} requestId={decision.request.id} onClose={() => { if (!inFlight.current) setDecision(null); }} onConfirm={note => runAction(decision.request, decision.action, { note })} isSubmitting={Boolean(processingId)} />}
+    <ConfirmActionDialog open={payment?._scope === actorKey} onOpenChange={open => { if (!open) { setPayment(null); setPaymentError(null); } }} title="Zaznamenat provedenou úhradu?" description={<>{payment?.members?.name || 'Pracovník'} · {money(payment?.total_amount)}. Potvrďte, že platba již proběhla mimo portál. Tato akce uzavře žádost jako vyplacenou a žádné peníze neposílá.{paymentError && <span role="alert" className="mt-3 block text-red-800">{paymentError}</span>}</>} confirmLabel="Úhrada proběhla – zaznamenat" loading={Boolean(processingId)} onConfirm={async () => { try { await runAction(payment, 'paid'); setPayment(null); } catch (error) { setPaymentError(getFinanceErrorMessage(error)); } }} />
+    <ForwardInvoiceDialog open={forward?._scope === actorKey} onOpenChange={open => { if (!open) setForward(null); }} payout={forward?._scope === actorKey ? forward : null} type="hourly" />
+  </div>;
+}

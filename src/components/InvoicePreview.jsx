@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Download, FileText, Image as ImageIcon, Loader2, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cs } from 'date-fns/locale';
@@ -9,6 +9,7 @@ import { deleteStoredFile } from '@/lib/documentStorageService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import { clearHourlyPayoutInvoice } from '@/lib/hourlyPayoutWorkflowService';
 import { logPayoutAction } from '@/lib/payoutLogger';
+import { removeHourlyInvoice } from '@/lib/hourlyInvoiceRemoval';
 
 const InvoicePreview = ({
   invoicePath,
@@ -26,7 +27,10 @@ const InvoicePreview = ({
   const [isDownloading, setIsDownloading] = useState(false);
   const [errorLoading, setErrorLoading] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [detachedInvoice, setDetachedInvoice] = useState(null);
+  const deleteLock = useRef(false);
   const { toast } = useToast();
+  const invoiceKey = `${requestId}|${invoicePath}|${uploadedAt}`;
 
   const isPdf = invoicePath?.toLowerCase().endsWith('.pdf');
   const cleanPath = invoicePath?.split('?')[0] || '';
@@ -62,42 +66,52 @@ const InvoicePreview = ({
 
   const handleDelete = async (event) => {
     event?.stopPropagation();
+    if (status !== 'invoice_uploaded' || deleteLock.current || detachedInvoice === invoiceKey) return;
+    deleteLock.current = true;
     setIsDeleting(true);
-    await logPayoutAction('invoice_delete_attempt', requestId, { invoicePath });
-
     try {
-      // Keep the database reference until physical deletion succeeds. A failed
-      // storage operation can then be retried without losing the file identity.
-      await deleteStoredFile({
-        provider: storageProvider,
-        connectionId: storageConnectionId,
-        bucket: storageMetadata?.bucket || 'invoices',
-        filePath: invoicePath,
-        fileId: externalFileId,
-        entityType: 'invoice',
-        entityId: requestId,
-        accessEntityType: 'hourly_payout',
-        accessEntityId: requestId,
+      const { cleanupError } = await removeHourlyInvoice({
+        requestId,
+        clearInvoice: clearHourlyPayoutInvoice,
+        deleteFile: deleteStoredFile,
+        logAction: logPayoutAction,
+        invoice: {
+          provider: storageProvider,
+          connectionId: storageConnectionId,
+          bucket: storageMetadata?.bucket || 'invoices',
+          filePath: invoicePath,
+          fileId: externalFileId,
+          entityType: 'invoice',
+          entityId: requestId,
+          accessEntityType: 'hourly_payout',
+          accessEntityId: requestId,
+        },
       });
-      await clearHourlyPayoutInvoice(requestId);
-      await logPayoutAction('invoice_delete_success', requestId, { invoicePath });
-      toast({ title: 'Smazáno', description: 'Faktura byla odstraněna z evidence i úložiště.' });
+      setDetachedInvoice(invoiceKey);
       setDeleteDialogOpen(false);
-      onDelete?.();
+      toast(cleanupError ? {
+        title: 'Faktura odebrána z žádosti',
+        description: 'Soubor se nepodařilo odstranit z úložiště. Správce jej může uklidit později; odebrání z žádosti neopakujte.',
+        variant: 'warning',
+      } : { title: 'Faktura odstraněna', description: 'Žádost je znovu připravena k nahrání správné faktury.' });
     } catch (error) {
       console.error('[InvoicePreview] Error deleting invoice:', error);
-      await logPayoutAction('invoice_delete_failure', requestId, { error: error.message });
       toast({
         title: 'Fakturu se nepodařilo odstranit',
         description: error.message || 'Zkuste operaci znovu.',
         variant: 'destructive',
       });
     } finally {
+      deleteLock.current = false;
       setIsDeleting(false);
+      // Reload also after an uncertain RPC response. Refresh/log failures must
+      // not turn an already confirmed state transition into a failed mutation.
+      void Promise.resolve().then(() => onDelete?.()).catch(() => {});
     }
   };
 
   if (!invoicePath) return null;
+  if (detachedInvoice === invoiceKey) return <p role="status" className="text-sm text-slate-600">Faktura byla odebrána z žádosti. Obnovujeme její stav.</p>;
 
   return (
     <div className="flex flex-col gap-2">
@@ -132,7 +146,7 @@ const InvoicePreview = ({
               <span className="hidden sm:inline">{isDownloading ? 'Stahuji...' : 'Stáhnout'}</span>
             </Button>
           )}
-          {status !== 'paid' && (
+          {status === 'invoice_uploaded' && (
             <Button
               variant="ghost"
               size="icon"
@@ -155,7 +169,7 @@ const InvoicePreview = ({
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         title="Smazat fakturu?"
-        description="Faktura bude odstraněna z připojeného úložiště a potom z evidence žádosti. Uhrazenou fakturu odstranit nelze."
+        description="Faktura bude nejprve odebrána z žádosti a potom se pokusíme odstranit soubor z úložiště. Žádost se vrátí k doplnění faktury."
         confirmLabel="Smazat fakturu"
         destructive
         loading={isDeleting}

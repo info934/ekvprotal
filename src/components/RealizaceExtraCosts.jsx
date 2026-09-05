@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Trash2, Edit2, Save, X, TrendingUp } from 'lucide-react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency as formatCurrencyValue } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -25,12 +25,13 @@ const CATEGORIES = [
 
 const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate, canEdit: canEditOverride }) => {
     const { toast } = useToast();
-    const { hasPermission, userRole } = useAuth();
+    const { hasPermission, userRole, isPrivateMode } = useAuth();
+    const formatCurrency = value => isPrivateMode ? 'Skryto' : formatCurrencyValue(value);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
 
     // Strictly disable edit for 'user' role
-    const canEdit = canEditOverride ?? (hasPermission('realizace', 'can_edit') && userRole !== 'user');
+    const canEdit = !isPrivateMode && (canEditOverride ?? (hasPermission('realizace', 'can_edit') && userRole !== 'user'));
 
     // Form State
     const [description, setDescription] = useState('');
@@ -190,12 +191,12 @@ const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate, canEdit: canEd
                                             <TableCell>
                                                 {canEdit && (
                                                     <div className="flex justify-end gap-1">
-                                                        <Button variant="ghost" size="icon" onClick={() => openDialog(item)}>
+                                                        <Button variant="ghost" size="icon" aria-label={`Upravit vícepráci: ${item.description}`} onClick={() => openDialog(item)}>
                                                             <Edit2 className="w-4 h-4" />
                                                         </Button>
                                                         <AlertDialog>
                                                             <AlertDialogTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700">
+                                                                <Button variant="ghost" size="icon" aria-label={`Smazat vícepráci: ${item.description}`} className="text-red-500 hover:text-red-700">
                                                                     <Trash2 className="w-4 h-4" />
                                                                 </Button>
                                                             </AlertDialogTrigger>
@@ -221,7 +222,7 @@ const RealizaceExtraCosts = ({ realizaceId, extraCosts, onUpdate, canEdit: canEd
                 </div>
             </CardContent>
 
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog open={isDialogOpen && !isPrivateMode} onOpenChange={setIsDialogOpen}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>{editingItem ? 'Upravit vícenáklad' : 'Přidat vícenáklad'}</DialogTitle>

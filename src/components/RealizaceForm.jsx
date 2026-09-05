@@ -23,13 +23,14 @@ import MemberSelect from '@/components/MemberSelect';
 import PageHeader from '@/components/ui/page-header';
 import { ensureEntityFolder } from '@/lib/documentStorageService';
 import { formatMoney } from '@/lib/financePresentation';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 
 const RealizaceForm = () => {
     const { realizaceId } = useParams();
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const { toast } = useToast();
-    const { hasPermission, userRole } = useAuth();
+    const { hasPermission, userRole, user, memberId } = useAuth();
 
     const isEditing = Boolean(realizaceId);
     const sourceOpportunityId = !isEditing ? searchParams.get('crmOpportunityId') : null;
@@ -64,6 +65,7 @@ const RealizaceForm = () => {
         control, 
         setValue,
         reset,
+        getValues,
         watch, 
         formState: { errors, isSubmitting } 
     } = useForm({
@@ -83,6 +85,20 @@ const RealizaceForm = () => {
             actual_end_date: '',
             location_address: ''
         }
+    });
+
+    const unsaved = useUnsavedChanges({
+        draftKey: `realization:${user?.id || memberId}:${realizaceId || `new:${sourceOpportunityId || 'standalone'}`}`,
+        snapshot: { values: watch(), teamEntries, profitMode, overheadMode },
+        readSnapshot: () => ({ values: getValues(), teamEntries, profitMode, overheadMode }),
+        ready: !loading && !profitSharesLoading && canEdit,
+        busy: isSubmitting,
+        onRestore: draft => {
+            reset(draft.values);
+            setTeamEntries(Array.isArray(draft.teamEntries) ? draft.teamEntries : []);
+            setProfitMode(draft.profitMode === 'fixed' ? 'fixed' : 'percent');
+            setOverheadMode(draft.overheadMode === 'fixed' ? 'fixed' : 'percent');
+        },
     });
 
     const watchStatus = watch('status', '');
@@ -179,6 +195,7 @@ const RealizaceForm = () => {
     }, [toast]);
 
     const fetchData = useCallback(async () => {
+        setLoading(true);
         try {
             const [membersRes, typesRes] = await Promise.all([
                 supabase.from('members').select('id, name').order('name'),
@@ -433,6 +450,7 @@ const RealizaceForm = () => {
             }
 
             toast({ title: isEditing ? 'Realizace aktualizována' : 'Realizace vytvořena' });
+            unsaved.markSaved();
             navigate(`/realizace/${targetId}`);
         } catch (error) {
              const msg = parseApiError(error);
@@ -449,6 +467,7 @@ const RealizaceForm = () => {
             const { error } = await supabase.from('realizations').delete().eq('id', realizaceId);
             if (error) throw error;
             toast({ title: 'Realizace smazána' });
+            unsaved.markSaved();
             navigate('/realizace');
         } catch (error) {
             const msg = parseApiError(error);
@@ -493,7 +512,7 @@ const RealizaceForm = () => {
                         Nemáte oprávnění k úpravám této realizace.
                     </CardContent>
                     <CardFooter className="justify-center">
-                        <Button onClick={() => navigate(isEditing ? `/realizace/${realizaceId}` : '/realizace')}>Zpět</Button>
+                        <Button onClick={() => unsaved.requestLeave(isEditing ? `/realizace/${realizaceId}` : '/realizace')}>Zpět</Button>
                     </CardFooter>
                 </Card>
             </div>
@@ -502,18 +521,19 @@ const RealizaceForm = () => {
 
     return (
         <div className="app-page-wide">
+            {unsaved.dialogs}
             <PageHeader
                 icon={HardHat}
                 title={isEditing ? 'Upravit realizaci' : 'Nová realizace'}
                 actions={
-                    <Button variant="ghost" onClick={() => navigate(isEditing ? `/realizace/${realizaceId}` : '/realizace')}>
+                    <Button variant="ghost" onClick={() => unsaved.requestLeave(isEditing ? `/realizace/${realizaceId}` : '/realizace')}>
                         <ChevronLeft className="w-4 h-4 mr-2" /> Zpět
                     </Button>
                 }
                 className="mb-6"
             />
             <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="hidden">
-                <Button variant="ghost" onClick={() => navigate(isEditing ? `/realizace/${realizaceId}` : '/realizace')} className="mb-4">
+                <Button variant="ghost" onClick={() => unsaved.requestLeave(isEditing ? `/realizace/${realizaceId}` : '/realizace')} className="mb-4">
                     <ChevronLeft className="w-4 h-4 mr-2" /> Zpět
                 </Button>
                 <h1 className="text-3xl font-bold mb-6 flex items-center gap-3">
@@ -522,6 +542,7 @@ const RealizaceForm = () => {
                 </h1>
             </motion.div>
 
+            {unsaved.dirty && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Máte neuložené změny. Uložte je pomocí tlačítka na konci formuláře.</p>}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                 {sourceOpportunity && (
                     <Card className="border-emerald-200 bg-emerald-50/80 shadow-sm">
@@ -534,7 +555,7 @@ const RealizaceForm = () => {
                                     {sourceOpportunity.title} {sourceOpportunity.subject?.name ? `- ${sourceOpportunity.subject.name}` : ''}
                                 </p>
                             </div>
-                            <Button type="button" variant="outline" onClick={() => navigate(crmOpportunityPath(sourceOpportunity))}>
+                            <Button type="button" variant="outline" onClick={() => unsaved.requestLeave(crmOpportunityPath(sourceOpportunity))}>
                                 Zpet na OP
                             </Button>
                         </CardContent>
@@ -891,7 +912,7 @@ const RealizaceForm = () => {
                             )}
                         </div>
                         <div className="flex gap-2">
-                            <Button type="button" variant="outline" onClick={() => navigate(isEditing ? `/realizace/${realizaceId}` : '/realizace')}>Zrušit</Button>
+                            <Button type="button" variant="outline" onClick={() => unsaved.requestLeave(isEditing ? `/realizace/${realizaceId}` : '/realizace')}>Zrušit</Button>
                             {canEdit && (
                                 <Button type="submit" disabled={isSubmitting}>
                                     {isSubmitting ? 'Ukládání...' : (isEditing ? <><Save className="w-4 h-4 mr-2" /> Uložit změny</> : <><Plus className="w-4 h-4 mr-2" /> Vytvořit realizaci</>)}

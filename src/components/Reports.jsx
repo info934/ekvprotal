@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from '@/lib/utils';
 import PageHeader from '@/components/ui/page-header';
+import { toSafeCsv } from '@/lib/operationsHelpers';
 
 const ReportCard = ({ report, onDelete, onDownload }) => {
   const { hasPermission, isSuperUser } = useAuth();
@@ -76,9 +77,12 @@ const ReportCard = ({ report, onDelete, onDownload }) => {
 const Reports = () => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const { toast } = useToast();
   const { hasPermission, isSuperUser } = useAuth();
   const canViewReports = isSuperUser || hasPermission('reports', 'can_admin');
+  const canExportProjects = canViewReports && (isSuperUser || hasPermission('projects', 'can_read'));
 
   const fetchReports = useCallback(async () => {
     if (!canViewReports) {
@@ -88,12 +92,14 @@ const Reports = () => {
     }
 
     setLoading(true);
+    setLoadError('');
     const { data, error } = await supabase
       .from('reports')
       .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
+      setLoadError(error.message);
       toast({
         title: 'Chyba při načítání reportů',
         description: error.message,
@@ -110,10 +116,42 @@ const Reports = () => {
   }, [fetchReports]);
 
   const handleGenerateReport = async () => {
-    toast({
-      title: '🚧 Funkce se připravuje',
-      description: 'Generování nových reportů bude brzy dostupné.',
-    });
+    if (!canExportProjects || exporting) return;
+    setExporting(true);
+    try {
+      const projects = [];
+      const pageSize = 500;
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await supabase.from('projects')
+          .select('id, code, name, status, start_date, completion_date')
+          .order('id').range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        projects.push(...(data || []));
+        if ((data || []).length < pageSize) break;
+      }
+      const createdAt = new Date();
+      const rows = [
+        ['Přehled projektů EKV', format(createdAt, 'd. M. yyyy HH:mm')],
+        ['Rozsah', 'Projekty přístupné přihlášenému uživateli'],
+        ['Počet projektů', projects.length],
+        [],
+        ['Kód', 'Název', 'Stav', 'Zahájení', 'Termín dokončení'],
+        ...projects.map(project => [project.code, project.name, project.status, project.start_date, project.completion_date]),
+      ];
+      const url = URL.createObjectURL(new Blob([toSafeCsv(rows)], { type: 'text/csv;charset=utf-8' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `EKV_projekty_${format(createdAt, 'yyyy-MM-dd')}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast({ title: 'CSV přehled je připraven ke stažení', description: `${projects.length} projektů. Export najdete ve stažených souborech.` });
+    } catch (error) {
+      toast({ title: 'Export se nepodařilo vytvořit', description: error.message, variant: 'destructive' });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleDeleteReport = async (id) => {
@@ -173,11 +211,11 @@ const Reports = () => {
         <PageHeader
           icon={BarChart3}
           title="Reporty"
-          description="Přehled a správa generovaných reportů a statistik."
+          description="Export aktuálních projektů a archiv uložených reportů."
           actions={
             <>
-              <Button onClick={handleGenerateReport} className="w-full md:w-auto">
-                Generovat nový report
+              <Button disabled={exporting || !canExportProjects} onClick={handleGenerateReport} className="w-full md:w-auto">
+                <Download className="mr-2 h-4 w-4" />{exporting ? 'Připravuji export…' : 'Exportovat projekty (CSV)'}
               </Button>
               <Button variant="outline" size="sm" onClick={fetchReports} className="bg-white/80 hidden md:inline-flex">
                 <RefreshCw className="w-4 h-4 mr-2" />
@@ -211,10 +249,13 @@ const Reports = () => {
           </div>
         </motion.div>
 
+        <p className="text-sm text-muted-foreground">CSV obsahuje kód, název, stav a termíny dostupných projektů. Stahuje se přímo do počítače; uložené reporty níže tvoří samostatný archiv.{!canExportProjects && ' Pro export potřebujete oprávnění číst projekty.'}</p>
         {loading ? (
           <div className="flex justify-center items-center h-64">
             <RefreshCw className="w-8 h-8 animate-spin text-primary" />
           </div>
+        ) : loadError ? (
+          <Card role="alert" className="p-6 text-center"><p className="font-medium">Archiv reportů se nepodařilo načíst.</p><p className="mt-1 text-sm text-muted-foreground">{loadError}</p><Button variant="outline" className="mt-4" onClick={fetchReports}>Zkusit znovu</Button></Card>
         ) : reports.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {reports.map((report) => (
@@ -234,8 +275,8 @@ const Reports = () => {
               <p className="text-muted-foreground mb-4">
                 Zatím nebyly vygenerovány žádné reporty.
               </p>
-              <Button onClick={handleGenerateReport}>
-                Generovat první report
+              <Button disabled={exporting || !canExportProjects} onClick={handleGenerateReport}>
+                {exporting ? 'Připravuji export…' : 'Exportovat projekty (CSV)'}
               </Button>
             </CardContent>
           </Card>

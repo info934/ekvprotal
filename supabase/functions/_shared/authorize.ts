@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertActiveAccount } from "./accountStatus.ts";
 
 export type FunctionActor = {
   userId: string | null;
@@ -30,11 +31,19 @@ export const authorizeFunctionRequest = async (
     throw Object.assign(new Error("Invalid session."), { status: 401 });
   }
 
-  const { data: member } = await admin
+  await assertActiveAccount(admin, user.id);
+
+  const { data: member, error: memberError } = await admin
     .from("members")
     .select("id, user_role")
     .eq("auth_user_id", user.id)
     .maybeSingle();
+  if (memberError) {
+    throw Object.assign(new Error("Could not verify user identity."), { status: 503 });
+  }
+  if (!member) {
+    throw Object.assign(new Error("Employee identity is required."), { status: 403 });
+  }
   const role = String(member?.user_role || "");
   const actor = { userId: user.id, memberId: member?.id || null, role, isServiceRole: false };
 
@@ -44,12 +53,15 @@ export const authorizeFunctionRequest = async (
   }
 
   if (options.module) {
-    const { data: permission } = await admin
+    const { data: permission, error: permissionError } = await admin
       .from("role_permissions")
       .select("can_read, can_edit, can_admin")
       .eq("role", role)
       .eq("module", options.module)
       .maybeSingle();
+    if (permissionError) {
+      throw Object.assign(new Error("Could not verify permissions."), { status: 503 });
+    }
     const allowed = options.level === "admin"
       ? permission?.can_admin
       : options.level === "edit"

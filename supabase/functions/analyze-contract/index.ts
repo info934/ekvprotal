@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { corsHeaders } from '../_shared/cors.ts';
 import { fetchWithTimeout } from '../_shared/fetch.ts';
+import { assertActiveAccount } from '../_shared/accountStatus.ts';
 
 const GRAPH_ROOT = 'https://graph.microsoft.com/v1.0';
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -305,6 +306,7 @@ Deno.serve(async (req) => {
     const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: authError } = await admin.auth.getUser(token);
     if (authError || !user) return json({ success: false, error: 'Invalid session.' }, 401);
+    await assertActiveAccount(admin, user.id);
 
     const { data: member } = await admin.from('members').select('user_role').eq('auth_user_id', user.id).maybeSingle();
     if (String(member?.user_role || '').toLowerCase() !== 'admin') return json({ success: false, error: 'Admin access required.' }, 403);
@@ -432,6 +434,6 @@ Deno.serve(async (req) => {
         status: 'failed', error_message: error instanceof Error ? error.message : String(error), updated_at: new Date().toISOString(),
       }).eq('id', jobId);
     }
-    return json({ success: false, error: error instanceof Error ? error.message : String(error) }, 500);
+    return json({ success: false, error: error instanceof Error ? error.message : String(error) }, (error as { status?: number }).status || 500);
   }
 });

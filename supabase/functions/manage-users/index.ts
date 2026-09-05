@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.30.0'
 import { corsHeaders } from './cors.ts'
 import { fetchWithTimeout } from '../_shared/fetch.ts'
+import { assertActiveAccount } from '../_shared/accountStatus.ts'
 
 const jsonResponse = (body: Record<string, unknown>, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -124,11 +125,13 @@ serve(async (req) => {
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) return jsonResponse({ error: 'Missing Authorization header' }, 401)
 
-    const token = authHeader.replace('Bearer ', '')
+    const token = authHeader.replace(/^Bearer\s+/i, '')
     const { data: { user: authUser }, error: userError } = await supabaseAdmin.auth.getUser(token)
     if (userError || !authUser) {
       return jsonResponse({ error: `Authentication error: ${userError?.message || 'unknown user'}` }, 401)
     }
+
+    await assertActiveAccount(supabaseAdmin, authUser.id)
 
     const authenticatedSupabase = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
@@ -390,14 +393,25 @@ serve(async (req) => {
         const { userId, reason } = payload
         if (userId === authUser.id) return jsonResponse({ error: 'Vlastní účet nelze deaktivovat.' }, 400)
         const before = await supabaseAdmin.from('user_account_status').select('*').eq('auth_user_id', userId).maybeSingle()
+        if (before.error) throw before.error
         const data = await upsertAccountStatus(userId, 'disabled', reason)
+        // Persist the database block first, then prevent new Auth sessions/refreshes.
+        const { error: banError } = await supabaseAdmin.auth.admin.updateUserById(userId, { ban_duration: '876000h' })
         await logAdminAction('deactivate_user', userId, payload.email || null, before.data || null, data)
+        if (banError) {
+          console.error('Account disabled, but Auth ban failed:', banError)
+          return jsonResponse({ error: 'Účet je deaktivovaný, ale blokaci nových přihlášení se nepodařilo dokončit. Zopakujte deaktivaci.', account_status: 'disabled' }, 503)
+        }
         return jsonResponse(data)
       }
 
       case 'reactivate_user': {
         const { userId } = payload
         const before = await supabaseAdmin.from('user_account_status').select('*').eq('auth_user_id', userId).maybeSingle()
+        if (before.error) throw before.error
+        // If unbanning fails, the database block must stay in place.
+        const { error: unbanError } = await supabaseAdmin.auth.admin.updateUserById(userId, { ban_duration: 'none' })
+        if (unbanError) throw unbanError
         const data = await upsertAccountStatus(userId, 'active')
         await logAdminAction('reactivate_user', userId, payload.email || null, before.data || null, data)
         return jsonResponse(data)
@@ -418,6 +432,6 @@ serve(async (req) => {
     }
   } catch (error) {
     console.error(error)
-    return jsonResponse({ error: error.message }, 500)
+    return jsonResponse({ error: error.message }, error.status || 500)
   }
 })

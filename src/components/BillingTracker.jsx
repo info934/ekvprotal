@@ -24,9 +24,9 @@ import { formatMoney, formatPercent, getFinanceErrorMessage, VAT_RATE_OPTIONS } 
 import ConfirmActionDialog from '@/components/ui/confirm-action-dialog';
 import { getBillingNetAmounts, splitNetAmount } from '@/domain/billingFinancials';
 import { getBillingSummary } from '@/lib/billingSummaryCache';
+import { toFiniteAmount } from '@/domain/financials';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
-const money = formatMoney;
-const percent = formatPercent;
 const localDate = (value) => value ? new Date(`${value}T00:00:00`).toLocaleDateString('cs-CZ') : '—';
 const toDateInput = (date) => date.toISOString().slice(0, 10);
 const addDays = (date, days) => {
@@ -79,7 +79,11 @@ const emptyMilestoneForm = {
 
 const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, enableContractAnalysis = false, showFinancialSummary = true }) => {
   const { toast } = useToast();
+  const { isPrivateMode } = useAuth();
+  const money = value => isPrivateMode ? 'Skryto' : formatMoney(value);
+  const percent = value => isPrivateMode ? 'Skryto' : formatPercent(value);
   const [summary, setSummary] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
@@ -101,16 +105,19 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
     const controller = new AbortController();
     loadRequestRef.current = { id: requestId, controller };
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await getBillingSummary(entityType, entityId, {
         force: options?.force === true,
       });
       if (requestId !== loadRequestRef.current.id || controller.signal.aborted) return;
+      if (!data || !Array.isArray(data.entries) || !Array.isArray(data.milestones)) throw new Error('Fakturační přehled není úplný.');
       setSummary(data);
       onSummaryChange?.(data);
     } catch (error) {
       if (requestId !== loadRequestRef.current.id || controller.signal.aborted) return;
       setSummary(null);
+      setLoadError(getFinanceErrorMessage(error, 'Fakturační přehled není dostupný. Obnovte data před změnou fakturace.'));
       toast({ title: 'Fakturaci se nepodařilo načíst', description: getFinanceErrorMessage(error), variant: 'destructive' });
     } finally {
       if (requestId === loadRequestRef.current.id) setLoading(false);
@@ -231,15 +238,20 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
     const count = Number(planForm.count);
     const interval = Number(planForm.interval_days);
     const vatRate = Number(planForm.vat_rate);
-    const contractNet = Number(summary?.contract_amount_excl_vat ?? summary?.contract_amount ?? 0);
-    const existingNet = milestones.filter((item) => item.status !== 'cancelled').reduce((sum, item) => sum + Number(item.amount_excl_vat || 0), 0);
-    const remainingNet = Math.max(0, contractNet - existingNet);
-    if (!Number.isInteger(count) || count < 1 || count > 24 || remainingNet <= 0 || !planForm.first_date) {
+    const { contractNet } = getBillingNetAmounts(summary);
+    const existingAmounts = milestones.filter(item => item.status !== 'cancelled').map(item => toFiniteAmount(item.amount_excl_vat));
+    const existingNet = existingAmounts.some(amount => amount === null) ? null : existingAmounts.reduce((sum, amount) => sum + amount, 0);
+    const remainingNet = contractNet === null || existingNet === null ? null : Math.max(0, contractNet - existingNet);
+    if (!Number.isInteger(count) || count < 1 || count > 24 || remainingNet === null || remainingNet <= 0 || !planForm.first_date || !Number.isInteger(interval) || interval <= 0 || !Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100) {
       toast({ title: 'Zkontrolujte počet etap, první termín a zbývající hodnotu zakázky', variant: 'destructive' });
       return;
     }
     const firstNumber = milestones.reduce((max, item) => Math.max(max, Number(item.installment_number || 0)), 0) + 1;
     const netParts = splitNetAmount(remainingNet, count);
+    if (netParts.length !== count || netParts.some(amount => amount <= 0)) {
+      toast({ title: 'Zvolte méně etap, aby každá měla kladnou částku alespoň jeden haléř.', variant: 'destructive' });
+      return;
+    }
     const rows = Array.from({ length: count }, (_, index) => {
       const issueDate = addDays(planForm.first_date, interval * index);
       return {
@@ -386,10 +398,12 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
   };
 
   if (loading) return <div className="rounded-lg border bg-white p-5 text-sm text-slate-500">Načítám fakturaci…</div>;
+  if (loadError || !summary) return <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-5"><h3 className="font-semibold">Fakturace není dostupná</h3><p role="alert" className="text-sm text-red-800">{loadError || 'Fakturační přehled nebyl načten.'}</p><Button variant="outline" onClick={() => load({ force: true })}>Zkusit znovu</Button></section>;
 
   const healthy = summary?.status === 'fully_paid' && !summary?.missing_document_count && !summary?.overdue_milestone_count;
-  const planDiff = Number(summary?.plan_variance || 0);
+  const planDiff = toFiniteAmount(summary?.plan_variance);
   const { contractNet, plannedNet, invoicedNet, paidNetEquivalent, outstandingGross } = getBillingNetAmounts(summary);
+  const remainingToPlan = contractNet === null || plannedNet === null ? null : Math.max(0, contractNet - plannedNet);
 
   return (
     <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -549,9 +563,9 @@ const BillingTracker = ({ entityType, entityId, entityCode, onSummaryChange, ena
             <div className="space-y-2"><Label>První termín plnění</Label><Input type="date" value={planForm.first_date} onChange={(e) => setPlanForm((p) => ({ ...p, first_date: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Rozestup etap (dnů)</Label><Input type="number" min="1" value={planForm.interval_days} onChange={(e) => setPlanForm((p) => ({ ...p, interval_days: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Sazba DPH</Label><Select value={planForm.vat_rate} onValueChange={(v) => setPlanForm((p) => ({ ...p, vat_rate: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{VAT_RATE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>
-            <div className="rounded-md border bg-slate-50 p-3 sm:col-span-2"><div className="text-xs text-slate-500">Zbývá naplánovat bez DPH</div><div className="text-lg font-semibold">{money(Math.max(0, contractNet - plannedNet))}</div></div>
+            <div className="rounded-md border bg-slate-50 p-3 sm:col-span-2"><div className="text-xs text-slate-500">Zbývá naplánovat bez DPH</div><div className="text-lg font-semibold">{money(remainingToPlan)}</div></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setPlanDialogOpen(false)}>Zrušit</Button><Button onClick={createEqualPlan} disabled={saving}>{saving ? 'Vytvářím…' : 'Vytvořit etapy'}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setPlanDialogOpen(false)}>Zrušit</Button><Button onClick={createEqualPlan} disabled={saving || remainingToPlan === null || remainingToPlan <= 0}>{saving ? 'Vytvářím…' : 'Vytvořit etapy'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

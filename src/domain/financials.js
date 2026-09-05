@@ -1,3 +1,11 @@
+// Missing values must remain distinguishable from an explicit zero in read
+// models and validation. Legacy calculations below retain their own defaults.
+export const toFiniteAmount = (value) => {
+  if (!['number', 'string'].includes(typeof value) || String(value).trim() === '') return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+};
+
 export const toAmount = (value) => {
   const amount = Number.parseFloat(value);
   return Number.isFinite(amount) ? amount : 0;
@@ -260,7 +268,9 @@ export const calculateRealizationFinancials = (realization = {}, totalCosts = 0)
 };
 
 export const areRealizationPercentagesValid = (profitMarginPercent, overheadPercent) => {
-  return toAmount(profitMarginPercent) + toAmount(overheadPercent) <= 100;
+  const margin = toFiniteAmount(profitMarginPercent);
+  const overhead = toFiniteAmount(overheadPercent);
+  return margin !== null && overhead !== null && margin >= 0 && overhead >= 0 && margin + overhead <= 100;
 };
 
 export const calculateRealizationMemberShare = (share = {}, teamBudget = 0) => {
@@ -339,12 +349,15 @@ export const calculateRewardAvailability = ({
 };
 
 export const assessFinancialHealth = ({
-  baseAmount = 0,
-  remainingAmount = 0,
+  baseAmount,
+  remainingAmount,
   availableAmount = remainingAmount,
   committedAmount = 0,
   minimumReservePercent = 10,
 } = {}) => {
+  if ([baseAmount, remainingAmount, availableAmount, committedAmount, minimumReservePercent].some(value => toFiniteAmount(value) === null)) {
+    return { status: 'unavailable', base: null, remaining: null, available: null, committed: null, reservePercent: null, overallocation: null };
+  }
   const base = Math.max(0, toAmount(baseAmount));
   const remaining = toAmount(remainingAmount);
   const available = toAmount(availableAmount);
@@ -360,13 +373,14 @@ export const assessFinancialHealth = ({
 };
 
 export const getProjectFinancialHealthInputs = (financials = {}) => {
-  const baseAmount = toAmount(financials.teamBudget);
-  const remainingAmount = toAmount(
+  const baseAmount = toFiniteAmount(financials.teamBudget);
+  const remainingAmount = toFiniteAmount(
     financials.rewardBaseBudget ?? financials.remainingAfterCosts ?? baseAmount
   );
-  const committedAmount = Math.max(0, toAmount(financials.teamRewards));
-  const availableAmount = toAmount(
-    financials.unallocatedBudget ?? (remainingAmount - committedAmount)
+  const rewardAmount = toFiniteAmount(financials.teamRewards);
+  const committedAmount = rewardAmount === null ? null : Math.max(0, rewardAmount);
+  const availableAmount = toFiniteAmount(
+    financials.unallocatedBudget ?? (remainingAmount === null || committedAmount === null ? null : remainingAmount - committedAmount)
   );
 
   return { baseAmount, remainingAmount, availableAmount, committedAmount };

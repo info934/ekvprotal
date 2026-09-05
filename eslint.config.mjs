@@ -9,6 +9,7 @@ export default [
 			'node_modules/**',
 			'dist/**',
 			'build/**',
+			'output/**',
 			'fa_portal/**',
 			'backups/**',
 			'vite.config.js',

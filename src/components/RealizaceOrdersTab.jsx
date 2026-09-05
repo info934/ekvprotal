@@ -20,7 +20,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { formatCurrency } from '@/lib/utils';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialValueGuard from './FinancialValueGuard';
 
@@ -38,7 +37,7 @@ const commercialStatusConfig = {
   cancelled: { label: 'Zrušeno', variant: 'destructive' },
 };
 
-const RealizaceOrdersTab = ({ realizaceId, onOrdersChanged, distributionAmount }) => {
+const RealizaceOrdersTab = ({ realizaceId, onOrdersChanged }) => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { hasPermission, userRole } = useAuth();
@@ -83,21 +82,14 @@ const RealizaceOrdersTab = ({ realizaceId, onOrdersChanged, distributionAmount }
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <CardTitle>Objednávky materiálu a služeb</CardTitle>
-          {distributionAmount !== undefined && canViewAmounts && (
-            <p className="mt-1 text-sm text-muted-foreground">
-              Dostupné z týmového rozpočtu:{' '}
-              <span className="font-medium text-foreground">
-                <FinancialValueGuard value={formatCurrency(distributionAmount)} />
-              </span>
-            </p>
-          )}
+
         </div>
         {canEdit && (
           <Button onClick={() => navigate(`/realizace/${realizaceId}/orders/new`)}>
-            <Plus className="mr-2 h-4 w-4" /> Vytvořit nabídku / objednávku
+            <Plus className="mr-2 h-4 w-4" /> Nová nabídka / objednávka
           </Button>
         )}
       </CardHeader>

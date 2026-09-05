@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { cn } from '@/lib/utils';
+import { crmWorkflowErrorMessage } from '@/lib/crmDataAccess';
 import { formatMoney } from '@/lib/financePresentation';
 
 const emptySetForm = {
@@ -26,18 +27,9 @@ const formatCurrency = (value, currency = 'CZK') => formatMoney(value, { currenc
 
 const productUsageCount = (product) => Number(product?.usage_count ?? product?.total_usage_count ?? product?.metadata?.usage_count ?? 0);
 
-const productSearchValue = (product) => [
-  product?.code,
-  product?.sku,
-  product?.name,
-  product?.description,
-  product?.category,
-  product?.product_type,
-].filter(Boolean).join(' ').toLowerCase();
-
 const getItemProduct = (row, productsById) => row.item || productsById.get(row.catalog_item_id) || {};
 
-const ProductSetManager = ({ products = [], canEdit = false, userId = null }) => {
+const ProductSetManager = ({ products = [], canEdit = false }) => {
   const { toast } = useToast();
   const [sets, setSets] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -46,6 +38,9 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
   const [form, setForm] = useState(emptySetForm);
   const [items, setItems] = useState([]);
   const [productSearch, setProductSearch] = useState('');
+  const [catalogMatches, setCatalogMatches] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
   const [schemaWarning, setSchemaWarning] = useState('');
 
   const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
@@ -60,7 +55,7 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
 
     if (error) {
       setSets([]);
-      setSchemaWarning('Produktové sety budou dostupné po aplikaci poslední databázové migrace.');
+      setSchemaWarning(error.message || 'Produktové sety se nepodařilo načíst.');
     } else {
       setSets((data || []).map((set) => ({
         ...set,
@@ -100,19 +95,39 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
     setDialogOpen(true);
   };
 
+  useEffect(() => {
+    if (!dialogOpen) return;
+    const controller = new AbortController();
+    let active = true;
+    setCatalogLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const searchValue = productSearch.trim().replace(/[%(),"\\]/g, ' ');
+        let query = supabase.from('commercial_item_catalog')
+          .select('id, code, sku, name, description, category, unit, purchase_price, default_unit_price, default_vat_rate, product_type, metadata')
+          .eq('is_active', true).is('archived_at', null)
+          .order('name').order('id').limit(80 + items.length);
+        if (searchValue) query = query.or('name.ilike.%' + searchValue + '%,code.ilike.%' + searchValue + '%,sku.ilike.%' + searchValue + '%,category.ilike.%' + searchValue + '%');
+        const { data, error } = await query.abortSignal(controller.signal);
+        if (!active) return;
+        if (error) throw error;
+        setCatalogMatches(data || []);
+        setCatalogError('');
+      } catch (error) {
+        if (!active) return;
+        setCatalogMatches([]);
+        setCatalogError(error.message || 'Katalog se nepodařilo načíst.');
+      } finally {
+        if (active) setCatalogLoading(false);
+      }
+    }, 180);
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [dialogOpen, productSearch, items.length]);
+
   const availableProducts = useMemo(() => {
-    const needle = productSearch.trim().toLowerCase();
     const selectedIds = new Set(items.map((item) => item.catalog_item_id));
-    return products
-      .filter((product) => product?.id && !selectedIds.has(product.id))
-      .filter((product) => !needle || productSearchValue(product).includes(needle))
-      .sort((a, b) => {
-        const usageDiff = productUsageCount(b) - productUsageCount(a);
-        if (usageDiff !== 0) return usageDiff;
-        return String(a.name || a.code || '').localeCompare(String(b.name || b.code || ''), 'cs');
-      })
-      .slice(0, 80);
-  }, [items, productSearch, products]);
+    return catalogMatches.filter((product) => !selectedIds.has(product.id)).slice(0, 80);
+  }, [catalogMatches, items]);
 
   const addProduct = (product) => {
     setItems((current) => [
@@ -163,52 +178,35 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
       return;
     }
 
+    if (saving) return;
     setSaving(true);
-    const payload = {
-      code: form.code.trim() || null,
-      name: form.name.trim(),
-      category: form.category.trim() || null,
-      description: form.description.trim() || null,
-      is_active: form.is_active !== false,
-      created_by: form.id ? undefined : userId,
-    };
-
-    let setId = form.id;
-    let error = null;
-    if (setId) {
-      const result = await supabase.from('product_sets').update(payload).eq('id', setId);
-      error = result.error;
-    } else {
-      const result = await supabase.from('product_sets').insert(payload).select('id').single();
-      error = result.error;
-      setId = result.data?.id;
-    }
-
-    if (!error && setId) {
-      const deleteResult = await supabase.from('product_set_items').delete().eq('set_id', setId);
-      error = deleteResult.error;
-      if (!error) {
-        const rows = items.map((item, index) => ({
-          set_id: setId,
+    try {
+      const { data, error } = await supabase.rpc('save_product_set_atomic', {
+        p_set_id: form.id || null,
+        p_set: {
+          code: form.code.trim() || null,
+          name: form.name.trim(),
+          category: form.category.trim() || null,
+          description: form.description.trim() || null,
+          is_active: form.is_active !== false,
+        },
+        p_items: items.map((item, index) => ({
           catalog_item_id: item.catalog_item_id,
-          quantity: Number(item.quantity || 1),
+          quantity: Number(item.quantity),
           sort_order: (index + 1) * 10,
           note: item.note || null,
-        }));
-        const insertResult = await supabase.from('product_set_items').insert(rows);
-        error = insertResult.error;
-      }
+        })),
+      });
+      if (error) throw error;
+      if (!data?.id) throw new Error('Server nepotvrdil uložení setu. Obnovte seznam před opakováním.');
+      toast({ title: 'Produktový set uložen' });
+      setDialogOpen(false);
+      await fetchSets();
+    } catch (error) {
+      toast({ title: 'Set se nepodařilo uložit', description: crmWorkflowErrorMessage(error), variant: 'destructive' });
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
-    if (error) {
-      toast({ title: 'Set se nepodařilo uložit', description: error.message, variant: 'destructive' });
-      return;
-    }
-
-    toast({ title: 'Produktový set uložen' });
-    setDialogOpen(false);
-    fetchSets();
   };
 
   return (
@@ -285,7 +283,7 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => !saving && setDialogOpen(open)}>
         <DialogContent className="max-h-[92vh] w-[96vw] max-w-[1280px] overflow-hidden p-0">
           <DialogHeader className="border-b px-4 py-3">
             <DialogTitle className="flex items-center gap-2 text-base">
@@ -339,7 +337,10 @@ const ProductSetManager = ({ products = [], canEdit = false, userId = null }) =>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {availableProducts.map((product) => (
+                      {catalogLoading && <TableRow><TableCell colSpan={4}>Hledám v celém katalogu…</TableCell></TableRow>}
+                      {!catalogLoading && catalogError && <TableRow><TableCell colSpan={4} className="text-destructive" role="alert">{catalogError}</TableCell></TableRow>}
+                      {!catalogLoading && !catalogError && availableProducts.length === 0 && <TableRow><TableCell colSpan={4}>Žádný další produkt neodpovídá hledání.</TableCell></TableRow>}
+                      {!catalogLoading && availableProducts.map((product) => (
                         <TableRow key={product.id} className="[&>td]:py-1.5">
                           <TableCell className="font-mono text-[11px]">{product.code || product.sku || '-'}</TableCell>
                           <TableCell>
