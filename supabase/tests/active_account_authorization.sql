@@ -16,10 +16,15 @@ BEGIN
     (v_active, v_active::text || '@example.invalid'),
     (v_disabled, v_disabled::text || '@example.invalid'),
     (v_legacy, v_legacy::text || '@example.invalid');
+  -- Auth can provision member rows automatically on the production schema.
   INSERT INTO public.members (name, email, auth_user_id, user_role) VALUES
     ('Active integration fixture', v_active::text || '@example.invalid', v_active, 'admin'),
-    ('Disabled integration fixture', v_disabled::text || '@example.invalid', v_disabled, 'admin'),
-    ('Legacy integration fixture', v_legacy::text || '@example.invalid', NULL, 'user');
+    ('Disabled integration fixture', v_disabled::text || '@example.invalid', v_disabled, 'admin')
+  ON CONFLICT (auth_user_id) DO UPDATE SET name = EXCLUDED.name, user_role = EXCLUDED.user_role;
+  INSERT INTO public.members (name, email, auth_user_id, user_role)
+  SELECT 'Legacy integration fixture', v_legacy::text || '@example.invalid', v_legacy, 'user'
+  WHERE NOT EXISTS (SELECT 1 FROM public.members WHERE auth_user_id = v_legacy);
+  UPDATE public.members SET auth_user_id = NULL WHERE auth_user_id = v_legacy;
   INSERT INTO public.user_account_status (auth_user_id, status) VALUES
     (v_active, 'active'), (v_disabled, 'disabled');
   INSERT INTO public.notifications (user_id, type, title, message) VALUES

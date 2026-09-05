@@ -11,21 +11,31 @@ BEGIN;
 DO $$
 DECLARE v_admin uuid := gen_random_uuid(); v_owner uuid := gen_random_uuid(); v_other uuid := gen_random_uuid(); v_outsider uuid := gen_random_uuid();
 BEGIN
-  PERFORM set_config('test.employee_admin', v_admin::text, true);
-  PERFORM set_config('test.employee_owner', v_owner::text, true);
-  PERFORM set_config('test.employee_other', v_other::text, true);
-  PERFORM set_config('test.employee_outsider', v_outsider::text, true);
+  PERFORM set_config('test.employee_admin_auth', v_admin::text, true);
+  PERFORM set_config('test.employee_owner_auth', v_owner::text, true);
+  PERFORM set_config('test.employee_other_auth', v_other::text, true);
+  PERFORM set_config('test.employee_outsider_auth', v_outsider::text, true);
   INSERT INTO auth.users (id, email) VALUES (v_admin, v_admin::text || '@example.invalid'), (v_owner, v_owner::text || '@example.invalid'),
     (v_other, v_other::text || '@example.invalid'), (v_outsider, v_outsider::text || '@example.invalid');
   INSERT INTO public.members (id, auth_user_id, name, email, user_role) VALUES
     (v_admin, v_admin, 'Employee admin fixture', v_admin::text || '@example.invalid', 'admin'),
     (v_owner, v_owner, 'Employee owner fixture', v_owner::text || '@example.invalid', 'user'),
     (v_other, v_other, 'Employee other fixture', v_other::text || '@example.invalid', 'user'),
-    (v_outsider, v_outsider, 'Non-employee fixture', v_outsider::text || '@example.invalid', 'user');
+    (v_outsider, v_outsider, 'Non-employee fixture', v_outsider::text || '@example.invalid', 'user')
+  ON CONFLICT (auth_user_id) DO UPDATE SET name = EXCLUDED.name, user_role = EXCLUDED.user_role;
+  -- Member IDs are distinct from Auth IDs in production.
+  SELECT id INTO v_admin FROM public.members WHERE auth_user_id = v_admin;
+  PERFORM set_config('test.employee_admin', v_admin::text, true);
+  SELECT id INTO v_owner FROM public.members WHERE auth_user_id = v_owner;
+  PERFORM set_config('test.employee_owner', v_owner::text, true);
+  SELECT id INTO v_other FROM public.members WHERE auth_user_id = v_other;
+  PERFORM set_config('test.employee_other', v_other::text, true);
+  SELECT id INTO v_outsider FROM public.members WHERE auth_user_id = v_outsider;
+  PERFORM set_config('test.employee_outsider', v_outsider::text, true);
 END;
 $$;
 SET LOCAL ROLE authenticated;
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_admin'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_admin_auth'), 'role', 'authenticated')::text, true);
 DO $$
 DECLARE
   v_owner uuid := current_setting('test.employee_owner')::uuid;
@@ -78,7 +88,7 @@ BEGIN
 END;
 $$;
 
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_owner'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_owner_auth'), 'role', 'authenticated')::text, true);
 DO $$
 DECLARE v_id uuid := gen_random_uuid(); v_payload jsonb; v_request jsonb; v_replay jsonb;
 BEGIN
@@ -113,7 +123,7 @@ BEGIN
 END;
 $$;
 
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_other'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_other_auth'), 'role', 'authenticated')::text, true);
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM public.employee_asset_assignments) OR EXISTS (SELECT 1 FROM public.employee_records)
@@ -125,7 +135,7 @@ BEGIN
 END;
 $$;
 
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_outsider'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_outsider_auth'), 'role', 'authenticated')::text, true);
 DO $$
 BEGIN
   BEGIN
@@ -135,7 +145,7 @@ BEGIN
 END;
 $$;
 
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_admin'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_admin_auth'), 'role', 'authenticated')::text, true);
 DO $$
 DECLARE v_request jsonb; v_id uuid := current_setting('test.employee_request')::uuid; v_returned_asset jsonb; v_replay jsonb;
 BEGIN
@@ -165,7 +175,7 @@ BEGIN
 END;
 $$;
 
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_owner'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_owner_auth'), 'role', 'authenticated')::text, true);
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM public.employee_profiles) OR EXISTS (SELECT 1 FROM public.employee_requests) THEN RAISE EXCEPTION 'Inactive employee can still access workspace'; END IF;
@@ -174,9 +184,9 @@ $$;
 
 RESET ROLE;
 INSERT INTO public.user_account_status (auth_user_id, status)
-VALUES (current_setting('test.employee_admin')::uuid, 'disabled');
+VALUES (current_setting('test.employee_admin_auth')::uuid, 'disabled');
 SET LOCAL ROLE authenticated;
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_admin'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.employee_admin_auth'), 'role', 'authenticated')::text, true);
 DO $$
 BEGIN
   BEGIN

@@ -7,7 +7,7 @@ ARG VITE_SUPABASE_ANON_KEY
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 COPY vendor ./vendor
 RUN npm ci
 

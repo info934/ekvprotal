@@ -7,9 +7,9 @@ DO $$
 DECLARE v_admin uuid := gen_random_uuid(); v_owner uuid := gen_random_uuid(); v_other uuid := gen_random_uuid();
   v_project uuid := gen_random_uuid(); v_project_other uuid := gen_random_uuid();
 BEGIN
-  PERFORM set_config('test.fa_admin', v_admin::text, true);
-  PERFORM set_config('test.fa_owner', v_owner::text, true);
-  PERFORM set_config('test.fa_other', v_other::text, true);
+  PERFORM set_config('test.fa_admin_auth', v_admin::text, true);
+  PERFORM set_config('test.fa_owner_auth', v_owner::text, true);
+  PERFORM set_config('test.fa_other_auth', v_other::text, true);
   PERFORM set_config('test.fa_project', v_project::text, true);
   PERFORM set_config('test.fa_project_other', v_project_other::text, true);
   INSERT INTO auth.users(id, email) VALUES
@@ -18,7 +18,15 @@ BEGIN
   INSERT INTO public.members(id, auth_user_id, name, email, user_role, hourly_rate) VALUES
     (v_admin, v_admin, 'Finance test administrator', v_admin::text || '@example.invalid', 'admin', 100),
     (v_owner, v_owner, 'Finance test employee', v_owner::text || '@example.invalid', 'user', 100),
-    (v_other, v_other, 'Finance test other employee', v_other::text || '@example.invalid', 'user', 100);
+    (v_other, v_other, 'Finance test other employee', v_other::text || '@example.invalid', 'user', 100)
+  ON CONFLICT (auth_user_id) DO UPDATE SET name = EXCLUDED.name, user_role = EXCLUDED.user_role, hourly_rate = EXCLUDED.hourly_rate;
+  -- Member IDs are distinct from Auth IDs in production.
+  SELECT id INTO v_admin FROM public.members WHERE auth_user_id = v_admin;
+  PERFORM set_config('test.fa_admin', v_admin::text, true);
+  SELECT id INTO v_owner FROM public.members WHERE auth_user_id = v_owner;
+  PERFORM set_config('test.fa_owner', v_owner::text, true);
+  SELECT id INTO v_other FROM public.members WHERE auth_user_id = v_other;
+  PERFORM set_config('test.fa_other', v_other::text, true);
   INSERT INTO public.member_hourly_rate_history(member_id, hourly_rate, currency, valid_from)
   VALUES (v_owner, 100, 'CZK', '1900-01-01') ON CONFLICT (member_id, valid_from) DO NOTHING;
   INSERT INTO public.member_hourly_rate_history(member_id, hourly_rate, currency, valid_from)
@@ -26,6 +34,7 @@ BEGIN
   INSERT INTO public.role_permissions(role, module, can_read, can_edit, can_admin)
   VALUES ('user', 'attendance', true, true, false)
   ON CONFLICT (role, module) DO UPDATE SET can_read = true, can_edit = true, can_admin = false;
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin_auth'), 'role', 'authenticated')::text, true);
   INSERT INTO public.projects(id, name, code, status, price, budget_percentage, overhead_percentage) VALUES
     (v_project, 'Finance attendance fixture A', 'FA-' || v_project::text, 'V řešení', 100000, 100, 0),
     (v_project_other, 'Finance attendance fixture B', 'FA-' || v_project_other::text, 'V řešení', 100000, 100, 0);
@@ -33,7 +42,7 @@ END;
 $$;
 
 SET LOCAL ROLE authenticated;
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner_auth'), 'role', 'authenticated')::text, true);
 DO $$
 DECLARE
   v_owner uuid := current_setting('test.fa_owner')::uuid; v_project uuid := current_setting('test.fa_project')::uuid;
@@ -85,9 +94,9 @@ BEGIN
 END;
 $$;
 
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin_auth'), 'role', 'authenticated')::text, true);
 SELECT public.approve_attendance_submission(current_setting('test.fa_submission')::uuid);
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner_auth'), 'role', 'authenticated')::text, true);
 DO $$
 DECLARE v_request jsonb;
 BEGIN
@@ -103,7 +112,7 @@ BEGIN
 END;
 $$;
 
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin_auth'), 'role', 'authenticated')::text, true);
 DO $$
 DECLARE v_discrepancy record;
 BEGIN
@@ -126,7 +135,7 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN NULL; END;
 END;
 $$;
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_other'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_other_auth'), 'role', 'authenticated')::text, true);
 DO $$
 BEGIN
   BEGIN
@@ -139,12 +148,12 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END;
 $$;
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner_auth'), 'role', 'authenticated')::text, true);
 DO $$
 DECLARE v_cancelled jsonb;
 BEGIN
   v_cancelled := public.cancel_hourly_payout_request(current_setting('test.fa_request')::uuid, 'Correction needed');
-  IF v_cancelled ->> 'status' <> 'cancelled' OR v_cancelled ->> 'cancelled_by' IS DISTINCT FROM current_setting('test.fa_owner') THEN
+  IF v_cancelled ->> 'status' <> 'cancelled' OR v_cancelled ->> 'cancelled_by' IS DISTINCT FROM current_setting('test.fa_owner_auth') THEN
     RAISE EXCEPTION 'Cancellation evidence missing';
   END IF;
   IF public.cancel_hourly_payout_request(current_setting('test.fa_request')::uuid, 'Retry') IS DISTINCT FROM v_cancelled THEN
@@ -157,7 +166,7 @@ END;
 $$;
 
 -- Correct an UNPAID attendance row to another date and project, then reapprove.
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin_auth'), 'role', 'authenticated')::text, true);
 SELECT public.revert_attendance_submission(current_setting('test.fa_submission')::uuid);
 SELECT public.return_attendance_submission_for_edit(current_setting('test.fa_submission')::uuid, 'Correct project/date');
 SELECT public.save_attendance_record(current_setting('test.fa_attendance')::uuid, current_setting('test.fa_owner')::uuid,
@@ -179,7 +188,7 @@ BEGIN
 END;
 $$;
 SET LOCAL ROLE authenticated;
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner_auth'), 'role', 'authenticated')::text, true);
 DO $$
 DECLARE v_request jsonb;
 BEGIN
@@ -195,7 +204,7 @@ UPDATE public.hourly_payout_requests
 SET attendance_snapshot = jsonb_set(attendance_snapshot, '{0,pay_amount}', '999'::jsonb)
 WHERE id = current_setting('test.fa_request_new')::uuid;
 SET LOCAL ROLE authenticated;
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin_auth'), 'role', 'authenticated')::text, true);
 DO $$
 BEGIN
   BEGIN
@@ -233,9 +242,9 @@ BEGIN
 END;
 $$;
 SET LOCAL ROLE authenticated;
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin_auth'), 'role', 'authenticated')::text, true);
 SELECT public.approve_hourly_payout_request(current_setting('test.fa_request_new')::uuid, 'Approved fixture', true);
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner_auth'), 'role', 'authenticated')::text, true);
 DO $$
 BEGIN
   BEGIN
@@ -244,7 +253,7 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN NULL; END;
 END;
 $$;
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_admin_auth'), 'role', 'authenticated')::text, true);
 SELECT public.mark_hourly_payout_paid(current_setting('test.fa_request_new')::uuid);
 DO $$
 BEGIN
@@ -284,13 +293,15 @@ $$;
 -- Physical evidence must be detached by the workflow before it can be removed.
 -- Use the previously cancelled isolated fixture; never a real storage provider.
 SELECT set_config('test.fa_invoice_name', 'hourly_payout/' || current_setting('test.fa_request') || '/řádná faktura.pdf', true);
+-- Isolated fixture only: emulate Storage API's transaction flag. RLS stays enabled.
+SET LOCAL storage.allow_delete_query = 'true';
 UPDATE public.hourly_payout_requests SET status = 'invoice_uploaded', invoice_storage_provider = 'supabase',
   invoice_url = 'invoices/' || current_setting('test.fa_invoice_name'), invoice_external_file_id = NULL
 WHERE id = current_setting('test.fa_request')::uuid;
 INSERT INTO storage.objects(id, bucket_id, name)
 VALUES (gen_random_uuid(), 'invoices', current_setting('test.fa_invoice_name'));
 SET LOCAL ROLE authenticated;
-SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner'), 'role', 'authenticated')::text, true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', current_setting('test.fa_owner_auth'), 'role', 'authenticated')::text, true);
 DO $$
 DECLARE v_deleted integer;
 BEGIN
