@@ -1,3 +1,18 @@
+# Společná fronta a návazné úkoly KD — nasazeno 5. 9. 2026
+
+Kód: 2ebea06, release ekvportal-2.0-20260905T150623Z.
+- /tasks: společný seznam plánovaných úkolů projekce a realizace, deduplikace podle legacy_project_task_id, zachované samostatné projektové úkoly. Filtry otevřené/moje/po termínu/blokované/všechny, hledání a oblast, stav filtrů v URL. Původní správa projekce zůstává na ?view=project.
+- Moje práce: osobní úkoly včetně přidělení mezi zdroji, společné počty, upozornění na plánovanou práci dnes bez zapsané docházky. Chyba načtení se nezobrazuje jako nula.
+- KD: vytvoření úkolu z uloženého bodu s odpovědnou osobou a termínem. Atomická funkce vytvoří úkol a revizi zápisu, odmítá změněnou verzi a již propojený bod. Zděděné kontroly oprávnění a zdrojů plánování.
+- Historie posledních 50 verzí pouze ke čtení, navazující KD přebírá existující neuzavřené úkoly.
+- Migrace 20260905190000 aplikována po čerstvé záloze /opt/ekvportal-backups/work-queue-20260905/. Předchozí image zachován.
+- 159 JS testů, lint, security/UI/critical invariants, migrace check a build prošly. Izolované SQL testy ověřily vytvoření, propojení, verzi a opakovaný požadavek; testovací transakce vrácena.
+- Browser na preview 4177: filtr Moje, založení KD → vytvoření úkolu → historie dvou verzí; osobní úvodní přehled, desktop a mobil 390×844, bez console errors. Náhled používá syntetická data, nejde o test všech přihlášených produkčních workflow.
+- Produkční kontejner healthy, image sha256:49717a5dd3f9283d52d7d5b3627eb332c0b76296485ef1b7735b41dc3e93c4cd.
+- Zbývá z návrhu: vydání PDF, externí rozesílání po potvrzení a širší backlog. Navazující KD přebírá pouze propojené otevřené úkoly, nikoli automaticky všechna rozhodnutí.
+
+---
+
 # Aktuální stav: nasazeno 5. 9. 2026
 
 Produkční kód: `ea0db95` (main), release `ekvportal-2.0-20260905T145010Z`. Níže uvedené lokální stavy jsou historické záznamy jednotlivých kroků.
