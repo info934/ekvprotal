@@ -1187,7 +1187,7 @@ const ProjectDetail = () => {
                         </CollapsibleSection>
                     </TabsContent>
 
-                    <TabsContent value="meetings"><MeetingNotes entityType="project" entityId={projectId} canEdit={canEdit} onOpenPlan={() => openTab('plan')} /></TabsContent>
+                    <TabsContent value="meetings"><MeetingNotes entityTitle={project.name} entityType="project" entityId={projectId} canEdit={canEdit} onOpenPlan={() => openTab('plan')} /></TabsContent>
                     <TabsContent value="tasks"><ProjectTasks projectId={projectId} project={project} tasks={tasks} members={members} canEdit={canEdit} onTaskUpdate={setTasks} loadError={operationalLoadError} onRetry={refreshData} /></TabsContent>
                     <TabsContent value="plan"><PlanningBoard entityType="project" entityId={projectId} embedded canEdit={canEdit} /></TabsContent>
                     <TabsContent value="engineering"><ProjectEngineering projectId={projectId} project={project} canEdit={canEdit} /></TabsContent>
