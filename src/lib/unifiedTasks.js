@@ -1,5 +1,20 @@
 import { fetchReportRows } from './reportData.js';
 import { isClosedTask, localDateKey } from '../domain/workOverview.js';
+export function taskQueueFilters(params) {
+ return {
+  scope: ['open','mine','overdue','blocked','all'].includes(params.get('scope')) ? params.get('scope') : 'open',
+  kind: ['project','realization'].includes(params.get('kind')) ? params.get('kind') : 'all',
+  search: (params.get('q') || '').slice(0,250),
+ };
+}
+export function taskExactDate(value) {
+ const day = String(value || '').slice(0,10);
+ if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return '';
+ const date = new Date(day + 'T12:00:00');
+ if (!Number.isFinite(date.getTime()) || localDateKey(date) !== day) return '';
+ return new Intl.DateTimeFormat('cs-CZ',{day:'numeric',month:'numeric',year:'numeric'}).format(date);
+}
+const searchText = value => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('cs');
 export const TASK_LABELS = { planned:'Nové', ready:'Připraveno', in_progress:'V řešení', blocked:'Blokováno', done:'Hotovo', cancelled:'Zrušeno' };
 export function mergeWorkTasks(plans, items, legacy, assignments = []) {
   const linked = new Set(items.map(i=>i.legacy_project_task_id).filter(Boolean));
@@ -20,7 +35,7 @@ export function filterWorkTasks(rows,{scope='open',memberId,search='',kind='all'
     (scope==='all'||!isClosedTask(t)) && (scope!=='mine'||Boolean(memberId&&t.assignedIds.includes(memberId))) &&
     (scope!=='overdue'||Boolean(t.end_date&&t.end_date.slice(0,10)<today)) &&
     (scope!=='blocked'||t.status==='Blokováno') &&
-    `${t.name} ${t.project?.name||''} ${t.project?.code||''}`.toLocaleLowerCase('cs').includes(search.trim().toLocaleLowerCase('cs')));
+    searchText(`${t.name} ${t.project?.name||''} ${t.project?.code||''}`).includes(searchText(search.trim())));
 }
 export async function loadUnifiedTasks(client,{hasPermission,signal}={}) {
   if(!hasPermission('tasks','can_read')) return [];
