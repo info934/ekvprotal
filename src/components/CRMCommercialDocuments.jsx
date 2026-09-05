@@ -167,7 +167,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         : 'id';
       const documentsQueryFactory = () => supabase
         .from('crm_commercial_documents')
-        .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, gross_subtotal, subtotal, discount_total, tax_total, total, total_with_tax, cost_total, total_cost, margin_total, margin_value, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, notes, sync_items, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code)${documentId ? ', opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)' : ''}), items:crm_commercial_document_items(${documentItemsSelect})`)
+        .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, gross_subtotal, subtotal, discount_total, tax_total, total, total_with_tax, cost_total, total_cost, margin_total, margin_value, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, notes, sync_items, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone), opportunity:opportunity_id(id, number, title, value, stage, description, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone), project:project_id(id, name, code)${documentId ? ', opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)' : ''}), items:crm_commercial_document_items(${documentItemsSelect})`)
         .eq('type', type)
         .is('deleted_at', null)
         .order('created_at', { ascending: false }).order('id').abortSignal(request.signal);
@@ -179,7 +179,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         documentsQuery,
       fetchAllCrmRows(() => supabase
         .from('crm_opportunities')
-        .select('id, number, title, value, subject_id, deleted_at, subject:subject_id(id, name)')
+        .select('id, number, title, value, subject_id, deleted_at, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone)')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .order('id')
@@ -187,7 +187,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       selectCrmNumberingSettings(supabase, request.signal),
       supabase
         .from('order_templates')
-        .select('id, name, content')
+        .select('id, name, content, document_category')
         .eq('is_active', true)
         .order('name')
         .abortSignal(request.signal),
@@ -218,7 +218,11 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     });
     setDocuments(normalizedDocuments);
     setOpportunities(opportunities);
-    setDocumentTemplates(templatesRes.error ? [] : (templatesRes.data || []));
+    setDocumentTemplates(templatesRes.error ? [] : (templatesRes.data || []).filter((template) => (
+      !template.document_category
+      || template.document_category === 'generic'
+      || template.document_category === type
+    )));
     setNumbering(normalizeCrmNumbering(numberingRes.error ? [] : numberingRes.data));
     setSelectedDocument(documentId ? findCrmRecordByRef(normalizedDocuments, documentId) : null);
 
@@ -855,7 +859,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                     <SelectValue placeholder="Šablona dokumentu" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="default">Výchozí šablona</SelectItem>
+                    <SelectItem value="default">Firemní EKV (doporučeno)</SelectItem>
                     {documentTemplates.map((template) => (
                       <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
                     ))}

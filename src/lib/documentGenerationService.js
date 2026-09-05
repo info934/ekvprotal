@@ -140,6 +140,7 @@ export const buildDocumentGenerationPayload = ({ opportunity, document }) => {
   const totals = calculateCrmTotals(sourceItems);
   const documentType = document?.type || 'offer';
   const documentNumber = document?.number || '';
+  const subject = document?.subject || opportunity?.subject || {};
 
   const items = [...sourceItems]
     .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
@@ -204,7 +205,7 @@ export const buildDocumentGenerationPayload = ({ opportunity, document }) => {
       id: opportunity?.id,
       title: opportunity?.title || '',
       value: Number(opportunity?.value || 0),
-      subjectName: opportunity?.subject?.name || '',
+      subjectName: subject.name || '',
       projectName: opportunity?.project?.name || '',
       projectCode: opportunity?.project?.code || '',
       description: opportunity?.description || '',
@@ -216,6 +217,15 @@ export const buildDocumentGenerationPayload = ({ opportunity, document }) => {
         issueDate: opportunity?.created_at,
         generatedAt,
       }),
+    },
+    client: {
+      name: subject.name || '',
+      ico: subject.ico || '',
+      dic: subject.dic || '',
+      address: subject.address || '',
+      contactPerson: subject.contact_person || '',
+      email: subject.email || '',
+      phone: subject.phone || '',
     },
     items,
     generatedAt,
@@ -460,7 +470,7 @@ const fillItemsRepeatBlocks = (templateContent, items) => {
 };
 
 export const buildDocumentTemplatePlaceholders = (payload) => {
-  const { document, opportunity, generatedAt } = payload;
+  const { document, opportunity, client = {}, generatedAt } = payload;
   const totalWithTax = document.totalWithTax ?? (document.total + document.taxTotal);
   const clientName = opportunity.subjectName || 'Bez subjektu';
   const projectName = opportunity.projectName || opportunity.projectCode || '';
@@ -472,6 +482,12 @@ export const buildDocumentTemplatePlaceholders = (payload) => {
     document_date: formatDate(document.issueDate),
     document_valid_until: formatDate(document.validUntil),
     client_name: clientName,
+    client_ico: client.ico || '',
+    client_dic: client.dic || '',
+    client_address: client.address || '',
+    client_contact_person: client.contactPerson || '',
+    client_email: client.email || '',
+    client_phone: client.phone || '',
     project_name: projectName,
     project_code: opportunity.projectCode || '',
     opportunity_title: opportunity.title || '',
@@ -490,6 +506,12 @@ export const buildDocumentTemplatePlaceholders = (payload) => {
     profit_after_commission_percent: Number(document.profitAfterCommissionPercent || 0).toLocaleString('cs-CZ'),
     notes: document.notes || '',
     company_logo: ekvProjectLogoDataUri,
+    company_name: EKV_COMPANY.name,
+    company_address: EKV_COMPANY.address,
+    company_ico: EKV_COMPANY.ico,
+    company_dic: EKV_COMPANY.dic,
+    company_email: EKV_COMPANY.email,
+    company_web: EKV_COMPANY.web,
     generated_at: formatDate(generatedAt),
     item_count: payload.items.length,
     items_table: renderItemsTableHtml(payload.items),
@@ -539,7 +561,7 @@ const ensureHtmlDocument = (content, title = 'Dokument') => {
 </html>`;
 };
 
-export const renderCommercialDocumentHtml = (payload, template = null) => {
+const renderLegacyCommercialDocumentHtml = (payload, template = null) => {
   const { document, opportunity, items, generatedAt } = payload;
   const totalWithTax = document.totalWithTax ?? (document.total + document.taxTotal);
 
@@ -741,6 +763,194 @@ export const renderCommercialDocumentHtml = (payload, template = null) => {
 </html>`);
 };
 
+const EKV_COMPANY = {
+  name: 'EKV Project s.r.o.',
+  address: 'Papírnická 2809/16, 326 00 Plzeň',
+  ico: '10793615',
+  dic: 'CZ10793615',
+  email: 'info@ekvproject.cz',
+  web: 'www.ekvproject.cz',
+};
+
+const chunkCommercialItems = (items = []) => {
+  if (items.length === 0) return [[]];
+  const chunks = [];
+  let current = [];
+  let weight = 0;
+
+  items.forEach((item) => {
+    const textLength = String(item.name || '').length + String(item.description || '').length;
+    const itemWeight = Math.max(1, Math.ceil(textLength / 115));
+    const limit = chunks.length === 0 ? 4 : 5;
+    if (current.length > 0 && weight + itemWeight > limit) {
+      chunks.push(current);
+      current = [];
+      weight = 0;
+    }
+    current.push(item);
+    weight += itemWeight;
+  });
+
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+};
+
+const renderCorporateItemsTable = (items) => {
+  const rows = items.length > 0 ? items.map((item) => `
+    <tr>
+      <td class="position">${item.position}</td>
+      <td class="item-copy">
+        ${item.code ? `<span class="item-code">${escapeHtml(item.code)}</span>` : ''}
+        <strong>${escapeHtml(item.name || 'Položka')}</strong>
+        ${item.description ? `<span class="item-description">${escapeHtml(item.description)}</span>` : ''}
+      </td>
+      <td class="num">${Number(item.quantity || 0).toLocaleString('cs-CZ')} ${escapeHtml(item.unit || '')}</td>
+      <td class="num">${formatCurrency(item.unitPrice)}</td>
+      <td class="num">${Number(item.discountPercent || 0).toLocaleString('cs-CZ')} %</td>
+      <td class="num">${Number(item.vatRate || 0).toLocaleString('cs-CZ')} %</td>
+      <td class="num amount">${formatCurrency(item.lineTotal)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="7" class="empty">Dokument zatím nemá položky.</td></tr>';
+
+  return `
+    <table class="line-items">
+      <thead><tr>
+        <th>#</th><th>Položka</th><th class="num">Množství</th><th class="num">Jedn. cena</th><th class="num">Sleva</th><th class="num">DPH</th><th class="num">Celkem bez DPH</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+};
+
+const renderCorporateCommercialDocumentHtml = (payload) => {
+  const { document, opportunity, client = {}, items, generatedAt } = payload;
+  const isOrder = document.type === 'order';
+  const totalWithTax = document.totalWithTax ?? (document.total + document.taxTotal);
+  const itemChunks = chunkCommercialItems(items);
+  const longNotes = String(document.notes || '').length > 360;
+  const pageDefinitions = itemChunks.map((pageItems, index) => ({
+    kind: index === 0 ? 'first' : 'items',
+    items: pageItems,
+    isLastItemsPage: index === itemChunks.length - 1,
+  }));
+  if (longNotes) pageDefinitions.push({ kind: 'notes', items: [], isLastItemsPage: false });
+  const pageCount = pageDefinitions.length;
+
+  const documentContext = isOrder
+    ? 'Potvrzený rozsah objednávky, ceny a termíny plnění podle aktuálních údajů v EKV Portálu.'
+    : 'Položkový návrh dodávky a realizace podle aktuální kalkulace obchodního případu.';
+  const itemSectionTitle = isOrder ? 'Položky objednávky' : 'Položkový rozpočet';
+  const acceptanceTitle = isOrder ? 'Potvrzení objednávky' : 'Akceptace nabídky';
+  const clientRole = isOrder ? 'Za objednatele' : 'Za klienta';
+  const validUntilLabel = isOrder ? 'Termín / platnost' : 'Platnost nabídky';
+
+  const renderFooter = (pageNumber) => `
+    <footer>
+      <div><strong>${EKV_COMPANY.name}</strong> · ${EKV_COMPANY.address} · IČO ${EKV_COMPANY.ico} · DIČ ${EKV_COMPANY.dic}</div>
+      <div>${EKV_COMPANY.email} · ${EKV_COMPANY.web}</div>
+      <div class="footer-meta">ID ${escapeHtml(document.originalId)} · Strana ${pageNumber}/${pageCount}</div>
+    </footer>`;
+
+  const renderTotals = () => `
+    <section class="closing-grid keep-together">
+      <div class="terms">
+        <h3>${acceptanceTitle}</h3>
+        <p>${isOrder ? 'Objednávka se stává závaznou potvrzením oprávněnými zástupci obou stran.' : 'Nabídku lze přijmout podpisem nebo písemným potvrzením v době její platnosti.'}</p>
+        ${document.notes && !longNotes ? `<div class="note"><strong>Poznámka</strong><span>${escapeHtml(document.notes)}</span></div>` : ''}
+      </div>
+      <div class="totals">
+        <div><span>Cena před slevou</span><strong>${formatCurrency(document.subtotal)}</strong></div>
+        <div><span>Sleva celkem</span><strong>${formatCurrency(document.discountTotal)}</strong></div>
+        <div><span>Cena bez DPH</span><strong>${formatCurrency(document.total)}</strong></div>
+        <div><span>DPH</span><strong>${formatCurrency(document.taxTotal)}</strong></div>
+        <div class="total-main"><span>Celkem s DPH</span><strong>${formatCurrency(totalWithTax)}</strong></div>
+      </div>
+    </section>
+    <section class="signature keep-together">
+      <div class="sig-card"><strong>Za EKV Project</strong><div class="sig-line">Datum, jméno a podpis</div></div>
+      <div class="sig-card"><strong>${clientRole}</strong><div class="sig-line">Datum, jméno a podpis</div></div>
+    </section>`;
+
+  const pages = pageDefinitions.map((page, index) => {
+    const isFirst = page.kind === 'first';
+    const isNotes = page.kind === 'notes';
+    const includeTotals = page.isLastItemsPage && !longNotes;
+    return `
+      <main class="page">
+        <div class="topbar"></div>
+        ${isFirst ? `
+          <header class="document-header">
+            <div>
+              <img class="brand-logo" src="${ekvProjectLogoDataUri}" alt="EKV Project" />
+              <p class="document-label">${escapeHtml(document.label)} ${escapeHtml(document.number || 'Bez čísla')}</p>
+              <h1>${escapeHtml(document.title)}</h1>
+              <p class="subtitle">${documentContext}</p>
+            </div>
+            <aside class="meta">
+              <div><span>Vystaveno</span><strong>${formatDate(document.issueDate)}</strong></div>
+              <div><span>${validUntilLabel}</span><strong>${formatDate(document.validUntil)}</strong></div>
+              <div><span>Obchodní případ</span><strong>${escapeHtml(opportunity.title || '-')}</strong></div>
+              <div class="meta-total"><span>Celkem s DPH</span><strong>${formatCurrency(totalWithTax)}</strong></div>
+            </aside>
+          </header>
+          <section class="party-grid">
+            <div class="party-card">
+              <h2>Klient</h2><div class="party-name">${escapeHtml(client.name || opportunity.subjectName || 'Bez klienta')}</div>
+              ${client.address ? `<p>${escapeHtml(client.address)}</p>` : ''}
+              ${(client.ico || client.dic) ? `<p>${[client.ico ? `IČO ${escapeHtml(client.ico)}` : '', client.dic ? `DIČ ${escapeHtml(client.dic)}` : ''].filter(Boolean).join(' · ')}</p>` : ''}
+              ${(client.contactPerson || client.email || client.phone) ? `<p>${[client.contactPerson, client.email, client.phone].filter(Boolean).map(escapeHtml).join(' · ')}</p>` : ''}
+            </div>
+            <div class="party-card">
+              <h2>Projekt / obchodní případ</h2><div class="party-name">${escapeHtml(opportunity.projectName || opportunity.title || '-')}</div>
+              ${opportunity.projectCode ? `<p>Kód projektu ${escapeHtml(opportunity.projectCode)}</p>` : ''}
+              ${opportunity.description ? `<p>${escapeHtml(opportunity.description)}</p>` : '<p>Rozsah plnění je uveden v položkovém rozpočtu.</p>'}
+            </div>
+          </section>` : `
+          <header class="continuation-header">
+            <img class="brand-logo compact" src="${ekvProjectLogoDataUri}" alt="EKV Project" />
+            <div><span>${escapeHtml(document.label)} ${escapeHtml(document.number || '')}</span><strong>${escapeHtml(document.title)}</strong></div>
+          </header>`}
+        ${isNotes ? `
+          <section class="section notes-page"><div class="section-title"><h2>Poznámky a podmínky</h2></div><p>${escapeHtml(document.notes)}</p></section>
+          ${renderTotals()}` : `
+          <section class="section">
+            <div class="section-title"><h2>${itemSectionTitle}${!isFirst ? ' - pokračování' : ''}</h2><span>${items.length} ${items.length === 1 ? 'položka' : (items.length >= 2 && items.length <= 4 ? 'položky' : 'položek')}</span></div>
+            ${renderCorporateItemsTable(page.items)}
+          </section>
+          ${includeTotals ? renderTotals() : ''}`}
+        ${renderFooter(index + 1)}
+      </main>`;
+  }).join('');
+
+  return sanitizeGeneratedDocumentHtml(`<!doctype html>
+<html lang="cs"><head><meta charset="utf-8" /><title>${escapeHtml(document.label)} ${escapeHtml(document.number)}</title>
+<style>
+  :root{--ink:#101828;--muted:#667085;--line:#d7e0ec;--soft:#f5f8fc;--blue:#2459c7;--blue-dark:#153b82;--green:#2f8f5b}
+  *{box-sizing:border-box} body{margin:0;background:#e9edf4;color:var(--ink);font-family:"Aptos","Segoe UI",Calibri,Arial,sans-serif;font-size:10.5px;line-height:1.4}
+  .page{position:relative;width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:9mm 10mm 21mm;box-shadow:0 20px 55px rgba(15,23,42,.16);page-break-after:always;overflow:hidden}
+  .page:last-child{page-break-after:auto}.topbar{height:6px;border-radius:999px;background:linear-gradient(90deg,var(--blue-dark),var(--blue),var(--green));margin-bottom:9px}
+  .brand-logo{display:block;width:54mm;height:auto;margin-bottom:10px}.brand-logo.compact{width:39mm;margin:0}
+  .document-header{display:grid;grid-template-columns:minmax(0,1fr) 71mm;gap:8mm;align-items:start;margin-bottom:10px}.document-label{margin:0 0 5px;color:var(--blue);font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+  h1{margin:0;font-size:24px;line-height:1.08;letter-spacing:-.035em}.subtitle{max-width:110mm;margin:7px 0 0;color:#475467;font-size:11.5px}
+  .meta{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fbfdff}.meta>div{display:grid;grid-template-columns:28mm 1fr;gap:6px;padding:8px 9px;border-bottom:1px solid var(--line)}.meta>div:last-child{border-bottom:0}.meta span{color:var(--muted);font-size:8.2px;letter-spacing:.08em;text-transform:uppercase}.meta strong{text-align:right;font-size:10px}.meta .meta-total{background:#ecfdf3;color:#14532d}
+  .party-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:9px}.party-card{min-height:29mm;border:1px solid var(--line);border-radius:12px;padding:9px}.party-card h2{margin:0 0 5px;color:#475467;font-size:9px;letter-spacing:.1em;text-transform:uppercase}.party-name{font-size:15px;font-weight:800}.party-card p{margin:4px 0 0;color:var(--muted)}
+  .continuation-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:9px;border-bottom:1px solid var(--line)}.continuation-header div{text-align:right}.continuation-header span{display:block;color:var(--blue);font-size:9px;font-weight:800;text-transform:uppercase}.continuation-header strong{display:block;margin-top:2px;font-size:12px}
+  .section{margin-top:8px}.section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;padding-bottom:6px;border-bottom:2px solid #e8edf5}.section-title h2{margin:0;font-size:13.5px}.section-title span{border-radius:999px;background:#edf4ff;color:var(--blue);padding:3px 8px;font-size:9px;font-weight:800}
+  table{width:100%;border-collapse:separate;border-spacing:0}.line-items{border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:9.4px}.line-items th{padding:5px;background:#f1f5fa;color:var(--muted);font-size:7.8px;letter-spacing:.06em;text-align:left;text-transform:uppercase;border-bottom:1px solid var(--line)}.line-items td{padding:6px 5px;vertical-align:top;border-bottom:1px solid #e9eef5}.line-items tr:last-child td{border-bottom:0}.line-items .position{width:6mm;color:var(--muted)}.item-copy{width:70mm}.item-copy strong,.item-code,.item-description{display:block}.item-code{margin-bottom:2px;color:var(--blue);font-size:8.4px;font-weight:800}.item-description{margin-top:2px;color:var(--muted);font-size:8.5px}.num{text-align:right;white-space:nowrap}.amount{font-weight:800}.empty{text-align:center;color:var(--muted);padding:18px!important}
+  .closing-grid{display:grid;grid-template-columns:1fr 71mm;gap:8mm;margin-top:9px;align-items:start}.terms h3{margin:0 0 5px;font-size:12px}.terms p{margin:0;color:var(--muted)}.note{margin-top:8px;padding:7px 8px;border-left:3px solid var(--blue);background:var(--soft)}.note strong,.note span{display:block}.note span{margin-top:2px;color:#475467;white-space:pre-wrap}
+  .totals{border:1px solid var(--line);border-radius:11px;overflow:hidden}.totals>div{display:grid;grid-template-columns:1fr 29mm;gap:8px;padding:6px 9px;border-bottom:1px solid #e9eef5}.totals>div:last-child{border-bottom:0}.totals strong{text-align:right}.totals .total-main{background:#ecfdf3;color:#14532d;font-size:12px;font-weight:900}
+  .signature{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-top:9px}.sig-card{display:flex;min-height:47px;flex-direction:column;justify-content:space-between;border:1px solid var(--line);border-radius:10px;padding:8px}.sig-line{padding-top:5px;border-top:1px solid #98a2b3;color:var(--muted);font-size:9px}
+  .notes-page p{white-space:pre-wrap;color:#344054;font-size:10.5px}.keep-together{break-inside:avoid}
+  footer{position:absolute;right:10mm;bottom:6mm;left:10mm;display:grid;grid-template-columns:1.5fr 1fr auto;gap:8px;padding-top:5px;border-top:1px solid #e8edf5;color:var(--muted);font-size:7.5px}.footer-meta{text-align:right;white-space:nowrap}
+  @page{size:A4;margin:0}@media print{body{background:#fff}.page{margin:0;box-shadow:none}}
+</style></head><body>${pages}</body></html>`);
+};
+
+export const renderCommercialDocumentHtml = (payload, template = null) => (
+  template?.content
+    ? renderLegacyCommercialDocumentHtml(payload, template)
+    : renderCorporateCommercialDocumentHtml(payload)
+);
+
 export const generateDocumentFileName = (payload, extension = 'html') => {
   const parts = [
     payload.document.label,
@@ -793,35 +1003,46 @@ const createStyledPdfFromHtml = async (html) => {
   try {
     await waitForDocumentAssets(host);
 
-    const page = host.querySelector('.page') || host.querySelector('main') || host;
-    page.style.boxShadow = 'none';
-    page.style.margin = '0';
-
-    const canvas = await html2canvas(page, {
-      backgroundColor: '#ffffff',
-      scale: Math.min(2, window.devicePixelRatio || 1.5),
-      useCORS: true,
-      logging: false,
-      windowWidth: page.scrollWidth,
-      windowHeight: page.scrollHeight,
-    });
-
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const imageHeight = (canvas.height * pageWidth) / canvas.width;
-    const imageData = canvas.toDataURL('image/png');
+    const pageNodes = Array.from(host.querySelectorAll('.page'));
+    const renderNodes = pageNodes.length > 0 ? pageNodes : [host.querySelector('main') || host];
 
-    let remainingHeight = imageHeight;
-    let y = 0;
-    pdf.addImage(imageData, 'PNG', 0, y, pageWidth, imageHeight, undefined, 'FAST');
-    remainingHeight -= pageHeight;
+    for (let index = 0; index < renderNodes.length; index += 1) {
+      const page = renderNodes[index];
+      page.style.boxShadow = 'none';
+      page.style.margin = '0';
 
-    while (remainingHeight > 0) {
-      y -= pageHeight;
-      pdf.addPage();
-      pdf.addImage(imageData, 'PNG', 0, y, pageWidth, imageHeight, undefined, 'FAST');
-      remainingHeight -= pageHeight;
+      const canvas = await html2canvas(page, {
+        backgroundColor: '#ffffff',
+        scale: Math.min(2, window.devicePixelRatio || 1.5),
+        useCORS: true,
+        logging: false,
+        windowWidth: page.scrollWidth,
+        windowHeight: page.scrollHeight,
+      });
+      const imageData = canvas.toDataURL('image/png');
+      const naturalHeight = (canvas.height * pageWidth) / canvas.width;
+
+      if (index > 0) pdf.addPage();
+      if (renderNodes.length === 1 && naturalHeight > pageHeight * 1.04) {
+        let remainingHeight = naturalHeight;
+        let y = 0;
+        pdf.addImage(imageData, 'PNG', 0, y, pageWidth, naturalHeight, undefined, 'FAST');
+        remainingHeight -= pageHeight;
+        while (remainingHeight > 0) {
+          y -= pageHeight;
+          pdf.addPage();
+          pdf.addImage(imageData, 'PNG', 0, y, pageWidth, naturalHeight, undefined, 'FAST');
+          remainingHeight -= pageHeight;
+        }
+      } else {
+        const scale = naturalHeight > pageHeight ? pageHeight / naturalHeight : 1;
+        const drawWidth = pageWidth * scale;
+        const drawHeight = naturalHeight * scale;
+        pdf.addImage(imageData, 'PNG', (pageWidth - drawWidth) / 2, 0, drawWidth, drawHeight, undefined, 'FAST');
+      }
     }
 
     return pdf;
