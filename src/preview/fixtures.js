@@ -68,12 +68,21 @@ export function createFixtures() {
     { id: uuid(1302), title: 'Rodinný dům · realizace', number: 'OP-26-020', status: 'open', stage: 'qualification', estimated_value: 450000, expected_value: 450000, probability: 40, expected_close_date: previewDate(25), subject_id: subjects[0].id, assigned_to: MEMBER_ID, created_at: timestamp(-3) },
   ];
   const crm_commercial_documents = [{ id: uuid(1401), type: 'offer', title: 'Elektroinstalace základní školy', number: 'NAB-26-018', status: 'draft', subject_id: subjects[2].id, opportunity_id: crm_opportunities[0].id, total_without_vat: 320000, total_with_vat: 387200, created_at: timestamp(-2), valid_until: previewDate(14), issue_date: previewDate(-2), items: [] }];
-  const planning_plans = projects.slice(0, 2).map((project, index) => ({ id: uuid(1501 + index), plan_id: uuid(1501 + index), entity_type: 'project', entity_id: project.id, name: project.name, entity_name: project.name, entity_code: project.code }));
-  const planning_items = project_tasks.slice(0, 4).map((task, index) => ({ ...task, legacy_project_task_id: task.id, id: uuid(1601 + index), plan_id: planning_plans[index % 2].id, item_type: 'task', start_at: `${task.start_date}T08:00:00`, end_at: `${task.end_date}T16:00:00`, status: task.status === 'Hotovo' ? 'done' : 'in_progress', sort_order: index, calendar_sync_enabled: false, calendar_link: null }));
+  const planning_plans = [
+    ...projects.map((project,index)=>({id:uuid(1501+index),plan_id:uuid(1501+index),entity_type:'project',entity_id:project.id,title:project.name,code:project.code,name:project.name,entity_name:project.name,entity_code:project.code})),
+    ...realizations.map((realization,index)=>({id:uuid(1551+index),plan_id:uuid(1551+index),entity_type:'realization',entity_id:realization.id,title:realization.name,code:realization.code,name:realization.name,entity_name:realization.name,entity_code:realization.code})),
+  ];
+  const planning_items = [
+    ...project_tasks.slice(0,4).map((task,index)=>({...task,legacy_project_task_id:task.id,id:uuid(1601+index),plan_id:planning_plans.find(p=>p.entity_id===task.project_id).id,item_type:'task',start_at:task.start_date?`${task.start_date}T08:00:00`:null,end_at:task.end_date?`${task.end_date}T16:00:00`:null,status:task.status==='Hotovo'?'done':task.status==='Nové'?'planned':'in_progress',sort_order:index,calendar_sync_enabled:false,calendar_link:null})),
+    {id:uuid(1651),plan_id:uuid(1551),item_type:'task',name:'Koordinace průchodů před montáží',member_id:ADMIN_ID,status:'blocked',start_date:previewDate(-2),end_date:previewDate(-1),start_at:timestamp(-2),end_at:timestamp(-1),sort_order:0,progress:0,calendar_sync_enabled:false},
+    {id:uuid(1652),plan_id:uuid(1551),item_type:'task',name:'Montáž kabelových tras',member_id:MEMBER_ID,status:'planned',start_date:previewDate(2),end_date:previewDate(4),start_at:timestamp(2),end_at:timestamp(4),sort_order:1,progress:0,calendar_sync_enabled:false},
+  ];
+  const meeting_notes=[{id:uuid(91001),plan_id:uuid(1551),title:'KD 01 – příprava elektroinstalace',meeting_date:previewDate(-2),participants:'Jan Novák – koordinace\nPetr Svoboda – montáž',version:1,updated_at:timestamp(-2),updated_by:AUTH_ADMIN_ID,points:[{kind:'decision',text:'Před zahájením montáže ověřit připravenost průchodů.'},{kind:'task',text:'Vyřešit kolizi kabelové trasy s rozvody VZT.',planning_item_id:uuid(1651)}]}];
   const tables = {
     members, subjects, projects, realizations, realizace_team_members, project_tasks, project_members, attendance, payouts, payout_items, documents,
-    crm_opportunities, crm_commercial_documents, planning_plans, planning_items,
-    planning_assignments: planning_items.map((item, index) => ({ id: uuid(1701 + index), item_id: item.id, member_id: item.member_id, allocation_percentage: 100 })),
+    crm_opportunities, crm_commercial_documents, planning_plans, planning_items, meeting_notes,
+    meeting_note_versions: meeting_notes.map(note=>({note_id:note.id,version:note.version,snapshot:structuredClone(note),created_at:note.updated_at})),
+    planning_assignments: planning_items.map((item, index) => ({ id: uuid(1701 + index), item_id: item.id, member_id: item.member_id, allocation_percent: 100 })),
     notifications: [{ id: uuid(1801), user_id: AUTH_ADMIN_ID, type: 'payout', title: 'Žádost čeká na schválení', message: 'Petr Svoboda odeslal žádost o výplatu.', is_read: false, created_at: timestamp(-1) }],
     attendance_submissions: [{ id: uuid(1901), member_id: ADMIN_ID, month_date: `${previewDate(-8).slice(0, 7)}-01`, total_hours: 12, status: 'submitted', submitted_at: timestamp(-3), created_at: timestamp(-3) }],
     hourly_payout_requests: [{ id: uuid(2001), member_id: MEMBER_ID, project_id: projects[0].id, month_date: '2026-07-01', payout_year: 2026, payout_month: 7, total_hours: 24, hours: 24, hourly_rate: 450, amount: 10800, total_amount: 10800, status: 'pending', created_at: timestamp(-1), request_date: timestamp(-1), invoice_url: null }],
