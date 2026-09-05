@@ -239,8 +239,8 @@ const SubjectDetail = () => {
       setOrders(ordersRes.data || []);
 
       if (hasPermission('projects', 'can_read')) {
-        let query = supabase
-          .from('projects')
+        const query = supabase
+          .rpc('list_projects_safe')
           .select(canViewProjectFinance ? '*' : 'id, name, code, status, completion_date, created_at')
           .or(`investor_id.eq.${subjectId},client_id.eq.${subjectId}`)
           .order('created_at', { ascending: false });
