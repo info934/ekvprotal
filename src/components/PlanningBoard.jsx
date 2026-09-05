@@ -1,3 +1,4 @@
+import { useLocation, useNavigate } from 'react-router-dom';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { planningAvailabilityKey, planningDeletionItems } from '@/lib/operationsHelpers';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -479,6 +480,14 @@ const AccommodationDialog = ({ open, value, items, members, onClose, onSave, sav
 const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEditOverride }) => {
   const { hasPermission } = useAuth();
   const { toast } = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const focusedItemId = new URLSearchParams(location.search).get('planItem');
+  const clearFocusedItem = () => {
+    const params = new URLSearchParams(location.search);
+    params.delete('planItem');
+    navigate({pathname:location.pathname, search:params.toString(), hash:location.hash}, {replace:true, state:location.state});
+  };
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [data, setData] = useState({ items: [], dependencies: [], travel: [], accommodations: [], members: [], subcontractors: [] });
@@ -497,6 +506,7 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
     setAvailability({ checking: false, result: null, error: '' });
   }, []);
 
+  const focusedItem = data.items.find(item => item.id === focusedItemId);
   const selectedPlan = plans.find((plan) => plan.plan_id === selectedPlanId);
   const permissionEntityType = selectedPlan?.entity_type || entityType;
   const canEdit = canEditOverride ?? (permissionEntityType === 'realization'
@@ -734,6 +744,23 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
             {canEdit && <Button onClick={() => setItemDialog({ open: true, value: null })}><Plus className="mr-2 h-4 w-4" />Přidat do plánu</Button>}
           </div>
         </div>
+
+        {focusedItemId && <section aria-label="Vybraný úkol" className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-blue-700">Úkol z přehledu</p>
+              {loading ? <p role="status" className="mt-1 text-sm">Načítám vybraný úkol…</p> : focusedItem ? <>
+                <h2 className="mt-1 break-words font-semibold text-slate-900">{focusedItem.name}</h2>
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-sm"><StatusBadge value={focusedItem.status}/><span>Termín: {formatDate(focusedItem.end_date)}</span></div>
+                {focusedItem.description && <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-600">{focusedItem.description}</p>}
+              </> : <p role="status" className="mt-1 text-sm">Úkol není v tomto plánu dostupný. Mohl být odebrán nebo k němu nemáte přístup.</p>}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {!loading && focusedItem && canEdit && <Button variant="outline" onClick={() => setItemDialog({open:true,value:focusedItem})}><Pencil className="mr-2 h-4 w-4"/>Upravit vybraný úkol</Button>}
+              <Button variant="ghost" onClick={clearFocusedItem}>Zrušit výběr úkolu</Button>
+            </div>
+          </div>
+        </section>}
 
         <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Metric icon={Clock3} label="Aktivní položky" value={stats.active} />

@@ -10,7 +10,7 @@ export function mergeWorkTasks(plans, items, legacy, assignments = []) {
       return {...i,id:`plan:${i.id}`,sourceId:i.id,status:TASK_LABELS[i.status]||i.status,kind:p.entity_type,
         project:{name:p.title||p.entity_name||p.name,code:p.code||p.entity_code},
         assignedIds:[i.member_id,...assignments.filter(a=>a.item_id===i.id).map(a=>a.member_id)].filter(Boolean),
-        path:`/${p.entity_type==='project'?'projects':'realizace'}/${p.entity_id}#plan`};
+        path:`/${p.entity_type==='project'?'projects':'realizace'}/${p.entity_id}?planItem=${encodeURIComponent(i.id)}#plan`};
     }),
     ...legacy.filter(i=>!linked.has(i.id)).map(i=>({...i,id:`project:${i.id}`,sourceId:i.id,kind:'project',assignedIds:[i.member_id].filter(Boolean),path:`/projects/${i.project_id}?task=${i.id}#tasks`})),
   ].sort((a,b)=>(a.end_date||'9999').localeCompare(b.end_date||'9999')||a.id.localeCompare(b.id));
