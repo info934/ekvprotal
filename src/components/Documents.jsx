@@ -1,3 +1,4 @@
+import { fetchReportRows } from '@/lib/reportData';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -34,49 +35,57 @@ const statusConfig = {
 const Documents = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const linkedDocument = searchParams.get('document') || '';
-  const linkedSearch = searchParams.get('search') || '';
+  const linkedSearch = (searchParams.get('search') || '').slice(0,250);
   const { toast } = useToast();
   const { hasPermission, isSuperUser } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [projects, setProjects] = useState([]);
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [projectSearch, setProjectSearch] = useState('');
-  const [searchTerm, setSearchTerm] = useState(linkedSearch);
-  const [selectedProject, setSelectedProject] = useState(undefined);
+  const searchTerm=linkedSearch;
+  const selectedProject=searchParams.get('project')||undefined;
+  const setFilter=(key,value)=>setSearchParams(previous=>{const next=new URLSearchParams(previous);if(value)next.set(key,value);else next.delete(key);return next;},{replace:true});
+  const setSearchTerm=value=>setFilter('search',value);
+  const setSelectedProject=value=>setFilter('project',value);
+  const clearFilters=()=>setSearchParams(previous=>{const next=new URLSearchParams(previous);['document','search','project'].forEach(key=>next.delete(key));return next;},{replace:true});
   const [isDocDialogOpen, setIsDocDialogOpen] = useState(false);
   const [docDialogPayload, setDocDialogPayload] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const requestId = useRef(0);
-  useEffect(() => { setSearchTerm(linkedSearch); }, [linkedSearch]);
+  const pendingRequest=useRef(null);
 
   const fetchDocuments = useCallback(async () => {
+    pendingRequest.current?.abort();
+    const controller=new AbortController();pendingRequest.current=controller;
+    const timeout=setTimeout(()=>controller.abort(),20000);
     const currentRequest = ++requestId.current;
     setLoading(true);
     setLoadError('');
     try {
       if (linkedDocument && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(linkedDocument)) throw new Error('Odkaz na dokument není platný.');
-      let query = supabase.from('documents').select('*, projects(name, code)');
-      if (linkedDocument) query = query.eq('id', linkedDocument);
-      if (!linkedDocument && searchTerm.trim()) query = query.ilike('name', `%${searchTerm.trim().replace(/[\\%_]/g, '\\$&')}%`);
-      if (!linkedDocument && selectedProject) {
-        query = query.eq('project_id', selectedProject);
-      } else if (!isSuperUser) {
-        const { data: userProjects, error: projectsError } = await supabase.rpc('list_projects_safe');
-        if (projectsError) throw projectsError;
-        const projectIds = (userProjects || []).map(project => project.id);
-        if (!projectIds.length) {
-          if (currentRequest === requestId.current) setDocuments([]);
-          return;
-        }
-        query = query.in('project_id', projectIds);
+      let allowedProjects=null;
+      if(!isSuperUser){
+        const {data,error}=await supabase.rpc('list_projects_safe').abortSignal(controller.signal);
+        if(error)throw error;
+        allowedProjects=(data||[]).map(project=>project.id);
+        if(!allowedProjects.length){if(currentRequest===requestId.current)setDocuments([]);return;}
       }
-      const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) throw error;
+      const data=await fetchReportRows(()=>{
+        let query=supabase.from('documents').select('*, projects(name, code)').order('created_at',{ascending:false}).order('id');
+        if(linkedDocument)query=query.eq('id',linkedDocument);
+        else{
+          if(searchTerm.trim())query=query.ilike('name','%'+searchTerm.trim().replace(/[\\%_]/g,'\\$&')+'%');
+          if(selectedProject)query=query.eq('project_id',selectedProject);
+        }
+        if(allowedProjects)query=query.in('project_id',allowedProjects);
+        return query;
+      },controller.signal);
       if (currentRequest === requestId.current) setDocuments(data || []);
     } catch (error) {
       if (currentRequest === requestId.current) setLoadError(error.message || 'Zkontrolujte připojení a zkuste načtení znovu.');
     } finally {
+      clearTimeout(timeout);
       if (currentRequest === requestId.current) setLoading(false);
     }
   }, [searchTerm, selectedProject, isSuperUser, linkedDocument]);
@@ -102,7 +111,7 @@ const Documents = () => {
   
   useEffect(() => {
     const timer = setTimeout(fetchDocuments, 200);
-    return () => { clearTimeout(timer); requestId.current += 1; };
+    return () => { clearTimeout(timer); pendingRequest.current?.abort(); requestId.current += 1; };
   }, [fetchDocuments]);
 
   useEffect(() => {
@@ -247,7 +256,7 @@ const Documents = () => {
           </div>
           <div className="flex-grow sm:flex-grow-0">
              <Select disabled={Boolean(linkedDocument)} value={selectedProject || 'all'} onValueChange={(value) => setSelectedProject(value === 'all' ? undefined : value)}>
-                <SelectTrigger className="h-10 w-full bg-white sm:w-64">
+                <SelectTrigger aria-label="Projekt dokumentu" className="h-10 w-full bg-white sm:w-64">
                     <SelectValue placeholder="Všechny projekty" />
                 </SelectTrigger>
                 <SelectContent>
@@ -273,7 +282,8 @@ const Documents = () => {
           </div>
         </div>
 
-        {linkedDocument && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-blue-50 p-4"><p className="text-sm">Zobrazení konkrétního dokumentu z odkazu.</p><Button variant="outline" onClick={() => { setSearchTerm(''); setSelectedProject(undefined); setSearchParams(current => { const next = new URLSearchParams(current); next.delete('document'); next.delete('search'); return next; }); }}>Zobrazit všechny dokumenty</Button></div>}
+        {linkedDocument && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-blue-50 p-4"><p className="text-sm">Zobrazení konkrétního dokumentu z odkazu.</p><Button variant="outline" onClick={clearFilters}>Zobrazit všechny dokumenty</Button></div>}
+        {!linkedDocument&&<div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500"><span role="status">{loading?'Načítám seznam…':loadError?'Počet dokumentů není dostupný':'Dokumentů ve výběru: '+documents.length}</span>{(searchTerm||selectedProject)&&<Button size="sm" variant="ghost" onClick={clearFilters}>Zrušit filtry</Button>}</div>}
         {loading && <div role="status" className="flex items-center justify-center gap-3 py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Načítám dokumenty…</div>}
         {!loading && loadError && (
           <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 text-center">
@@ -299,7 +309,7 @@ const Documents = () => {
             <TableBody>
                 {documents.map((doc) => {
                     const statusKey = doc.type === 'Zápis z KD' || doc.type === 'Příloha' ? doc.type : doc.status;
-                    const config = statusConfig[statusKey] || {};
+                    const config = statusConfig[statusKey] || {label:doc.status||'Stav neuveden',color:'bg-slate-50 text-slate-600 border-slate-200'};
                     return (
                         <TableRow key={doc.id}>
                             <TableCell className="font-medium">{doc.name}</TableCell>
@@ -309,8 +319,9 @@ const Documents = () => {
                             <TableCell>
                                 <span className={`px-2 py-1 text-xs font-medium rounded-full border ${config.color}`}>{config.label}</span>
                             </TableCell>
-                            <TableCell>{format(new Date(doc.created_at), 'd.M.yyyy')}</TableCell>
+                            <TableCell>{doc.created_at&&Number.isFinite(Date.parse(doc.created_at))?format(new Date(doc.created_at), 'd.M.yyyy'):'Datum neuvedeno'}</TableCell>
                             <TableCell className="text-right">
+                                {!doc.file_path&&!doc.external_web_url&&<span className="text-xs text-slate-500">Soubor není připojen</span>}
                                 {(doc.file_path || doc.external_web_url) && (
                                     <Button variant="ghost" size="icon" aria-label={`Stáhnout ${doc.name}`} onClick={() => handleDownloadFile(doc)}>
                                        <Download className="w-5 h-5"/>
