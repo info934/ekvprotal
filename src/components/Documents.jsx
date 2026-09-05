@@ -1,7 +1,6 @@
 import { fetchReportRows } from '@/lib/reportData';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { Plus, Search, FileText, Download, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -40,6 +39,10 @@ const Documents = () => {
   const { hasPermission, isSuperUser } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState('');
+  const projectRequest = useRef(null);
+  const projectRequestId = useRef(0);
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [projectSearch, setProjectSearch] = useState('');
   const searchTerm=linkedSearch;
@@ -91,24 +94,35 @@ const Documents = () => {
   }, [searchTerm, selectedProject, isSuperUser, linkedDocument]);
 
   const fetchProjects = useCallback(async () => {
-    let projectQuery;
-    if (isSuperUser) {
-        projectQuery = supabase.from('projects').select('id, name, code');
-    } else {
-        projectQuery = supabase.rpc('list_projects_safe');
-    }
-    const { data, error } = isSuperUser ? await projectQuery.order('code') : await projectQuery;
-    if (!error) {
-      const nextProjects = [...(data || [])].sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'cs'));
-      setProjects(nextProjects);
-      setFilteredProjects(nextProjects);
+    projectRequest.current?.abort();
+    const controller = new AbortController();
+    projectRequest.current = controller;
+    const current = ++projectRequestId.current;
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    setProjectsLoading(true);
+    setProjectsError('');
+    try {
+      const data = await fetchReportRows(() => isSuperUser
+        ? supabase.from('projects').select('id, name, code').order('code').order('id')
+        : supabase.rpc('list_projects_safe').order('id'), controller.signal);
+      if (current !== projectRequestId.current) return;
+      setProjects([...data].sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'cs')));
+    } catch (error) {
+      if (current === projectRequestId.current) {
+        setProjects([]);
+        setProjectsError(controller.signal.aborted ? 'Načítání projektů trvalo příliš dlouho.' : 'Projekty se nepodařilo načíst.');
+      }
+    } finally {
+      clearTimeout(timeout);
+      if (current === projectRequestId.current) setProjectsLoading(false);
     }
   }, [isSuperUser]);
 
   useEffect(() => {
     fetchProjects();
+    return () => { projectRequest.current?.abort(); projectRequestId.current += 1; };
   }, [fetchProjects]);
-  
+
   useEffect(() => {
     const timer = setTimeout(fetchDocuments, 200);
     return () => { clearTimeout(timer); pendingRequest.current?.abort(); requestId.current += 1; };
@@ -211,36 +225,16 @@ const Documents = () => {
         title="Dokumentace"
         description="Správa projektové dokumentace a verzí"
         actions={hasPermission('documents', 'can_edit') && (
-          <Button onClick={openAddDocumentDialog}>
+          <Button disabled={projectsLoading || Boolean(projectsError) || !projects.length} onClick={openAddDocumentDialog}>
             <Plus className="w-4 h-4 mr-2" />
             Nový dokument
           </Button>
         )}
       />
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="hidden"
-      >
-        <div>
-          <h1 className="text-3xl sm:text-4xl font-bold gradient-text mb-2 flex items-center gap-3">
-            <FileText className="w-8 h-8" />
-            Dokumentace
-          </h1>
-          <p className="text-muted-foreground">Správa projektové dokumentace a verzí</p>
-        </div>
-        {hasPermission('documents', 'can_edit') &&
-            <Button
-              onClick={openAddDocumentDialog}
-              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-lg"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Nový dokument
-            </Button>
-        }
-      </motion.div>
-
       <div className="crm-panel p-4 sm:p-5">
+        {projectsLoading && <p role="status" className="mb-4 text-sm text-muted-foreground">Načítám projekty pro filtrování a nahrávání…</p>}
+        {projectsError && <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"><p>{projectsError} Výběr projektu a nahrávání jsou dočasně nedostupné.</p><Button size="sm" variant="outline" onClick={fetchProjects}>Načíst projekty znovu</Button></div>}
+        {!projectsLoading && !projectsError && !projects.length && <p className="mb-4 text-sm text-muted-foreground">Nemáte dostupný projekt pro nahrání dokumentu.</p>}
         <div className="mb-6 flex flex-wrap gap-4">
           <div className="relative flex-grow">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -255,7 +249,7 @@ const Documents = () => {
             />
           </div>
           <div className="flex-grow sm:flex-grow-0">
-             <Select disabled={Boolean(linkedDocument)} value={selectedProject || 'all'} onValueChange={(value) => setSelectedProject(value === 'all' ? undefined : value)}>
+             <Select disabled={Boolean(linkedDocument) || projectsLoading || Boolean(projectsError)} value={selectedProject || 'all'} onValueChange={(value) => setSelectedProject(value === 'all' ? undefined : value)}>
                 <SelectTrigger aria-label="Projekt dokumentu" className="h-10 w-full bg-white sm:w-64">
                     <SelectValue placeholder="Všechny projekty" />
                 </SelectTrigger>
@@ -314,8 +308,8 @@ const Documents = () => {
                         <TableRow key={doc.id}>
                             <TableCell className="font-medium">{doc.name}</TableCell>
                             <TableCell>{doc.projects?.code}</TableCell>
-                            <TableCell>{doc.version}</TableCell>
-                            <TableCell>{doc.type}</TableCell>
+                            <TableCell>{doc.version || '—'}</TableCell>
+                            <TableCell>{doc.type === 'project' ? 'Projektový dokument' : doc.type || 'Typ neuveden'}</TableCell>
                             <TableCell>
                                 <span className={`px-2 py-1 text-xs font-medium rounded-full border ${config.color}`}>{config.label}</span>
                             </TableCell>
