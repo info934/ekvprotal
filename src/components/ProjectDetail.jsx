@@ -1,7 +1,7 @@
 import MeetingNotes from '@/components/MeetingNotes';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
-import { safeListReturnPath, taskIsDone, taskIsOpen, taskIsCancelled, taskProgress } from '@/lib/listWorkspaceState';
+import { recordReturnPath, taskIsDone, taskIsOpen, taskIsCancelled, taskProgress } from '@/lib/listWorkspaceState';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -1051,8 +1051,8 @@ const ProjectDetail = () => {
             <RecordWorkspaceHeader
                 title={project.name}
                 subtitle={project.code}
-                onBack={() => navigate(safeListReturnPath(location.state?.returnTo, '/projects'))}
-                backLabel="Zpět na projekce"
+                onBack={() => navigate(recordReturnPath(location.state?.returnTo, '/projects'))}
+                backLabel={recordReturnPath(location.state?.returnTo, '/projects').split('?')[0] === '/tasks' ? 'Zpět na úkoly' : 'Zpět na projekce'}
                 status={renderStatusMenu()}
                 actions={(
                     <>

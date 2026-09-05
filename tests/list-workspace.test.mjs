@@ -99,3 +99,9 @@ test('fetchAllListRows never returns a partial list after a failed or malformed 
   await assert.rejects(fetchAllListRows(async () => ({ data: { id: 1 } }), 2), /formát/);
   await assert.rejects(fetchAllListRows(async () => { throw failure; }, 2), error => error === failure);
 });
+import {recordReturnPath} from '../src/lib/listWorkspaceState.js';
+test('record returns preserve task filters but reject other or external targets',()=>{
+ assert.equal(recordReturnPath('/tasks?scope=mine&q=Test','/projects'),'/tasks?scope=mine&q=Test');
+ for(const candidate of ['https://example.com','//example.com','/tasks-other','/members'])assert.equal(recordReturnPath(candidate,'/projects'),'/projects');
+ assert.equal(recordReturnPath('/realizace?q=Test','/realizace'),'/realizace?q=Test');
+});

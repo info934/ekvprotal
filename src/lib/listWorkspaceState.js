@@ -68,3 +68,8 @@ export async function fetchAllListRows(fetchPage, pageSize = 500) {
     if (!data.length) return rows;
   }
 }
+
+export function recordReturnPath(candidate,fallback){
+ if(typeof candidate==='string'&&(candidate==='/tasks'||candidate.startsWith('/tasks?')))return candidate;
+ return safeListReturnPath(candidate,fallback);
+}

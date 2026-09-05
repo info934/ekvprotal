@@ -1,7 +1,7 @@
 import MeetingNotes from '@/components/MeetingNotes';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { safeListReturnPath } from '@/lib/listWorkspaceState';
+import { recordReturnPath } from '@/lib/listWorkspaceState';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -599,8 +599,8 @@ const RealizaceDetail = () => {
       <RecordWorkspaceHeader
         title={realization.name}
         subtitle={realization.code}
-        onBack={() => navigate(safeListReturnPath(location.state?.returnTo, '/realizace'))}
-        backLabel="Zpět na realizace"
+        onBack={() => navigate(recordReturnPath(location.state?.returnTo, '/realizace'))}
+        backLabel={recordReturnPath(location.state?.returnTo, '/realizace').split('?')[0] === '/tasks' ? 'Zpět na úkoly' : 'Zpět na realizace'}
         status={renderStatusMenu()}
         actions={canEdit && (
           <Button size="sm" onClick={() => navigate(`/realizace/${realizaceId}/edit`)}>
