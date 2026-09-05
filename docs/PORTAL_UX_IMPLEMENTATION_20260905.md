@@ -1,3 +1,19 @@
+# Aktuální stav: nasazeno 5. 9. 2026
+
+Produkční kód: `ea0db95` (main), release `ekvportal-2.0-20260905T145010Z`. Níže uvedené lokální stavy jsou historické záznamy jednotlivých kroků.
+
+- Sjednocené menší hlavičky a rozestupy napříč moduly, aktualizovaná nápověda globálního hledání, česká data a stavy v zápisech KD.
+- Nasazeny oba předchozí balíky i kompaktní docházka a výplaty.
+- Před změnou čerstvá plná databázová záloha a archiv aplikace: `/opt/ekvportal-backups/ux-kd-20260905/`. Dump má 3065 položek v ověřeném katalogu. Předchozí image zachován jako `ekvportal:before-ux-kd-20260905`.
+- Produkční migrace 20260905170000 a 20260905180000 úspěšné; RLS zapnuté, anonymní SELECT a přímý klientský UPDATE zakázány.
+- Validace: všech 154 JS testů, lint, UI/security/critical invariants, kontrola migrací a build. SQL testy na izolované obnovené databázi viz níže.
+- Browser: projekty na desktopu, hledání Javorová zúží 4 záznamy na 2; zaměstnanci na mobilu 390 × 844. Smysluplný obsah bez error overlay a bez console errors. Předchozí balík má kontrolu docházky, výplat a KD.
+- Produkční kontejner healthy. Deset cest a čtyři vstupní assets vrací HTTP 200; HTML odpovídá kandidátovi. HTTPS ověřeno s explicitně důvěryhodným existujícím certifikátem serveru; veřejná důvěryhodnost certifikátu se tím nemění. Nejde o test všech přihlášených produkčních workflow.
+- Image: `sha256:402741885266ad523130e5c95f9238c20f198917fc06f4b2009c2c4e56173232`.
+- Zbývá: PDF a externí rozesílání KD, prohlížeč historie verzí, tvorba úkolu přímo ze zápisu a ostatní backlog auditu.
+
+---
+
 # První balík úprav použitelnosti — 5. 9. 2026
 
 Navazuje na PORTAL_UX_FUNCTIONAL_AUDIT_20260905.md.
