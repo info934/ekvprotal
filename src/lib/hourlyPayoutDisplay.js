@@ -12,7 +12,7 @@ const summarizeBreakdown = (breakdown) => {
     .filter(([key]) => isMeaningfulBreakdownKey(key))
     .map(([key, hours]) => ({
       label: String(key).trim(),
-      hours: Number(hours || 0),
+      hours: toFiniteAmount(hours) === null || Number(hours) < 0 ? null : Number(hours),
     }))
     .filter((item) => item.label);
 };
@@ -25,22 +25,23 @@ const summarizeSnapshot = (snapshot) => {
   const projectIds = new Set();
   const realizationIds = new Set();
 
-  snapshot.forEach((entry) => {
+  const entries = snapshot.filter(entry => entry && typeof entry === 'object' && !Array.isArray(entry));
+  entries.forEach((entry) => {
     if (entry?.project_id) projectIds.add(entry.project_id);
     if (entry?.realization_id) realizationIds.add(entry.realization_id);
   });
 
   return {
-    count: snapshot.length,
+    count: entries.length,
     projectIds: [...projectIds],
     realizationIds: [...realizationIds],
   };
 };
 
 export const getHourlyPayoutDisplay = (request) => {
-  const month = request?.payout_month;
-  const year = request?.payout_year;
-  const periodLabel = month && year ? `Žádost za ${month}/${year}` : 'Měsíční žádost';
+  const month = Number(request?.payout_month);
+  const year = Number(request?.payout_year);
+  const periodLabel = Number.isInteger(month) && month >= 1 && month <= 12 && Number.isInteger(year) && year >= 1000 && year <= 9999 ? `Žádost za ${month}/${year}` : 'Měsíční žádost';
   const directProject = request?.projects?.name || request?.projects?.code;
   const breakdownItems = summarizeBreakdown(request?.breakdown);
   const snapshotSummary = summarizeSnapshot(request?.attendance_snapshot);
@@ -59,7 +60,7 @@ export const getHourlyPayoutDisplay = (request) => {
     const visibleItems = breakdownItems.slice(0, 2);
     const hiddenCount = breakdownItems.length - visibleItems.length;
     const assignmentLabel = [
-      ...visibleItems.map((item) => `${item.label}${item.hours ? ` (${item.hours} h)` : ''}`),
+      ...visibleItems.map((item) => `${item.label}${item.hours !== null ? ` (${item.hours.toLocaleString('cs-CZ')} h)` : ' (hodiny neuvedeny)'}`),
       hiddenCount > 0 ? `+${hiddenCount} další` : null,
     ].filter(Boolean).join(', ');
 
@@ -77,7 +78,7 @@ export const getHourlyPayoutDisplay = (request) => {
     return {
       periodLabel,
       assignmentLabel: linkedCount > 0 ? `${linkedCount} navázaných aktivit` : `${snapshotSummary.count} záznamů docházky`,
-      assignmentDetail: 'Detail je uložen ve snapshotu docházky',
+      assignmentDetail: 'Rozpis je uložený u žádosti v záznamech docházky',
       projectReference: snapshotSummary.projectIds[0] || snapshotSummary.realizationIds[0] || null,
       searchText: `${periodLabel} snapshot docházka`,
     };
@@ -91,3 +92,4 @@ export const getHourlyPayoutDisplay = (request) => {
     searchText: periodLabel,
   };
 };
+import { toFiniteAmount } from '../domain/financials.js';

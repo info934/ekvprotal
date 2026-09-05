@@ -5,6 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "vite --host :: --port 3000",
+    "preview:ui": "vite --config vite.preview.config.mjs --host 127.0.0.1 --port 4174",
+    "preview:ui:build": "vite build --config vite.preview.config.mjs",
     "build": "node tools/build.mjs",
     "financial:check": "node tools/check-financial-calculations.mjs",
     "financial:report": "node tools/generate-financial-audit-report.mjs",
@@ -23,7 +25,9 @@
     "test:critical": "node tools/check-critical-invariants.mjs",
     "security:check": "node tools/check-security-invariants.mjs",
     "ui:check": "node tools/check-ui-invariants.mjs",
-    "test": "eslint . --quiet && node tools/check-supabase-migrations.mjs && node tools/check-financial-calculations.mjs && node tools/check-critical-invariants.mjs && node tools/check-security-invariants.mjs && node tools/check-ui-invariants.mjs"
+    "test:workflows": "node --test tests/*.test.mjs && node tools/check-operations-workflows.mjs && node tools/check-unsaved-workflows.mjs && node tools/test-security-stabilization.mjs",
+    "test:preview": "node src/preview/test-preview.mjs",
+    "test": "eslint . --quiet && node tools/check-supabase-migrations.mjs && node tools/check-financial-calculations.mjs && node tools/check-critical-invariants.mjs && node tools/check-security-invariants.mjs && node tools/check-ui-invariants.mjs && npm run test:workflows"
   },
   "dependencies": {
     "@babel/generator": "^7.26.3",

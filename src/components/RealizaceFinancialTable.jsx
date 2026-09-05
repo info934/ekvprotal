@@ -1,40 +1,57 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
-import { useToast } from '@/components/ui/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { format, parseISO } from 'date-fns';
-import { formatMoney } from '@/lib/financePresentation';
+import { formatMoney, getFinanceErrorMessage } from '@/lib/financePresentation';
+import { toFiniteAmount } from '@/domain/financials';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { FinanceVisibilityNotice } from '@/components/finance/FinanceWorkspace';
+import { Button } from '@/components/ui/button';
 
 const RealizaceFinancialTable = () => {
     const [financialData, setFinancialData] = useState([]);
     const [loading, setLoading] = useState(true);
-    const { toast } = useToast();
+    const [error, setError] = useState(null);
+    const [reload, setReload] = useState(0);
+    const { userRole, isPrivateMode } = useAuth();
+    const allowed = userRole === 'admin';
 
     useEffect(() => {
+        const controller = new AbortController();
+        setFinancialData([]); setError(null);
+        if (!allowed) { setLoading(false); return () => controller.abort(); }
         const fetchTableData = async () => {
             setLoading(true);
-            const { data, error } = await supabase
+            try {
+            const { data, error: loadError } = await supabase
                 .from('realizace_financials')
                 .select(`
                     *,
                     realization:realizace_id (name)
                 `)
                 .order('period', { ascending: false })
-                .limit(10);
-            
-            if (error) {
-                toast({ title: 'Chyba načítání finančních záznamů', variant: 'destructive', description: error.message });
-            } else {
-                setFinancialData(data);
+                .order('id')
+                .limit(10).abortSignal(controller.signal);
+            if (loadError) throw loadError;
+            if (!Array.isArray(data)) throw new Error('Finanční seznam nebyl načten.');
+            if (!controller.signal.aborted) setFinancialData(data);
+            } catch (loadError) {
+                if (!controller.signal.aborted) setError(getFinanceErrorMessage(loadError, 'Finanční záznamy se nepodařilo načíst.'));
+            } finally {
+                if (!controller.signal.aborted) setLoading(false);
             }
-            setLoading(false);
         };
         fetchTableData();
-    }, [toast]);
+        return () => controller.abort();
+    }, [allowed, reload]);
 
     const formatCurrency = formatMoney;
+    const periodLabel = value => {
+        const date = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00Z`) : null;
+        return date && Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? date.toLocaleDateString('cs-CZ', { month: '2-digit', year: 'numeric', timeZone: 'UTC' }) : 'Období není platné';
+    };
+    if (!allowed || isPrivateMode) return <FinanceVisibilityNotice message={isPrivateMode ? 'Finanční záznamy jsou skryté v soukromém režimu.' : 'Finanční záznamy jsou dostupné administrátorovi.'} />;
 
     // Future integration point for Forecast module:
     // This table could be enhanced with a column showing 'Projected vs. Actual' variance
@@ -42,8 +59,8 @@ const RealizaceFinancialTable = () => {
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Poslední finanční operace</CardTitle>
-                <CardDescription>Přehled posledních zaznamenaných finančních pohybů v realizacích.</CardDescription>
+                <CardTitle>Poslední finanční záznamy</CardTitle>
+                <CardDescription>10 nejnovějších periodických záznamů realizací. Přehled nezobrazuje všechny finanční pohyby.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Table>
@@ -61,6 +78,8 @@ const RealizaceFinancialTable = () => {
                             <TableRow>
                                 <TableCell colSpan={5} className="text-center">Načítání...</TableCell>
                             </TableRow>
+                        ) : error ? (
+                            <TableRow><TableCell colSpan={5}><p role="alert" className="mb-3 text-sm text-red-800">{error}</p><Button variant="outline" onClick={() => setReload(value => value + 1)}>Zkusit znovu</Button></TableCell></TableRow>
                         ) : financialData.length === 0 ? (
                             <TableRow>
                                 <TableCell colSpan={5} className="text-center">Nebyly nalezeny žádné finanční záznamy.</TableCell>
@@ -71,11 +90,11 @@ const RealizaceFinancialTable = () => {
                                     <TableCell>
                                         <div className="font-medium">{item.realization?.name || 'N/A'}</div>
                                     </TableCell>
-                                    <TableCell>{format(parseISO(item.period), 'MM/yyyy')}</TableCell>
+                                    <TableCell>{periodLabel(item.period)}</TableCell>
                                     <TableCell className="text-green-600">{formatCurrency(item.actual_revenue)}</TableCell>
                                     <TableCell className="text-red-600">{formatCurrency(item.actual_costs)}</TableCell>
                                     <TableCell className="text-right font-medium">
-                                        <Badge variant={item.actual_profit >= 0 ? 'success' : 'destructive'}>
+                                        <Badge variant={toFiniteAmount(item.actual_profit) === null ? 'secondary' : Number(item.actual_profit) >= 0 ? 'success' : 'destructive'}>
                                             {formatCurrency(item.actual_profit)}
                                         </Badge>
                                     </TableCell>

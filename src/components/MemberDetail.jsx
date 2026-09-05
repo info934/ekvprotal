@@ -499,6 +499,7 @@ const MemberDetail = () => {
           <p className="text-muted-foreground">Detailní přehled zaměstnance, jeho pozice, projektů, financí a certifikací.</p>
         </div>
         <div className="flex-shrink-0 flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          {(isAdmin || String(currentMemberId) === String(memberId)) && <Button variant="outline" asChild><Link to={`/employees/${memberId}`}><Briefcase className="mr-2 h-4 w-4" />Zaměstnanecká karta</Link></Button>}
           {canEdit && <Button variant="outline" onClick={() => setIsMessageDialogOpen(true)} className="w-full sm:w-auto"><MessageSquare className="w-4 h-4 mr-2" />Poslat zprávu</Button>}
           {canEdit && <Button onClick={() => setIsMemberDialogOpen(true)} className="w-full sm:w-auto"><Edit2 className="w-4 h-4 mr-2" />Upravit</Button>}
           {canAdmin && (

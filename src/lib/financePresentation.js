@@ -1,15 +1,54 @@
+import { toFiniteAmount } from '../domain/financials.js';
+
 export const formatMoney = (value, options = {}) => {
+  const amount = toFiniteAmount(value);
+  if (amount === null) return 'Nedostupné';
   const { maximumFractionDigits = 0, minimumFractionDigits = 0, currency = 'CZK' } = options;
   return new Intl.NumberFormat('cs-CZ', {
     style: 'currency',
     currency,
     maximumFractionDigits,
     minimumFractionDigits,
-  }).format(Number(value || 0));
+  }).format(amount);
 };
 
-export const formatPercent = (value, maximumFractionDigits = 1) =>
-  `${Number(value || 0).toLocaleString('cs-CZ', { maximumFractionDigits })} %`;
+export const formatPercent = (value, maximumFractionDigits = 1) => {
+  const amount = toFiniteAmount(value);
+  return amount === null ? 'Nedostupné' : `${amount.toLocaleString('cs-CZ', { maximumFractionDigits })} %`;
+};
+
+export async function fetchAllFinancialRows(factory, signal, pageSize = 250) {
+  const rows = [];
+  while (true) {
+    if (signal?.aborted) throw new DOMException('Načítání bylo přerušeno.', 'AbortError');
+    let query = factory().range(rows.length, rows.length + pageSize - 1);
+    if (signal) query = query.abortSignal(signal);
+    const result = await query;
+    if (result.error) throw result.error;
+    if (!Array.isArray(result.data)) throw new Error('Server nevrátil úplná finanční data.');
+    if (!result.data.length) return rows;
+    rows.push(...result.data);
+  }
+}
+
+export function aggregateFinancialPeriods(rows) {
+  const months = new Map();
+  for (const row of rows) {
+    if (typeof row.period !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row.period)) throw new Error('Finanční záznam nemá platné období.');
+    const date = new Date(`${row.period}T12:00:00Z`);
+    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== row.period) throw new Error('Finanční záznam nemá platné období.');
+    const month = row.period.slice(0, 7);
+    const item = months.get(month) || { month, revenue: 0, costs: 0, profit: 0 };
+    for (const [source, target] of [['actual_revenue', 'revenue'], ['actual_costs', 'costs'], ['actual_profit', 'profit']]) {
+      const amount = toFiniteAmount(row[source]);
+      if (amount === null) throw new Error('Finanční záznam obsahuje neúplnou nebo neplatnou částku.');
+      item[target] += amount;
+      if (!Number.isFinite(item[target])) throw new Error('Finanční souhrn překročil podporovaný rozsah.');
+    }
+    months.set(month, item);
+  }
+  return [...months.values()].sort((a, b) => a.month.localeCompare(b.month));
+}
 
 export const financeMetricTones = {
   neutral: 'border-slate-200 bg-white text-slate-950',

@@ -45,6 +45,8 @@ import { useToast } from '@/components/ui/use-toast';
 import { parseApiError } from '@/lib/apiValidation';
 import BatchProjectDialog from '@/components/BatchProjectDialog';
 import { ListViewModeToggle, ListWorkspaceToolbar } from '@/components/ui/list-workspace';
+import { usePersistentListState } from '@/hooks/usePersistentListState';
+import { compareListRecords, fetchAllListRows, isRecordActivation } from '@/lib/listWorkspaceState';
 import {
   buildProjectProjectionChartData,
   calculateProjectProjectionStats,
@@ -52,6 +54,8 @@ import {
 } from '@/domain/projectProjections';
 
 const chartPalette = ['#64748b', '#2563eb', '#f59e0b', '#10b981', '#8b5cf6'];
+const projectListStatuses = Object.keys(projectStatusConfig);
+const projectListSorts = ['created_at', 'name', 'code', 'price', 'completion_date'];
 
 const formatChartAxisValue = (value, money) => {
   if (!money) return value;
@@ -281,10 +285,14 @@ const Projects = () => {
 
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('kanban');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
+  const [loadError, setLoadError] = useState('');
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+  const { state: listState, update: updateList, openRecord } = usePersistentListState({ scope: 'projects', userId: user?.id || memberId, statuses: projectListStatuses, sorts: projectListSorts, ready: !loading });
+  const { q: searchQuery, status: statusFilter, view: viewMode } = listState;
+  const sortConfig = useMemo(() => ({ key: listState.sort, direction: listState.dir }), [listState.sort, listState.dir]);
+  const setSearchQuery = q => updateList({ q });
+  const setStatusFilter = status => updateList({ status });
+  const setViewMode = view => updateList({ view });
   const [filterOpen, setFilterOpen] = useState(false);
   const [projectStats, setProjectStats] = useState(getEmptyProjectProjectionStats);
   const [memberRewards, setMemberRewards] = useState({});
@@ -305,6 +313,7 @@ const Projects = () => {
     { id: 'name', label: 'Název' },
     { id: 'investor', label: 'Investor' },
     { id: 'status', label: 'Stav' },
+    { id: 'deadline', label: 'Dokončení' },
     showFinance && { id: 'price', label: 'Cena' },
     showReward && { id: 'reward', label: 'Odměna' },
     { id: 'actions', label: 'Akce', hideable: false },
@@ -338,6 +347,8 @@ const Projects = () => {
         return project.investor?.name || '-';
       case 'status':
         return renderStatusMenu(project);
+      case 'deadline':
+        return project.completion_date ? new Date(`${project.completion_date}T12:00:00`).toLocaleDateString('cs-CZ') : <span className="text-muted-foreground">Bez termínu</span>;
       case 'price':
         return formatCurrency(project.price);
       case 'reward':
@@ -435,14 +446,14 @@ const Projects = () => {
 
   const fetchProjects = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
-      const { data, error } = await supabase.rpc('list_projects_safe');
-
-      if (error) throw error;
+      const data = await fetchAllListRows((from, to) => supabase.rpc('list_projects_safe').order('id').range(from, to));
 
       setProjects(data || []);
       setProjectStats(calculateProjectProjectionStats(data || []));
     } catch (error) {
+      setLoadError(error.message || 'Zkuste načtení zopakovat.');
       console.error('Error fetching projects:', error);
       toast({ title: 'Chyba načítání projektů', description: error.message, variant: 'destructive' });
     } finally {
@@ -474,20 +485,7 @@ const Projects = () => {
       result = result.filter(p => p.status === statusFilter);
     }
 
-    result.sort((a, b) => {
-      let aVal = a[sortConfig.key];
-      let bVal = b[sortConfig.key];
-
-      if (aVal === null) aVal = '';
-      if (bVal === null) bVal = '';
-
-      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
-      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
-
-      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
+    result.sort((a, b) => compareListRecords(a, b, sortConfig.key, sortConfig.direction));
 
     return result;
   }, [projects, searchQuery, statusFilter, sortConfig]);
@@ -502,10 +500,7 @@ const Projects = () => {
   }), [projects, projectStats, showFinance, statusOrder]);
 
   const handleSort = (key) => {
-    setSortConfig(current => ({
-      key,
-      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
-    }));
+    updateList({ sort: key, dir: key === 'created_at' || key === 'price' ? 'desc' : 'asc' });
   };
 
   const renderStatusMenu = (project, triggerClassName) => {
@@ -582,8 +577,8 @@ const Projects = () => {
     <div className="app-page">
       <PageHeader
         icon={FolderPlus}
-        title="Projekty"
-        description="Správa projektové dokumentace a zakázek"
+        title="Projekce"
+        description="Zakázky, odpovědnosti a termíny. Pokračujte tam, kde jste skončili."
         actions={canEdit && (
           <>
             <Button onClick={() => setBatchDialogOpen(true)} variant="outline">
@@ -604,14 +599,24 @@ const Projects = () => {
         onProjectsCreated={fetchProjects} 
       />
 
-      {!isPrivateMode && (
-        <ProjectionExecutiveDashboard
+      {loadError && <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-5"><p className="font-semibold">Projekce se nepodařilo načíst</p><p className="mt-1 text-sm text-muted-foreground">{loadError}</p><Button variant="outline" className="mt-3" onClick={fetchProjects}>Zkusit znovu</Button></div>}
+      {!loadError && <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border bg-white px-5 py-4 text-sm">
+        <span><strong className="mr-1 text-foreground">{projects.length}</strong> zakázek</span>
+        <button type="button" className="text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => setStatusFilter('active')}><strong className="mr-1 text-foreground">{projects.filter(project => project.status === 'active').length}</strong> aktivních</button>
+        <button type="button" className="text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => setStatusFilter('ready_for_delivery')}><strong className="mr-1 text-foreground">{projects.filter(project => project.status === 'ready_for_delivery').length}</strong> k dodání</button>
+        <span className="text-muted-foreground sm:ml-auto" aria-live="polite">Ve výběru {filteredProjects.length}</span>
+      </div>}
+      {!isPrivateMode && !loadError && (
+        <details className="rounded-xl border bg-white" open={analysisOpen} onToggle={event => setAnalysisOpen(event.currentTarget.open)}>
+          <summary className="cursor-pointer px-5 py-4 text-sm font-medium">Analýza zakázek <span className="ml-2 text-xs font-normal text-muted-foreground">Finance, vývoj a rozdělení podle stavu</span></summary>
+          {analysisOpen && <div className="border-t p-4"><ProjectionExecutiveDashboard
           chartData={chartData}
           showFinance={showFinance}
           showReward={showReward}
           stats={projectStats}
           totalReward={totalReward}
-        />
+        /></div>}
+        </details>
       )}
 
       {/* Filters & Controls */}
@@ -619,9 +624,10 @@ const Projects = () => {
         primary={(
           <>
           <div className="relative flex-1 md:max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Hledat projekt, investora..."
+              placeholder="Hledat název, kód nebo investora…"
+              aria-label="Hledat projekci"
               className="pl-9"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -655,7 +661,7 @@ const Projects = () => {
 
           {(searchQuery || statusFilter !== 'all') && (
             <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}>
-              <X className="w-4 h-4 mr-1" /> Reset
+              <X className="w-4 h-4 mr-1" /> Zrušit filtry
             </Button>
           )}
           </>
@@ -663,16 +669,18 @@ const Projects = () => {
         secondary={(
           <>
           <Select value={sortConfig.key} onValueChange={handleSort}>
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-[160px]" aria-label="Řazení projekcí">
               <SelectValue placeholder="Řazení" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="created_at">Nejnovejší</SelectItem>
-              <SelectItem value="name">Název A-Z</SelectItem>
+              <SelectItem value="created_at">Datum vytvoření</SelectItem>
+              <SelectItem value="name">Název</SelectItem>
               <SelectItem value="code">Kód projektu</SelectItem>
+              <SelectItem value="completion_date">Termín dokončení</SelectItem>
               {showFinance && <SelectItem value="price">Cena</SelectItem>}
             </SelectContent>
           </Select>
+          <Button variant="outline" size="icon" aria-label={sortConfig.direction === 'asc' ? 'Řadit sestupně' : 'Řadit vzestupně'} onClick={() => updateList({ dir: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}><ArrowUpDown className="h-4 w-4" /></Button>
           <ListViewModeToggle
             value={viewMode}
             onChange={setViewMode}
@@ -686,7 +694,7 @@ const Projects = () => {
         )}
       />
 
-      {filteredProjects.length === 0 ? (
+      {loadError ? null : filteredProjects.length === 0 ? (
         <div className="text-center py-16 bg-slate-50 rounded-lg border border-dashed">
           <p className="text-muted-foreground">Nebyly nalezeny žádné projekty odpovídající filtrům.</p>
           <Button variant="link" onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}>
@@ -710,7 +718,7 @@ const Projects = () => {
                   >
                     <ProjectCard
                       project={project}
-                      onClick={() => navigate(`/projects/${project.id}`)}
+                      onClick={event => { if (!event || isRecordActivation(event)) openRecord(`/projects/${project.id}`); }}
                       showFinance={showFinance}
                       showReward={showReward}
                       rewardDisplay={rewardDisplay}
@@ -747,13 +755,13 @@ const Projects = () => {
                     <TableRow
                       key={project.id}
                       className="group cursor-pointer bg-white hover:bg-blue-50/35"
-                      onClick={() => navigate(`/projects/${project.id}`)}
+                      onClick={event => { if (!event || isRecordActivation(event)) openRecord(`/projects/${project.id}`); }}
                       role="link"
                       tabIndex={0}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
+                        if (isRecordActivation(event)) {
                           event.preventDefault();
-                          navigate(`/projects/${project.id}`);
+                          openRecord(`/projects/${project.id}`);
                         }
                       }}
                     >
@@ -823,7 +831,10 @@ const Projects = () => {
                                 "bg-white border rounded-lg p-3 hover:shadow-sm transition-shadow cursor-pointer min-w-0",
                                 draggingProjectId === project.id && "opacity-60"
                               )}
-                              onClick={() => navigate(`/projects/${project.id}`)}
+                              onClick={event => { if (!event || isRecordActivation(event)) openRecord(`/projects/${project.id}`); }}
+                              role="link" tabIndex={0}
+                              aria-label={`Otevřít projekci ${project.name}`}
+                              onKeyDown={event => { if (isRecordActivation(event)) { event.preventDefault(); openRecord(`/projects/${project.id}`); } }}
                               draggable={canEdit}
                               onDragStart={(event) => {
                                 if (!canEdit) return;
@@ -878,9 +889,9 @@ const ProjectCard = ({ project, onClick, showFinance, showReward, rewardDisplay 
     <Card
       className="cursor-pointer border-l-4 transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 group"
       style={{ borderLeftColor: project.status === 'active' ? '#3b82f6' : 'transparent' }}
-      onClick={onClick}
+      onClick={event => { if (isRecordActivation(event)) onClick(); }}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
+        if (isRecordActivation(event)) {
           event.preventDefault();
           onClick();
         }

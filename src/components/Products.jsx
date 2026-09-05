@@ -1,4 +1,5 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { fetchAllCrmRows, fetchCrmRowsByIds } from '@/lib/crmDataAccess';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -177,107 +178,66 @@ const Products = () => {
     setSchemaWarning('');
 
     try {
-      const useServerPage = brandFilter === 'all' && supplierFilter === 'all' && availabilityFilter === 'all';
-      let productQuery = supabase
-        .from('commercial_item_catalog')
-        .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, currency, stock_min_qty, warehouse_location, allow_backorder, valid_from, valid_until, datasheet_external_web_url, datasheet_file_name, datasheet_preview_image_url, image_url, preferred_supplier_offer_id, is_active, archived_at, metadata, created_at, updated_at', { count: 'exact' })
-        .order('name', { ascending: true });
-      if (activeFilter === 'active') productQuery = productQuery.eq('is_active', true).is('archived_at', null);
-      if (activeFilter === 'archived') productQuery = productQuery.or('is_active.eq.false,archived_at.not.is.null');
-      if (typeFilter !== 'all') productQuery = productQuery.eq('product_type', typeFilter);
-      if (categoryFilter !== 'all') productQuery = productQuery.eq('category', categoryFilter);
-      const searchValue = deferredSearch.trim().replace(/[%(),]/g, ' ');
-      if (searchValue) {
-        productQuery = productQuery.or(`sku.ilike.%${searchValue}%,code.ilike.%${searchValue}%,name.ilike.%${searchValue}%,description.ilike.%${searchValue}%,category.ilike.%${searchValue}%`);
-      }
-      productQuery = useServerPage
-        ? productQuery.range((page - 1) * pageSize, page * pageSize - 1)
-        : productQuery.limit(2_000);
-
-      let { data: productData, error: productError, count: productCount } = await productQuery.abortSignal(request.signal);
-
-      if (productError) {
-        let fallbackQuery = supabase
+      const useServerPage = brandFilter === 'all' && supplierFilter === 'all' && availabilityFilter === 'all' && !deferredSearch.trim();
+      const productQueryFactory = () => {
+        let productQuery = supabase
           .from('commercial_item_catalog')
-          .select('id, code, name, description, category, unit, default_unit_price, default_vat_rate, is_active, metadata, created_at, updated_at', { count: 'exact' })
-          .order('name', { ascending: true });
-        fallbackQuery = useServerPage
-          ? fallbackQuery.range((page - 1) * pageSize, page * pageSize - 1)
-          : fallbackQuery.limit(2_000);
-        const fallback = await fallbackQuery.abortSignal(request.signal);
-
-        if (fallback.error) {
-          setProducts([]);
-          setStockByProduct({});
-          setSuppliers([]);
-          setSupplierPricesByProduct({});
-          setSupplierSlugsByProduct({});
-          setSupplierSearchByProduct({});
-          setProductSchemaReady(false);
-          setCatalogOverview(null);
-          setSchemaWarning(fallback.error.message || 'Katalog produktů se nepodařilo načíst.');
-          return;
+          .select('id, sku, code, name, description, category, unit, product_type, default_unit_price, default_vat_rate, purchase_price, currency, stock_min_qty, warehouse_location, allow_backorder, valid_from, valid_until, datasheet_external_web_url, datasheet_file_name, datasheet_preview_image_url, image_url, preferred_supplier_offer_id, is_active, archived_at, metadata, created_at, updated_at', { count: 'exact' })
+          .order('name', { ascending: true }).order('id');
+        if (activeFilter === 'active') {
+          const today = new Date().toISOString().slice(0, 10);
+          productQuery = productQuery.eq('is_active', true).is('archived_at', null)
+            .or('valid_from.is.null,valid_from.lte.' + today)
+            .or('valid_until.is.null,valid_until.gte.' + today);
         }
-
-        productData = (fallback.data || []).map((product) => ({
-          ...product,
-          sku: product.code || '',
-          product_type: 'service',
-          purchase_price: 0,
-          currency: 'CZK',
-          stock_min_qty: null,
-          warehouse_location: null,
-          allow_backorder: false,
-          valid_from: null,
-          valid_until: null,
-          datasheet_external_web_url: null,
-          datasheet_file_name: null,
-          datasheet_preview_image_url: null,
-          image_url: null,
-          preferred_supplier_offer_id: null,
-          archived_at: null,
-        }));
-        productCount = fallback.count;
-        setProductSchemaReady(false);
-        setSchemaWarning('Online databáze ještě nemá produktovou migraci. Zobrazuji původní katalog bez skladu a rozšířené editace.');
-      } else {
-        setProductSchemaReady(true);
-      }
+        if (activeFilter === 'archived') productQuery = productQuery.or('is_active.eq.false,archived_at.not.is.null');
+        if (typeFilter !== 'all') productQuery = productQuery.eq('product_type', typeFilter);
+        if (categoryFilter !== 'all') productQuery = productQuery.eq('category', categoryFilter);
+        return productQuery.abortSignal(request.signal);
+      };
+      // Advanced search includes supplier and metadata values. Fetch every
+      // matching page before local filtering instead of silently truncating at 2,000.
+      const { data: productData, error: productError, count: productCount } = useServerPage
+        ? await productQueryFactory().range((page - 1) * pageSize, page * pageSize - 1)
+        : await fetchAllCrmRows(productQueryFactory);
+      if (productError) throw productError;
+      setProductSchemaReady(true);
 
       if (requestId !== fetchRequestRef.current.id) return;
       setTotalProducts(useServerPage ? Number(productCount || 0) : (productData || []).length);
       const productIds = (productData || []).map((product) => product.id);
-      const emptyResult = Promise.resolve({ data: [], error: null });
 
       const [stockRes, supplierPriceRes, supplierRes, usageRes, overviewRes] = await Promise.all([
-        productIds.length ? supabase
+        fetchCrmRowsByIds(productIds, (ids) => supabase
           .from('product_stock_status')
-          .select('catalog_item_id, stock_qty, reserved_qty, available_qty')
-          .in('catalog_item_id', productIds)
-          .abortSignal(request.signal) : emptyResult,
-        productIds.length ? supabase
+          .select('catalog_item_id, stock_qty, reserved_qty, available_qty', { count: 'exact' })
+          .in('catalog_item_id', ids).order('catalog_item_id')
+          .abortSignal(request.signal)),
+        fetchCrmRowsByIds(productIds, (ids) => supabase
           .from('product_supplier_current_prices')
-          .select('catalog_item_id, supplier_offer_id, supplier_name, supplier_slug, supplier_sku, supplier_product_url, price_without_vat, currency, availability_note, scraped_at, price_change_amount, price_change_percent, supplier_offer_count, price_rank')
-          .in('catalog_item_id', productIds)
-          .order('price_rank', { ascending: true })
-          .abortSignal(request.signal) : emptyResult,
+          .select('catalog_item_id, supplier_offer_id, supplier_name, supplier_slug, supplier_sku, supplier_product_url, price_without_vat, currency, availability_note, scraped_at, price_change_amount, price_change_percent, supplier_offer_count, price_rank', { count: 'exact' })
+          .in('catalog_item_id', ids)
+          .order('catalog_item_id').order('price_rank', { ascending: true }).order('supplier_offer_id')
+          .abortSignal(request.signal)),
         supabase
           .from('product_suppliers')
           .select('slug, name, is_active')
           .eq('is_active', true)
           .order('name', { ascending: true })
           .abortSignal(request.signal),
-        productIds.length ? supabase
+        fetchCrmRowsByIds(productIds, (ids) => supabase
           .from('product_usage_stats')
-          .select('catalog_item_id, total_usage_count, last_used_at')
-          .in('catalog_item_id', productIds)
-          .abortSignal(request.signal) : emptyResult,
+          .select('catalog_item_id, total_usage_count, last_used_at', { count: 'exact' })
+          .in('catalog_item_id', ids).order('catalog_item_id')
+          .abortSignal(request.signal)),
         supabase
           .rpc('get_product_catalog_overview')
           .abortSignal(request.signal),
       ]);
       if (requestId !== fetchRequestRef.current.id) return;
 
+      if ((supplierFilter !== 'all' || deferredSearch.trim()) && supplierPriceRes.error) throw supplierPriceRes.error;
+      if (availabilityFilter === 'low_stock' && stockRes.error) throw stockRes.error;
       const warnings = [];
       if (stockRes.error) warnings.push('Skladovy prehled zatim neni dostupny.');
       if (supplierPriceRes.error) warnings.push('Dodavatelske ceny zatim nejsou dostupne.');
@@ -502,7 +462,7 @@ const Products = () => {
     });
   }, [activeFilter, availabilityFilter, brandFilter, categoryFilter, products, search, stockByProduct, supplierFilter, supplierSearchByProduct, supplierSlugsByProduct, typeFilter]);
 
-  const usesServerPage = brandFilter === 'all' && supplierFilter === 'all' && availabilityFilter === 'all';
+  const usesServerPage = brandFilter === 'all' && supplierFilter === 'all' && availabilityFilter === 'all' && !deferredSearch.trim();
   const pageCount = Math.max(1, Math.ceil((usesServerPage ? totalProducts : filteredProducts.length) / pageSize));
   const pagedProducts = useMemo(
     () => usesServerPage ? filteredProducts : filteredProducts.slice((page - 1) * pageSize, page * pageSize),
@@ -749,7 +709,7 @@ const Products = () => {
           </CardContent>
         </Card>
 
-        <ProductSetManager products={products} canEdit={canEdit} userId={user?.id || null} />
+        <ProductSetManager products={products} canEdit={hasPermission('crm', 'can_edit') || hasPermission('crm', 'can_admin') || hasPermission('settings', 'can_edit') || hasPermission('settings', 'can_admin')} />
 
         <Card className="overflow-hidden border-slate-200 bg-white shadow-sm">
           <CardHeader className="border-b bg-white px-3 py-3">

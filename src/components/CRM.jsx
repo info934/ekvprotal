@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -57,18 +57,19 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
 import { allocateCrmNumber, DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
-import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef } from '@/lib/crmRoutes';
+import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef, filterCrmRecordByRef } from '@/lib/crmRoutes';
+import { fetchAllCrmRows, fetchCrmRowsByIds, crmWorkflowErrorMessage } from '@/lib/crmDataAccess';
+import { createCrmOpportunityDraft, crmOpportunityDraftReducer, hasCrmOpportunityDraft, submitCrmOpportunityDraft } from '@/lib/crmOpportunityDraft';
+import { getKnownOpportunityMargin, compareOpportunityUpdated, opportunityMatchesSearch } from '@/lib/crmOpportunityPresentation';
 import {
-  buildCrmDocumentItemPayload,
   buildCrmOpportunityItemPayload,
   calculateCrmLineTotal,
   calculateCrmTotals,
   createCrmCatalogItem,
   normalizeCrmItem,
-  isMissingCrmRpcError,
 } from '@/lib/crmItemPayloads';
 import { cn } from '@/lib/utils';
-import { formatMoney } from '@/lib/financePresentation';
+import { formatMoney, formatPercent } from '@/lib/financePresentation';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
 
 const subjectTypeLabels = {
@@ -240,7 +241,7 @@ const MetricCard = ({ icon: Icon, title, value, description, tone = 'default' })
 );
 
 const DealWorkspace = ({
-  opportunity,
+  opportunity: persistedOpportunity,
   documents = [],
   documentTemplates = [],
   selectedTemplateIds = {},
@@ -255,7 +256,8 @@ const DealWorkspace = ({
   onGenerateOverview,
   onTemplateChange,
   onStageChange,
-  onUpdateOpportunity,
+  onSaveOpportunityDraft,
+  onReloadOpportunity,
   onUpdateOpportunityItems,
   onAddNote,
   onCancelOpportunity,
@@ -272,6 +274,47 @@ const DealWorkspace = ({
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
+  const [draft, dispatchDraft] = useReducer(crmOpportunityDraftReducer, undefined, createCrmOpportunityDraft);
+  const draftSavingRef = useRef(false);
+  const hasDraft = hasCrmOpportunityDraft(draft);
+  const opportunity = persistedOpportunity ? {
+    ...persistedOpportunity,
+    ...draft.fields,
+    custom_fields: {
+      ...(persistedOpportunity.custom_fields || {}),
+      ...Object.fromEntries(Object.entries(draft.customFields).map(([key, field]) => [key, field.value])),
+    },
+  } : null;
+  const updateDraftFields = (patch) => dispatchDraft({ type: 'edit', patch, record: persistedOpportunity });
+  const updateCustomFieldDraft = (key, value, fieldType) => dispatchDraft({ type: 'custom', key, value, fieldType, record: persistedOpportunity });
+  const saveDraft = async () => {
+    if (!canEdit || !hasDraft || draftSavingRef.current) return;
+    draftSavingRef.current = true;
+    dispatchDraft({ type: 'saving' });
+    try {
+      const result = await onSaveOpportunityDraft?.(persistedOpportunity.id, draft);
+      if (result?.error) throw result.error;
+      if (!result?.data?.id) throw new Error('Server nepotvrdil uložení změn.');
+      dispatchDraft({ type: 'saved' });
+    } catch (error) {
+      dispatchDraft({ type: 'error', message: crmWorkflowErrorMessage(error) });
+    } finally {
+      draftSavingRef.current = false;
+    }
+  };
+  const cancelDraft = () => {
+    if (draftSavingRef.current) return;
+    const shouldReload = draft.status === 'error';
+    dispatchDraft({ type: 'reset' });
+    if (shouldReload) onReloadOpportunity?.();
+  };
+
+  useEffect(() => {
+    if (!hasDraft) return undefined;
+    const preventAccidentalClose = (event) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', preventAccidentalClose);
+    return () => window.removeEventListener('beforeunload', preventAccidentalClose);
+  }, [hasDraft]);
 
   useEffect(() => {
     if (!catalogPickerOpen || catalogProducts.length) return undefined;
@@ -353,8 +396,9 @@ const DealWorkspace = ({
   const stage = getStage(opportunity.stage, stages);
   const priority = getPriority(opportunity.priority, priorities);
   const value = Number(opportunity.value || 0);
-  const expectedCosts = Math.round(value * 0.72);
-  const expectedProfit = value - expectedCosts;
+  const knownMargin = getKnownOpportunityMargin(opportunity);
+  const expectedCosts = knownMargin ? calculateCrmTotals(opportunity.items).total_cost : null;
+  const expectedProfit = knownMargin?.value ?? null;
   const offerDocuments = documents.filter((document) => document.type === 'offer');
   const orderDocuments = documents.filter((document) => document.type === 'order');
   const opportunityItems = [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
@@ -395,13 +439,8 @@ const DealWorkspace = ({
   const discountTotal = itemTotals.discount_total;
   const total = itemTotals.total;
   const taxValue = itemTotals.total + itemTotals.tax_total;
-  const totalCost = itemTotals.total_cost ?? expectedCosts;
-  const marginValue = itemTotals.margin_value ?? (total - totalCost);
-  const marginPercent = Number.isFinite(itemTotals.margin_percent)
-    ? itemTotals.margin_percent
-    : total > 0
-      ? (marginValue / total) * 100
-      : 0;
+  const marginValue = knownMargin?.value ?? null;
+  const marginPercent = knownMargin?.percent ?? null;
   const subject = opportunity.subject;
   const subjectEmail = subject?.email || '';
   const subjectPhone = subject?.phone || '';
@@ -479,7 +518,7 @@ const DealWorkspace = ({
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               {onBack && (
-                <Button variant="ghost" className="mb-2 h-8 px-0 text-muted-foreground" onClick={onBack}>
+                <Button variant="ghost" className="mb-2 h-8 px-0 text-muted-foreground" onClick={onBack} disabled={hasDraft || draft.status === 'saving'}>
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Zpět na obchodní případy
                 </Button>
@@ -498,7 +537,7 @@ const DealWorkspace = ({
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="shrink-0">
+                <Button variant="outline" className="shrink-0" disabled={hasDraft || draft.status === 'saving'} title={hasDraft ? 'Nejprve uložte nebo zrušte rozpracované změny.' : undefined}>
                   <MoreHorizontal className="mr-2 h-4 w-4" />
                   Akce
                 </Button>
@@ -510,34 +549,34 @@ const DealWorkspace = ({
                     Upravit případ
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem disabled={!canEdit || creatingDocument} onSelect={() => onCreateDocument?.('offer')}>
+                <DropdownMenuItem disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'} onSelect={() => onCreateDocument?.('offer')}>
                   Vytvořit nabídku
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={!canEdit || creatingDocument} onSelect={() => onCreateDocument?.('order')}>
+                <DropdownMenuItem disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'} onSelect={() => onCreateDocument?.('order')}>
                   Vytvořit objednávku
                 </DropdownMenuItem>
                 {stage.value === 'won' && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel>Předat do výroby</DropdownMenuLabel>
-                    <DropdownMenuItem disabled={!canEdit} onSelect={() => onCreateProject?.()}>
+                    <DropdownMenuItem disabled={!canEdit || hasDraft || draft.status === 'saving'} onSelect={() => onCreateProject?.()}>
                       Vytvořit projekt z OP
                     </DropdownMenuItem>
-                    <DropdownMenuItem disabled={!canEdit} onSelect={() => onCreateRealization?.()}>
+                    <DropdownMenuItem disabled={!canEdit || hasDraft || draft.status === 'saving'} onSelect={() => onCreateRealization?.()}>
                       Vytvořit realizaci z OP
                     </DropdownMenuItem>
                   </>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>Generovat overview</DropdownMenuLabel>
-                <DropdownMenuItem disabled={generatingDocument} onSelect={() => onGenerateOverview?.('docx')}>
+                <DropdownMenuItem disabled={generatingDocument || hasDraft || draft.status === 'saving'} onSelect={() => onGenerateOverview?.('docx')}>
                   <FileText className="mr-2 h-4 w-4" />
                   DOCX
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={generatingDocument} onSelect={() => onGenerateOverview?.('pdf')}>
+                <DropdownMenuItem disabled={generatingDocument || hasDraft || draft.status === 'saving'} onSelect={() => onGenerateOverview?.('pdf')}>
                   PDF
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={generatingDocument} onSelect={() => onGenerateOverview?.('html')}>
+                <DropdownMenuItem disabled={generatingDocument || hasDraft || draft.status === 'saving'} onSelect={() => onGenerateOverview?.('html')}>
                   HTML
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -546,13 +585,24 @@ const DealWorkspace = ({
                   <Ban className="mr-2 h-4 w-4" />
                   Stornovat OP
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={!canEdit} className="text-rose-700 focus:text-rose-700" onSelect={() => onDeleteOpportunity?.(opportunity)}>
+                <DropdownMenuItem disabled={!canEdit || hasDraft || draft.status === 'saving'} className="text-rose-700 focus:text-rose-700" onSelect={() => onDeleteOpportunity?.(opportunity)}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   Odstranit OP
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          {canEdit && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="min-w-0 text-sm" role={draft.status === 'error' ? 'alert' : 'status'} aria-live="polite">
+                {draft.status === 'saving' ? 'Ukládám změny…' : draft.status === 'error' ? draft.error : hasDraft ? 'Máte neuložené změny údajů případu.' : draft.status === 'saved' ? 'Změny byly uloženy.' : 'Údaje upravte a potvrďte tlačítkem Uložit změny.'}
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={cancelDraft} disabled={!hasDraft || draft.status === 'saving'}>Zrušit změny</Button>
+                <Button type="button" size="sm" onClick={saveDraft} disabled={!hasDraft || draft.status === 'saving' || updatingOpportunity}>{draft.status === 'saving' ? 'Ukládám…' : 'Uložit změny'}</Button>
+              </div>
+            </div>
+          )}
         </CardHeader>
         <CardContent className="grid gap-5 bg-white p-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.65fr)]">
           <div className="space-y-5">
@@ -620,15 +670,15 @@ const DealWorkspace = ({
                     <Input
                       type="date"
                       value={opportunity.expected_close_date || ''}
-                      disabled={!canEdit || updatingOpportunity}
-                      onChange={(event) => onUpdateOpportunity?.(opportunity.id, { expected_close_date: event.target.value || null })}
+                      disabled={!canEdit || updatingOpportunity || draft.status === 'saving'}
+                      onChange={(event) => updateDraftFields({ expected_close_date: event.target.value || null })}
                     />
                   </div>
                   <div className="space-y-1">
                     <Label>Stav</Label>
                     <Select
                       value={opportunity.stage}
-                      disabled={!canEdit || updatingOpportunity}
+                      disabled={!canEdit || updatingOpportunity || hasDraft || draft.status === 'saving'}
                       onValueChange={(value) => {
                         onStageChange?.(opportunity.id, value);
                       }}
@@ -647,8 +697,8 @@ const DealWorkspace = ({
                     <Label>Priorita</Label>
                     <Select
                       value={opportunity.priority || 'medium'}
-                      disabled={!canEdit || updatingOpportunity}
-                      onValueChange={(value) => onUpdateOpportunity?.(opportunity.id, { priority: value })}
+                      disabled={!canEdit || updatingOpportunity || draft.status === 'saving'}
+                      onValueChange={(value) => updateDraftFields({ priority: value })}
                     >
                       <SelectTrigger className="bg-white">
                         <SelectValue />
@@ -669,9 +719,9 @@ const DealWorkspace = ({
                       type="number"
                       min="0"
                       max="100"
-                      value={opportunity.probability || 0}
-                      disabled={!canEdit || updatingOpportunity}
-                      onChange={(event) => onUpdateOpportunity?.(opportunity.id, { probability: Number(event.target.value || 0) })}
+                      value={opportunity.probability ?? 0}
+                      disabled={!canEdit || updatingOpportunity || draft.status === 'saving'}
+                      onChange={(event) => updateDraftFields({ probability: event.target.value })}
                     />
                     <div className="h-2 overflow-hidden rounded-full bg-slate-200">
                       <div className="h-full rounded-full bg-emerald-500" style={{ width: `${opportunity.probability || 0}%` }} />
@@ -689,18 +739,18 @@ const DealWorkspace = ({
                           type="number"
                           min="0"
                           value={opportunity.value ?? 0}
-                          disabled={!canEdit || updatingOpportunity}
-                          onChange={(event) => onUpdateOpportunity?.(opportunity.id, { value: Number(event.target.value || 0) })}
+                          disabled={!canEdit || updatingOpportunity || draft.status === 'saving'}
+                          onChange={(event) => updateDraftFields({ value: event.target.value })}
                           className="h-8 w-40 bg-white text-right font-semibold"
                         />
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2">
                         <span className="text-muted-foreground">Predpokladane naklady</span>
-                        <strong>{formatCurrency(expectedCosts)}</strong>
+                        <strong>{expectedCosts === null ? 'Nedostupné' : formatCurrency(expectedCosts)}</strong>
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-md bg-emerald-50 px-3 py-2">
                         <span className="text-muted-foreground">Predpokladany zisk</span>
-                        <strong>{formatCurrency(expectedProfit)}</strong>
+                        <strong>{expectedProfit === null ? 'Nedostupné' : formatCurrency(expectedProfit)}</strong>
                       </div>
                     </div>
                     <div className="flex items-center justify-center">
@@ -733,13 +783,13 @@ const DealWorkspace = ({
               <TabsContent value="details" className="space-y-4">
                 <div className="grid gap-4 rounded-lg border bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-3">
                   <div className="space-y-1"><Label>Kod OP</Label><Input value={opportunity.number || '-'} disabled className="bg-slate-50 font-mono" /></div>
-                  <div className="space-y-1"><Label>Mena</Label><Input value={opportunity.currency || 'CZK'} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { currency: event.target.value || 'CZK' })} /></div>
-                  <div className="space-y-1"><Label>Verze</Label><Input type="number" min="1" value={opportunity.version_no || 1} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { version_no: Number(event.target.value || 1) })} /></div>
-                  <div className="space-y-1"><Label>Typ obchodu</Label><Select value={businessType} disabled={!canEdit || updatingOpportunity} onValueChange={(value) => onUpdateOpportunity?.(opportunity.id, { business_type: value })}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="fve">FVE</SelectItem><SelectItem value="pd">Projektova dokumentace</SelectItem><SelectItem value="hw">Hardware</SelectItem><SelectItem value="service">Servis</SelectItem><SelectItem value="general">Obecne</SelectItem></SelectContent></Select></div>
-                  <div className="space-y-1"><Label>Kategorie</Label><Input value={opportunity.category || ''} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { category: event.target.value || null })} placeholder="napr. FVE mikrozdroj" /></div>
-                  <div className="space-y-1"><Label>Zdroj</Label><Input value={opportunity.source || ''} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { source: event.target.value || null })} placeholder="doporuceni, web, stavajici klient" /></div>
-                  {[1, 2, 3].map((level) => (<div key={level} className="space-y-1"><Label>Klasifikace {level}</Label><Input value={opportunity[`classification_${level}`] || ''} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { [`classification_${level}`]: event.target.value || null })} /></div>))}
-                  <div className="space-y-1 md:col-span-2 xl:col-span-3"><Label>Stitky</Label><Input value={opportunityTags.join(', ')} disabled={!canEdit || updatingOpportunity} onChange={(event) => onUpdateOpportunity?.(opportunity.id, { tags: event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })} placeholder="VIP, dotace, urgentni" /></div>
+                  <div className="space-y-1"><Label>Mena</Label><Input value={opportunity.currency ?? 'CZK'} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} onChange={(event) => updateDraftFields({ currency: event.target.value })} /></div>
+                  <div className="space-y-1"><Label>Verze</Label><Input type="number" min="1" value={opportunity.version_no ?? 1} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} onChange={(event) => updateDraftFields({ version_no: event.target.value })} /></div>
+                  <div className="space-y-1"><Label>Typ obchodu</Label><Select value={businessType} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} onValueChange={(value) => updateDraftFields({ business_type: value })}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="fve">FVE</SelectItem><SelectItem value="pd">Projektova dokumentace</SelectItem><SelectItem value="hw">Hardware</SelectItem><SelectItem value="service">Servis</SelectItem><SelectItem value="general">Obecne</SelectItem></SelectContent></Select></div>
+                  <div className="space-y-1"><Label>Kategorie</Label><Input value={opportunity.category || ''} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} onChange={(event) => updateDraftFields({ category: event.target.value || null })} placeholder="napr. FVE mikrozdroj" /></div>
+                  <div className="space-y-1"><Label>Zdroj</Label><Input value={opportunity.source || ''} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} onChange={(event) => updateDraftFields({ source: event.target.value || null })} placeholder="doporuceni, web, stavajici klient" /></div>
+                  {[1, 2, 3].map((level) => (<div key={level} className="space-y-1"><Label>Klasifikace {level}</Label><Input value={opportunity[`classification_${level}`] || ''} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} onChange={(event) => updateDraftFields({ [`classification_${level}`]: event.target.value || null })} /></div>))}
+                  <div className="space-y-1 md:col-span-2 xl:col-span-3"><Label>Stitky</Label><Input value={typeof opportunity.tags === 'string' ? opportunity.tags : opportunityTags.join(', ')} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} onChange={(event) => updateDraftFields({ tags: event.target.value })} placeholder="VIP, dotace, urgentni" /></div>
                 </div>
               </TabsContent>
               <TabsContent value="custom" className="space-y-4">
@@ -749,16 +799,16 @@ const DealWorkspace = ({
                     <div className="grid gap-3 md:grid-cols-2">
                       {(section.fields || []).filter((field) => field.is_active !== false).map((field) => {
                         const value = customFields[field.field_key] ?? '';
-                        const updateField = (nextValue) => onUpdateOpportunity?.(opportunity.id, { custom_fields: { ...customFields, [field.field_key]: nextValue } });
-                        if (field.field_type === 'textarea') return (<div key={field.field_key} className="space-y-1 md:col-span-2"><Label>{field.label}</Label><Textarea value={value} disabled={!canEdit || updatingOpportunity} onChange={(event) => updateField(event.target.value)} className="min-h-[90px]" />{field.template_key && <p className="text-xs text-muted-foreground">Sablona: <code>{`{{${field.template_key}}}`}</code></p>}</div>);
-                        if (field.field_type === 'select') { const options = Array.isArray(field.options) ? field.options : []; return (<div key={field.field_key} className="space-y-1"><Label>{field.label}</Label><Select value={value || 'none'} disabled={!canEdit || updatingOpportunity} onValueChange={(nextValue) => updateField(nextValue === 'none' ? '' : nextValue)}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Nevyplneno</SelectItem>{options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>{field.template_key && <p className="text-xs text-muted-foreground">Sablona: <code>{`{{${field.template_key}}}`}</code></p>}</div>); }
-                        return (<div key={field.field_key} className="space-y-1"><Label>{field.label}</Label><Input type={field.field_type === 'number' ? 'number' : field.field_type === 'date' ? 'date' : 'text'} value={value} disabled={!canEdit || updatingOpportunity} onChange={(event) => updateField(event.target.value)} />{field.template_key && <p className="text-xs text-muted-foreground">Sablona: <code>{`{{${field.template_key}}}`}</code></p>}</div>);
+                        const updateField = (nextValue) => updateCustomFieldDraft(field.field_key, nextValue, field.field_type);
+                        if (field.field_type === 'textarea') return (<div key={field.field_key} className="space-y-1 md:col-span-2"><Label>{field.label}</Label><Textarea value={value} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} onChange={(event) => updateField(event.target.value)} className="min-h-[90px]" />{field.template_key && <p className="text-xs text-muted-foreground">Sablona: <code>{`{{${field.template_key}}}`}</code></p>}</div>);
+                        if (field.field_type === 'select') { const options = Array.isArray(field.options) ? field.options : []; return (<div key={field.field_key} className="space-y-1"><Label>{field.label}</Label><Select value={value || 'none'} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} onValueChange={(nextValue) => updateField(nextValue === 'none' ? '' : nextValue)}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Nevyplneno</SelectItem>{options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>{field.template_key && <p className="text-xs text-muted-foreground">Sablona: <code>{`{{${field.template_key}}}`}</code></p>}</div>); }
+                        return (<div key={field.field_key} className="space-y-1"><Label>{field.label}</Label><Input type={field.field_type === 'number' ? 'number' : field.field_type === 'date' ? 'date' : 'text'} value={value} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} onChange={(event) => updateField(event.target.value)} />{field.template_key && <p className="text-xs text-muted-foreground">Sablona: <code>{`{{${field.template_key}}}`}</code></p>}</div>);
                       })}
                     </div>
                   </div>
                 ))}
               </TabsContent>
-              <TabsContent value="products" className="space-y-4"><div className="rounded-lg border bg-white p-4 shadow-sm"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><DataVizMetricCard title="Cena bez DPH" value={formatCurrency(total)} icon={CircleDollarSign} tone="blue" /><DataVizMetricCard title="DPH" value={formatCurrency(itemTotals.tax_total)} icon={Percent} tone="amber" /><DataVizMetricCard title="Cena s DPH" value={formatCurrency(taxValue)} icon={CheckCircle2} tone="green" /><DataVizMetricCard title="Marze" value={`${marginPercent.toFixed(1)} %`} description={formatCurrency(marginValue)} icon={BarChart3} tone="purple" /></div><p className="mt-4 text-sm text-muted-foreground">Polozkova tabulka je pod hlavickou detailu v plne sirce, aby zustala citelna i pri vetsim poctu sloupcu.</p></div></TabsContent>
+              <TabsContent value="products" className="space-y-4"><div className="rounded-lg border bg-white p-4 shadow-sm"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><DataVizMetricCard title="Cena bez DPH" value={formatCurrency(total)} icon={CircleDollarSign} tone="blue" /><DataVizMetricCard title="DPH" value={formatCurrency(itemTotals.tax_total)} icon={Percent} tone="amber" /><DataVizMetricCard title="Cena s DPH" value={formatCurrency(taxValue)} icon={CheckCircle2} tone="green" /><DataVizMetricCard title="Marze" value={marginPercent === null ? 'Nedostupné' : `${marginPercent.toFixed(1)} %`} description={marginValue === null ? 'Doplňte položky a nákupní ceny' : formatCurrency(marginValue)} icon={BarChart3} tone="purple" /></div><p className="mt-4 text-sm text-muted-foreground">Polozkova tabulka je pod hlavickou detailu v plne sirce, aby zustala citelna i pri vetsim poctu sloupcu.</p></div></TabsContent>
               <TabsContent value="commerce">
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="rounded-lg border bg-white p-4 shadow-sm">
@@ -781,7 +831,7 @@ const DealWorkspace = ({
               <TabsContent value="activities"><div className="space-y-3 rounded-lg border bg-white p-4 shadow-sm"><h3 className="text-sm font-semibold text-slate-950">Aktivity obchodniho pripadu</h3>{opportunityActivities.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim neni naplanovana zadna CRM aktivita.</div>) : opportunityActivities.map((activity) => (<div key={activity.id} className="flex items-start justify-between gap-3 rounded-lg border bg-slate-50 px-3 py-2 text-sm"><div className="min-w-0"><div className="font-semibold text-slate-900">{activity.title}</div><div className="mt-1 text-xs text-muted-foreground">{activity.type} - {activity.status}</div></div><Badge variant="outline" className="shrink-0 bg-white">{formatDate(activity.due_at || activity.completed_at)}</Badge></div>))}</div></TabsContent>
               <TabsContent value="documents"><div className="rounded-lg border bg-white p-5 text-center shadow-sm"><Paperclip className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="text-sm font-medium text-muted-foreground">Prilohy budou navazane na centralni dokumentovy modul a budou dostupne i pro generovani vystupu.</p><Button className="mt-4" variant="secondary" disabled>Nahrat soubor</Button></div></TabsContent>
               <TabsContent value="history"><div className="rounded-lg border bg-white p-4 shadow-sm"><div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-950"><History className="h-4 w-4 text-primary" />Historie obchodniho pripadu</div>{timelineItems.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim neni evidovana zadna aktivita ani dokument.</div>) : (<div className="space-y-4">{timelineItems.map((item) => { const Icon = item.icon || Clock; return (<div key={item.id} className="relative grid gap-3 border-l border-slate-200 pl-5 text-sm"><span className="absolute -left-2 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-2 ring-primary/40"><span className="h-2 w-2 rounded-full bg-primary" /></span><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex items-center gap-2 font-semibold text-slate-950"><Icon className="h-4 w-4 text-slate-500" /><span>{item.kind}</span><span className="truncate text-slate-700">{item.title}</span></div>{item.detail && <p className="mt-1 line-clamp-2 text-muted-foreground">{item.detail}</p>}</div><span className="shrink-0 text-xs text-muted-foreground">{formatDate(item.date)}</span></div></div>); })}</div>)}</div></TabsContent>
-              <TabsContent value="discussion"><div className="space-y-4 rounded-lg border bg-white p-4 shadow-sm"><div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><MessageSquare className="h-4 w-4 text-primary" />Interni diskuze</div><div className="space-y-3">{opportunityNotes.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim zde neni zadny komentar.</div>) : opportunityNotes.map((note) => (<div key={note.id} className="rounded-lg border bg-slate-50 p-3 text-sm"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span className="font-semibold text-slate-700">{note.author?.name || 'Interni poznamka'}</span><span>{formatDate(note.created_at)}</span></div><p className="mt-2 whitespace-pre-wrap text-slate-800">{note.body}</p></div>))}</div><div className="grid gap-2"><Textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} disabled={!canEdit || updatingOpportunity} placeholder="Napsat komentar pro tym..." className="min-h-[100px]" /><div className="flex justify-end"><Button size="sm" disabled={!canEdit || updatingOpportunity || !noteDraft.trim()} onClick={() => { const body = noteDraft.trim(); if (!body) return; setNoteDraft(''); onAddNote?.(opportunity.id, body); }}><MessageSquare className="mr-2 h-4 w-4" />Pridat komentar</Button></div></div></div></TabsContent>
+              <TabsContent value="discussion"><div className="space-y-4 rounded-lg border bg-white p-4 shadow-sm"><div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><MessageSquare className="h-4 w-4 text-primary" />Interni diskuze</div><div className="space-y-3">{opportunityNotes.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim zde neni zadny komentar.</div>) : opportunityNotes.map((note) => (<div key={note.id} className="rounded-lg border bg-slate-50 p-3 text-sm"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span className="font-semibold text-slate-700">{note.author?.name || 'Interni poznamka'}</span><span>{formatDate(note.created_at)}</span></div><p className="mt-2 whitespace-pre-wrap text-slate-800">{note.body}</p></div>))}</div><div className="grid gap-2"><Textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} placeholder="Napsat komentar pro tym..." className="min-h-[100px]" /><div className="flex justify-end"><Button size="sm" disabled={!canEdit || updatingOpportunity || hasDraft || draft.status === 'saving' || !noteDraft.trim()} onClick={() => { const body = noteDraft.trim(); if (!body) return; setNoteDraft(''); onAddNote?.(opportunity.id, body); }}><MessageSquare className="mr-2 h-4 w-4" />Pridat komentar</Button></div></div></div></TabsContent>
 
             </Tabs>
           </div>
@@ -851,11 +901,11 @@ const DealWorkspace = ({
                       </Button>
                     )}
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <Button size="sm" onClick={() => onCreateProject?.()} disabled={!canEdit}>
+                      <Button size="sm" onClick={() => onCreateProject?.()} disabled={!canEdit || hasDraft || draft.status === 'saving'}>
                         <Building2 className="mr-2 h-4 w-4" />
                         Vytvořit projekt
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => onCreateRealization?.()} disabled={!canEdit}>
+                      <Button size="sm" variant="outline" onClick={() => onCreateRealization?.()} disabled={!canEdit || hasDraft || draft.status === 'saving'}>
                         <CheckCircle2 className="mr-2 h-4 w-4" />
                         Vytvořit realizaci
                       </Button>
@@ -877,14 +927,10 @@ const DealWorkspace = ({
               <Textarea
                 key={opportunity.id}
                 className="mt-3 min-h-[90px]"
-                defaultValue={opportunity.next_step || ''}
-                disabled={!canEdit || updatingOpportunity}
+                value={opportunity.next_step || ''}
+                disabled={!canEdit || updatingOpportunity || draft.status === 'saving'}
                 placeholder="Zatím není naplánovaná."
-                onBlur={(event) => {
-                  if ((event.target.value || '') !== (opportunity.next_step || '')) {
-                    onUpdateOpportunity?.(opportunity.id, { next_step: event.target.value || null });
-                  }
-                }}
+                onChange={(event) => updateDraftFields({ next_step: event.target.value || null })}
               />
             </div>
             <div className="rounded-lg border bg-white p-4 shadow-sm">
@@ -910,7 +956,7 @@ const DealWorkspace = ({
         description="Položky OP jsou hlavní zdroj pro synchronizované nabídky a objednávky. CRM položky neodečítají sklad."
         items={getEditableOpportunityItems()}
         canEdit={canEdit}
-        disabled={updatingOpportunity}
+        disabled={updatingOpportunity || hasDraft || draft.status === 'saving'}
         onUpdateItem={updateOpportunityItem}
         onRemoveItem={removeOpportunityItem}
         onAddManual={addOpportunityItem}
@@ -925,7 +971,7 @@ const DealWorkspace = ({
             </CardTitle>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" disabled={!canEdit || creatingDocument}>
+                <Button variant="outline" size="sm" disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'}>
                   <Plus className="mr-2 h-4 w-4" />
                   Přidat dokument
                 </Button>
@@ -967,11 +1013,11 @@ const DealWorkspace = ({
               <h3 className="text-base font-semibold text-slate-900">Zatím zde není žádná nabídka ani objednávka</h3>
               <p className="mx-auto mt-1 max-w-md">Vytvořte první dokument z položek obchodního případu. Šablonu lze zvolit před vytvořením nebo před generováním výstupu.</p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <Button size="sm" onClick={() => onCreateDocument?.('offer')} disabled={!canEdit || creatingDocument}>
+                <Button size="sm" onClick={() => onCreateDocument?.('offer')} disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'}>
                   <Package className="mr-2 h-4 w-4" />
                   Vytvořit nabídku
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => onCreateDocument?.('order')} disabled={!canEdit || creatingDocument}>
+                <Button size="sm" variant="outline" onClick={() => onCreateDocument?.('order')} disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'}>
                   <ShoppingCart className="mr-2 h-4 w-4" />
                   Vytvořit objednávku
                 </Button>
@@ -1019,7 +1065,7 @@ const DealWorkspace = ({
                           size="sm"
                           variant="outline"
                           onClick={() => onCreateDocument?.(module.type)}
-                          disabled={!canEdit || creatingDocument}
+                          disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'}
                         >
                           <Plus className="mr-2 h-4 w-4" />
                           {module.cta}
@@ -1031,7 +1077,7 @@ const DealWorkspace = ({
                     <div className="flex min-h-[150px] flex-col items-center justify-center p-6 text-center text-sm text-muted-foreground">
                       <module.icon className="mb-3 h-9 w-9 text-slate-300" />
                       <p className="font-medium text-slate-700">{module.empty}</p>
-                      <Button className="mt-4" size="sm" variant="outline" onClick={() => onCreateDocument?.(module.type)} disabled={!canEdit || creatingDocument}>
+                      <Button className="mt-4" size="sm" variant="outline" onClick={() => onCreateDocument?.(module.type)} disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'}>
                         <Plus className="mr-2 h-4 w-4" />
                         {module.cta}
                       </Button>
@@ -1066,7 +1112,7 @@ const DealWorkspace = ({
                             </div>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button size="sm" variant="outline" disabled={generatingDocument}>
+                                <Button size="sm" variant="outline" disabled={generatingDocument || hasDraft || draft.status === 'saving'}>
                                   <FileText className="mr-2 h-4 w-4" />
                                   Generovat
                                 </Button>
@@ -1245,7 +1291,7 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
   const renderOpportunityCell = (columnId, opportunity, index) => {
     const stage = getStage(opportunity.stage, stages);
     const priority = getPriority(opportunity.priority, priorities);
-    const estimatedMargin = Number(opportunity.value || 0) * 0.28;
+    const margin = getKnownOpportunityMargin(opportunity);
 
     switch (columnId) {
       case 'select':
@@ -1277,7 +1323,7 @@ const OpportunityTable = ({ opportunities, stages, priorities, selectedOpportuni
       case 'value':
         return formatCurrency(opportunity.value);
       case 'margin':
-        return formatCurrency(estimatedMargin) + ' / 28 %';
+        return margin ? `${formatCurrency(margin.value)} / ${formatPercent(margin.percent)}` : <span className="font-normal text-muted-foreground" title="Marže vyžaduje úplné položky a nákupní ceny.">Nedostupné</span>;
       case 'closeDate':
         return formatDate(opportunity.expected_close_date);
       case 'priority':
@@ -1728,49 +1774,48 @@ const CRM = () => {
       ? ', items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)'
       : '';
 
-    let opportunitiesQuery = supabase
+    const opportunitiesQueryFactory = () => supabase
       .from('crm_opportunities')
-      .select(`id, number, title, stage, status, priority, value, probability, expected_close_date, next_step, description, lost_reason, lost_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name)${opportunityItemsSelect}`)
+      .select(`id, number, title, stage, status, priority, value, probability, created_at, updated_at, expected_close_date, next_step, description, lost_reason, lost_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name)${opportunityItemsSelect}`)
       .is('deleted_at', null)
-      .order('updated_at', { ascending: false });
-    opportunitiesQuery = isOpportunityDetailPage
-      ? opportunitiesQuery.or(`id.eq.${opportunityId},number.eq.${opportunityId}`).limit(1)
-      : opportunitiesQuery.limit(500);
+      .order('updated_at', { ascending: false }).order('id').abortSignal(request.signal);
+    const opportunitiesQuery = isOpportunityDetailPage
+      ? filterCrmRecordByRef(opportunitiesQueryFactory(), opportunityId).limit(1)
+      : fetchAllCrmRows(opportunitiesQueryFactory);
 
-    const commercialDocumentsQuery = supabase
+    const commercialDocumentsQuery = isOpportunityDetailPage ? Promise.resolve({ data: [], error: null }) : fetchAllCrmRows(() => supabase
       .from('crm_commercial_documents')
       .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, cancelled_at, cancelled_reason, deleted_at, deleted_reason${isOpportunityDetailPage ? '' : documentItemsSelect}`)
       .is('deleted_at', null)
-      .order('created_at', { ascending: false })
-      .limit(isOpportunityDetailPage ? 0 : 500);
+      .order('created_at', { ascending: false }).order('id').abortSignal(request.signal));
 
     const withSignal = (query) => typeof query?.abortSignal === 'function' ? query.abortSignal(request.signal) : query;
-    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, activitiesRes, notesRes, initialCommercialDocumentsRes, stagesRes, prioritiesRes, templatesRes, numberingRes, productsRes, stockRes] = await Promise.all([
-      supabase
+    const [subjectsRes, projectsRes, contactsRes, opportunitiesRes, initialActivitiesRes, initialNotesRes, initialCommercialDocumentsRes, stagesRes, prioritiesRes, templatesRes, numberingRes, productsRes, stockRes] = await Promise.all([
+      fetchAllCrmRows(() => supabase
         .from('subjects')
         .select('id, name, ico, email, phone, contact_person, created_at, subject_types(name)')
-        .order('name', { ascending: true }),
-      supabase
+        .order('name', { ascending: true }).order('id').abortSignal(request.signal)),
+      fetchAllCrmRows(() => supabase
         .from('projects')
         .select('id, name, code, status, created_at, client:client_id(id, name), investor:investor_id(id, name)')
         .order('created_at', { ascending: false })
-        .limit(18),
-      supabase
+        .order('id').abortSignal(request.signal)),
+      fetchAllCrmRows(() => supabase
         .from('project_contacts')
         .select('id, name, role, email, phone, project_id, projects(id, name, code)')
         .order('name', { ascending: true })
-        .limit(60),
+        .order('id').abortSignal(request.signal)),
       opportunitiesQuery,
-      supabase
+      isOpportunityDetailPage ? Promise.resolve({ data: [], error: null }) : fetchAllCrmRows(() => supabase
         .from('crm_activities')
         .select('id, opportunity_id, title, type, status, due_at, completed_at, subject:subject_id(id, name), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
         .order('due_at', { ascending: true, nullsFirst: false })
-        .limit(60),
-      supabase
+        .order('id').abortSignal(request.signal)),
+      isOpportunityDetailPage ? Promise.resolve({ data: [], error: null }) : fetchAllCrmRows(() => supabase
         .from('crm_notes')
         .select('id, opportunity_id, subject_id, body, created_at, author:author_member_id(id, name)')
         .order('created_at', { ascending: false })
-        .limit(100),
+        .order('id').abortSignal(request.signal)),
       commercialDocumentsQuery,
       supabase
         .from('crm_stage_definitions')
@@ -1787,25 +1832,38 @@ const CRM = () => {
         .select('id, name, description, content, created_at')
         .order('created_at', { ascending: false }),
       selectCrmNumberingSettings(supabase, request.signal),
-      supabase
+      fetchAllCrmRows(() => supabase
         .from('commercial_item_catalog')
         .select('id, product_type, is_active, archived_at, stock_min_qty')
-        .order('name', { ascending: true }),
-      supabase
+        .order('name', { ascending: true }).order('id').abortSignal(request.signal)),
+      fetchAllCrmRows(() => supabase
         .from('product_stock_status')
-        .select('catalog_item_id, available_qty'),
+        .select('catalog_item_id, available_qty').order('catalog_item_id').abortSignal(request.signal)),
     ].map(withSignal));
 
     let commercialDocumentsRes = initialCommercialDocumentsRes;
+    let activitiesRes = initialActivitiesRes;
+    let notesRes = initialNotesRes;
     const loadedOpportunityId = opportunitiesRes.data?.[0]?.id;
     if (isOpportunityDetailPage && loadedOpportunityId && !opportunitiesRes.error) {
-      commercialDocumentsRes = await supabase
+      [commercialDocumentsRes, activitiesRes, notesRes] = await Promise.all([fetchAllCrmRows(() => supabase
         .from('crm_commercial_documents')
         .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, subtotal, discount_total, tax_total, total, notes, sync_items, cancelled_at, cancelled_reason, deleted_at, deleted_reason${documentItemsSelect}`)
         .eq('opportunity_id', loadedOpportunityId)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        .abortSignal(request.signal);
+        .order('created_at', { ascending: false }).order('id')
+        .abortSignal(request.signal)),
+      fetchAllCrmRows(() => supabase.from('crm_activities')
+        .select('id, opportunity_id, title, type, status, due_at, completed_at, subject:subject_id(id, name), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
+        .eq('opportunity_id', loadedOpportunityId)
+        .order('due_at', { ascending: true, nullsFirst: false }).order('id')
+        .abortSignal(request.signal)),
+      fetchAllCrmRows(() => supabase.from('crm_notes')
+        .select('id, opportunity_id, subject_id, body, created_at, author:author_member_id(id, name)')
+        .eq('opportunity_id', loadedOpportunityId)
+        .order('created_at', { ascending: false }).order('id')
+        .abortSignal(request.signal)),
+      ]);
     }
 
     if (requestId !== crmRequestIdRef.current) return;
@@ -1823,8 +1881,8 @@ const CRM = () => {
       setContacts(contactsRes.data || []);
     }
 
-    if (opportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error) {
-      const crmError = opportunitiesRes.error || activitiesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error;
+    if (opportunitiesRes.error || activitiesRes.error || notesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error) {
+      const crmError = opportunitiesRes.error || activitiesRes.error || notesRes.error || commercialDocumentsRes.error || stagesRes.error || prioritiesRes.error;
       if (isMissingCrmTableError(crmError)) {
         setCrmTablesReady(false);
         setOpportunities([]);
@@ -1857,11 +1915,11 @@ const CRM = () => {
 
       const opportunityIds = (opportunitiesRes.data || []).map((row) => row.id);
       const extendedRes = opportunityIds.length
-        ? await supabase
+        ? await fetchCrmRowsByIds(opportunityIds, (ids) => supabase
           .from('crm_opportunities')
-          .select('id, category, business_type, currency, version_no, classification_1, classification_2, classification_3, tags, confirmation_status, confirmed_at, confirmed_by, custom_fields')
-          .in('id', opportunityIds)
-          .abortSignal(request.signal)
+          .select('id, category, source, business_type, currency, version_no, classification_1, classification_2, classification_3, tags, confirmation_status, confirmed_at, confirmed_by, custom_fields')
+          .in('id', ids).order('id')
+          .abortSignal(request.signal))
         : { data: [], error: null };
       if (requestId !== crmRequestIdRef.current) return;
       if (!extendedRes.error) {
@@ -1942,7 +2000,7 @@ const CRM = () => {
         setLoading(false);
       }
     }
-  }, [isOpportunityDetailPage, toast]);
+  }, [isOpportunityDetailPage, opportunityId, toast]);
 
   useEffect(() => {
     fetchCrmData();
@@ -1972,7 +2030,10 @@ const CRM = () => {
     const closedCount = wonOpportunities.length + lostOpportunities.length;
     const conversionRate = closedCount > 0 ? Math.round((wonOpportunities.length / closedCount) * 100) : 0;
     const averageOpenValue = openOpportunities.length > 0 ? Math.round(pipelineValue / openOpportunities.length) : 0;
-    const expectedGrossProfit = Math.round(weightedPipeline * 0.28);
+    const knownMargins = openOpportunities.map(getKnownOpportunityMargin);
+    const expectedGrossProfit = knownMargins.every(Boolean)
+      ? Math.round(openOpportunities.reduce((sum, opportunity, index) => sum + knownMargins[index].value * Number(opportunity.probability || 0) / 100, 0))
+      : null;
 
     return {
       subjects: subjects.length,
@@ -2022,14 +2083,7 @@ const CRM = () => {
         (stageFilter === 'open' && opportunity.status === 'open' && !stage.is_closed) ||
         opportunity.stage === stageFilter;
       const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter;
-      const searchable = [
-        opportunity.title,
-        opportunity.subject?.name,
-        opportunity.project?.name,
-        opportunity.project?.code,
-        opportunity.next_step,
-      ].filter(Boolean).join(' ').toLowerCase();
-      const matchesQuery = !normalizedQuery || searchable.includes(normalizedQuery);
+      const matchesQuery = opportunityMatchesSearch(opportunity, normalizedQuery);
       return matchesStage && matchesPriority && matchesQuery;
     });
 
@@ -2037,7 +2091,7 @@ const CRM = () => {
       if (sortMode === 'value_desc') return Number(b.value || 0) - Number(a.value || 0);
       if (sortMode === 'close_date') return new Date(a.expected_close_date || '9999-12-31') - new Date(b.expected_close_date || '9999-12-31');
       if (sortMode === 'probability_desc') return Number(b.probability || 0) - Number(a.probability || 0);
-      return String(b.id).localeCompare(String(a.id));
+      return compareOpportunityUpdated(a, b);
     });
   }, [crmStages, opportunities, opportunityQuery, priorityFilter, sortMode, stageFilter]);
 
@@ -2110,6 +2164,13 @@ const CRM = () => {
     }
   }, [canEditCrm, fetchCrmData, toast, updateOpportunityState]);
 
+  const handleSaveOpportunityDraft = useCallback(async (opportunityId, draft) => {
+    if (!canEditCrm || !opportunityId) return { error: new Error('Nemáte oprávnění upravit obchodní případ.') };
+    const result = await submitCrmOpportunityDraft(supabase, opportunityId, draft);
+    if (!result.error && result.data?.id) updateOpportunityState(opportunityId, result.data);
+    return result;
+  }, [canEditCrm, updateOpportunityState]);
+
   const handleOpportunityItemsUpdate = useCallback(async (opportunityId, nextItems) => {
     if (!canEditCrm || !opportunityId) return;
 
@@ -2144,99 +2205,10 @@ const CRM = () => {
       return;
     }
 
-    if (!isMissingCrmRpcError(replaceError)) {
-      setUpdatingOpportunity(false);
-      toast({ title: 'Položky OP se nepodařilo uložit', description: replaceError.message, variant: 'destructive' });
-      fetchCrmData();
-      return;
-    }
-
-    const { error: deleteError } = await supabase
-      .from('crm_opportunity_items')
-      .delete()
-      .eq('opportunity_id', opportunityId);
-
-    if (deleteError) {
-      setUpdatingOpportunity(false);
-      toast({ title: 'Položky OP se nepodařilo uložit', description: deleteError.message, variant: 'destructive' });
-      fetchCrmData();
-      return;
-    }
-
-    if (opportunityItemRows.length > 0) {
-      const { error: insertError } = await supabase
-        .from('crm_opportunity_items')
-        .insert(opportunityItemRows);
-
-      if (insertError) {
-        setUpdatingOpportunity(false);
-        toast({ title: 'Položky OP se nepodařilo uložit', description: insertError.message, variant: 'destructive' });
-        fetchCrmData();
-        return;
-      }
-    }
-
-    const { error: opportunityError } = await supabase
-      .from('crm_opportunities')
-      .update({ value: totals.total, updated_at: new Date().toISOString() })
-      .eq('id', opportunityId);
-
-    if (opportunityError) {
-      setUpdatingOpportunity(false);
-      toast({ title: 'Hodnotu OP se nepodařilo uložit', description: opportunityError.message, variant: 'destructive' });
-      fetchCrmData();
-      return;
-    }
-
-    const syncedDocuments = commercialDocuments.filter((document) => (
-      document.opportunity_id === opportunityId &&
-      (document.sync_items ?? true)
-    ));
-
-    for (const document of syncedDocuments) {
-      const { error: deleteDocumentItemsError } = await supabase
-        .from('crm_commercial_document_items')
-        .delete()
-        .eq('document_id', document.id);
-      if (deleteDocumentItemsError) {
-        setUpdatingOpportunity(false);
-        toast({ title: 'Synchronizace dokumentu selhala', description: deleteDocumentItemsError.message, variant: 'destructive' });
-        fetchCrmData();
-        return;
-      }
-
-      const documentItemRows = normalizedItems.map((item, index) => buildCrmDocumentItemPayload(item, document.id, index));
-      if (documentItemRows.length > 0) {
-        const { error: insertDocumentItemsError } = await supabase
-          .from('crm_commercial_document_items')
-          .insert(documentItemRows);
-        if (insertDocumentItemsError) {
-          setUpdatingOpportunity(false);
-          toast({ title: 'Synchronizace dokumentu selhala', description: insertDocumentItemsError.message, variant: 'destructive' });
-          fetchCrmData();
-          return;
-        }
-      }
-
-      const { error: updateDocumentError } = await supabase
-        .from('crm_commercial_documents')
-        .update({ ...totals, updated_at: new Date().toISOString() })
-        .eq('id', document.id);
-      if (updateDocumentError) {
-        setUpdatingOpportunity(false);
-        toast({ title: 'Synchronizace dokumentu selhala', description: updateDocumentError.message, variant: 'destructive' });
-        fetchCrmData();
-        return;
-      }
-    }
-
-    setCommercialDocuments((current) => current.map((document) => (
-      document.opportunity_id === opportunityId && (document.sync_items ?? true)
-        ? { ...document, ...totals, items: normalizedItems.map((item, index) => ({ ...item, sort_order: (index + 1) * 10 })) }
-        : document
-    )));
     setUpdatingOpportunity(false);
-  }, [canEditCrm, commercialDocuments, fetchCrmData, toast, updateOpportunityState]);
+    toast({ title: 'Položky OP se nepodařilo uložit', description: crmWorkflowErrorMessage(replaceError), variant: 'destructive' });
+    // Keep the draft in the editor so users can retry without losing their work.
+  }, [canEditCrm, toast, updateOpportunityState]);
 
   const handleAddOpportunityNote = useCallback(async (opportunityId, body) => {
     if (!canEditCrm || !opportunityId || !body?.trim()) return;
@@ -2465,72 +2437,23 @@ const CRM = () => {
   };
 
   const handleCreateCommercialDocument = async (type) => {
-    if (!selectedOpportunity || !crmTablesReady) return;
-
+    if (!selectedOpportunity || !crmTablesReady || !canEditCrm || creatingDocument) return;
     setCreatingDocument(true);
-
-    const baseValue = Number(selectedOpportunity.value || 0);
-    const sourceItems = selectedOpportunity.items?.length ? selectedOpportunity.items : [{
-      ...createEmptyCrmItem(),
-      code: 'CRM-001',
-      name: selectedOpportunity.title,
-      unit_price: baseValue,
-      line_total: baseValue,
-    }];
-    const totals = calculateCrmTotals(sourceItems);
-    const vatRate = 21;
-    const number = await allocateCrmNumber(supabase, type);
-
-    const { data: documentData, error: documentError } = await supabase
-      .from('crm_commercial_documents')
-      .insert({
-        opportunity_id: selectedOpportunity.id,
-        subject_id: selectedOpportunity.subject_id || selectedOpportunity.subject?.id || null,
-        type,
-        status: 'draft',
-        number,
-        title: `${type === 'offer' ? 'Nabídka' : 'Objednávka'} - ${selectedOpportunity.title}`,
-        subtotal: totals.subtotal,
-        discount_total: totals.discount_total,
-        tax_total: totals.tax_total,
-        total: totals.total,
-        notes: selectedOpportunity.description || null,
-        sync_items: true,
-      })
-      .select('id')
-      .single();
-
-    if (documentError) {
-      setCreatingDocument(false);
-      toast({
-        title: 'Dokument se nepodařilo vytvořit',
-        description: documentError.message,
-        variant: 'destructive',
+    try {
+      const { data, error } = await supabase.rpc('create_crm_commercial_document_atomic', {
+        p_opportunity_id: selectedOpportunity.id,
+        p_type: type,
+        p_notes: selectedOpportunity.description || null,
       });
-      return;
-    }
-
-    const documentItems = sourceItems.map((item, index) => buildCrmDocumentItemPayload({
-      ...item,
-      vat_rate: item.vat_rate ?? vatRate,
-    }, documentData.id, index));
-    const { error: itemError } = documentItems.length > 0
-      ? await supabase.from('crm_commercial_document_items').insert(documentItems)
-      : { error: null };
-
-    if (itemError) {
+      if (error) throw error;
+      if (!data?.id) throw new Error('Server nepotvrdil vytvoření dokumentu. Obnovte seznam před opakováním.');
+      toast({ title: type === 'offer' ? 'Nabídka vytvořena' : 'Objednávka vytvořena' });
+      await fetchCrmData();
+    } catch (error) {
+      toast({ title: 'Dokument se nepodařilo vytvořit', description: crmWorkflowErrorMessage(error), variant: 'destructive' });
+    } finally {
       setCreatingDocument(false);
-      toast({
-        title: 'Položka dokumentu se nepodařila vytvořit',
-        description: itemError.message,
-        variant: 'destructive',
-      });
-      return;
     }
-
-    setCreatingDocument(false);
-    toast({ title: type === 'offer' ? 'Nabídka vytvořena' : 'Objednávka vytvořena' });
-    fetchCrmData();
   };
 
   const handleCreateProjectFromOpportunity = useCallback(() => {
@@ -2709,8 +2632,8 @@ const CRM = () => {
             </div>
             <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
               <p className="text-xs font-semibold uppercase text-muted-foreground">Očekávaný hrubý zisk</p>
-              <p className="mt-1 text-xl font-semibold text-primary">{crmTablesReady ? formatCurrency(metrics.expectedGrossProfit) : '-'}</p>
-              <p className="text-xs text-muted-foreground">orientačně 28 % z vážené pipeline</p>
+              <p className="mt-1 text-xl font-semibold text-primary">{crmTablesReady && metrics.expectedGrossProfit !== null ? formatCurrency(metrics.expectedGrossProfit) : 'Nedostupné'}</p>
+              <p className="text-xs text-muted-foreground">Vyžaduje úplné položky a nákupní ceny všech otevřených případů</p>
             </div>
           </CardContent>
         </Card>
@@ -2919,6 +2842,7 @@ const CRM = () => {
         ) : isOpportunityDetailPage ? (
           <div className="space-y-4">
             <DealWorkspace
+              key={selectedOpportunity?.id || 'empty'}
               opportunity={selectedOpportunity}
               documents={selectedOpportunityDocuments}
               documentTemplates={documentTemplates}
@@ -2941,7 +2865,8 @@ const CRM = () => {
                 [type]: templateId || 'default',
               }))}
               onStageChange={requestOpportunityStageChange}
-              onUpdateOpportunity={handleInlineOpportunityUpdate}
+              onSaveOpportunityDraft={handleSaveOpportunityDraft}
+              onReloadOpportunity={fetchCrmData}
               onUpdateOpportunityItems={handleOpportunityItemsUpdate}
               onAddNote={handleAddOpportunityNote}
               creatingDocument={creatingDocument}

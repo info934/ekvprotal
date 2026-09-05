@@ -1,484 +1,72 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  CheckCircle, XCircle, Clock, Eye,
-  Search, Filter, User,
-  FileText, RotateCcw
-} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { format } from 'date-fns';
+import { cs } from 'date-fns/locale';
+import { CheckCircle, RefreshCw, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { useDebouncedValue } from '@/hooks/useDebounce';
-import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
-import { cs } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
+import { attendanceMonthRange, loadAttendanceRows, loadAttendanceSubmissions, sumAttendanceHours } from '@/lib/attendanceWorkspace';
+import { useAttendanceResource } from '@/hooks/useAttendanceResource';
+import { approveAttendanceSubmission, rejectAttendanceSubmission, returnAttendanceSubmissionForEdit, revertAttendanceSubmission } from '@/lib/attendanceWorkflowService';
 import { sendAttendanceNotification } from '@/lib/attendanceEmailService';
-import {
-  approveAttendanceSubmission,
-  rejectAttendanceSubmission,
-  returnAttendanceSubmissionForEdit,
-} from '@/lib/attendanceWorkflowService';
-import { DataVizMetricCard } from '@/components/ui/data-viz';
+import { AttendanceLoadState, AttendanceRecordsTable, AttendanceStatus } from './AttendanceWorkspaceParts';
 
-// --- Memoized Components ---
-const StatusBadge = React.memo(({ status }) => {
-  const config = {
-    submitted: { label: 'Ke schválení', icon: Clock, variant: 'warning', className: 'bg-orange-100 text-orange-800 border-orange-200' },
-    approved: { label: 'Schváleno', icon: CheckCircle, variant: 'success', className: 'bg-green-100 text-green-800 border-green-200' },
-    rejected: { label: 'Zamítnuto', icon: XCircle, variant: 'destructive', className: 'bg-red-100 text-red-800 border-red-200' },
-    returned: { label: 'Vráceno k úpravě', icon: RotateCcw, variant: 'warning', className: 'bg-amber-100 text-amber-800 border-amber-200' },
-    draft: { label: 'Koncept', icon: FileText, variant: 'secondary', className: 'bg-gray-100 text-gray-800 border-gray-200' }
-  };
+const monthLabel = date => format(new Date(`${date.slice(0, 10)}T12:00:00`), 'LLLL yyyy', { locale: cs });
+const actionLabels = { approved: 'Schválit měsíc', returned: 'Vrátit k úpravě', rejected: 'Zamítnout měsíc', submitted: 'Znovu otevřít ke kontrole' };
 
-  const current = config[status] || config.draft;
-  const Icon = current.icon;
-
-  return (
-    <Badge variant="outline" className={cn("inline-flex max-w-full items-center gap-1 whitespace-nowrap font-semibold", current.className)}>
-      <Icon className="h-3 w-3 shrink-0" />
-      <span className="truncate">{current.label}</span>
-    </Badge>
-  );
-});
-
-StatusBadge.displayName = 'StatusBadge';
-
-const StatCard = ({ label, value, icon: Icon, tone }) => (
-  <DataVizMetricCard icon={Icon} label={label} value={value} tone={tone} />
-);
-
-const SubmissionCard = React.memo(({ submission, onDetail, onApprove, onReject, onReturnForEdit, showActions }) => {
-  const memberName = submission.member?.name || 'Neznámý uživatel';
-  const monthLabel = format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs });
-  const totalHours = Number(submission.total_hours).toFixed(1);
-  const submittedDate = submission.submitted_at ?format(parseISO(submission.submitted_at), 'd.M.yyyy HH:mm') : '-';
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-primary/25 hover:shadow-md">
-      <div className="flex min-h-[128px] flex-col justify-between">
-        <div className="mb-2 flex min-w-0 flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600">
-              <User className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <h4 className="truncate font-semibold text-slate-950">{memberName}</h4>
-              <p className="truncate text-xs capitalize text-muted-foreground">{monthLabel}</p>
-            </div>
-          </div>
-          <StatusBadge status={submission.status} />
-        </div>
-
-        <div className="my-3 grid min-w-0 gap-3 text-sm sm:grid-cols-2">
-          <div className="min-w-0 rounded border border-slate-100 bg-slate-50 p-2">
-            <span className="text-muted-foreground block text-xs">Celkem hodin</span>
-            <span className="text-lg font-bold text-slate-800">{totalHours} h</span>
-          </div>
-          <div className="min-w-0 rounded border border-slate-100 bg-slate-50 p-2">
-            <span className="text-muted-foreground block text-xs">Odesláno</span>
-            <span className="block truncate font-medium text-slate-800">{submittedDate}</span>
-          </div>
-        </div>
-
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
-          <Button variant="ghost" size="sm" onClick={() => onDetail(submission)} className="text-blue-600 hover:bg-blue-50 hover:text-blue-700">
-            <Eye className="mr-2 h-4 w-4" /> Detail
-          </Button>
-          {showActions && submission.status === 'submitted' && (
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button size="sm" variant="outline" onClick={() => onReturnForEdit(submission)} className="border-amber-100 text-amber-700 hover:bg-amber-50 hover:text-amber-800">
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Vrátit k úpravě
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => onReject(submission)} className="border-red-100 text-red-600 hover:bg-red-50 hover:text-red-700">
-                <XCircle className="mr-2 h-4 w-4" />
-                Zamítnout
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => onApprove(submission)} className="border-emerald-100 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700">
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Schválit
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-});
-
-SubmissionCard.displayName = 'SubmissionCard';
-
-const AttendanceSubmissionsOptimized = () => {
+export default function AttendanceSubmissionsOptimized() {
   const { toast } = useToast();
-  const { hasPermission } = useAuth();
-  
-  // Data State
-  const [submissions, setSubmissions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
-  // UI State
-  const [filterStatus, setFilterStatus] = useState('submitted');
-  const [searchTerm, setSearchTerm] = useState('');
-  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
-  
-  // Dialog State
-  const [detailSubmission, setDetailSubmission] = useState(null);
-  const [detailRecords, setDetailRecords] = useState([]);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [rejectDialog, setRejectDialog] = useState(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [returnDialog, setReturnDialog] = useState(null);
-  const [returnReason, setReturnReason] = useState('');
-
-  const canAdmin = hasPermission('attendance', 'can_admin');
-
-  // --- 4) Optimize Supabase query ---
-  const fetchSubmissions = useCallback(async () => {
-    setLoading(true);
+  const { hasPermission, userRole } = useAuth();
+  const canAdmin = userRole === 'admin' || hasPermission('attendance', 'can_admin');
+  const [filter, setFilter] = useState('submitted');
+  const [search, setSearch] = useState('');
+  const [month, setMonth] = useState('');
+  const [page, setPage] = useState(1);
+  const [detail, setDetail] = useState(null);
+  const [decision, setDecision] = useState(null);
+  const [note, setNote] = useState('');
+  const [pending, setPending] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const busy = useRef(false);
+  const loader = useCallback(signal => loadAttendanceSubmissions(supabase, { signal }), []);
+  const resource = useAttendanceResource('attendance-submissions', loader);
+  const detailsLoader = useCallback(signal => loadAttendanceRows(supabase, { memberId: detail?.member_id, ...attendanceMonthRange(detail?.month_date || new Date()), signal }), [detail]);
+  const details = useAttendanceResource(`attendance-detail:${detail?.id || ''}`, detailsLoader, Boolean(detail));
+  const submissions = resource.data || [];
+  const filtered = useMemo(() => submissions.filter(row => (filter === 'all' || row.status === filter) && (!month || row.month_date.startsWith(month)) && (!search.trim() || row.member?.name?.toLocaleLowerCase('cs').includes(search.trim().toLocaleLowerCase('cs')))), [submissions, filter, month, search]);
+  useEffect(() => setPage(1), [filter, month, search, resource.data]);
+  const pages = Math.max(1, Math.ceil(filtered.length / 25));
+  const safePage = Math.min(page, pages);
+  const startDecision = status => { setDecision(status); setNote(''); setActionError(''); };
+  const applyDecision = async () => {
+    if (!canAdmin || !detail || !['submitted', 'approved'].includes(detail.status) || busy.current || !details.ready) return;
+    if (['returned', 'rejected'].includes(decision) && !note.trim()) { setActionError('Napište pracovníkovi, co je potřeba opravit.'); return; }
+    busy.current = true; setPending(true); setActionError('');
     try {
-      let query = supabase
-        .from('attendance_submissions')
-        .select(`
-          id, 
-          status, 
-          total_hours, 
-          month_date, 
-          submitted_at, 
-          notes, 
-          member_id,
-          member:members!attendance_submissions_member_id_fkey(id, name, email)
-        `)
-        .order('submitted_at', { ascending: false });
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      setSubmissions(data || []);
-    } catch (error) {
-      toast({ title: 'Chyba při načítání', description: error.message, variant: 'destructive' });
-    } finally {
-      setLoading(false);
-    }
-  }, [toast]);
-
-  useEffect(() => {
-    fetchSubmissions();
-  }, [fetchSubmissions]);
-
-  // --- 2) Optimized useMemo for filtered submissions & stats ---
-  const filteredSubmissions = useMemo(() => {
-    return submissions.filter(sub => {
-      const matchesStatus = filterStatus === 'all' || sub.status === filterStatus;
-      const matchesSearch = debouncedSearchTerm === '' || 
-        sub.member?.name?.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
-      return matchesStatus && matchesSearch;
-    });
-  }, [submissions, filterStatus, debouncedSearchTerm]);
-
-  const stats = useMemo(() => {
-    return submissions.reduce((acc, sub) => {
-      acc.total++;
-      if (sub.status === 'submitted') acc.pending++;
-      if (sub.status === 'approved') acc.approved++;
-      if (sub.status === 'rejected') acc.rejected++;
-      if (sub.status === 'returned') acc.returned++;
-      return acc;
-    }, { total: 0, pending: 0, approved: 0, rejected: 0, returned: 0 });
-  }, [submissions]);
-
-  // --- Detail Logic ---
-  const fetchDetailRecords = useCallback(async (submission) => {
-    setDetailLoading(true);
-    const start = startOfMonth(parseISO(submission.month_date));
-    const end = endOfMonth(start);
-    
-    try {
-      const { data, error } = await supabase
-        .from('attendance')
-        .select('date, hours, description, project:projects(name, code), realization:realizations(name)')
-        .eq('member_id', submission.member_id)
-        .gte('date', format(start, 'yyyy-MM-dd'))
-        .lte('date', format(end, 'yyyy-MM-dd'))
-        .order('date');
-        
-      if (error) throw error;
-      setDetailRecords(data || []);
-    } catch (error) {
-      toast({ title: 'Chyba detailu', description: error.message, variant: 'destructive' });
-    } finally {
-      setDetailLoading(false);
-    }
-  }, [toast]);
-
-  const handleOpenDetail = useCallback((submission) => {
-    setDetailSubmission(submission);
-    fetchDetailRecords(submission);
-  }, [fetchDetailRecords]);
-
-  // --- 3) useCallback for actions ---
-  const handleApprove = useCallback(async (submission) => {
-    if (!canAdmin) return;
-    try {
-      await approveAttendanceSubmission(submission.id);
-
-      fetchSubmissions();
-      const notification = await sendAttendanceNotification({
-        submissionId: submission.id,
-        eventType: 'approved',
-        memberName: submission.member?.name || 'Pracovník',
-        monthDate: format(parseISO(submission.month_date), 'LLLL yyyy', { locale: cs }),
-        totalHours: submission.total_hours,
-      });
-      toast(notification?.success
-        ? { title: 'Schváleno', description: 'Zaměstnanec byl informován e-mailem.', className: 'bg-green-100 text-green-800' }
-        : { title: 'Docházka byla schválena', description: 'Stav je uložený, ale e-mail se nepodařilo potvrdit.', variant: 'warning' });
-    } catch (error) {
-      toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
-    }
-  }, [canAdmin, fetchSubmissions, toast]);
-
-  const handleRejectConfirm = useCallback(async () => {
-    if (!canAdmin || !rejectDialog) return;
-    try {
-      await rejectAttendanceSubmission(rejectDialog.id, rejectReason);
-
-      setRejectDialog(null);
-      setRejectReason('');
-      fetchSubmissions();
-
-      const notification = await sendAttendanceNotification({
-        submissionId: rejectDialog.id,
-        eventType: 'rejected',
-        memberName: rejectDialog.member?.name || 'Pracovník',
-        monthDate: format(parseISO(rejectDialog.month_date), 'LLLL yyyy', { locale: cs }),
-        totalHours: rejectDialog.total_hours,
-        reason: rejectReason,
-      });
-      toast(notification?.success
-        ? { title: 'Zamítnuto', description: 'Zaměstnanec byl informován e-mailem.' }
-        : { title: 'Docházka byla zamítnuta', description: 'Stav je uložený, ale e-mail se nepodařilo potvrdit.', variant: 'warning' });
-    } catch (error) {
-      toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
-    }
-  }, [canAdmin, rejectDialog, rejectReason, fetchSubmissions, toast]);
-
-  const handleReturnConfirm = useCallback(async () => {
-    if (!canAdmin || !returnDialog) return;
-    try {
-      await returnAttendanceSubmissionForEdit(returnDialog.id, returnReason);
-
-      setReturnDialog(null);
-      setReturnReason('');
-      fetchSubmissions();
-
-      const notification = await sendAttendanceNotification({
-        submissionId: returnDialog.id,
-        eventType: 'returned',
-        memberName: returnDialog.member?.name || 'Pracovník',
-        monthDate: format(parseISO(returnDialog.month_date), 'LLLL yyyy', { locale: cs }),
-        totalHours: returnDialog.total_hours,
-        reason: returnReason || 'Bez poznámky.',
-      });
-      toast(notification?.success
-        ? { title: 'Vráceno k úpravě', description: 'Zaměstnanec byl informován e-mailem.' }
-        : { title: 'Docházka byla vrácena k úpravě', description: 'Stav je uložený, ale e-mail se nepodařilo potvrdit.', variant: 'warning' });
-    } catch (error) {
-      toast({ title: 'Chyba', description: error.message, variant: 'destructive' });
-    }
-  }, [canAdmin, returnDialog, returnReason, fetchSubmissions, toast]);
-
-  return (
-    <div className="space-y-6">
-      {/* Statistics */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Ke schválení" value={stats.pending} icon={Clock} tone="orange" />
-        <StatCard label="Schváleno" value={stats.approved} icon={CheckCircle} tone="green" />
-        <StatCard label="Zamítnuto" value={stats.rejected} icon={XCircle} tone="red" />
-        <StatCard label="Vráceno" value={stats.returned} icon={RotateCcw} tone="amber" />
-        <StatCard label="Celkem" value={stats.total} icon={FileText} tone="slate" />
-      </div>
-
-      {/* Controls */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Hledat jméno..." 
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-4 h-4 text-muted-foreground" />
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filtr stavu" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Všechny stavy</SelectItem>
-              <SelectItem value="submitted">Ke schválení</SelectItem>
-              <SelectItem value="approved">Schváleno</SelectItem>
-              <SelectItem value="rejected">Zamítnuto</SelectItem>
-              <SelectItem value="returned">Vráceno k úpravě</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* List */}
-      <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2">
-        {loading ?(
-          <div className="flex min-h-[260px] items-center justify-center text-sm text-muted-foreground">
-            <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
-            Načítání...
-          </div>
-        ) : filteredSubmissions.length > 0 ?(
-          <div className="max-h-[620px] space-y-2 overflow-y-auto pr-1">
-            {filteredSubmissions.map((submission) => (
-              <SubmissionCard
-                key={submission.id}
-                submission={submission}
-                onDetail={handleOpenDetail}
-                onApprove={handleApprove}
-                onReject={(s) => setRejectDialog(s)}
-                onReturnForEdit={(s) => setReturnDialog(s)}
-                showActions={canAdmin}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="flex min-h-[260px] flex-col items-center justify-center text-muted-foreground">
-            <Search className="mb-2 h-12 w-12 opacity-20" />
-            <p>Žádné záznamy k zobrazení</p>
-          </div>
-        )}
-      </div>
-
-      {/* Detail Dialog */}
-      <Dialog open={!!detailSubmission} onOpenChange={(open) => !open && setDetailSubmission(null)}>
-        <DialogContent className="flex max-h-[88vh] w-[calc(100vw-2rem)] max-w-5xl flex-col overflow-hidden p-0">
-          <DialogHeader className="border-b bg-slate-50/80 px-6 py-5 text-left">
-            <DialogTitle>Detail docházky</DialogTitle>
-            <DialogDescription>
-              Kontrola měsíčního výkazu před schválením, zamítnutím nebo vrácením do schvalování.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-            <div className="grid gap-3 text-sm md:grid-cols-5">
-              <div className="rounded-lg border border-slate-200 bg-white p-3 md:col-span-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pracovník</span>
-                <p className="mt-1 truncate text-base font-bold text-slate-950">{detailSubmission?.member?.name || '-'}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Měsíc</span>
-                <p className="mt-1 font-semibold capitalize text-slate-900">{detailSubmission && format(parseISO(detailSubmission.month_date), 'LLLL yyyy', { locale: cs })}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Celkem hodin</span>
-                <p className="mt-1 text-lg font-bold text-slate-950">{detailSubmission ? Number(detailSubmission.total_hours).toFixed(1) : 0} h</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Stav</span>
-                <div className="mt-1"><StatusBadge status={detailSubmission?.status} /></div>
-              </div>
-            </div>
-
-            {detailLoading ?(
-              <p className="text-center py-4">Načítání detailů...</p>
-            ) : detailRecords.length > 0 ?(
-              <div className="space-y-2">
-                <h4 className="font-semibold text-sm text-slate-700 sticky top-0 bg-white py-2">Denní záznamy</h4>
-                {detailRecords.map((record, idx) => (
-                  <div key={idx} className="flex flex-col gap-2 rounded-md border border-slate-100 bg-white p-3 text-sm sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="font-medium">{format(parseISO(record.date), 'd.M.yyyy')}</div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {record.project ? `${record.project.name} (${record.project.code})` : record.realization?.name || 'Bez přiřazení'}
-                      </div>
-                      {record.description && <div className="mt-0.5 break-words text-xs italic">{record.description}</div>}
-                    </div>
-                    <div className="shrink-0 font-bold">{Number(record.hours).toFixed(1)} h</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-center text-muted-foreground py-4">Žádné záznamy v tomto měsíci.</p>
-            )}
-          </div>
-
-          <DialogFooter className="border-t bg-white px-6 py-4">
-            <Button variant="outline" onClick={() => setDetailSubmission(null)}>Zavřít</Button>
-            {canAdmin && detailSubmission?.status === 'submitted' && (
-              <>
-                <Button variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => { setReturnDialog(detailSubmission); setDetailSubmission(null); }}>Vrátit k úpravě</Button>
-                <Button variant="destructive" onClick={() => { setRejectDialog(detailSubmission); setDetailSubmission(null); }}>Zamítnout</Button>
-                <Button onClick={() => { handleApprove(detailSubmission); setDetailSubmission(null); }} className="bg-green-600 hover:bg-green-700">Schválit</Button>
-              </>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Return For Edit Dialog */}
-      <Dialog open={!!returnDialog} onOpenChange={(open) => !open && setReturnDialog(null)}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Vrátit docházku k úpravě</DialogTitle>
-            <DialogDescription>
-              Výkaz se nebude počítat jako zamítnutý. Zaměstnanec ho může upravit a znovu odeslat ke schválení.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-4">
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              Doporučení: napište, co přesně má zaměstnanec doplnit nebo opravit.
-            </div>
-            <Textarea
-              placeholder="Poznámka pro zaměstnance..."
-              value={returnReason}
-              onChange={(e) => setReturnReason(e.target.value)}
-              className="min-h-[120px]"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setReturnDialog(null)}>Zrušit</Button>
-            <Button onClick={handleReturnConfirm} className="bg-amber-600 hover:bg-amber-700">Vrátit k úpravě</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Reject Reason Dialog */}
-      <Dialog open={!!rejectDialog} onOpenChange={(open) => !open && setRejectDialog(null)}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Zamítnout docházku</DialogTitle>
-            <DialogDescription>
-              Zadejte důvod zamítnutí. Uživatel bude informován e-mailem.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Textarea 
-              placeholder="Důvod zamítnutí..." 
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              className="min-h-[100px]"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setRejectDialog(null)}>Zrušit</Button>
-            <Button variant="destructive" onClick={handleRejectConfirm} disabled={!rejectReason.trim()}>Zamítnout</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-};
-
-export default AttendanceSubmissionsOptimized;
+      const saved = decision === 'submitted' ? await revertAttendanceSubmission(detail.id) : decision === 'approved' ? await approveAttendanceSubmission(detail.id) : decision === 'returned' ? await returnAttendanceSubmissionForEdit(detail.id, note.trim()) : await rejectAttendanceSubmission(detail.id, note.trim());
+      const info = { ...detail, ...(saved || {}) };
+      const eventType = decision;
+      setDecision(null); setDetail(null); resource.refresh();
+      toast({ title: 'Stav měsíce byl uložen' });
+      if (decision === 'submitted') return;
+      try {
+        const notification = await sendAttendanceNotification({ submissionId: info.id, eventType, memberName: info.member?.name || 'Pracovník', monthDate: monthLabel(info.month_date), totalHours: info.total_hours, reason: note.trim() || undefined });
+        if (!notification?.success) throw new Error('Notification not confirmed');
+      } catch { toast({ title: 'Stav je uložený', description: 'E-mailovou notifikaci se nepodařilo potvrdit.', variant: 'warning' }); }
+    } catch (error) { setActionError(error.message || 'Změnu se nepodařilo uložit.'); }
+    finally { busy.current = false; setPending(false); }
+  };
+  return <div className="space-y-5">
+    <section className="space-y-4 rounded-xl border bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">Schvalování docházky</h2><p className="mt-1 text-sm text-slate-500">Otevřete výkaz, zkontrolujte záznamy a rozhodněte o celém měsíci.</p></div><Button variant="outline" onClick={resource.refresh} disabled={pending}><RefreshCw className="mr-2 h-4 w-4" />Obnovit</Button></div><div className="flex flex-wrap gap-3 border-t pt-4"><div className="relative min-w-52 flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input aria-label="Hledat pracovníka" placeholder="Hledat pracovníka…" className="pl-9" value={search} onChange={event => setSearch(event.target.value)} /></div><Select value={filter} onValueChange={setFilter}><SelectTrigger aria-label="Stav výkazu" className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="submitted">Ke schválení</SelectItem><SelectItem value="approved">Schváleno</SelectItem><SelectItem value="returned">Vráceno k úpravě</SelectItem><SelectItem value="rejected">Zamítnuto</SelectItem><SelectItem value="draft">Koncept</SelectItem><SelectItem value="all">Všechny stavy</SelectItem></SelectContent></Select><Input className="w-44" type="month" aria-label="Filtrovat měsíc výkazu" value={month} onChange={event => setMonth(event.target.value)} />{month && <Button variant="ghost" onClick={() => setMonth('')}>Všechna období</Button>}</div></section>
+    <AttendanceLoadState loading={resource.loading} error={resource.error} onRetry={resource.refresh}>{resource.ready && <><div className="flex flex-wrap gap-6 rounded-xl border bg-white px-5 py-4 text-sm"><span><strong>{submissions.filter(row => row.status === 'submitted').length}</strong> čeká na schválení</span><span><strong>{submissions.filter(row => row.status === 'approved').length}</strong> schválených</span><span className="text-slate-500">{filtered.length} zobrazených výkazů</span></div>{filtered.length ? <div className="overflow-hidden rounded-xl border bg-white"><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Pracovník</TableHead><TableHead>Měsíc</TableHead><TableHead className="text-right">Hodiny</TableHead><TableHead>Stav</TableHead><TableHead>Odesláno</TableHead><TableHead className="text-right">Kontrola</TableHead></TableRow></TableHeader><TableBody>{filtered.slice((safePage - 1) * 25, safePage * 25).map(row => <TableRow key={row.id}><TableCell className="min-w-40 font-medium">{row.member?.name || 'Neznámý pracovník'}{row.notes && <p className="mt-1 max-w-xs truncate text-xs font-normal text-slate-500" title={row.notes}>{row.notes}</p>}</TableCell><TableCell className="whitespace-nowrap capitalize">{monthLabel(row.month_date)}</TableCell><TableCell className="text-right font-semibold tabular-nums">{Number(row.total_hours).toLocaleString('cs-CZ')} h</TableCell><TableCell><AttendanceStatus status={row.status} /></TableCell><TableCell className="whitespace-nowrap text-xs text-slate-500">{row.submitted_at ? new Date(row.submitted_at).toLocaleDateString('cs-CZ') : 'Neodesláno'}</TableCell><TableCell className="text-right"><Button variant="outline" disabled={pending} onClick={() => setDetail(row)}>Otevřít výkaz</Button></TableCell></TableRow>)}</TableBody></Table></div>{pages > 1 && <div className="flex items-center justify-end gap-3 border-t p-3 text-sm"><Button variant="outline" size="sm" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>Předchozí</Button>{safePage} / {pages}<Button variant="outline" size="sm" disabled={safePage === pages} onClick={() => setPage(safePage + 1)}>Další</Button></div>}</div> : <div className="rounded-xl border border-dashed bg-white p-10 text-center"><CheckCircle className="mx-auto mb-3 h-7 w-7 text-slate-400" /><p className="font-medium">{filter === 'submitted' ? 'Žádný výkaz nyní nečeká na schválení' : 'Žádný výkaz neodpovídá filtrům'}</p><p className="mt-2 text-sm text-slate-500">Stav a měsíc můžete změnit ve filtrech nahoře.</p></div>}</>}</AttendanceLoadState>
+    <Dialog open={Boolean(detail)} onOpenChange={open => { if (!open && !pending && !decision) setDetail(null); }}><DialogContent className="flex max-h-[90vh] max-w-5xl flex-col overflow-hidden"><DialogHeader><DialogTitle>{detail?.member?.name || 'Výkaz docházky'}</DialogTitle><DialogDescription>{detail ? monthLabel(detail.month_date) : ''} · odeslaný součet {Number(detail?.total_hours || 0).toLocaleString('cs-CZ')} h</DialogDescription></DialogHeader><div className="min-h-0 flex-1 overflow-y-auto"><AttendanceLoadState loading={details.loading} error={details.error} onRetry={details.refresh}>{details.ready && <><p className="mb-3 text-sm text-slate-500">Načtené záznamy: {sumAttendanceHours(details.data).toLocaleString('cs-CZ')} h. {detail?.notes && `Poznámka: ${detail.notes}`}</p><AttendanceRecordsTable records={details.data} /></>}</AttendanceLoadState></div><DialogFooter><Button variant="outline" disabled={pending} onClick={() => setDetail(null)}>Zavřít</Button>{canAdmin && detail?.status === 'approved' && <Button variant="outline" disabled={pending || !details.ready} onClick={() => startDecision('submitted')}>Znovu otevřít ke kontrole</Button>}{canAdmin && detail?.status === 'submitted' && <><Button variant="outline" disabled={pending || !details.ready} onClick={() => startDecision('returned')}>Vrátit k úpravě</Button><Button variant="outline" disabled={pending || !details.ready} onClick={() => startDecision('rejected')}>Zamítnout</Button><Button disabled={pending || !details.ready} onClick={() => startDecision('approved')}>Schválit měsíc</Button></>}</DialogFooter></DialogContent></Dialog>
+    <Dialog open={Boolean(decision)} onOpenChange={open => { if (!open && !pending) setDecision(null); }}><DialogContent><DialogHeader><DialogTitle>{actionLabels[decision]}</DialogTitle><DialogDescription>{detail?.member?.name} · {detail ? monthLabel(detail.month_date) : ''}. {decision === 'submitted' ? 'Výkaz se vrátí do stavu Ke schválení. Záznamy zůstanou uzamčené do následného vrácení pracovníkovi. Aktivní nebo vyplacená hodinová žádost opětovné otevření blokuje.' : decision === 'approved' ? 'Schválený výkaz bude podkladem pro hodinové výplaty a jeho záznamy zůstanou uzamčené.' : 'Napište konkrétně, co má pracovník opravit před dalším odesláním.'}</DialogDescription></DialogHeader>{['returned', 'rejected'].includes(decision) && <div className="space-y-2"><Label htmlFor="attendance-decision-note">Důvod a pokyny pro pracovníka</Label><Textarea id="attendance-decision-note" value={note} onChange={event => setNote(event.target.value)} disabled={pending} rows={4} /></div>}{actionError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{actionError}</p>}<DialogFooter><Button variant="outline" disabled={pending} onClick={() => setDecision(null)}>Zrušit</Button><Button variant={decision === 'rejected' ? 'destructive' : 'default'} disabled={pending || (['returned', 'rejected'].includes(decision) && !note.trim())} onClick={applyDecision}>{pending ? 'Ukládám…' : actionLabels[decision]}</Button></DialogFooter></DialogContent></Dialog>
+  </div>;
+}

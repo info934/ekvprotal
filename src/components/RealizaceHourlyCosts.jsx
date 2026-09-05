@@ -13,7 +13,7 @@ import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialValueGuard from './FinancialValueGuard';
 import { useToast } from '@/components/ui/use-toast';
 
-const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, distributionAmount }) => {
+const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject }) => {
     const { hasPermission, userRole } = useAuth();
     const { toast } = useToast();
     const [records, setRecords] = useState([]);
@@ -143,12 +143,7 @@ const RealizaceHourlyCosts = ({ realizaceId, linkedProjectId, onLinkProject, dis
 
     return (
         <div className="space-y-6">
-            {distributionAmount !== undefined && canViewAmounts && (
-                 <div className="bg-blue-50 border border-blue-100 p-3 rounded-md flex items-center gap-2 mb-4">
-                     <span className="text-sm font-medium text-blue-700">Týmový rozpočet (pro mzdy a náklady):</span>
-                     <span className="text-lg font-bold text-blue-800"><FinancialValueGuard value={formatCurrency(distributionAmount)} /></span>
-                 </div>
-            )}
+
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card>

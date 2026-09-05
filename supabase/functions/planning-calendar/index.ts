@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.30.0';
 import { corsHeaders } from '../_shared/cors.ts';
 import { fetchWithTimeout } from '../_shared/fetch.ts';
+import { assertActiveAccount } from '../_shared/accountStatus.ts';
 
 type CalendarAction = 'checkAvailability' | 'syncItem' | 'testConnection';
 
@@ -197,6 +198,7 @@ Deno.serve(async (req: Request) => {
     const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: authError } = await admin.auth.getUser(token);
     if (authError || !user) return jsonResponse({ success: false, error: 'Invalid session.' }, 401);
+    await assertActiveAccount(admin, user.id);
 
     const body = await req.json();
     const action = body.action as CalendarAction;

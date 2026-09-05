@@ -47,8 +47,8 @@ export const formatHours = (value) =>
     maximumFractionDigits: 1
   })} h`;
 
-export const PayoutStatusBadge = ({ status, className }) => {
-  const meta = payoutStatusMeta[status] || {
+export const PayoutStatusBadge = ({ status, approvedWithoutInvoice = false, className }) => {
+  const meta = status === 'approved' && approvedWithoutInvoice ? { ...payoutStatusMeta.approved, label: 'Připraveno k úhradě' } : payoutStatusMeta[status] || {
     label: status || 'Neznámý stav',
     icon: AlertTriangle,
     className: 'border-slate-200 bg-slate-50 text-slate-700'

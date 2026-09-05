@@ -41,10 +41,13 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PayoutApprovalAuditLog from './PayoutApprovalAuditLog';
 import { formatCurrency, PayoutStatusBadge } from '@/components/payouts/PayoutShared';
 import PayoutRequestsTable from '@/components/payouts/PayoutRequestsTable';
+import { FinanceAmount } from '@/components/finance/FinanceWorkspace';
+import { sumPayoutAmounts, payoutNextStep } from '@/lib/payoutWorkspaceData';
 
 const PayoutTableActions = ({
   item,
   canAdmin,
+  canEditOwn,
   onApproveWithDialog,
   onDelete,
   onDownloadInvoice,
@@ -62,12 +65,12 @@ const PayoutTableActions = ({
   const canUploadInvoice = item.status === 'approved' && (isOwner || canAdmin) && !item.approved_without_invoice && !item.invoice_url;
   const canMarkPaid = canAdmin && (item.status === 'invoice_uploaded' || (item.status === 'approved' && item.approved_without_invoice));
   const canManagePending = canAdmin && item.status === 'pending';
-  const canEditPending = item.status === 'pending' && (canAdmin || isOwner);
-  const canDeleteRequest = item.status === 'pending' && (canAdmin || isOwner) && !item.invoice_url;
-  const canRemoveInvoice = item.status === 'invoice_uploaded' && (canAdmin || isOwner) && Boolean(item.invoice_url);
+  const canEditPending = item.status === 'pending' && (canAdmin || (isOwner && canEditOwn));
+  const canDeleteRequest = item.status === 'pending' && (canAdmin || (isOwner && canEditOwn)) && !item.invoice_url;
+  const canRemoveInvoice = item.status === 'invoice_uploaded' && (canAdmin || (isOwner && canEditOwn)) && Boolean(item.invoice_url);
   const canReopenForReview = item.status === 'approved' && canAdmin;
   const canCancelRequest = ['approved', 'invoice_uploaded'].includes(item.status)
-    && (canAdmin || isOwner)
+    && (canAdmin || (isOwner && canEditOwn))
     && (item.status !== 'invoice_uploaded' || canAdmin);
 
   const handleFileChange = async (event) => {
@@ -90,7 +93,7 @@ const PayoutTableActions = ({
           <Button
             size="sm"
             variant="outline"
-            className="h-8 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+            className="h-11 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
             onClick={() => onApproveWithDialog?.(item)}
           >
             <CheckCircle className="mr-1 h-4 w-4" />
@@ -99,9 +102,10 @@ const PayoutTableActions = ({
           <Button
             size="icon"
             variant="outline"
-            className="h-8 w-8 border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+            className="h-11 w-11 border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
             onClick={() => onUpdateStatus?.(item.id, 'rejected', item)}
             title="Zamítnout"
+            aria-label="Zamítnout žádost"
           >
             <XCircle className="h-4 w-4" />
           </Button>
@@ -120,7 +124,7 @@ const PayoutTableActions = ({
           <Button
             size="sm"
             variant="outline"
-            className="h-8 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+            className="h-11 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
             disabled={isUploading}
             onClick={() => document.getElementById(fileInputId)?.click()}
           >
@@ -133,18 +137,18 @@ const PayoutTableActions = ({
       {canMarkPaid && (
         <Button
           size="sm"
-          className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
+          className="h-11 bg-emerald-600 text-white hover:bg-emerald-700"
           onClick={() => onUpdateStatus?.(item.id, 'paid', item)}
         >
           <Check className="mr-1 h-4 w-4" />
-          Vyplatit
+          Zaznamenat úhradu
         </Button>
       )}
 
       {(canEditPending || canDeleteRequest || canRemoveInvoice || canReopenForReview || canCancelRequest) && (
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-950" title="Další akce">
+            <Button variant="ghost" size="icon" className="h-11 w-11 text-slate-500 hover:bg-slate-100 hover:text-slate-950" title="Další akce" aria-label="Další akce žádosti">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </PopoverTrigger>
@@ -272,7 +276,7 @@ const PayoutItemsSummary = ({ items = [] }) => {
   if (!items.length) return <span className="text-sm text-slate-400">Bez položek</span>;
 
   const visibleItems = items.slice(0, 2);
-  const totalAmount = items.reduce((sum, payoutItem) => sum + Number(payoutItem.amount || 0), 0);
+  const totalAmount = sumPayoutAmounts(items, 'amount');
 
   return (
     <div className="min-w-0 space-y-1.5">
@@ -280,7 +284,7 @@ const PayoutItemsSummary = ({ items = [] }) => {
         <Badge variant="outline" className="rounded-full border-slate-200 bg-white font-semibold text-slate-700">
           {items.length} {items.length === 1 ? 'položka' : items.length < 5 ? 'položky' : 'položek'}
         </Badge>
-        <span className="tabular-nums">Součet položek {formatCurrency(totalAmount)}</span>
+        <span className="tabular-nums">Součet položek <FinanceAmount value={totalAmount} exact /></span>
       </div>
       <div className="space-y-1">
         {visibleItems.map((payoutItem) => (
@@ -290,7 +294,7 @@ const PayoutItemsSummary = ({ items = [] }) => {
               <div className="text-xs text-slate-500">{getPayoutItemSubtitle(payoutItem)}</div>
             </div>
             <div className="shrink-0 text-right text-sm font-semibold tabular-nums text-slate-950">
-              {formatCurrency(payoutItem.amount)}
+              <FinanceAmount value={payoutItem.amount} exact />
             </div>
           </div>
         ))}
@@ -325,7 +329,7 @@ const PayoutDetailPanel = ({ item, onDownloadInvoice }) => {
           <DetailMetric icon={User} label="Pracovník" value={item.members?.name || 'Neznámý pracovník'} />
           <DetailMetric icon={Hash} label="Variabilní symbol" value={item.variable_symbol || 'Není vyplněn'} />
           <DetailMetric icon={CalendarDays} label="Podáno" value={createdAt ? format(new Date(createdAt), 'd. MMMM yyyy', { locale: cs }) : 'Bez data'} />
-          <DetailMetric icon={DollarSign} label="Celkem" value={formatCurrency(item.total_amount || item.amount)} />
+        <DetailMetric icon={DollarSign} label="Celkem" value={<FinanceAmount value={item.amount} exact />} />
         </div>
 
         <div className="grid gap-5 p-4 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -357,7 +361,7 @@ const PayoutDetailPanel = ({ item, onDownloadInvoice }) => {
                           )}
                           <div className="mt-0.5 text-xs text-slate-500">{getPayoutItemSubtitle(payoutItem)}</div>
                         </div>
-                        <div className="text-right text-sm font-bold tabular-nums text-slate-950">{formatCurrency(payoutItem.amount)}</div>
+                        <div className="text-right text-sm font-bold tabular-nums text-slate-950"><FinanceAmount value={payoutItem.amount} exact /></div>
                       </div>
                     );
                   })}
@@ -374,7 +378,7 @@ const PayoutDetailPanel = ({ item, onDownloadInvoice }) => {
               <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm text-slate-500">Aktuální stav</span>
-                  <PayoutStatusBadge status={item.status} />
+                  <PayoutStatusBadge status={item.status} approvedWithoutInvoice={item.approved_without_invoice} />
                 </div>
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span className="text-slate-500">Schváleno</span>
@@ -414,8 +418,10 @@ const PayoutDetailPanel = ({ item, onDownloadInvoice }) => {
 
 const PayoutTable = ({
   canAdmin,
+  canEditOwn,
   data,
   loading,
+  error,
   onApproveWithDialog,
   onCancel,
   onDelete,
@@ -426,6 +432,7 @@ const PayoutTable = ({
   onUpdateStatus,
   onUploadInvoice
 }) => {
+  const { isPrivateMode } = useAuth();
   const [selectedAuditPayout, setSelectedAuditPayout] = useState(null);
   const [expandedPayout, setExpandedPayout] = useState(null);
   const togglePayoutDetail = (item) => {
@@ -445,9 +452,11 @@ const PayoutTable = ({
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+            className="h-11 w-11 text-slate-500 hover:bg-slate-100 hover:text-slate-950"
             onClick={() => togglePayoutDetail(item)}
             title={isExpanded ? 'Sbalit detail' : 'Zobrazit detail'}
+            aria-label={isExpanded ? 'Sbalit detail žádosti' : 'Zobrazit detail žádosti'}
+            aria-expanded={isExpanded}
           >
             <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
           </Button>
@@ -455,18 +464,12 @@ const PayoutTable = ({
       },
     },
     {
-      key: 'date',
-      header: 'Datum',
-      headerClassName: 'h-11 px-5 text-xs font-bold uppercase tracking-wide text-slate-500',
-      cellClassName: 'px-5 font-medium text-slate-600',
-      render: (item) => format(new Date(item.created_at || item.request_date), 'dd. MM. yyyy', { locale: cs }),
-    },
-    {
       key: 'worker',
       header: 'Pracovník',
       render: (item) => (
         <>
-          <div className="font-semibold text-slate-950">{item.members?.name || 'Neznámý pracovník'}</div>
+          <div className="font-semibold text-slate-950 lg:min-w-[105px]">{item.members?.name || 'Neznámý pracovník'}</div>
+          <div className="mt-1 whitespace-nowrap text-xs text-slate-500">{format(new Date(item.created_at || item.request_date), 'd. M. yyyy', { locale: cs })}</div>
           {item.variable_symbol && <div className="mt-0.5 text-xs text-slate-500">VS {item.variable_symbol}</div>}
         </>
       ),
@@ -474,7 +477,7 @@ const PayoutTable = ({
     {
       key: 'items',
       header: 'Položky',
-      cellClassName: 'min-w-[320px] max-w-[460px]',
+      cellClassName: 'lg:min-w-[210px] lg:max-w-[310px]',
       render: (item) => <PayoutItemsSummary items={item.payout_items || []} />,
     },
     {
@@ -482,14 +485,15 @@ const PayoutTable = ({
       header: 'Částka',
       headerClassName: 'h-11 text-right text-xs font-bold uppercase tracking-wide text-slate-500',
       cellClassName: 'text-right',
-      render: (item) => <div className="font-bold tabular-nums text-slate-950">{formatCurrency(item.total_amount || item.amount)}</div>,
+      render: (item) => <div className="font-bold tabular-nums text-slate-950"><FinanceAmount value={item.amount} exact /></div>,
     },
     {
       key: 'status',
       header: 'Stav',
       render: (item) => (
         <div className="flex flex-col items-start gap-1">
-          <PayoutStatusBadge status={item.status} />
+          <PayoutStatusBadge status={item.status} approvedWithoutInvoice={item.approved_without_invoice} />
+          <span className="max-w-[190px] text-xs leading-5 text-slate-500">{payoutNextStep(item, canAdmin)}</span>
           {item.approved_without_invoice && (
             <TooltipProvider>
               <Tooltip>
@@ -512,12 +516,12 @@ const PayoutTable = ({
       render: (item) => (
         <div className="space-y-2">
           {item.invoice_url ? (
-            <Button variant="outline" size="sm" onClick={() => onDownloadInvoice?.(item)} className="h-8 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100">
+            <Button variant="outline" size="sm" onClick={() => onDownloadInvoice?.(item)} className="h-11 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100">
               <Download className="h-3.5 w-3.5" />
               Stáhnout
             </Button>
           ) : (
-            <span className="text-xs text-slate-400">Faktura zatím není nahraná</span>
+            <span className="text-xs text-slate-500">{item.approved_without_invoice ? 'Faktura se nevyžaduje' : item.status === 'pending' ? 'Až po schválení' : ['cancelled', 'rejected', 'paid'].includes(item.status) ? 'Uzavřená žádost' : 'Čeká na nahrání'}</span>
           )}
           {item.admin_note && (
             <Popover>
@@ -542,7 +546,7 @@ const PayoutTable = ({
         <div className="flex items-center justify-end gap-2">
           <Popover open={selectedAuditPayout === item.id} onOpenChange={(open) => setSelectedAuditPayout(open ? item.id : null)}>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-950" title="Historie schválení">
+              <Button variant="ghost" size="icon" className="h-11 w-11 text-slate-500 hover:bg-slate-100 hover:text-slate-950" title="Historie schválení" aria-label="Historie schválení">
                 <Eye className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
@@ -559,6 +563,7 @@ const PayoutTable = ({
           <PayoutTableActions
             item={item}
             canAdmin={canAdmin}
+            canEditOwn={canEditOwn}
             onApproveWithDialog={onApproveWithDialog}
             onCancel={onCancel}
             onDelete={onDelete}
@@ -582,11 +587,12 @@ const PayoutTable = ({
       getRowAriaLabel={(item) => {
         const worker = item.members?.name || 'neznámý pracovník';
         const action = expandedPayout === item.id ? 'Sbalit detail žádosti' : 'Zobrazit detail žádosti';
-        return `${action}: ${worker}, ${formatCurrency(item.total_amount || item.amount)}`;
+        return `${action}: ${worker}${isPrivateMode ? '' : `, ${formatCurrency(item.amount)}`}`;
       }}
       getRowKey={(item) => item.id}
       items={data}
       loading={loading}
+      error={error}
       loadingLabel="Načítám úkolové výplaty..."
       onRowClick={togglePayoutDetail}
       renderExpandedRow={(item) => (

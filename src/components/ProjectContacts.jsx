@@ -1,281 +1,112 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit2, Trash2, Contact, Users, Briefcase } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent } from '@/components/ui/card';
+import { Plus, Edit2, Trash2, Contact, Mail, Phone, Search, AlertTriangle, Loader2 } from 'lucide-react';
 import ProjectContactDialog from '@/components/ProjectContactDialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-
-
-const DetailSection = ({ title, icon: Icon, children, actions, className = "" }) => (
-    <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className={`bg-white rounded-xl border shadow-sm ${className}`}
-    >
-        <div className="p-6 border-b bg-gradient-to-r from-slate-50 to-slate-100 rounded-t-xl">
-            <div className="flex justify-between items-center">
-                <h3 className="text-xl font-bold flex items-center gap-3 text-slate-800">
-                    <Icon className="w-6 h-6 text-primary" />
-                    {title}
-                </h3>
-                {actions && <div className="flex gap-2">{actions}</div>}
-            </div>
-        </div>
-        <div className="p-6">
-            <div className="space-y-4">{children}</div>
-        </div>
-    </motion.div>
-);
+import { fetchAllListRows } from '@/lib/listWorkspaceState';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 const ProjectContacts = ({ projectId }) => {
     const { toast } = useToast();
-    const { hasPermission } = useAuth();
-    const [externalContacts, setExternalContacts] = useState([]);
-    const [teamMembers, setTeamMembers] = useState([]);
-    const [subcontractors, setSubcontractors] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const { hasPermission, user } = useAuth();
+    const [state, setState] = useState({ scope: null, rows: [], loading: true, error: null });
+    const [search, setSearch] = useState('');
     const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
     const [editingContact, setEditingContact] = useState(null);
     const [contactToDelete, setContactToDelete] = useState(null);
-
-    const canEdit = useMemo(() => hasPermission('projects', 'can_edit'), [hasPermission]);
+    const [saving, setSaving] = useState(false);
+    const mutationLock = useRef(false);
+    const requestRef = useRef(null);
+    const scope = `${user?.id || ''}:${projectId}`;
+    const currentScope = useRef(scope); currentScope.current = scope;
+    const canEdit = hasPermission('projects', 'can_edit');
 
     const fetchData = useCallback(async () => {
-        setLoading(true);
-
-        const [contactsRes, membersRes, subcontractorsRes] = await Promise.all([
-            supabase.from('project_contacts').select('*').eq('project_id', projectId),
-            supabase.rpc('list_project_members_safe', { p_project_id: projectId }),
-            supabase.rpc('list_project_subcontractors_safe', { p_project_id: projectId })
-        ]);
-
-        if (contactsRes.error) {
-            toast({ title: 'Chyba při načítání externích kontaktů', variant: 'destructive', description: contactsRes.error.message });
-        } else {
-            setExternalContacts(contactsRes.data);
+        requestRef.current?.abort();
+        const controller = new AbortController();
+        requestRef.current = controller;
+        setState({ scope, rows: [], loading: true, error: null });
+        try {
+            const rows = await fetchAllListRows((from, to) => supabase.from('project_contacts').select('*').eq('project_id', projectId).order('name').order('id').range(from, to).abortSignal(controller.signal));
+            if (!controller.signal.aborted) setState({ scope, rows, loading: false, error: null });
+        } catch (error) {
+            if (!controller.signal.aborted) setState({ scope, rows: [], loading: false, error: error.message });
         }
-
-        if (membersRes.error) {
-            toast({ title: 'Chyba při načítání týmu', variant: 'destructive', description: membersRes.error.message });
-        } else {
-            setTeamMembers(membersRes.data.map(m => ({
-                id: m.member?.id || m.member_id,
-                name: m.member?.name || 'Člen týmu',
-                role: m.member?.role?.name || 'Člen týmu',
-                email: m.member?.email,
-                phone: m.member?.phone,
-                type: 'team'
-            })));
-        }
-
-        if (subcontractorsRes.error) {
-            toast({ title: 'Chyba při načítání subdodavatelů', variant: 'destructive', description: subcontractorsRes.error.message });
-        } else {
-            setSubcontractors(subcontractorsRes.data.map(s => ({
-                id: s.subject_id,
-                name: s.subject?.contact_person || s.subject?.name,
-                role: `Subdodavatel (${s.subject?.name})`,
-                email: s.subject?.email,
-                phone: s.subject?.phone,
-                type: 'subcontractor'
-            })));
-        }
-
-        setLoading(false);
-    }, [projectId, toast]);
+    }, [projectId, scope]);
 
     useEffect(() => {
+        setSearch(''); setIsContactDialogOpen(false); setEditingContact(null); setContactToDelete(null);
         fetchData();
+        return () => requestRef.current?.abort();
     }, [fetchData]);
 
     const handleSaveContact = async (formData) => {
-        const dataToSave = { ...formData, project_id: projectId };
-        if (editingContact && editingContact.type === 'external') {
-            dataToSave.id = editingContact.id;
-        }
-
-        const { error } = await supabase.from('project_contacts').upsert(dataToSave);
-
-        if (error) {
-            toast({ title: 'Chyba při ukládání kontaktu', variant: 'destructive', description: error.message });
-        } else {
-            toast({ title: '✅ Kontakt uložen' });
-            setIsContactDialogOpen(false);
-            setEditingContact(null);
-            fetchData();
-        }
+        if (!canEdit || mutationLock.current) return;
+        mutationLock.current = true; setSaving(true);
+        try {
+            const dataToSave = { name: formData.name.trim(), role: formData.role?.trim() || null, email: formData.email?.trim() || null, phone: formData.phone?.trim() || null, project_id: projectId };
+            if (!dataToSave.name) throw new Error('Vyplňte jméno kontaktu.');
+            const query = editingContact ? supabase.from('project_contacts').update(dataToSave).eq('id', editingContact.id).eq('project_id', projectId) : supabase.from('project_contacts').insert(dataToSave);
+            const { data, error } = await query.select('id').single();
+            if (error) throw error;
+            if (!data?.id) throw new Error('Uložení kontaktu se nepodařilo potvrdit.');
+            if (currentScope.current !== scope) return;
+            toast({ title: 'Kontakt uložen' });
+            setIsContactDialogOpen(false); setEditingContact(null);
+            await fetchData();
+        } catch (error) {
+            if (currentScope.current === scope) toast({ title: 'Kontakt se nepodařilo uložit', variant: 'destructive', description: error.message });
+        } finally { mutationLock.current = false; setSaving(false); }
     };
 
-    const handleDeleteContact = async () => {
-        if (!contactToDelete) return;
-        const { error } = await supabase.from('project_contacts').delete().eq('id', contactToDelete.id);
-        if (error) {
-            toast({ title: 'Chyba při mazání kontaktu', variant: 'destructive', description: error.message });
-        } else {
-            toast({ title: '🗑️ Kontakt smazán' });
-            fetchData();
-        }
-        setContactToDelete(null);
+    const handleDeleteContact = async (event) => {
+        event.preventDefault();
+        if (!contactToDelete || !canEdit || mutationLock.current) return;
+        mutationLock.current = true; setSaving(true);
+        try {
+            const { data, error } = await supabase.from('project_contacts').delete().eq('id', contactToDelete.id).eq('project_id', projectId).select('id').single();
+            if (error) throw error;
+            if (!data?.id) throw new Error('Smazání kontaktu se nepodařilo potvrdit.');
+            if (currentScope.current !== scope) return;
+            toast({ title: 'Kontakt smazán' }); setContactToDelete(null); await fetchData();
+        } catch (error) {
+            if (currentScope.current === scope) toast({ title: 'Kontakt se nepodařilo smazat', variant: 'destructive', description: error.message });
+        } finally { mutationLock.current = false; setSaving(false); }
     };
 
-    const openEditDialog = (contact) => {
-        setEditingContact({ ...contact, type: 'external' });
-        setIsContactDialogOpen(true);
-    };
+    const current = state.scope === scope ? state : { rows: [], loading: true, error: null };
+    const contacts = useMemo(() => {
+        const query = search.trim().toLocaleLowerCase('cs-CZ');
+        return (state.scope === scope ? state.rows : []).filter(contact => [contact.name, contact.role, contact.email, contact.phone].some(value => String(value || '').toLocaleLowerCase('cs-CZ').includes(query)));
+    }, [scope, search, state]);
+    const openNewDialog = () => { setEditingContact(null); setIsContactDialogOpen(true); };
 
-    const openNewDialog = () => {
-        setEditingContact(null);
-        setIsContactDialogOpen(true);
-    };
-
-    const allContacts = [...teamMembers, ...subcontractors, ...externalContacts.map(c => ({ ...c, type: 'external' }))];
-
-    return (
-        <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <div>
-                    <h2 className="text-2xl font-bold text-slate-800">Kontakty projektu</h2>
-                    <p className="text-muted-foreground mt-1">Správa všech kontaktů souvisejících s projektem</p>
-                </div>
-                {canEdit && (
-                    <Button onClick={openNewDialog} className="shadow-lg hover:shadow-xl transition-shadow">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Přidat externí kontakt
-                    </Button>
-                )}
-            </div>
-
-            <DetailSection title="Všichni kontakty" icon={Contact}>
-                {loading ? (
-                    <div className="flex items-center justify-center py-12">
-                        <div className="text-center">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-                            <p className="text-muted-foreground">Načítání kontaktů...</p>
-                        </div>
-                    </div>
-                ) : allContacts.length > 0 ? (
-                    <div className="overflow-x-auto">
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="bg-slate-50">
-                                    <TableHead className="font-semibold text-slate-700">Typ</TableHead>
-                                    <TableHead className="font-semibold text-slate-700">Jméno</TableHead>
-                                    <TableHead className="font-semibold text-slate-700">Role / Firma</TableHead>
-                                    <TableHead className="font-semibold text-slate-700">Email</TableHead>
-                                    <TableHead className="font-semibold text-slate-700">Telefon</TableHead>
-                                    {canEdit && <TableHead className="text-right font-semibold text-slate-700">Akce</TableHead>}
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {allContacts.map(contact => (
-                                    <TableRow key={`${contact.type}-${contact.id}`} className="hover:bg-slate-50 transition-colors">
-                                        <TableCell>
-                                            <div className="flex items-center gap-2">
-                                                {contact.type === 'team' && <Users className="w-5 h-5 text-blue-500" title="Člen týmu" />}
-                                                {contact.type === 'subcontractor' && <Briefcase className="w-5 h-5 text-orange-500" title="Subdodavatel" />}
-                                                {contact.type === 'external' && <Contact className="w-5 h-5 text-gray-500" title="Externí kontakt" />}
-                                                <span className="text-sm font-medium text-slate-600">
-                                                    {contact.type === 'team' && 'Tým'}
-                                                    {contact.type === 'subcontractor' && 'Subdodavatel'}
-                                                    {contact.type === 'external' && 'Externí'}
-                                                </span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="font-medium text-slate-800">{contact.name}</TableCell>
-                                        <TableCell className="text-slate-600">{contact.role}</TableCell>
-                                        <TableCell>
-                                            {contact.email ? (
-                                                <a href={`mailto:${contact.email}`} className="text-blue-600 hover:text-blue-800 hover:underline transition-colors">
-                                                    {contact.email}
-                                                </a>
-                                            ) : (
-                                                <span className="text-muted-foreground">-</span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>
-                                            {contact.phone ? (
-                                                <a href={`tel:${contact.phone}`} className="text-blue-600 hover:text-blue-800 hover:underline transition-colors">
-                                                    {contact.phone}
-                                                </a>
-                                            ) : (
-                                                <span className="text-muted-foreground">-</span>
-                                            )}
-                                        </TableCell>
-                                        {canEdit ? (
-                                            <TableCell className="text-right">
-                                                {contact.type === 'external' && (
-                                                    <div className="flex justify-end gap-1">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => openEditDialog(contact)}
-                                                            className="hover:bg-blue-50 hover:text-blue-600"
-                                                        >
-                                                            <Edit2 className="w-4 h-4" />
-                                                        </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => setContactToDelete(contact)}
-                                                            className="hover:bg-red-50 hover:text-red-600"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </Button>
-                                                    </div>
-                                                )}
-                                            </TableCell>
-                                        ) : <TableCell />}
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </div>
-                ) : (
-                    <div className="text-center py-12">
-                        <Contact className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                        <h3 className="text-lg font-semibold text-slate-800 mb-2">Žádné kontakty</h3>
-                        <p className="text-muted-foreground mb-4">Zatím nebyly přidány žádné externí kontakty.</p>
-                        {canEdit && (
-                            <Button onClick={openNewDialog} variant="outline">
-                                <Plus className="w-4 h-4 mr-2" />
-                                Přidat první kontakt
-                            </Button>
-                        )}
-                    </div>
-                )}
-            </DetailSection>
-
-            {canEdit && (
-                <ProjectContactDialog
-                    isOpen={isContactDialogOpen}
-                    onClose={() => setIsContactDialogOpen(false)}
-                    onSave={handleSaveContact}
-                    contact={editingContact}
-                    projectId={projectId}
-                />
-            )}
-            
-            <AlertDialog open={!!contactToDelete} onOpenChange={() => setContactToDelete(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Opravdu smazat kontakt?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            Chystáte se smazat kontakt "{contactToDelete?.name}". Tato akce je nevratná.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Zrušit</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeleteContact} className="bg-destructive hover:bg-destructive/90">Smazat</AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+    return <div className="space-y-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-xl font-semibold">Externí kontakty</h2><p className="mt-1 text-sm text-muted-foreground">Kontaktní osoby investora, úřadů a dalších partnerů projektu.</p></div>
+            {canEdit && <Button onClick={openNewDialog} disabled={saving}><Plus className="mr-2 h-4 w-4" />Přidat kontakt</Button>}
         </div>
-    );
+        <div className="relative max-w-lg"><Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" aria-label="Hledat externí kontakt" placeholder="Hledat jméno, roli, e-mail nebo telefon…" value={search} onChange={event => setSearch(event.target.value)} /></div>
+        {current.loading ? <div role="status" className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Načítám kontakty…</div> : current.error ? <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-5"><p className="flex items-center gap-2 font-medium"><AlertTriangle className="h-4 w-4" />Kontakty se nepodařilo načíst</p><p className="mt-1 text-sm">{current.error}</p><Button variant="outline" onClick={fetchData} className="mt-3">Zkusit znovu</Button></div> : contacts.length ? <div className="grid gap-4 lg:grid-cols-2">
+            {contacts.map(contact => <Card key={contact.id}><CardContent className="p-5">
+                <div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><h3 className="break-words font-semibold">{contact.name}</h3><p className="mt-1 break-words text-sm text-muted-foreground">{contact.role || 'Role není doplněna'}</p></div>
+                    {canEdit && <div className="flex shrink-0"><Button variant="ghost" size="icon" disabled={saving} aria-label={`Upravit kontakt ${contact.name}`} onClick={() => { setEditingContact(contact); setIsContactDialogOpen(true); }}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" disabled={saving} aria-label={`Smazat kontakt ${contact.name}`} onClick={() => setContactToDelete(contact)}><Trash2 className="h-4 w-4 text-red-600" /></Button></div>}
+                </div>
+                <div className="mt-4 space-y-2 text-sm">
+                    {contact.email && <a href={`mailto:${contact.email}`} className="flex min-h-9 items-center gap-2 break-all text-primary hover:underline"><Mail className="h-4 w-4 shrink-0" />{contact.email}</a>}
+                    {contact.phone && <a href={`tel:${contact.phone}`} className="flex min-h-9 items-center gap-2 break-all text-primary hover:underline"><Phone className="h-4 w-4 shrink-0" />{contact.phone}</a>}
+                    {!contact.email && !contact.phone && <p className="text-muted-foreground">E-mail ani telefon nejsou doplněné.</p>}
+                </div>
+            </CardContent></Card>)}
+        </div> : <div className="rounded-xl border border-dashed p-8 text-center"><Contact className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><h3 className="font-semibold">{search ? 'Žádný kontakt neodpovídá hledání' : 'Zatím bez externích kontaktů'}</h3><p className="mt-2 text-sm text-muted-foreground">{search ? 'Zkuste jiné jméno nebo hledání vymažte.' : 'Přidejte osoby, se kterými komunikujete mimo projektový tým.'}</p>{search && <Button className="mt-3" variant="outline" onClick={() => setSearch('')}>Vymazat hledání</Button>}</div>}
+        {canEdit && <ProjectContactDialog isOpen={isContactDialogOpen} onClose={() => { if (!saving) setIsContactDialogOpen(false); }} onSave={handleSaveContact} contact={editingContact} projectId={projectId} />}
+        <AlertDialog open={!!contactToDelete} onOpenChange={open => { if (!open && !saving) setContactToDelete(null); }}>
+            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Smazat externí kontakt?</AlertDialogTitle><AlertDialogDescription>Kontakt „{contactToDelete?.name}“ bude odebrán z tohoto projektu.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={saving}>Zrušit</AlertDialogCancel><AlertDialogAction disabled={saving} onClick={handleDeleteContact} className="bg-destructive hover:bg-destructive/90">{saving ? 'Mažu…' : 'Smazat kontakt'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+        </AlertDialog>
+    </div>;
 };
-
 export default ProjectContacts;

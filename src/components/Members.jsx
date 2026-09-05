@@ -166,6 +166,7 @@ const Members = () => {
             const { error } = await supabase.from('members').update(cleanedData).eq('id', editingMember.id);
             if (error) {
                 toast({ title: "Chyba při úpravě zaměstnance", variant: "destructive", description: error.message });
+                return false;
             } else {
                 toast({ title: "Zaměstnanec upraven" });
             }
@@ -173,6 +174,7 @@ const Members = () => {
             const { error } = await supabase.from('members').insert([cleanedData]);
             if (error) {
                 toast({ title: "Chyba při přidávání zaměstnance", variant: "destructive", description: error.message });
+                return false;
             } else {
                 toast({ title: "Zaměstnanec přidán" });
             }
@@ -346,6 +348,12 @@ const Members = () => {
                     description={isSuperUser ? 'Správa zaměstnanců, jejich pozic, kategorií a odměn' : 'Váš profil, pozice a odměny'}
                     actions={
                         <>
+                            {isAdmin && (
+                                <Button variant="outline" onClick={() => navigate('/employee?tab=requests&scope=all')}>
+                                    <Clock className="w-4 h-4 mr-2" />
+                                    Zaměstnanecké žádosti
+                                </Button>
+                            )}
                             {canEdit && isSuperUser && (
                                 <Button onClick={() => handleOpenDialog()} className="w-full md:w-auto">
                                     <Plus className="w-4 h-4 mr-2" />

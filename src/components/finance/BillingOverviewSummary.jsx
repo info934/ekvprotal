@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, Receipt } from 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
+import { FinanceAmount, FinanceMetricStrip, FinanceStageFlow } from '@/components/finance/FinanceWorkspace';
 import { formatMoney, formatPercent, getFinanceErrorMessage } from '@/lib/financePresentation';
 import { getBillingSummary } from '@/lib/billingSummaryCache';
 
@@ -28,7 +28,7 @@ const formatDate = (value) => value
   ? new Date(`${value}T12:00:00`).toLocaleDateString('cs-CZ')
   : 'Termín neurčen';
 
-const BillingOverviewSummary = ({ entityType, entityId, onOpenDetails, className = '' }) => {
+const BillingOverviewSummary = ({ entityType, entityId, onOpenDetails, compact = false, className = '' }) => {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -76,8 +76,8 @@ const BillingOverviewSummary = ({ entityType, entityId, onOpenDetails, className
     return (
       <section className={`rounded-lg border border-slate-200 bg-white p-4 ${className}`}>
         <div className="flex items-center justify-between"><Skeleton className="h-5 w-44" /><Skeleton className="h-8 w-24" /></div>
-        <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-20" />)}
+        <div className={`mt-4 grid gap-2 ${compact ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-4'}`}>
+          {Array.from({ length: compact ? 1 : 4 }).map((_, index) => <Skeleton key={index} className={compact ? 'h-12' : 'h-20'} />)}
         </div>
       </section>
     );
@@ -105,10 +105,10 @@ const BillingOverviewSummary = ({ entityType, entityId, onOpenDetails, className
               <h3 className="text-sm font-semibold text-slate-950">Fakturace a etapy</h3>
               <Badge variant={coverageStatus === 'fully_paid' ? 'success' : 'secondary'}>{coverageLabels[coverageStatus] || coverageStatus}</Badge>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Rychlý přehled plnění, vystavených faktur a přijatých úhrad.</p>
+            <p className="mt-1 text-xs text-slate-500">{compact ? 'Stav fakturace a nejbližší plánovaný krok.' : 'Rychlý přehled plnění, vystavených faktur a přijatých úhrad.'}</p>
           </div>
         </div>
-        {onOpenDetails && <Button size="sm" variant="outline" onClick={onOpenDetails}>Otevřít finance <ArrowRight className="ml-2 h-4 w-4" /></Button>}
+        {onOpenDetails && <Button size="sm" variant="outline" className="min-h-11" onClick={onOpenDetails}>Otevřít finance <ArrowRight className="ml-2 h-4 w-4" /></Button>}
       </div>
 
       {summary?.warning && (
@@ -118,6 +118,19 @@ const BillingOverviewSummary = ({ entityType, entityId, onOpenDetails, className
         </div>
       )}
 
+      {compact ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+            <div className="min-w-0">
+              <div className="text-xs text-slate-500">Nejbližší etapa</div>
+              <p className="mt-0.5 break-words text-sm font-medium text-slate-900">{nextMilestone?.name || (milestones.length ? 'Žádná otevřená etapa' : 'Etapy zatím nejsou naplánované')}</p>
+              {nextMilestone && <p className="mt-1 text-xs text-slate-500">{formatDate(dateValue(nextMilestone))} · {milestoneStatusLabels[nextMilestone.status] || nextMilestone.status}</p>}
+            </div>
+          </div>
+          {nextMilestone && <div className="text-right"><FinanceAmount value={nextMilestone.amount_incl_vat} className="text-sm font-semibold text-slate-900" /><div className="text-xs text-slate-500">včetně DPH</div></div>}
+        </div>
+      ) : (<>
       <FinanceMetricStrip metrics={[
         { label: 'Fakturační etapy', value: Number(summary?.plan_count || 0), detail: `${activeMilestones.length} zbývá dokončit`, tone: activeMilestones.length ? 'plan' : 'neutral', icon: CalendarClock },
         { label: 'Vyfakturováno bez DPH', value: formatPercent(summary?.invoice_coverage_percent), detail: formatMoney(summary?.invoiced_amount_excl_vat ?? summary?.invoiced_amount), tone: 'plan', icon: Receipt },
@@ -142,12 +155,13 @@ const BillingOverviewSummary = ({ entityType, entityId, onOpenDetails, className
               </div>
               <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-500">
                 <span>{formatDate(dateValue(milestone))}</span>
-                <span className="tabular-nums text-slate-700">{formatMoney(milestone.amount_incl_vat)}</span>
+                <FinanceAmount value={milestone.amount_incl_vat} className="text-slate-700" />
               </div>
             </div>
           ))}
         </div>
       )}
+      </>)}
     </section>
   );
 };

@@ -31,7 +31,8 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
   const [allProjects, setAllProjects] = useState([]);
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [projectSearch, setProjectSearch] = useState('');
-  const [taskStatuses, setTaskStatuses] = useState([]);
+  const [taskStatuses, setTaskStatuses] = useState(['Nové', 'V řešení', 'Hotovo', 'Zrušeno']);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const fetchAllProjects = async () => {
@@ -50,7 +51,7 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
         if (error) {
             toast({ title: 'Chyba při načítání stavů úkolů', variant: 'destructive' });
         } else {
-            setTaskStatuses(data.map(s => s.name));
+            setTaskStatuses([...new Set(['Nové', 'V řešení', 'Hotovo', 'Zrušeno', ...(data || []).map(s => s.name)])]);
         }
     };
     fetchAllProjects();
@@ -132,8 +133,9 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
   }, [formData.project_id, projectId]);
 
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving) return;
     
     if (!formData.name.trim()) {
       toast({
@@ -162,20 +164,27 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
       return;
     }
 
-    onSave({
-      ...formData,
-      member_id: formData.member_id || null,
-    });
+    setSaving(true);
+    try {
+      await onSave({ ...formData, member_id: formData.member_id || null });
+    } catch (error) {
+      toast({ title: 'Úkol se nepodařilo uložit', description: error.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (task && task.id && onDelete) {
-      onDelete(task.id);
+      setSaving(true);
+      try { await onDelete(task.id); }
+      catch (error) { toast({ title: 'Úkol se nepodařilo smazat', description: error.message, variant: 'destructive' }); }
+      finally { setSaving(false); }
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
       <FormDialogContent size="lg">
         <div className="hidden">
           <div className="text-2xl font-bold flex items-center gap-2">
@@ -411,17 +420,17 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
             
             </FormDialogBody>
             <FormDialogFooter className="flex-col sm:flex-row sm:justify-between sm:items-center">
-              {task && isAdmin && (
+              {task && isAdmin && onDelete && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button type="button" variant="destructive" className="w-full sm:w-auto sm:mr-auto">
+                    <Button type="button" disabled={saving} variant="destructive" className="w-full sm:w-auto sm:mr-auto">
                       <Trash2 className="w-4 h-4 mr-2" /> Smazat úkol
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>Opravdu smazat tento úkol?</AlertDialogTitle>
-                      <AlertDialogDescription>Tato akce je nevratná.</AlertDialogDescription>
+                      <AlertDialogDescription>Úkol „{task.name}“ a jeho propojená položka v plánování budou trvale odstraněny včetně jejich návazností. Chcete-li zachovat historii, změňte stav úkolu na Zrušeno.</AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Zrušit</AlertDialogCancel>
@@ -433,11 +442,11 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
                 </AlertDialog>
               )}
               <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 w-full sm:w-auto">
-                <Button type="button" variant="outline" onClick={onClose} className="w-full sm:w-auto">
+                <Button type="button" disabled={saving} variant="outline" onClick={onClose} className="w-full sm:w-auto">
                   Zrušit
                 </Button>
-                <Button type="submit" className="w-full sm:w-auto min-w-[120px]">
-                  {task ? 'Uložit změny' : 'Přidat úkol'}
+                <Button type="submit" disabled={saving} className="w-full sm:w-auto min-w-[120px]">
+                  {saving ? 'Ukládám…' : task ? 'Uložit změny' : 'Přidat úkol'}
                 </Button>
               </div>
             </FormDialogFooter>

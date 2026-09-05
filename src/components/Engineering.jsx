@@ -28,6 +28,7 @@ import SubjectDialog from '@/components/SubjectDialog';
 import PageHeader from '@/components/ui/page-header';
 import { activityStatusConfig, formatEngineeringCategory, getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
 import EngineeringStatusBadge from '@/components/engineering/EngineeringStatusBadge';
+import { parseEngineeringDate } from '@/lib/operationsHelpers';
 
 
 const StatCard = ({ icon: Icon, title, value, subtitle, color = "text-blue-600" }) => (
@@ -625,15 +626,18 @@ const Engineering = () => {
           try {
               const bstr = evt.target.result;
               const wb = XLSX.read(bstr, { type: 'binary' });
+              const dateOptions = { date1904: Boolean(wb.Workbook?.WBProps?.date1904) };
               const wsname = wb.SheetNames[0];
               const ws = wb.Sheets[wsname];
               const data = XLSX.utils.sheet_to_json(ws);
               
               let successCount = 0;
               let errorCount = 0;
+              const dateErrors = [];
 
               // We need project IDs. Let's fetch all projects first to map codes to IDs.
-              const { data: allProjects } = await supabase.from('projects').select('id, code');
+              const { data: allProjects, error: projectsError } = await supabase.from('projects').select('id, code');
+              if (projectsError) throw projectsError;
               const projectMap = {};
               allProjects?.forEach(p => projectMap[p.code] = p.id);
 
@@ -656,10 +660,16 @@ const Engineering = () => {
                       }
                   }
 
-                  // Parse Dates
-                  // Excel dates might be weird, assuming string DD.MM.YYYY for simplicity or ISO
-                  // Simple implementation - assumes user inputs valid ISO or format matches local
-                  // Ideally, we'd use a robust date parser here.
+                  let startDate, endDate;
+                  try {
+                    startDate = parseEngineeringDate(row['Datum zahájení'], dateOptions);
+                    endDate = parseEngineeringDate(row['Termín dokončení'], dateOptions);
+                    if (startDate && endDate && endDate < startDate) throw new Error('Termín dokončení je před zahájením.');
+                  } catch (dateError) {
+                    errorCount++;
+                    if (dateErrors.length < 3) dateErrors.push(`${projectCode}: ${dateError.message}`);
+                    continue;
+                  }
                   
                   const newActivity = {
                       project_id: projectId,
@@ -667,14 +677,12 @@ const Engineering = () => {
                       subject: row['Předmět (Vlastník)'] || 'Neznámý vlastník',
                       description: row['Popis'] || '',
                       status: status,
+                      start_date: startDate,
+                      end_date: endDate,
                       dny_na_vyjadreni: row['Dny na vyjádření'] ? parseInt(row['Dny na vyjádření']) : null,
                       is_urgent: row['Urgentní'] === 'Ano'
                   };
 
-                  // Optional date parsing if strings are provided
-                  // const parseDate = (d) => ... 
-                  // newActivity.start_date = parseDate(row['Datum zahájení'])
-                  
                   const { error } = await supabase.from('engineering_activities').insert([newActivity]);
                   if(error) errorCount++;
                   else successCount++;
@@ -682,7 +690,7 @@ const Engineering = () => {
 
               toast({ 
                   title: 'Import dokončen', 
-                  description: `Úspěšně importováno: ${successCount}, Chyby: ${errorCount}`,
+                  description: `Úspěšně importováno: ${successCount}, vynechané řádky: ${errorCount}.${dateErrors.length ? ` ${dateErrors.join(' ')}` : ''}`,
                   variant: errorCount > 0 ? 'warning' : 'default'
               });
               fetchActivities();

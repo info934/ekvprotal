@@ -51,6 +51,8 @@ import { getActivityStatusConfig } from '@/components/engineering/engineeringCon
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
+import { fetchAllCrmRows, fetchCrmRowsByIds } from '@/lib/crmDataAccess';
+import { isOpenDashboardStatus, isCancelledDashboardRecord, isOpenDashboardOpportunity } from '@/lib/crmDashboardMetrics';
 import { crmOpportunityPath } from '@/lib/crmRoutes';
 import { cn, formatCurrency } from '@/lib/utils';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
@@ -112,10 +114,7 @@ const emptyCompanyFinance = {
   overheadAccounted: 0,
 };
 
-const isOpenStatus = (status) => {
-  const value = String(status || '').toLowerCase();
-  return !['done', 'completed', 'complete', 'finished', 'closed', 'archived', 'cancelled', 'canceled', 'paid'].includes(value);
-};
+const isOpenStatus = isOpenDashboardStatus;
 
 const isOverdue = (date) => {
   if (!date) return false;
@@ -621,53 +620,56 @@ const Dashboard = () => {
       };
       const sectionErrors = [];
 
+      const allRows = (factory) => fetchAllCrmRows(() => factory().abortSignal(request.signal));
+      const memberActivities = async () => {
+        const memberships = await allRows(() => supabase.from('project_members').select('project_id').eq('member_id', memberId).order('project_id'));
+        if (memberships.error) return memberships;
+        const projectIds = [...new Set((memberships.data || []).map((row) => row.project_id))];
+        return fetchCrmRowsByIds(projectIds, (ids) => supabase.from('engineering_activities')
+          .select('id, subject, status, project_id, end_date, projects(name)')
+          .in('project_id', ids).order('end_date', { ascending: true, nullsFirst: false }).order('id')
+          .abortSignal(request.signal));
+      };
       const commonQueries = [
-        supabase.from('payouts')
+        allRows(() => supabase.from('payouts')
           .select(canViewCompanyFinance
             ? 'id, amount, status, request_date, member:members!payouts_member_id_fkey(name)'
-            : 'id, status, request_date, member:members!payouts_member_id_fkey(name)'
-          )
-          .eq('status', 'pending')
-          .order('request_date', { ascending: true })
-          .limit(20),
-        supabase.from('attendance_submissions').select('id, total_hours, status, month_date, member:members!attendance_submissions_member_id_fkey(name)').eq('status', 'submitted').order('submitted_at', { ascending: true }).limit(20),
-        supabase.from('crm_opportunities')
+            : 'id, status, request_date, member:members!payouts_member_id_fkey(name)')
+          .eq('status', 'pending').order('request_date', { ascending: true }).order('id')),
+        allRows(() => supabase.from('attendance_submissions')
+          .select('id, total_hours, status, month_date, member:members!attendance_submissions_member_id_fkey(name)')
+          .eq('status', 'submitted').order('submitted_at', { ascending: true }).order('id')),
+        allRows(() => supabase.from('crm_opportunities')
           .select(canViewCompanyFinance
-            ? 'id, number, title, value, probability, stage, expected_close_date, created_at, subject:subject_id(name)'
-            : 'id, number, title, stage, expected_close_date, created_at, subject:subject_id(name)'
-          )
-          .order('created_at', { ascending: false })
-          .limit(100),
-        supabase.from('crm_commercial_documents')
+            ? 'id, number, title, value, probability, stage, status, expected_close_date, created_at, deleted_at, archived_at, cancelled_at, subject:subject_id(name)'
+            : 'id, number, title, stage, status, expected_close_date, created_at, deleted_at, archived_at, cancelled_at, subject:subject_id(name)')
+          .is('deleted_at', null).is('archived_at', null).is('cancelled_at', null)
+          .order('created_at', { ascending: false }).order('id')),
+        allRows(() => supabase.from('crm_commercial_documents')
           .select(canViewCompanyFinance
-            ? 'id, type, status, title, number, total, valid_until, created_at'
-            : 'id, type, status, title, number, valid_until, created_at'
-          )
-          .order('created_at', { ascending: false })
-          .limit(100),
-        supabase.from('commercial_item_catalog').select('id', { count: 'exact', head: true }).eq('is_active', true),
-        supabase.from('documents').select('id, name, created_at').order('created_at', { ascending: false }).limit(50),
-      ].map((query) => query.abortSignal(request.signal));
+            ? 'id, type, status, title, number, total, valid_until, created_at, deleted_at, archived_at, cancelled_at'
+            : 'id, type, status, title, number, valid_until, created_at, deleted_at, archived_at, cancelled_at')
+          .is('deleted_at', null).is('archived_at', null).is('cancelled_at', null)
+          .order('created_at', { ascending: false }).order('id')),
+        supabase.from('commercial_item_catalog').select('id', { count: 'exact', head: true }).eq('is_active', true).is('archived_at', null).abortSignal(request.signal),
+        allRows(() => supabase.from('documents').select('id, name, created_at').order('created_at', { ascending: false }).order('id')),
+      ];
 
       const memberQueries = memberId && !isSuperUser ? [
-        supabase
-          .from('projects')
-          .select('id, name, code, status, start_date, completion_date, created_at')
-          .order('created_at', { ascending: false })
-          .limit(500),
-        supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').eq('member_id', memberId).order('end_date', { ascending: true }).limit(100),
-        supabase.rpc('get_user_activities', { p_member_id: memberId }),
-        supabase.from('realizations').select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, team_members').contains('team_members', [memberId]).order('created_at', { ascending: false }).limit(100),
-      ].map((query) => query.abortSignal(request.signal)) : null;
+        allRows(() => supabase.from('projects').select('id, name, code, status, start_date, completion_date, created_at').order('created_at', { ascending: false }).order('id')),
+        allRows(() => supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').eq('member_id', memberId).order('end_date', { ascending: true }).order('id')),
+        memberActivities(),
+        allRows(() => supabase.from('realizations').select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, team_members').contains('team_members', [memberId]).order('created_at', { ascending: false }).order('id')),
+      ] : null;
 
       const companyQueries = canViewCompanyFinance ? [
-        supabase.rpc('list_projects_safe').limit(500),
-        supabase.rpc('list_realizations_safe').limit(500),
-        supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').order('end_date', { ascending: true }).limit(200),
-        supabase.from('engineering_activities').select('id, subject, status, project_id, end_date, projects(name)').neq('status', 'done').order('end_date', { ascending: true }).limit(12),
-        supabase.rpc('get_company_financials'),
-        supabase.rpc('get_overhead_summary'),
-      ].map((query) => query.abortSignal(request.signal)) : null;
+        allRows(() => supabase.rpc('list_projects_safe').order('id')),
+        allRows(() => supabase.rpc('list_realizations_safe').order('id')),
+        allRows(() => supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').order('end_date', { ascending: true }).order('id')),
+        allRows(() => supabase.from('engineering_activities').select('id, subject, status, project_id, end_date, projects(name)').order('end_date', { ascending: true }).order('id')),
+        supabase.rpc('get_company_financials').abortSignal(request.signal),
+        supabase.rpc('get_overhead_summary').abortSignal(request.signal),
+      ] : null;
 
       const [
         commonResults,
@@ -690,8 +692,8 @@ const Dashboard = () => {
 
       next.payouts = resultArray(payoutsRes, 'Výplaty', sectionErrors);
       next.attendanceSubmissions = resultArray(attendanceRes, 'Docházka', sectionErrors);
-      next.opportunities = resultArray(opportunitiesRes, 'CRM příležitosti', sectionErrors);
-      next.commercialDocuments = resultArray(commercialDocumentsRes, 'CRM dokumenty', sectionErrors);
+      next.opportunities = resultArray(opportunitiesRes, 'CRM příležitosti', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
+      next.commercialDocuments = resultArray(commercialDocumentsRes, 'CRM dokumenty', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
       if (productsRes.error) {
         console.warn(`Produkty: ${productsRes.error.message}`);
         sectionErrors.push(`Produkty: ${productsRes.error.message}`);
@@ -702,10 +704,10 @@ const Dashboard = () => {
 
       if (memberResults) {
         const [userProjectsRes, userTasksRes, userActivitiesRes, userRealizationsRes] = memberResults;
-        next.userProjects = resultArray(userProjectsRes, 'Moje projekty', sectionErrors);
-        next.tasks = resultArray(userTasksRes, 'Moje úkoly', sectionErrors);
-        next.engineering = resultArray(userActivitiesRes, 'Moje aktivity', sectionErrors);
-        next.realizations = resultArray(userRealizationsRes, 'Moje realizace', sectionErrors);
+        next.userProjects = resultArray(userProjectsRes, 'Moje projekty', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
+        next.tasks = resultArray(userTasksRes, 'Moje úkoly', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
+        next.engineering = resultArray(userActivitiesRes, 'Moje aktivity', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
+        next.realizations = resultArray(userRealizationsRes, 'Moje realizace', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
       }
 
       if (companyResults) {
@@ -718,10 +720,10 @@ const Dashboard = () => {
           overheadRes,
         ] = companyResults;
 
-        next.projects = resultArray(projectsRes, 'Projekty', sectionErrors);
-        next.realizations = resultArray(realizationsRes, 'Realizace', sectionErrors);
-        next.tasks = resultArray(tasksRes, 'Úkoly', sectionErrors);
-        next.engineering = resultArray(engineeringRes, 'Inženýring', sectionErrors);
+        next.projects = resultArray(projectsRes, 'Projekty', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
+        next.realizations = resultArray(realizationsRes, 'Realizace', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
+        next.tasks = resultArray(tasksRes, 'Úkoly', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
+        next.engineering = resultArray(engineeringRes, 'Inženýring', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
 
         if (companyFinanceRes.error) throw new Error(`Firemní finance: ${companyFinanceRes.error.message}`);
         if (overheadRes.error) throw new Error(`Režie: ${overheadRes.error.message}`);
@@ -797,7 +799,7 @@ const Dashboard = () => {
     const overdueTasks = openTasks.filter((task) => isOverdue(task.end_date));
     const activeEngineering = data.engineering.filter((item) => isOpenStatus(item.status));
     const overdueEngineering = activeEngineering.filter((item) => isOverdue(item.end_date));
-    const openOpportunities = data.opportunities.filter((opportunity) => !['won', 'lost'].includes(String(opportunity.stage || '').toLowerCase()));
+    const openOpportunities = data.opportunities.filter(isOpenDashboardOpportunity);
     const pipelineValue = openOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
     const weightedPipeline = openOpportunities.reduce((sum, opportunity) => {
       const probability = Number(opportunity.probability ?? 0) / 100;
@@ -837,6 +839,7 @@ const Dashboard = () => {
       wonOpportunities,
       wonValue,
       pendingApprovals,
+      attentionCount: pendingApprovals + overdueTasks.length + overdueEngineering.length + openOpportunities.filter((opportunity) => isOverdue(opportunity.expected_close_date)).length,
       activeProductCount: data.productCount,
     };
   }, [data, isSuperUser]);
@@ -1055,7 +1058,7 @@ const Dashboard = () => {
             <div className="flex min-w-0 items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
               <div>
-                <p className="text-sm font-semibold">Část přehledu není aktuální</p>
+                <p className="text-sm font-semibold">Přehled se nepodařilo načíst celý</p>
                 <p className="mt-1 text-xs leading-5">{loadError}</p>
               </div>
             </div>
@@ -1077,6 +1080,7 @@ const Dashboard = () => {
           </div>
         )}
 
+        {!loadError && <>
         <ExecutiveDashboard
           canViewCompanyFinance={canViewCompanyFinance}
           attentionItems={attentionItems}
@@ -1096,7 +1100,7 @@ const Dashboard = () => {
           />
           <DashboardMetric icon={Briefcase} label="Aktivní projekce" value={summary.activeProjects.length} detail={`${summary.visibleProjects.length} projektů celkem`} tone="slate" to="/projects" />
           <DashboardMetric icon={Wrench} label="Aktivní realizace" value={summary.activeRealizations.length} detail="stav realizací a harmonogram" tone="amber" to="/realizace" />
-          <DashboardMetric icon={AlertTriangle} label="Vyžaduje pozornost" value={attentionItems.length} detail={`${summary.pendingApprovals} schválení, ${summary.overdueTasks.length} úkolů po termínu`} tone={attentionItems.length ? 'rose' : 'emerald'} />
+          <DashboardMetric icon={AlertTriangle} label="Vyžaduje pozornost" value={summary.attentionCount} detail={`${summary.pendingApprovals} schválení, ${summary.overdueTasks.length} úkolů po termínu`} tone={summary.attentionCount ? 'rose' : 'emerald'} />
           {canViewCompanyFinance && (
             <DashboardMetric icon={CircleDollarSign} label="Realizovaný zisk" value={formatCurrency(data.companyFinance.realizedProfit)} tone="emerald" to="/reports" />
           )}
@@ -1355,6 +1359,7 @@ const Dashboard = () => {
             </div>
           </TabsContent>
         </Tabs>
+        </>}
       </div>
     </div>
   );

@@ -1,9 +1,9 @@
 import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { Button } from '@/components/ui/button';
-import Sidebar from '@/components/Sidebar';
+import PortalShell from '@/components/layout/PortalShell';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -13,6 +13,8 @@ import { LogOut, RefreshCw } from 'lucide-react';
 
 const Dashboard = lazy(() => import('@/components/Dashboard'));
 const WorkspaceLanding = lazy(() => import('@/components/WorkspaceLanding'));
+const MyWork = lazy(() => import('@/components/MyWork'));
+const EmployeeCenter = lazy(() => import('@/components/employee/EmployeeCenter'));
 const Projects = lazy(() => import('@/components/Projects'));
 const Documents = lazy(() => import('@/components/Documents'));
 const CRM = lazy(() => import('@/components/CRM'));
@@ -126,6 +128,7 @@ const PrivateRoute = ({ children, module, level = 'can_read' }) => {
 };
 
 function AppContent() {
+  const location = useLocation();
   const { session, loading, permissionsReady, authError, retryPermissions } = useAuth();
   const [loadingTimeout, setLoadingTimeout] = useState(false);
   const isPortalLoading = loading || Boolean(session && !permissionsReady);
@@ -164,13 +167,14 @@ function AppContent() {
   return (
     <div className="flex min-h-screen min-w-0 bg-background text-foreground">
       {session ? (
-        <>
-          <Sidebar />
-          <main className="min-w-0 flex-1 overflow-x-hidden pt-16 transition-all duration-300 lg:ml-[var(--sidebar-width,16rem)] lg:pt-0 print:ml-0 print:p-0">
-            <ErrorBoundary>
+        <PortalShell>
+            <ErrorBoundary resetKey={location.pathname + location.search}>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
-                  <Route path="/" element={<WorkspaceLanding />} />
+                  <Route path="/" element={<MyWork />} />
+                  <Route path="/employee" element={<EmployeeCenter />} />
+                  <Route path="/employees/:employeeMemberId" element={<EmployeeCenter />} />
+                  <Route path="/workspaces" element={<WorkspaceLanding />} />
                   <Route path="/dashboard" element={<PrivateRoute module="dashboard"><Dashboard /></PrivateRoute>} />
                   <Route path="/projects" element={<PrivateRoute module="projects"><Projects /></PrivateRoute>} />
                   <Route path="/planning" element={<ProtectedRoute><PlanningBoard /></ProtectedRoute>} />
@@ -242,8 +246,7 @@ function AppContent() {
                 </Routes>
               </Suspense>
             </ErrorBoundary>
-          </main>
-        </>
+        </PortalShell>
       ) : (
         <ErrorBoundary>
           <Suspense fallback={<PageLoader />}>

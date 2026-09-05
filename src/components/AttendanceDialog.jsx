@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Dialog } from '@/components/ui/dialog';
 import { FormDialogBody, FormDialogContent, FormDialogFooter, FormDialogHeader } from '@/components/ui/form-dialog';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { z } from 'zod';
 import { AttendanceSchema } from '@/lib/validationSchemas';
 import { parseApiError } from '@/lib/apiValidation';
+import { attendanceRealizationId, fetchAllAttendanceRows } from '@/lib/attendanceWorkspace';
 
 const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, initialDate }) => {
   const { toast } = useToast();
@@ -24,8 +25,11 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
   
   // -- Global State --
   const [loading, setLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const batchId = useRef(null);
+  const savePending = useRef(false);
   
   // -- Data Source State --
   const [projects, setProjects] = useState([]);
@@ -58,48 +62,39 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
   useEffect(() => {
     if (!isOpen) return;
 
+    const controller = new AbortController();
     const loadData = async () => {
-      setLoading(true);
+      setLoading(true); setCatalogError(false);
       try {
-        if (isAdmin) {
-          const { data } = await supabase.from('members').select('id, name').order('name');
-          setMembers(data || []);
-        }
-
-        const { data: projData } = await supabase
-          .from('projects')
-          .select('id, name, code')
-          .neq('status', 'closed')
-          .order('name');
-        setProjects(projData || []);
-
-        let realQuery = supabase
-          .from('realizations')
-          .select('id, name')
-          .neq('status', 'Dokončeno')
-          .order('name');
-        
-        if (userRole === 'user' && memberId) {
-            realQuery = realQuery.contains('team_members', [memberId]);
-        }
-
-        const { data: realData } = await realQuery;
-        setRealizations(realData || []);
-
+        const [memberRows, projectRows, realizationRows] = await Promise.all([
+          isAdmin ? fetchAllAttendanceRows(() => supabase.from('members').select('id,name').order('name').order('id'), controller.signal) : Promise.resolve([]),
+          fetchAllAttendanceRows(() => supabase.from('projects').select('id,name,code').neq('status', 'closed').order('name').order('id'), controller.signal),
+          fetchAllAttendanceRows(() => {
+            let query = supabase.from('realizations').select('id,name').not('status', 'in', '("Dokončeno","Předáno")').order('name').order('id');
+            if (userRole === 'user' && memberId) query = query.contains('team_members', [memberId]);
+            return query;
+          }, controller.signal),
+        ]);
+        if (controller.signal.aborted) return;
+        if (record?.project_id && !projectRows.some(item => item.id === record.project_id)) projectRows.push({ id: record.project_id, name: record.projects?.name || 'Původní projekt', code: record.projects?.code });
+        const realizationId = attendanceRealizationId(record);
+        if (realizationId && !realizationRows.some(item => item.id === realizationId)) realizationRows.push({ id: realizationId, name: record.realizations?.name || 'Původní realizace' });
+        setMembers(memberRows); setProjects(projectRows); setRealizations(realizationRows);
       } catch (err) {
-        toast({ title: "Chyba", description: "Nepodařilo se načíst seznamy.", variant: "destructive" });
-      } finally {
-        setLoading(false);
-      }
+        if (controller.signal.aborted) return;
+        setCatalogError(true);
+        setError('Seznam zakázek nebo pracovníků se nepodařilo načíst. Zavřete formulář a zkuste jej otevřít znovu.');
+      } finally { if (!controller.signal.aborted) setLoading(false); }
     };
 
     loadData();
     setError('');
     setBatchItems([]);
+    if (!record) batchId.current = crypto.randomUUID();
     setGlobalHoursInput('');
 
     if (record) {
-      const isRealization = !!record.realizace_id && !record.project_id;
+      const isRealization = !!attendanceRealizationId(record) && !record.project_id;
       setCommonData({
         member_id: record.member_id,
         date: record.date ? format(new Date(record.date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
@@ -107,7 +102,7 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
       });
       setSingleItem({
         type: isRealization ? 'realization' : 'project',
-        item_id: isRealization ? record.realizace_id : (record.project_id || ''),
+        item_id: isRealization ? attendanceRealizationId(record) : (record.project_id || ''),
         hours: record.hours?.toString() || ''
       });
     } else {
@@ -118,12 +113,14 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
       });
     }
 
+    return () => controller.abort();
   }, [isOpen, record, isAdmin, memberId, initialDate, toast, userRole]);
 
   const handleAddItem = (itemId) => {
     let item;
     if (activeType === 'project') {
       const p = projects.find(p => p.id === itemId);
+      if (!p) return;
       item = { id: itemId, type: 'project', name: p.name, code: p.code, hours: '' };
     } else {
       const r = realizations.find(r => r.id === itemId);
@@ -145,7 +142,7 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
   const handleItemHoursChange = (index, value) => {
     setBatchItems(prev => {
       const newItems = [...prev];
-      newItems[index].hours = value;
+      newItems[index] = { ...newItems[index], hours: value };
       return newItems;
     });
   };
@@ -155,28 +152,9 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
     setBatchItems(prev => prev.map(item => ({ ...item, hours: globalHoursInput })));
   };
 
-  const getExistingDailyHours = async (targetMemberId, targetDate) => {
-    let query = supabase
-      .from('attendance')
-      .select('id, hours')
-      .eq('member_id', targetMemberId)
-      .eq('date', targetDate);
-
-    if (isEditMode && record?.id) {
-      query = query.neq('id', record.id);
-    }
-
-    const { data, error: attendanceError } = await query;
-    if (attendanceError) throw attendanceError;
-
-    return (data || []).reduce((sum, item) => {
-      const hours = parseFloat(String(item.hours).replace(',', '.'));
-      return sum + (Number.isFinite(hours) ? hours : 0);
-    }, 0);
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (savePending.current || submitting || loading || catalogError) return;
     setError('');
     
     // Validate payloads
@@ -217,15 +195,10 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
             return;
         }
 
+        savePending.current = true;
         setSubmitting(true);
-        const targetMemberId = isAdmin ? commonData.member_id : memberId;
-        const existingHours = await getExistingDailyHours(targetMemberId, commonData.date);
-        const dailyTotal = existingHours + totalHours;
-
-        if (dailyTotal > 24) {
-            setError(`Celkový součet hodin za den by byl ${dailyTotal.toLocaleString('cs-CZ')} h. Již uložené záznamy: ${existingHours.toLocaleString('cs-CZ')} h, nově zadáváte: ${totalHours.toLocaleString('cs-CZ')} h. Limit je 24 h.`);
-            return;
-        }
+        // The atomic server operation validates the total daily hours. A retry
+        // must not count a previously committed batch twice in a client precheck.
 
         if (isEditMode) {
             const payload = {
@@ -246,7 +219,7 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
                 project_id: item.project_id || null,
                 realizace_id: item.realizace_id || null
             }));
-            await onSave(payloads);
+            await onSave(payloads, { batchId: batchId.current });
         }
     } catch (err) {
         if (err instanceof z.ZodError) {
@@ -257,6 +230,7 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
             setError(msg || "Ukládání se nezdařilo.");
         }
     } finally {
+        savePending.current = false;
         setSubmitting(false);
     }
   };
@@ -269,7 +243,7 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
   }, [batchItems]);
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && !submitting && onClose()}>
       <FormDialogContent size="xl">
         <div className="hidden">
           <div className="flex items-center gap-2">
@@ -280,7 +254,7 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
         <FormDialogHeader
           icon={Clock}
           title={isEditMode ? 'Upravit záznam' : 'Zadat docházku'}
-          description="Zadejte datum, pracovníka a odpracované hodiny."
+          description={commonData.date ? `Zápis pro ${format(new Date(`${commonData.date}T12:00:00`), 'd. M. yyyy')}. Vyberte zakázky a doplňte odpracované hodiny.` : 'Vyberte datum, zakázky a odpracované hodiny.'}
         />
 
         {loading ? (
@@ -288,10 +262,10 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <FormDialogBody className="space-y-5">
+          <FormDialogBody><fieldset disabled={submitting} className="min-w-0 space-y-5">
             
             {error && (
-              <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md font-medium flex items-center gap-2">
+              <div role="alert" className="bg-destructive/10 text-destructive text-sm p-3 rounded-md font-medium flex items-center gap-2">
                  <AlertCircle className="w-4 h-4"/> {error}
               </div>
             )}
@@ -306,6 +280,7 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
                 <Label>Datum</Label>
                 <Input 
                     type="date" 
+                    aria-label="Datum docházky"
                     value={commonData.date} 
                     onChange={(e) => setCommonData(prev => ({ ...prev, date: e.target.value }))}
                 />
@@ -378,6 +353,7 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
                         <Input
                             type="number"
                             step="0.5"
+                            aria-label="Počet odpracovaných hodin"
                             value={singleItem.hours}
                             onChange={(e) => setSingleItem(prev => ({ ...prev, hours: e.target.value }))}
                         />
@@ -440,6 +416,7 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
                                 <Input 
                                     placeholder="např. 8" 
                                     className="h-8" 
+                                    aria-label="Hodiny pro všechny položky"
                                     value={globalHoursInput}
                                     onChange={e => setGlobalHoursInput(e.target.value)}
                                     type="number"
@@ -475,16 +452,18 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
                                             type="number"
                                             step="0.5"
                                             placeholder="Hod."
+                                            aria-label={`Počet hodin: ${item.name}`}
                                             value={item.hours}
                                             onChange={(e) => handleItemHoursChange(idx, e.target.value)}
-                                            className="h-8 text-right pr-2"
+                                            className="h-11 text-right pr-2"
                                         />
                                     </div>
                                     <Button 
                                         type="button" 
                                         variant="ghost" 
                                         size="icon" 
-                                        className="h-8 w-8 text-slate-400 hover:text-red-500"
+                                        className="h-11 w-11 text-slate-400 hover:text-red-500"
+                                        aria-label={`Odebrat ${item.name}`}
                                         onClick={() => handleRemoveItem(idx)}
                                     >
                                         <Trash2 className="w-4 h-4"/>
@@ -508,14 +487,15 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
             <div className="space-y-1.5 pt-2">
               <Label>Popis činnosti <span className="text-muted-foreground font-normal text-xs">(společný pro všechny)</span></Label>
               <Textarea
-                placeholder="Co se dělalo..."
+                  placeholder="Co se dělalo..."
+                  aria-label="Popis činnosti"
                 value={commonData.description}
                 onChange={(e) => setCommonData(prev => ({ ...prev, description: e.target.value }))}
                 className="resize-none min-h-[80px]"
               />
             </div>
 
-          </FormDialogBody>
+          </fieldset></FormDialogBody>
         )}
 
         <FormDialogFooter>
@@ -524,11 +504,10 @@ const AttendanceDialog = ({ isOpen, onClose, onSave, record, isAdmin, memberId, 
             </Button>
             <Button 
                 onClick={handleSubmit} 
-                disabled={submitting || (!isEditMode && batchItems.length === 0)} 
-                className={cn(isEditMode ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700")}
+                disabled={loading || catalogError || submitting || (!isEditMode && batchItems.length === 0)}
             >
             {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {isEditMode ? 'Uložit změny' : `Uložit ${batchItems.length > 0 ? `(${batchItems.length})` : ''}`}
+            {submitting ? 'Ukládám…' : isEditMode ? 'Uložit změny' : `Uložit hodiny ${batchItems.length > 0 ? `(${batchItems.length})` : ''}`}
             </Button>
         </FormDialogFooter>
       </FormDialogContent>

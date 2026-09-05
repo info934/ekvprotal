@@ -1,4 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { planningAvailabilityKey, planningDeletionItems } from '@/lib/operationsHelpers';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { format, parseISO } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import {
@@ -183,8 +185,13 @@ const Metric = ({ icon: Icon, label, value, tone = 'blue' }) => {
   );
 };
 
-const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSave, onDelete, onCheckAvailability, availability, saving }) => {
+const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSave, onDelete, onCheckAvailability, onAvailabilityInvalidate, availability, saving }) => {
   const [form, setForm] = useState(emptyItem());
+  const [savedAvailabilityKey, setSavedAvailabilityKey] = useState('');
+  const availabilityKey = planningAvailabilityKey(form);
+  const availabilityDirty = availabilityKey !== savedAvailabilityKey;
+
+  useEffect(() => { onAvailabilityInvalidate(); }, [availabilityKey, onAvailabilityInvalidate]);
 
   useEffect(() => {
     if (!open) return;
@@ -197,7 +204,7 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
       : value.member_id
         ? [{ member_id: value.member_id, role: '', allocation_percent: 100, planned_hours: '' }]
         : [];
-    setForm({
+    const nextForm = {
       ...emptyItem(),
       ...value,
       member_id: value.member_id || '',
@@ -205,7 +212,9 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
       end_at: toLocalDateTime(value.end_at || `${value.end_date}T17:00`, 17),
       assignments,
       subcontractor_assignments: (value.subcontractor_assignments || []).map(({ subcontractor, ...assignment }) => assignment),
-    });
+    };
+    setForm(nextForm);
+    setSavedAvailabilityKey(planningAvailabilityKey(nextForm));
   }, [open, value]);
 
   const update = (key, nextValue) => setForm((current) => ({ ...current, [key]: nextValue }));
@@ -343,17 +352,18 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
             </label>
             {form.id && form.member_id && (
               <div className="flex flex-wrap items-center gap-2 border-t border-blue-100 pt-2">
-                <Button type="button" size="sm" variant="outline" disabled={availability?.checking} onClick={() => onCheckAvailability(form.id)}>
+                <Button type="button" size="sm" variant="outline" disabled={saving || availability?.checking || availabilityDirty} onClick={() => onCheckAvailability(form.id)}>
                   <CalendarDays className="mr-2 h-4 w-4" />
                   {availability?.checking ? 'Kontroluji…' : 'Ověřit dostupnost'}
                 </Button>
                 {personalMailbox && <span className="text-xs text-slate-500">Osobní dostupnost: {personalMailbox}</span>}
-                {availability?.result && (
+                {availabilityDirty && <p className="w-full text-xs text-amber-800" role="status">Termín nebo řešitel byl změněn. Nejdříve položku uložte, poté ověřte dostupnost uloženého termínu.</p>}
+                {!availabilityDirty && availability?.result && (
                   <Badge variant={availability.result.available ? 'success' : 'destructive'}>
                     {availability.result.available ? 'Termín je volný' : `${availability.result.conflicts?.length || 0} kolizí`}
                   </Badge>
                 )}
-                {availability?.error && <span className="text-xs text-red-700">{availability.error}</span>}
+                {!availabilityDirty && availability?.error && <span className="text-xs text-red-700">{availability.error}</span>}
               </div>
             )}
             {calendarLink && (
@@ -384,7 +394,7 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
           </div>
         </div>
         <DialogFooter className="gap-2">
-          {form.id && <Button type="button" variant="destructive" className="sm:mr-auto" onClick={() => onDelete(form.id)}><Trash2 className="mr-2 h-4 w-4" />Smazat</Button>}
+          {form.id && <Button type="button" disabled={saving} variant="destructive" className="sm:mr-auto" onClick={() => onDelete(form.id)}><Trash2 className="mr-2 h-4 w-4" />Smazat</Button>}
           <Button type="button" variant="outline" onClick={onClose}>Zrušit</Button>
           <Button type="button" disabled={saving || !form.name.trim() || !form.start_at || !form.end_at} onClick={() => onSave(form)}>{saving ? 'Ukládám…' : 'Uložit'}</Button>
         </DialogFooter>
@@ -480,6 +490,12 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
   const [availability, setAvailability] = useState({ checking: false, result: null, error: '' });
   const [travelDialog, setTravelDialog] = useState({ open: false, value: null });
   const [accommodationDialog, setAccommodationDialog] = useState({ open: false, value: null });
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const availabilityRequestId = useRef(0);
+  const invalidateAvailability = useCallback(() => {
+    availabilityRequestId.current += 1;
+    setAvailability({ checking: false, result: null, error: '' });
+  }, []);
 
   const selectedPlan = plans.find((plan) => plan.plan_id === selectedPlanId);
   const permissionEntityType = selectedPlan?.entity_type || entityType;
@@ -524,8 +540,8 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
   useEffect(() => { loadPlans(); }, [loadPlans]);
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => {
-    setAvailability({ checking: false, result: null, error: '' });
-  }, [itemDialog.open, itemDialog.value?.id]);
+    invalidateAvailability();
+  }, [itemDialog.open, itemDialog.value?.id, invalidateAvailability]);
 
   const stats = useMemo(() => {
     const activeItems = data.items.filter((item) => !['done', 'cancelled'].includes(item.status));
@@ -569,9 +585,11 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
   }, [toast]);
 
   const handleAvailabilityCheck = useCallback(async (itemId) => {
+    const requestId = ++availabilityRequestId.current;
     setAvailability({ checking: true, result: null, error: '' });
     try {
       const result = await checkPlanningItemAvailability(itemId);
+      if (requestId !== availabilityRequestId.current) return;
       setAvailability({ checking: false, result, error: '' });
       toast({
         title: result.available ? 'Termín je v Outlooku volný' : 'Outlook hlásí kolizi',
@@ -581,6 +599,7 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
         variant: result.available ? 'default' : 'destructive',
       });
     } catch (availabilityError) {
+      if (requestId !== availabilityRequestId.current) return;
       setAvailability({ checking: false, result: null, error: availabilityError.message });
       toast({ title: 'Dostupnost se nepodařilo ověřit', description: availabilityError.message, variant: 'destructive' });
     }
@@ -597,21 +616,32 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
         await syncCalendarBestEffort(savedItem.id);
       }
     }, 'Položka plánu byla uložena');
-    if (done) setItemDialog({ open: false, value: null });
+    if (done) { setItemDialog({ open: false, value: null }); invalidateAvailability(); }
   };
 
   const handleItemDelete = async (id) => {
     const done = await runMutation(async () => {
-      const currentItem = data.items.find((item) => item.id === id);
-      if (getCalendarLink(currentItem)?.external_event_id) {
-        await savePlanningItem(selectedPlanId, { ...currentItem, calendar_sync_enabled: false });
-        // Keep the portal record when Outlook deletion fails so the orphan can
-        // still be retried and reconciled from the UI.
-        await syncPlanningItemCalendar(id);
+      for (const currentItem of planningDeletionItems(data.items, id)) {
+        if (getCalendarLink(currentItem)?.external_event_id) {
+          await savePlanningItem(selectedPlanId, { ...currentItem, calendar_sync_enabled: false });
+          // Keep records retryable if removal of any parent/child event fails.
+          await syncPlanningItemCalendar(currentItem.id);
+        }
       }
       await deletePlanningItem(id);
     }, 'Položka plánu byla smazána');
     if (done) setItemDialog({ open: false, value: null });
+    return done;
+  };
+
+  const requestItemDelete = (id) => {
+    const item = data.items.find(entry => entry.id === id);
+    const affectedCount = planningDeletionItems(data.items, id).length;
+    setPendingDelete({
+      title: `Smazat ${item?.item_type === 'phase' ? 'fázi' : 'položku'} „${item?.name || ''}“?`,
+      description: `Počet odstraňovaných položek včetně podřízených: ${affectedCount}. Smažou se jejich návaznosti, přiřazení a propojené projektové úkoly. Cesty a ubytování ztratí vazbu na položku. Publikované události budou odstraněny z Outlooku.`,
+      perform: () => handleItemDelete(id),
+    });
   };
 
   const handleItemDatesChange = useCallback((id, values) => runMutation(
@@ -643,10 +673,9 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
     'Návaznost byla vytvořena',
   ), [runMutation, selectedPlanId]);
 
-  const handleDependencyDelete = useCallback((id) => runMutation(
-    () => deletePlanningDependency(id),
-    'Návaznost byla odstraněna',
-  ), [runMutation]);
+  const handleDependencyDelete = useCallback((id) => {
+    setPendingDelete({ title: 'Odstranit návaznost úkolů?', description: 'Zruší se časová vazba mezi těmito položkami. Samotné úkoly zůstanou zachované.', perform: () => runMutation(() => deletePlanningDependency(id), 'Návaznost byla odstraněna') });
+  }, [runMutation]);
 
   const handleTravelSave = async (segment) => {
     if (new Date(segment.arrival_at) < new Date(segment.departure_at)) {
@@ -760,14 +789,14 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
             <section className="overflow-hidden rounded-md border bg-white">
               <div className="flex items-center justify-between border-b px-4 py-3"><div><h3 className="font-semibold">Cesty</h3><p className="text-xs text-slate-500">Trasy, vzdálenosti a potřeba přespání.</p></div>{canEdit && <Button size="sm" onClick={() => setTravelDialog({ open: true, value: null })}><Plus className="mr-2 h-4 w-4" />Cesta</Button>}</div>
               <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Čas</TableHead><TableHead>Aktivita</TableHead><TableHead>Trasa</TableHead><TableHead>Vzdálenost</TableHead><TableHead>Doba</TableHead><TableHead>Přespání</TableHead><TableHead>Stav</TableHead><TableHead className="w-20" /></TableRow></TableHeader><TableBody>
-                {data.travel.map((segment) => <TableRow key={segment.id}><TableCell className="whitespace-nowrap">{segment.departure_at ? formatDateTime(segment.departure_at) : formatDate(segment.travel_date)}{segment.arrival_at ? <div className="text-xs text-slate-500">do {formatDateTime(segment.arrival_at)}</div> : null}</TableCell><TableCell className="min-w-[180px]">{data.items.find((item) => item.id === segment.item_id)?.name || 'Bez vazby'}</TableCell><TableCell className="min-w-[260px]"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400" />{segment.origin_label} → {segment.destination_label}</div></TableCell><TableCell>{segment.distance_m ? `${(segment.distance_m / 1000).toLocaleString('cs-CZ')} km` : '—'}</TableCell><TableCell>{segment.duration_minutes ? `${segment.duration_minutes} min` : '—'}</TableCell><TableCell>{segment.overnight_required ? 'Nutné' : segment.overnight_recommended ? 'Doporučeno' : 'Ne'}</TableCell><TableCell><StatusBadge value={segment.status} labels={TRAVEL_STATUS} /></TableCell><TableCell>{canEdit && <div className="flex"><Button variant="ghost" size="icon" onClick={() => setTravelDialog({ open: true, value: segment })}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => runMutation(() => deleteTravelSegment(segment.id), 'Cesta byla smazána')}><Trash2 className="h-4 w-4 text-red-600" /></Button></div>}</TableCell></TableRow>)}
+                {data.travel.map((segment) => <TableRow key={segment.id}><TableCell className="whitespace-nowrap">{segment.departure_at ? formatDateTime(segment.departure_at) : formatDate(segment.travel_date)}{segment.arrival_at ? <div className="text-xs text-slate-500">do {formatDateTime(segment.arrival_at)}</div> : null}</TableCell><TableCell className="min-w-[180px]">{data.items.find((item) => item.id === segment.item_id)?.name || 'Bez vazby'}</TableCell><TableCell className="min-w-[260px]"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400" />{segment.origin_label} → {segment.destination_label}</div></TableCell><TableCell>{segment.distance_m ? `${(segment.distance_m / 1000).toLocaleString('cs-CZ')} km` : '—'}</TableCell><TableCell>{segment.duration_minutes ? `${segment.duration_minutes} min` : '—'}</TableCell><TableCell>{segment.overnight_required ? 'Nutné' : segment.overnight_recommended ? 'Doporučeno' : 'Ne'}</TableCell><TableCell><StatusBadge value={segment.status} labels={TRAVEL_STATUS} /></TableCell><TableCell>{canEdit && <div className="flex"><Button variant="ghost" size="icon" onClick={() => setTravelDialog({ open: true, value: segment })}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" aria-label={`Smazat cestu ${segment.origin_label} – ${segment.destination_label}`} onClick={() => setPendingDelete({ title: 'Smazat naplánovanou cestu?', description: `${segment.origin_label} → ${segment.destination_label}. Smažou se údaje této cesty; navázaná položka plánu zůstane zachovaná.`, perform: () => runMutation(() => deleteTravelSegment(segment.id), 'Cesta byla smazána') })}><Trash2 className="h-4 w-4 text-red-600" /></Button></div>}</TableCell></TableRow>)}
                 {!data.travel.length && <TableRow><TableCell colSpan={8} className="h-24 text-center text-slate-500">Zatím nejsou naplánované žádné cesty.</TableCell></TableRow>}
               </TableBody></Table></div>
             </section>
             <section className="overflow-hidden rounded-md border bg-white">
               <div className="flex items-center justify-between border-b px-4 py-3"><div><h3 className="font-semibold">Ubytování</h3><p className="text-xs text-slate-500">Návrhy a potvrzené rezervace navázané na harmonogram.</p></div>{canEdit && <Button size="sm" onClick={() => setAccommodationDialog({ open: true, value: null })}><Plus className="mr-2 h-4 w-4" />Ubytování</Button>}</div>
               <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Ubytování</TableHead><TableHead>Aktivita</TableHead><TableHead>Osoby</TableHead><TableHead>Příjezd</TableHead><TableHead>Odjezd</TableHead><TableHead>Rezervace</TableHead><TableHead>Stav</TableHead><TableHead className="w-20" /></TableRow></TableHeader><TableBody>
-                {data.accommodations.map((stay) => <TableRow key={stay.id}><TableCell><div className="font-medium">{stay.hotel_name}</div><div className="text-xs text-slate-500">{stay.address || 'Bez adresy'}</div></TableCell><TableCell className="min-w-[180px]">{data.items.find((item) => item.id === stay.item_id)?.name || 'Bez vazby'}</TableCell><TableCell className="min-w-[180px]">{stay.guest_members?.map((member) => member.name || member.email).join(', ') || 'Nevybráno'}</TableCell><TableCell>{formatDate(stay.check_in)}</TableCell><TableCell>{formatDate(stay.check_out)}</TableCell><TableCell>{stay.booking_reference || '—'}</TableCell><TableCell><StatusBadge value={stay.status} labels={ACCOMMODATION_STATUS} /></TableCell><TableCell>{canEdit && <div className="flex"><Button variant="ghost" size="icon" onClick={() => setAccommodationDialog({ open: true, value: stay })}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => runMutation(() => deleteAccommodation(stay.id), 'Ubytování bylo smazáno')}><Trash2 className="h-4 w-4 text-red-600" /></Button></div>}</TableCell></TableRow>)}
+                {data.accommodations.map((stay) => <TableRow key={stay.id}><TableCell><div className="font-medium">{stay.hotel_name}</div><div className="text-xs text-slate-500">{stay.address || 'Bez adresy'}</div></TableCell><TableCell className="min-w-[180px]">{data.items.find((item) => item.id === stay.item_id)?.name || 'Bez vazby'}</TableCell><TableCell className="min-w-[180px]">{stay.guest_members?.map((member) => member.name || member.email).join(', ') || 'Nevybráno'}</TableCell><TableCell>{formatDate(stay.check_in)}</TableCell><TableCell>{formatDate(stay.check_out)}</TableCell><TableCell>{stay.booking_reference || '—'}</TableCell><TableCell><StatusBadge value={stay.status} labels={ACCOMMODATION_STATUS} /></TableCell><TableCell>{canEdit && <div className="flex"><Button variant="ghost" size="icon" onClick={() => setAccommodationDialog({ open: true, value: stay })}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" aria-label={`Smazat ubytování ${stay.hotel_name}`} onClick={() => setPendingDelete({ title: `Smazat ubytování ${stay.hotel_name}?`, description: 'Smaže se evidence ubytování v portálu. Rezervaci u hotelu tato akce neruší.', perform: () => runMutation(() => deleteAccommodation(stay.id), 'Ubytování bylo smazáno') })}><Trash2 className="h-4 w-4 text-red-600" /></Button></div>}</TableCell></TableRow>)}
                 {!data.accommodations.length && <TableRow><TableCell colSpan={8} className="h-24 text-center text-slate-500">Zatím není evidované žádné ubytování.</TableCell></TableRow>}
               </TableBody></Table></div>
             </section>
@@ -825,7 +854,16 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
         </Tabs>
       </div>
 
-      <ItemDialog open={itemDialog.open} value={itemDialog.value} items={data.items} members={data.members} subcontractors={data.subcontractors} availability={availability} saving={saving} onCheckAvailability={handleAvailabilityCheck} onClose={() => setItemDialog({ open: false, value: null })} onSave={handleItemSave} onDelete={handleItemDelete} />
+      <ItemDialog open={itemDialog.open} value={itemDialog.value} items={data.items} members={data.members} subcontractors={data.subcontractors} availability={availability} saving={saving} onCheckAvailability={handleAvailabilityCheck} onClose={() => setItemDialog({ open: false, value: null })} onSave={handleItemSave} onDelete={requestItemDelete} onAvailabilityInvalidate={invalidateAvailability} />
+      <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open && !saving) { setPendingDelete(null); setData(current => ({ ...current, dependencies: [...current.dependencies] })); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>{pendingDelete?.title}</AlertDialogTitle><AlertDialogDescription>{pendingDelete?.description}</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Ponechat</AlertDialogCancel>
+            <AlertDialogAction disabled={saving} className="bg-destructive hover:bg-destructive/90" onClick={async event => { event.preventDefault(); if (await pendingDelete?.perform()) setPendingDelete(null); }}>{saving ? 'Mažu…' : 'Smazat'}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <TravelDialog open={travelDialog.open} value={travelDialog.value} items={data.items} saving={saving} onClose={() => setTravelDialog({ open: false, value: null })} onSave={handleTravelSave} />
       <AccommodationDialog open={accommodationDialog.open} value={accommodationDialog.value} items={data.items} members={data.members} saving={saving} onClose={() => setAccommodationDialog({ open: false, value: null })} onSave={handleAccommodationSave} />
     </div>

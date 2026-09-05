@@ -1,105 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { format, endOfMonth, startOfMonth } from 'date-fns';
-import { cs } from 'date-fns/locale';
-import { Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { attendanceMonthRange, groupAttendanceWork, loadAttendanceRows, sumAttendanceHours } from '@/lib/attendanceWorkspace';
+import { useAttendanceResource } from '@/hooks/useAttendanceResource';
+import { AttendanceLoadState, AttendanceRecordsTable } from './AttendanceWorkspaceParts';
 
-const HoursTable = ({ selectedMonth, memberId, onDataFetched }) => {
-  const [loading, setLoading] = useState(false);
-  const [records, setRecords] = useState([]);
-  const [totalHours, setTotalHours] = useState(0);
-
+export default function HoursTable({ selectedMonth, memberId, onDataFetched }) {
+  const { memberId: actorMemberId, userRole } = useAuth();
+  const allowed = Boolean(actorMemberId && memberId && (actorMemberId === memberId || userRole === 'admin'));
+  const range = useMemo(() => selectedMonth ? attendanceMonthRange(selectedMonth) : null, [selectedMonth]);
+  const key = `${actorMemberId}:${memberId}:${range?.start || ''}`;
+  const loader = useCallback(signal => loadAttendanceRows(supabase, { memberId, ...range, signal }), [memberId, range]);
+  const resource = useAttendanceResource(key, loader, allowed && Boolean(range));
+  const callbackRef = useRef(onDataFetched);
+  callbackRef.current = onDataFetched;
   useEffect(() => {
-    const fetchAttendance = async () => {
-      if (!selectedMonth || !memberId) return;
-
-      setLoading(true);
-      try {
-        const startDate = startOfMonth(new Date(selectedMonth)).toISOString();
-        const endDate = endOfMonth(new Date(selectedMonth)).toISOString();
-
-        const { data, error } = await supabase
-          .from('attendance')
-          .select('*, projects(id, name)')
-          .eq('member_id', memberId)
-          .gte('date', startDate)
-          .lte('date', endDate)
-          .order('date', { ascending: false });
-
-        if (error) throw error;
-
-        setRecords(data || []);
-        
-        const total = (data || []).reduce((sum, record) => sum + Number(record.hours), 0);
-        setTotalHours(total);
-
-        // Group by project for breakdown
-        const breakdown = (data || []).reduce((acc, curr) => {
-            const projName = curr.projects?.name || 'Nezařazeno (Režie)';
-            if (!acc[projName]) acc[projName] = 0;
-            acc[projName] += Number(curr.hours);
-            return acc;
-        }, {});
-
-        if (onDataFetched) {
-          onDataFetched({ records: data || [], totalHours: total, breakdown });
-        }
-      } catch (error) {
-        console.error('Error fetching attendance for HoursTable:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAttendance();
-  }, [selectedMonth, memberId]);
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center py-8 text-slate-500">
-        <Loader2 className="w-6 h-6 animate-spin mr-2" />
-        Načítání hodin...
-      </div>
-    );
-  }
-
-  if (records.length === 0) {
-    return (
-      <div className="text-center py-8 text-slate-500 bg-slate-50 rounded-lg border border-dashed">
-        Pro vybraný měsíc nebyly nalezeny žádné hodiny.
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-md border border-slate-200 overflow-hidden">
-      <Table>
-        <TableHeader className="bg-slate-50">
-          <TableRow>
-            <TableHead>Datum</TableHead>
-            <TableHead>Projekt</TableHead>
-            <TableHead className="text-right">Hodiny</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {records.map((record) => (
-            <TableRow key={record.id}>
-              <TableCell>{format(new Date(record.date), 'dd. MM. yyyy', { locale: cs })}</TableCell>
-              <TableCell className="font-medium text-slate-700">
-                {record.projects?.name || 'Nezařazeno (Režie)'}
-              </TableCell>
-              <TableCell className="text-right">{Number(record.hours).toFixed(1)} h</TableCell>
-            </TableRow>
-          ))}
-          <TableRow className="bg-slate-50 font-bold">
-            <TableCell colSpan={2} className="text-right">Celkem hodin:</TableCell>
-            <TableCell className="text-right text-primary">{totalHours.toFixed(1)} h</TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
-    </div>
-  );
-};
-
-export default HoursTable;
+    if (!allowed || !resource.ready) {
+      callbackRef.current?.({ records: [], totalHours: null, breakdown: {}, status: allowed ? resource.status : 'forbidden', error: resource.error || null, month: range?.start, memberId });
+      return;
+    }
+    const breakdown = {};
+    for (const group of groupAttendanceWork(resource.data)) breakdown[group.name] = (breakdown[group.name] || 0) + group.hours;
+    callbackRef.current?.({ records: resource.data, totalHours: sumAttendanceHours(resource.data), breakdown, status: 'ready', error: null, month: range?.start, memberId });
+  }, [allowed, resource.ready, resource.status, resource.data, resource.error, range, memberId]);
+  if (!allowed) return <p role="alert" className="rounded-xl border bg-white p-5 text-sm text-slate-600">Tyto hodiny jsou dostupné jejich vlastníkovi a administrátorovi.</p>;
+  if (!range) return <p className="text-sm text-slate-500">Vyberte měsíc pro zobrazení hodin.</p>;
+  return <AttendanceLoadState loading={resource.loading} error={resource.error} onRetry={resource.refresh}>
+    {resource.ready && <div className="space-y-3"><p className="text-sm font-medium">Zapsané hodiny za měsíc: {sumAttendanceHours(resource.data).toLocaleString('cs-CZ')} h</p><AttendanceRecordsTable records={resource.data} empty="Pro vybraný měsíc zatím nejsou zapsané hodiny." /><p className="text-xs text-slate-500">Součet docházky není automaticky nárokem k výplatě. Ten se řídí schválenými podklady výše.</p></div>}
+  </AttendanceLoadState>;
+}

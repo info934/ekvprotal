@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
-import { AlertTriangle, BarChart, DollarSign, TrendingUp, TrendingDown, HardHat, Plus, Edit2, FileText, X, Wallet } from 'lucide-react';
-import RealizaceOverheadSummary from './RealizaceOverheadSummary';
+import { AlertTriangle, BarChart, DollarSign, TrendingUp, TrendingDown, HardHat, Plus, Edit2, FileText, X, Wallet, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -17,36 +16,46 @@ import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import { FinanceAmount, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import EkvLoader from '@/components/ui/ekv-loader';
+import { fetchAllFinancialRows, getFinanceErrorMessage } from '@/lib/financePresentation';
+import { toFiniteAmount } from '@/domain/financials';
 
 // Main Dashboard Component
 const RealizaceFinancials = () => {
     const [financials, setFinancials] = useState(null);
     const [loading, setLoading] = useState(true);
-    const { toast } = useToast();
+    const [loadError, setLoadError] = useState(null);
+    const [reload, setReload] = useState(0);
     const { userRole } = useAuth();
     const { canViewAmounts } = getFinancialVisibility(userRole);
 
     useEffect(() => {
+        const controller = new AbortController();
+        setFinancials(null);
+        setLoadError(null);
         if (!canViewAmounts) {
             setLoading(false);
-            return;
+            return () => controller.abort();
         }
 
         const fetchFinancials = async () => {
             setLoading(true);
-            const { data, error } = await supabase.rpc('get_realization_financial_overview');
-            
-            if (error) {
-                toast({ title: 'Chyba při načítání financí', description: error.message, variant: 'destructive' });
-            } else {
-                setFinancials(data || {});
+            try {
+                const { data, error } = await supabase.rpc('get_realization_financial_overview').abortSignal(controller.signal);
+                if (error) throw error;
+                if (!data || !Array.isArray(data.items) || toFiniteAmount(data.realization_count) === null || Number(data.realization_count) !== data.items.length) {
+                    throw new Error('Finanční přehled není úplný.');
+                }
+                if (!controller.signal.aborted) setFinancials(data);
+            } catch (error) {
+                if (!controller.signal.aborted) setLoadError(getFinanceErrorMessage(error, 'Finanční přehled se nepodařilo úplně načíst. Obnovte jej prosím.'));
+            } finally {
+                if (!controller.signal.aborted) setLoading(false);
             }
-            setLoading(false);
         };
         fetchFinancials();
-    }, [canViewAmounts, toast]);
+        return () => controller.abort();
+    }, [canViewAmounts, reload]);
 
-    if (loading) return <EkvLoader title="Načítám finance realizací" description="Sestavuji kanonický přehled výnosů, nákladů a rozpočtů." />;
     if (!canViewAmounts) {
         return (
             <div className="app-page">
@@ -58,6 +67,8 @@ const RealizaceFinancials = () => {
             </div>
         );
     }
+    if (loading) return <EkvLoader title="Načítám finance realizací" description="Načítám výnosy, náklady a rozpočty." />;
+    if (loadError || !financials) return <Card className="space-y-4 p-6"><h2 className="font-semibold">Finance realizací nejsou dostupné</h2><p role="alert" className="text-sm text-red-800">{loadError || 'Finanční přehled nebyl načten.'}</p><Button variant="outline" onClick={() => setReload(value => value + 1)}><RefreshCw className="mr-2 h-4 w-4" />Zkusit znovu</Button></Card>;
     return (
         <div className="space-y-6 p-6">
             <div>
@@ -66,19 +77,18 @@ const RealizaceFinancials = () => {
             </div>
             <FinanceMetricStrip metrics={[
                 { label: 'Výnosy bez DPH', value: <FinanceAmount value={financials?.total_revenue} />, detail: 'Smlouvy a vícepráce', tone: 'neutral', icon: DollarSign },
-                { label: 'Skutečné náklady bez DPH', value: <FinanceAmount value={financials?.total_costs} />, detail: 'Přímá práce a vyplacené odměny', tone: 'neutral', icon: Wallet },
+                { label: 'Náklady a vyplacené odměny', value: <FinanceAmount value={financials?.total_costs} />, detail: 'Bez DPH; materiál, vícepráce, přímá práce a odměny', tone: 'neutral', icon: Wallet },
                 { label: 'Plánovaný zisk firmy', value: <FinanceAmount value={financials?.total_profit} />, detail: 'Podle nastavených marží', tone: Number(financials?.total_profit || 0) < 0 ? 'negative' : 'positive', icon: TrendingUp },
                 { label: 'Plánovaná režie', value: <FinanceAmount value={financials?.total_overhead} />, detail: 'Rozpočtová alokace', tone: 'warning', icon: FileText },
                 { label: 'Rozpočet týmů', value: <FinanceAmount value={financials?.total_distribution} />, detail: 'Základ pro odměny', tone: 'plan', icon: TrendingDown },
-                { label: 'Počet realizací', value: financials?.realization_count || 0, detail: 'V agregovaném přehledu', tone: 'neutral', icon: HardHat },
-                { label: 'Dostupné pro výplatu', value: <FinanceAmount value={financials?.total_available_for_payout} />, detail: 'Po rezervacích a vyplacených odměnách', tone: 'positive', icon: Wallet },
+                { label: 'Počet realizací', value: financials.realization_count, detail: 'V agregovaném přehledu', tone: 'neutral', icon: HardHat },
+                { label: 'Volný týmový rozpočet', value: <FinanceAmount value={financials?.total_available_for_payout} />, detail: 'Po rezervacích a vyplacených odměnách; není stav účtu', tone: 'positive', icon: Wallet },
             ]} className="2xl:grid-cols-4" />
-            <RealizaceOverheadSummary />
             <Card>
                 <CardHeader><CardTitle>Finanční stav realizací</CardTitle></CardHeader>
                 <CardContent className="overflow-x-auto">
                     <Table className="min-w-[980px]">
-                        <TableHeader><TableRow><TableHead>Realizace</TableHead><TableHead>Stav</TableHead><TableHead className="text-right">Výnos bez DPH</TableHead><TableHead className="text-right">Náklady bez DPH</TableHead><TableHead className="text-right">Marže</TableHead><TableHead className="text-right">Režie</TableHead><TableHead className="text-right">Týmový budget</TableHead><TableHead className="text-right">Dostupné</TableHead></TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>Realizace</TableHead><TableHead>Stav</TableHead><TableHead className="text-right">Výnos bez DPH</TableHead><TableHead className="text-right">Náklady bez DPH</TableHead><TableHead className="text-right">Plánovaný zisk</TableHead><TableHead className="text-right">Plánovaná režie</TableHead><TableHead className="text-right">Týmový rozpočet</TableHead><TableHead className="text-right">Volný rozpočet</TableHead></TableRow></TableHeader>
                         <TableBody>
                             {(financials?.items || []).map((item) => <TableRow key={item.id}>
                                 <TableCell className="font-medium">{item.name}</TableCell><TableCell>{item.status}</TableCell>
@@ -110,12 +120,14 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
     const [isSubjectDialogOpen, setIsSubjectDialogOpen] = useState(false);
     const [loadingSubjects, setLoadingSubjects] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState(null);
+    const inFlight = useRef(false);
 
     useEffect(() => {
         if(isOpen) fetchSubjects();
         if (costData && isOpen) {
             setDescription(costData.description || '');
-            setAmount(costData.amount || '');
+            setAmount(costData.amount ?? '');
             setSupplierId(costData.supplier_id || '');
             setVariableSymbol(costData.variable_symbol || '');
             setNote(costData.note || '');
@@ -125,6 +137,7 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
         } else if (isOpen) {
             resetForm();
         }
+        if (isOpen) setSaveError(null);
     }, [costData, isOpen]);
 
     const resetForm = () => {
@@ -140,9 +153,11 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
 
     const fetchSubjects = async () => {
         setLoadingSubjects(true);
-        const { data } = await supabase.from('subjects').select('id, name').order('name');
-        setSubjects(data || []);
-        setLoadingSubjects(false);
+        try {
+            const data = await fetchAllFinancialRows(() => supabase.from('subjects').select('id,name').order('name').order('id'));
+            setSubjects(data);
+        } catch (error) { toast({ title: 'Dodavatele se nepodařilo načíst', description: getFinanceErrorMessage(error), variant: 'destructive' }); }
+        finally { setLoadingSubjects(false); }
     };
 
     const handleQuickSubjectSave = async (subject) => {
@@ -154,21 +169,29 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
     };
 
     const handleSubmit = async () => {
-        if (!description || !amount) {
-            toast({ title: 'Chybí povinné údaje', variant: 'destructive' });
+        if (inFlight.current) return;
+        const numericAmount = toFiniteAmount(amount);
+        if (!description.trim() || numericAmount === null) {
+            setSaveError('Vyplňte popis a platnou konečnou částku bez DPH.');
             return;
         }
+        inFlight.current = true;
+        setSaveError(null);
         setSaving(true);
         try {
-            const saved = await onSave({ description, amount: parseFloat(amount), supplier_id: supplierId || null, variable_symbol: variableSymbol || null, note: note || null, invoiceFile, existingInvoice, removeInvoice });
+            const saved = await onSave({ description: description.trim(), amount: numericAmount, supplier_id: supplierId || null, variable_symbol: variableSymbol || null, note: note || null, invoiceFile, existingInvoice, removeInvoice });
             if (saved !== false) onClose();
+            else setSaveError('Náklad nebyl uložen. Zkontrolujte hlášení a zkuste to znovu; rozepsané údaje zůstaly zachované.');
+        } catch (error) {
+            setSaveError(getFinanceErrorMessage(error));
         } finally {
+            inFlight.current = false;
             setSaving(false);
         }
     };
 
     return (
-        <Dialog open={isOpen} onOpenChange={onClose}>
+        <Dialog open={isOpen} onOpenChange={open => { if (!open && !inFlight.current) onClose(); }}>
             <FormDialogContent size="md">
                 <FormDialogHeader
                     icon={costData ? Edit2 : Plus}
@@ -176,6 +199,7 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
                     description="Evidence faktur, dodavatelů a ostatních realizačních výdajů."
                 />
                 <FormDialogBody className="space-y-4">
+                    <fieldset disabled={saving} className="space-y-4">
                     <div className="grid gap-2">
                         <Label>Popis nákladu *</Label>
                         <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Např. nákup materiálu" />
@@ -184,7 +208,7 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
                         <div className="grid gap-2">
                             <Label>Částka bez DPH (Kč) *</Label>
                             <p className="text-xs text-muted-foreground">Do finančního výsledku realizace vstupuje náklad bez DPH.</p>
-                            <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
+                            <Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
                         </div>
                         <div className="grid gap-2">
                             <Label>Variabilní symbol</Label>
@@ -195,7 +219,7 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
                         <Label>Dodavatel</Label>
                         <div className="flex gap-2">
                             <Select value={supplierId} onValueChange={setSupplierId}>
-                                <SelectTrigger className="flex-1"><SelectValue placeholder="Vyberte dodavatele" /></SelectTrigger>
+                                <SelectTrigger className="flex-1" disabled={loadingSubjects || saving}><SelectValue placeholder={loadingSubjects ? 'Načítám dodavatele…' : 'Vyberte dodavatele'} /></SelectTrigger>
                                 <SelectContent>
                                     {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                                 </SelectContent>
@@ -220,6 +244,8 @@ export const RealizaceCostDialog = ({ isOpen, onClose, onSave, costData }) => {
                             )}
                         </div>
                     </div>
+                    {saveError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{saveError}</p>}
+                    </fieldset>
                 </FormDialogBody>
                 <FormDialogFooter>
                     <Button variant="outline" onClick={onClose} disabled={saving}>Zrušit</Button>

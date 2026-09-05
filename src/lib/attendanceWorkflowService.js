@@ -1,37 +1,15 @@
 import { supabase } from '@/lib/customSupabaseClient';
+import { attendanceDateOnly as toDateOnly } from './attendanceWorkspace.js';
+import { saveAttendanceBatch, saveAttendanceEdit } from './attendanceMutations.js';
 
-const toDateOnly = (value) => {
-  if (!value) return value;
-  if (typeof value === 'string') return value.slice(0, 10);
-  return new Date(value).toISOString().slice(0, 10);
-};
-
-export const saveAttendanceRecord = async (record, recordId = null) => {
-  const { data, error } = await supabase.rpc('save_attendance_record', {
-    p_record_id: recordId,
-    p_member_id: record.member_id,
-    p_date: toDateOnly(record.date),
-    p_hours: Number(record.hours),
-    p_project_id: record.project_id || null,
-    p_realizace_id: record.realizace_id || null,
-    p_description: record.description || null,
-  });
-
-  if (error) throw error;
-  return data;
-};
-
-export const saveAttendanceRecords = async (records, recordId = null) => {
-  if (Array.isArray(records)) {
-    const saved = [];
-    for (const record of records) {
-      saved.push(await saveAttendanceRecord(record));
-    }
-    return saved;
+export const saveAttendanceRecords = async (records, recordId = null, { batchId } = {}) => {
+  if (recordId) {
+    if (Array.isArray(records)) throw new Error('Úprava se vztahuje k jedinému záznamu.');
+    return saveAttendanceEdit(supabase, records, recordId);
   }
-
-  return saveAttendanceRecord(records, recordId);
+  return saveAttendanceBatch(supabase, Array.isArray(records) ? records : [records], batchId);
 };
+export const saveAttendanceRecord = (record, recordId = null, options) => saveAttendanceRecords(record, recordId, options);
 
 export const deleteAttendanceRecord = async (recordId) => {
   const { data, error } = await supabase.rpc('delete_attendance_record', {

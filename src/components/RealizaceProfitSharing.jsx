@@ -8,15 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Trash2, Save, AlertTriangle, Users, Coins } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency as formatCurrencyValue } from '@/lib/utils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { getFinancialVisibility } from '@/lib/getFinancialVisibility';
 import FinancialValueGuard from './FinancialValueGuard';
 import { calculateRealizationRewardAllocation } from '@/domain/financials';
 
-const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, sponsorDeductions = [], canEdit: canEditOverride }) => {
+const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, sponsorDeductions = [], canEdit: canEditOverride, onSaved }) => {
     const { toast } = useToast();
-    const { userRole } = useAuth();
+    const { userRole, isPrivateMode } = useAuth();
+    const formatCurrency = value => isPrivateMode ? 'Skryto' : formatCurrencyValue(value);
     const [shares, setShares] = useState([]);
     const [members, setMembers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -167,7 +168,8 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
                     ? 'Podíly jsou aktivní pro finanční vypořádání.'
                     : 'Podíly se aktivují až při finančním uzavření realizace.',
             });
-            fetchData();
+            await fetchData();
+            await onSaved?.();
         } catch (error) {
             console.error('Error saving shares:', error);
             toast({ title: 'Chyba při ukládání', description: error.message, variant: 'destructive' });
@@ -176,6 +178,7 @@ const RealizaceProfitSharing = ({ realizaceId, distributionAmount, isCompleted, 
         }
     };
 
+    if (isPrivateMode) return <p className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">Podíly a odměny jsou v soukromém režimu skryté.</p>;
     if (loading) return <div className="p-8 text-center">Načítání rozdělení zisku...</div>;
 
     return (

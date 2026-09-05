@@ -22,8 +22,9 @@ import CrmLineItemsTable from '@/components/CrmLineItemsTable';
 import CrmProductPickerDialog from '@/components/CrmProductPickerDialog';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
-import { allocateCrmNumber, DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
-import { crmOpportunityPath, findCrmRecordByRef, getCrmRecordRef } from '@/lib/crmRoutes';
+import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
+import { crmOpportunityPath, findCrmRecordByRef, getCrmRecordRef, filterCrmRecordByRef } from '@/lib/crmRoutes';
+import { fetchAllCrmRows, crmWorkflowErrorMessage } from '@/lib/crmDataAccess';
 import { formatMoney, formatPercent } from '@/lib/financePresentation';
 import {
   buildCrmDocumentItemPayload,
@@ -32,7 +33,6 @@ import {
   calculateCrmTotals,
   createCrmCatalogItem,
   normalizeCrmItem,
-  isMissingCrmRpcError,
 } from '@/lib/crmItemPayloads';
 import { cn } from '@/lib/utils';
 import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
@@ -150,25 +150,25 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       const documentItemsSelect = documentId
         ? 'id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot'
         : 'id';
-      let documentsQuery = supabase
+      const documentsQueryFactory = () => supabase
         .from('crm_commercial_documents')
         .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, gross_subtotal, subtotal, discount_total, tax_total, total, total_with_tax, cost_total, total_cost, margin_total, margin_value, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, notes, sync_items, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico), opportunity:opportunity_id(id, number, title, value, stage, subject:subject_id(id, name), project:project_id(id, name, code)${documentId ? ', opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)' : ''}), items:crm_commercial_document_items(${documentItemsSelect})`)
         .eq('type', type)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-      documentsQuery = documentId
-        ? documentsQuery.or(`id.eq.${documentId},number.eq.${documentId}`).limit(1)
-        : documentsQuery.limit(500);
+        .order('created_at', { ascending: false }).order('id').abortSignal(request.signal);
+      const documentsQuery = documentId
+        ? filterCrmRecordByRef(documentsQueryFactory(), documentId).limit(1)
+        : fetchAllCrmRows(documentsQueryFactory);
 
       const [documentsRes, opportunitiesRes, numberingRes, templatesRes] = await Promise.all([
-        documentsQuery.abortSignal(request.signal),
-      supabase
+        documentsQuery,
+      fetchAllCrmRows(() => supabase
         .from('crm_opportunities')
         .select('id, number, title, value, subject_id, deleted_at, subject:subject_id(id, name)')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
-        .limit(500)
-        .abortSignal(request.signal),
+        .order('id')
+        .abortSignal(request.signal)),
       selectCrmNumberingSettings(supabase, request.signal),
       supabase
         .from('order_templates')
@@ -546,135 +546,32 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     setCreateDialogOpen(true);
   };
 
-  const createOpportunityForDocument = async () => {
-    const title = createOpportunityTitle.trim();
-    if (!title || !createSubjectId) {
-      return { error: new Error('Pro novy obchodni pripad doplnte nazev a subjekt.') };
-    }
-
-    const opportunityNumber = await allocateCrmNumber(supabase, 'opportunity');
-    const { data, error } = await supabase
-      .from('crm_opportunities')
-      .insert({
-        number: opportunityNumber,
-        title,
-        subject_id: createSubjectId,
-        owner_member_id: null,
-        stage: 'lead',
-        status: 'open',
-        priority: 'medium',
-        value: Number(createOpportunityValue || 0),
-        probability: 25,
-        description: 'Vytvořeno automaticky při založení dokumentu ' + config.singular.toLowerCase() + '.',
-      })
-      .select('id, number, title, value, subject_id, subject:subject_id(id, name)')
-      .single();
-
-    return { data: data ? { ...data, items: [] } : null, error };
-  };
-
   const handleCreateDocument = async () => {
-    if (!canEdit) return;
-
+    if (!canEdit || saving) return;
+    if (createMode === 'existing' && !createOpportunityId) return;
+    if (createMode === 'new' && (!createOpportunityTitle.trim() || !createSubjectId)) return;
     setSaving(true);
-    let opportunity = null;
-
-    if (createMode === 'existing') {
-      opportunity = opportunities.find((item) => item.id === createOpportunityId);
-      if (!opportunity) {
-        setSaving(false);
-        toast({ title: 'Vyberte obchodni pripad', description: 'Dokument musi byt napojeny na existujici nebo novy OP.', variant: 'destructive' });
-        return;
-      }
-      const { data: opportunityItems, error: opportunityItemsError } = await supabase
-        .from('crm_opportunity_items')
-        .select('id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot')
-        .eq('opportunity_id', opportunity.id)
-        .order('sort_order', { ascending: true });
-      if (opportunityItemsError) {
-        setSaving(false);
-        toast({ title: 'Položky OP se nepodařilo načíst', description: opportunityItemsError.message, variant: 'destructive' });
-        return;
-      }
-      opportunity = { ...opportunity, items: opportunityItems || [] };
-    } else {
-      const created = await createOpportunityForDocument();
-      if (created.error) {
-        setSaving(false);
-        toast({ title: 'Obchodni pripad se nepodarilo vytvorit', description: created.error.message, variant: 'destructive' });
-        return;
-      }
-      opportunity = created.data;
-    }
-
-    const number = await allocateCrmNumber(supabase, type);
-    const sourceItems = [...(opportunity.items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-    const fallbackItem = {
-      code: 'CRM-001',
-      name: opportunity.title,
-      quantity: 1,
-      unit: 'ks',
-      unit_price: Number(opportunity.value || createOpportunityValue || 0),
-      discount_percent: 0,
-      vat_rate: 21,
-    };
-    const itemsForTotals = sourceItems.length > 0 ? sourceItems : [fallbackItem];
-    const totals = calculateCrmTotals(itemsForTotals);
-
-    const { data, error } = await supabase
-      .from('crm_commercial_documents')
-      .insert({
-        opportunity_id: opportunity.id,
-        subject_id: opportunity.subject_id,
-        type,
-        status: 'draft',
-        number,
-        title: config.singular + ' - ' + opportunity.title,
-        issue_date: new Date().toISOString().slice(0, 10),
-        valid_until: null,
-        sync_items: true,
-        ...totals,
-      })
-      .select('id, number, type')
-      .single();
-
-    if (error) {
-      setSaving(false);
-      toast({ title: config.singular + ' se nepodarilo vytvorit', description: error.message, variant: 'destructive' });
-      return;
-    }
-
-    let shouldInsertDocumentRows = sourceItems.length > 0;
-    if (sourceItems.length === 0) {
-      const opportunityRows = [fallbackItem].map((item, index) => buildCrmOpportunityItemPayload(item, opportunity.id, index));
-      const rpcPayload = opportunityRows.map(({ opportunity_id, ...item }) => item);
-      const { error: replaceError } = await supabase.rpc('replace_crm_opportunity_items', {
-        p_opportunity_id: opportunity.id,
-        p_items: rpcPayload,
-        p_sync_documents: true,
+    try {
+      const { data, error } = await supabase.rpc('create_crm_commercial_document_atomic', {
+        p_opportunity_id: createMode === 'existing' ? createOpportunityId : null,
+        p_type: type,
+        p_new_opportunity: createMode === 'new' ? {
+          title: createOpportunityTitle.trim(),
+          subject_id: createSubjectId,
+          value: Number(createOpportunityValue || 0),
+        } : null,
       });
-      if (replaceError && isMissingCrmRpcError(replaceError)) {
-        await supabase.from('crm_opportunity_items').delete().eq('opportunity_id', opportunity.id);
-        await supabase.from('crm_opportunity_items').insert(opportunityRows);
-        shouldInsertDocumentRows = true;
-      } else if (replaceError) {
-        setSaving(false);
-        toast({ title: 'Položky se nepodařilo synchronizovat', description: replaceError.message, variant: 'destructive' });
-        return;
-      }
+      if (error) throw error;
+      if (!data?.id) throw new Error('Server nepotvrdil vytvoření dokumentu. Obnovte seznam před opakováním.');
+      setCreateDialogOpen(false);
+      toast({ title: config.singular + ' vytvořena' });
+      navigate(config.detailPath(data));
+    } catch (error) {
+      toast({ title: config.singular + ' se nepodařilo vytvořit', description: crmWorkflowErrorMessage(error), variant: 'destructive' });
+    } finally {
+      setSaving(false);
     }
-
-    const documentRows = itemsForTotals.map((item, index) => buildCrmDocumentItemPayload(item, data.id, index));
-    if (shouldInsertDocumentRows && documentRows.length > 0) {
-      await supabase.from('crm_commercial_document_items').insert(documentRows);
-    }
-
-    setSaving(false);
-    setCreateDialogOpen(false);
-    toast({ title: config.singular + ' vytvorena', description: 'Napojeno na OP ' + (opportunity.number || opportunity.title) + '.' });
-    navigate(config.detailPath(data || { number, type }));
   };
-
 
   const getSortedOpportunityItems = (opportunity) => (
     [...(opportunity?.items || opportunity?.opportunity_items || [])]
@@ -696,123 +593,32 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     return getSortedOpportunityItems(targetOpportunity);
   };
 
-  const replaceDocumentOwnItems = async (documentId, sourceItems) => {
-    const rows = sourceItems.map((item, index) => buildCrmDocumentItemPayload(item, documentId, index));
-    const rpcPayload = rows.map(({ document_id, ...item }) => item);
-    const { error: rpcError } = await supabase.rpc('replace_crm_document_items', {
-      p_document_id: documentId,
-      p_items: rpcPayload,
-    });
-    if (!rpcError) return null;
-    if (!isMissingCrmRpcError(rpcError)) return rpcError;
-
-    const { error: deleteError } = await supabase
-      .from('crm_commercial_document_items')
-      .delete()
-      .eq('document_id', documentId);
-    if (deleteError) return deleteError;
-
-    if (rows.length === 0) return null;
-    const { error: insertError } = await supabase
-      .from('crm_commercial_document_items')
-      .insert(rows);
-    return insertError || null;
-  };
-
-  const clearDocumentOwnItems = async (documentId) => {
-    const { error } = await supabase
-      .from('crm_commercial_document_items')
-      .delete()
-      .eq('document_id', documentId);
-    return error || null;
-  };
-
   const handleApplyDocumentRelation = async () => {
-    if (!selectedDocument || !canEdit) return;
-    const targetOpportunity = opportunities.find((opportunity) => opportunity.id === relationTargetOpportunityId);
-    if (!targetOpportunity) {
-      toast({ title: 'Vyberte cilovy obchodni pripad', variant: 'destructive' });
-      return;
-    }
-
-    const copyCurrentItems = relationItemMode === 'current-copy';
-    const sourceItems = buildRelationItems(targetOpportunity);
-    const totals = calculateCrmTotals(sourceItems);
+    if (!selectedDocument || !canEdit || saving || !relationTargetOpportunityId) return;
     setSaving(true);
-
-    if (relationAction === 'copy') {
-      const number = await allocateCrmNumber(supabase, type);
-      const { data, error } = await supabase
-        .from('crm_commercial_documents')
-        .insert({
-          opportunity_id: targetOpportunity.id,
-          subject_id: targetOpportunity.subject_id || selectedDocument.subject_id || null,
-          type,
-          status: 'draft',
-          number,
-          title: formatCommercialDocumentTitle(selectedDocument.title || config.singular),
-          issue_date: new Date().toISOString().slice(0, 10),
-          valid_until: selectedDocument.valid_until || null,
-          notes: selectedDocument.notes || null,
-          sync_items: !copyCurrentItems,
-          ...totals,
-        })
-        .select('id, number, type')
-        .single();
-
-      if (error) {
-        setSaving(false);
-        toast({ title: 'Kopii se nepodarilo vytvorit', description: error.message, variant: 'destructive' });
-        return;
-      }
-
-      if (copyCurrentItems) {
-        const itemError = await replaceDocumentOwnItems(data.id, sourceItems);
-        if (itemError) {
-          setSaving(false);
-          toast({ title: 'Kopie vznikla, ale polozky se nepodarilo zkopirovat', description: itemError.message, variant: 'destructive' });
-          return;
-        }
-      }
-
-      setSaving(false);
+    try {
+      const { data, error } = await supabase.rpc('relate_crm_commercial_document_atomic', {
+        p_document_id: selectedDocument.id,
+        p_target_opportunity_id: relationTargetOpportunityId,
+        p_action: relationAction,
+        p_item_mode: relationItemMode,
+        p_items: relationItemMode === 'current-copy'
+          ? selectedDocument.items.map((item, index) => {
+            const { document_id, ...row } = buildCrmDocumentItemPayload(item, selectedDocument.id, index);
+            return row;
+          }) : null,
+      });
+      if (error) throw error;
+      if (!data?.id) throw new Error('Server nepotvrdil změnu dokumentu. Obnovte seznam před opakováním.');
       setRelationDialogOpen(false);
-      toast({ title: 'Dokument zkopirovan', description: 'Kopie je napojena na OP ' + (targetOpportunity.number || targetOpportunity.title) + '.' });
-      navigate(config.detailPath(data || { number, type }));
-      return;
-    }
-
-    const { error: updateError } = await supabase
-      .from('crm_commercial_documents')
-      .update({
-        opportunity_id: targetOpportunity.id,
-        subject_id: targetOpportunity.subject_id || selectedDocument.subject_id || null,
-        sync_items: !copyCurrentItems,
-        ...totals,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', selectedDocument.id);
-
-    if (updateError) {
+      toast({ title: relationAction === 'copy' ? 'Dokument zkopírován' : 'Obchodní případ dokumentu změněn' });
+      if (relationAction === 'copy') navigate(config.detailPath(data));
+      else await fetchData();
+    } catch (error) {
+      toast({ title: 'Změnu dokumentu se nepodařilo uložit', description: crmWorkflowErrorMessage(error), variant: 'destructive' });
+    } finally {
       setSaving(false);
-      toast({ title: 'Napojeni OP se nepodarilo zmenit', description: updateError.message, variant: 'destructive' });
-      return;
     }
-
-    const itemError = copyCurrentItems
-      ? await replaceDocumentOwnItems(selectedDocument.id, sourceItems)
-      : await clearDocumentOwnItems(selectedDocument.id);
-
-    if (itemError) {
-      setSaving(false);
-      toast({ title: 'OP zmeneno, ale polozky se nepodarilo upravit', description: itemError.message, variant: 'destructive' });
-      return;
-    }
-
-    setSaving(false);
-    setRelationDialogOpen(false);
-    toast({ title: 'Obchodni pripad dokumentu zmenen', description: 'Dokument je napojen na OP ' + (targetOpportunity.number || targetOpportunity.title) + '.' });
-    fetchData();
   };
 
   const handleGenerateSelectedDocument = async (format = 'docx') => {
@@ -963,9 +769,9 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
             </div>
 
             <div className="grid gap-3 rounded-lg border bg-slate-50 p-3 text-sm sm:grid-cols-3">
-              <div><div className="text-xs uppercase text-muted-foreground">Polozky</div><div className="font-semibold text-slate-950">{sourceItems.length}</div></div>
-              <div><div className="text-xs uppercase text-muted-foreground">Bez DPH</div><div className="font-semibold text-slate-950">{formatCurrency(totals.total)}</div></div>
-              <div><div className="text-xs uppercase text-muted-foreground">S DPH</div><div className="font-semibold text-slate-950">{formatCurrency(Number(totals.total || 0) + Number(totals.tax_total || 0))}</div></div>
+              <div><div className="text-xs uppercase text-muted-foreground">Položky</div><div className="font-semibold text-slate-950">{copyCurrentItems ? sourceItems.length : 'Dle cílového OP'}</div></div>
+              <div><div className="text-xs uppercase text-muted-foreground">Bez DPH</div><div className="font-semibold text-slate-950">{copyCurrentItems ? formatCurrency(totals.total) : 'Přepočítá se při uložení'}</div></div>
+              <div><div className="text-xs uppercase text-muted-foreground">S DPH</div><div className="font-semibold text-slate-950">{copyCurrentItems ? formatCurrency(Number(totals.total || 0) + Number(totals.tax_total || 0)) : 'Přepočítá se při uložení'}</div></div>
             </div>
           </div>
 

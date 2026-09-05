@@ -17,6 +17,12 @@ class ErrorBoundary extends React.Component {
     this.setState({ errorInfo });
   }
 
+  componentDidUpdate(previousProps) {
+    if (this.state.hasError && previousProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: null, errorInfo: null });
+    }
+  }
+
   handleReset = () => {
     this.setState({ hasError: false, error: null, errorInfo: null });
     window.location.reload();

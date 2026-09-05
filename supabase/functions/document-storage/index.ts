@@ -1,6 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.30.0';
 import { corsHeaders } from '../_shared/cors.ts';
 import { fetchWithTimeout } from '../_shared/fetch.ts';
+import { assertActiveAccount } from '../_shared/accountStatus.ts';
+import { assertInvoiceFileDetached } from '../_shared/invoiceDeletionGuard.ts';
 
 type StorageAction = 'testConnection' | 'ensureFolder' | 'createUploadSession' | 'registerUploadedFile' | 'uploadFile' | 'downloadUrl' | 'listFiles' | 'deleteFile';
 type EntityType = 'project' | 'realizace' | 'product' | 'invoice';
@@ -478,6 +480,7 @@ Deno.serve(async (req: Request) => {
     const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: authError } = await admin.auth.getUser(token);
     if (authError || !user) return jsonResponse({ success: false, error: 'Invalid session.' }, 401);
+    await assertActiveAccount(admin, user.id);
 
     const body = await req.json();
     const action = body.action as StorageAction;
@@ -861,16 +864,22 @@ Deno.serve(async (req: Request) => {
     if (action === 'deleteFile') {
       if (!body.fileId) return jsonResponse({ success: false, error: 'File ID is required.' }, 400);
       const fileId = String(body.fileId);
-      const { data: registeredFile } = await admin
+      const { data: registeredFile, error: registryReadError } = await admin
         .from('document_storage_files')
-        .select('id, external_file_id')
+        .select('id, external_file_id, external_web_url')
         .eq('connection_id', connection.id)
         .eq('entity_type', entityType)
         .eq('entity_id', entityId)
         .eq('external_file_id', fileId)
         .maybeSingle();
+      if (registryReadError) throw Object.assign(new Error('Could not verify registered file ownership.'), { status: 503 });
       if (!registeredFile) return jsonResponse({ success: false, error: 'File is not registered for this entity.' }, 403);
       if (entityFolderMapping) await assertItemBelongsToEntityFolder(graphToken, target, fileId, entityFolderMapping);
+      if (entityType === 'invoice') {
+        await assertInvoiceFileDetached(admin, {
+          connectionId: String(connection.id), fileId, fileUrl: registeredFile.external_web_url,
+        });
+      }
       try {
         await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
       } catch (deleteError) {
