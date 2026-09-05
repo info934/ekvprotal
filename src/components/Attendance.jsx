@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import PageHeader from '@/components/ui/page-header';
 import AttendanceDialog from './AttendanceDialog';
+import AttendancePlanning from './AttendancePlanning';
 import { useSearchParams } from 'react-router-dom';
 import { attendanceEntryDate } from '@/lib/operationsHelpers';
 import { sendAttendanceApprovalRequestEmail } from '@/lib/email';
@@ -77,7 +78,8 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
   const monthKey = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth) ? requestedMonth : format(new Date(), 'yyyy-MM');
   const currentMonth = useMemo(() => new Date(`${monthKey}-01T12:00:00`), [monthKey]);
   const setCurrentMonth = date => setMonthParams(current => { const next = new URLSearchParams(current); next.set('month', format(date, 'yyyy-MM')); return next; });
-  const [viewMode, setViewMode] = useState('list');
+  const [viewMode, setViewMode] = useState('calendar');
+  const [calendarDay, setCalendarDay] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all'); // 'all', 'project', 'realization'
   const [hourlyRate, setHourlyRate] = useState(null);
   const [exporting, setExporting] = useState(false);
@@ -224,8 +226,9 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
   };
 
   const handleDayClick = (day) => {
+    setCalendarDay(format(day, 'yyyy-MM-dd'));
     if (!isEditable) {
-      toast({ title: "Nelze upravovat", description: "Docházka je již odeslána nebo schválena.", variant: "warning" });
+
       return;
     }
     setEditingRecord(null); // Clear editing record to indicate "New"
@@ -491,6 +494,7 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
       {viewMode === 'calendar' ? (
         <Card>
           <CardContent className="p-2 sm:p-6">
+            <p className="mb-4 text-sm text-slate-600">{isEditable ? 'Kliknutím na den přidáte odpracované hodiny. Záznamy vybraného dne najdete pod kalendářem.' : 'Měsíc je pouze pro čtení. Kliknutím na den zobrazíte jeho záznamy.'}</p>
             <div className="grid grid-cols-7 gap-1 text-center font-bold text-muted-foreground mb-4 text-sm">
               {['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'].map(d => <div key={d}>{d}</div>)}
             </div>
@@ -540,12 +544,12 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
                       {dayAttendance.length > 0 ? (
                         dayAttendance.slice(0, 3).map((rec, idx) => (
                           <div key={rec.id} className="text-[10px] leading-tight truncate px-1.5 py-1 bg-white rounded border border-slate-100 text-slate-600">
-                            {rec.projects?.code || rec.realizations?.name || '---'}
+                            {rec.projects?.code || rec.projects?.name || rec.realizations?.name || 'Bez zakázky'}
                           </div>
                         ))
                       ) : (
                         <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Plus className="w-6 h-6 text-slate-300" />
+                          {isEditable && <Plus className="w-6 h-6 text-slate-300" />}
                         </div>
                       )}
                       {dayAttendance.length > 3 && (
@@ -558,6 +562,7 @@ const MyAttendance = ({ memberId, isAdmin, attendanceEnabled }) => {
                 )
               })}
             </div>
+            {calendarDay?.startsWith(monthKey) && <section className="mt-5 border-t pt-5"><h3 className="mb-3 font-semibold">Záznamy dne {format(new Date(calendarDay + 'T12:00:00'), 'd. M. yyyy')}</h3><AttendanceRecordsTable records={filteredAttendance.filter(row => row.date.slice(0, 10) === calendarDay)} pending={pending} onEdit={isEditable ? record => { setEditingRecord(record); setIsAttendanceDialogOpen(true); } : null} onDelete={isEditable ? setDeletingRecord : null} empty="Pro tento den a filtr nejsou zapsané hodiny." /></section>}
           </CardContent>
         </Card>
       ) : (
@@ -682,14 +687,15 @@ const Attendance = () => {
           </div>
         </motion.div>
 
-        <Tabs value={canViewAdminTabs && ['approvals', 'submissions', 'global-attendance', ...(canViewReport ? ['reporting'] : [])].includes(searchParams.get('tab')) ? (searchParams.get('tab') === 'approvals' ? 'submissions' : searchParams.get('tab')) : 'my-attendance'} onValueChange={tab => setSearchParams(current => { const next = new URLSearchParams(current); next.set('tab', tab); return next; })} className="w-full">
+        <Tabs value={searchParams.get('tab') === 'planning' ? 'planning' : canViewAdminTabs && ['approvals', 'submissions', 'global-attendance', ...(canViewReport ? ['reporting'] : [])].includes(searchParams.get('tab')) ? (searchParams.get('tab') === 'approvals' ? 'submissions' : searchParams.get('tab')) : 'my-attendance'} onValueChange={tab => setSearchParams(current => { const next = new URLSearchParams(current); next.set('tab', tab); return next; })} className="w-full">
           <div className="glass-effect rounded-xl p-2 mb-6">
-            <TabsList className="w-full grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4">
+            <TabsList className="w-full grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5">
               <TabsTrigger value="my-attendance" className="flex items-center gap-2">
                 <Clock className="w-4 h-4" />
                 <span className="hidden sm:inline">Moje docházka</span>
                 <span className="sm:hidden">Docházka</span>
               </TabsTrigger>
+              <TabsTrigger value="planning"><Calendar className="mr-2 h-4 w-4" />Plán docházky</TabsTrigger>
               {canViewAdminTabs && (
                 <>
                   <TabsTrigger value="submissions" className="flex items-center gap-2">
@@ -712,6 +718,7 @@ const Attendance = () => {
             </TabsList>
           </div>
 
+          <TabsContent value="planning"><AttendancePlanning memberId={memberId} /></TabsContent>
           <TabsContent value="my-attendance" className="mt-6">
             <AttendanceLoadState loading={memberResource.loading} error={memberResource.error} onRetry={memberResource.refresh}>{memberResource.ready && <MyAttendance memberId={memberId} isAdmin={canViewAdminTabs} attendanceEnabled={attendanceEnabled} />}</AttendanceLoadState>
           </TabsContent>
