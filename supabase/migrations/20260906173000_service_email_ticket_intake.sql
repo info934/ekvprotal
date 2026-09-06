@@ -79,7 +79,7 @@ on conflict (document_type) do nothing;
 
 insert into public.app_settings(key, value) values
   ('service_inbox_enabled', 'true'),
-  ('service_inbox_mailbox', 'service@ekvproject.cz'),
+  ('service_inbox_mailbox', 'servis@ekvproject.cz'),
   ('service_inbox_poll_minutes', '5'),
   ('service_inbox_function_url', 'https://yurysbxxevtuvhrbmloc.supabase.co/functions/v1/service-email-intake')
 on conflict (key) do nothing;

@@ -88,7 +88,7 @@ const getSettings = async (admin: ReturnType<typeof createClient>) => {
   const values = Object.fromEntries((data || []).map(({ key, value }) => [key, value]));
   return {
     enabled: String(values.service_inbox_enabled || 'true').toLowerCase() === 'true',
-    mailbox: String(values.service_inbox_mailbox || 'service@ekvproject.cz').trim().toLowerCase(),
+    mailbox: String(values.service_inbox_mailbox || 'servis@ekvproject.cz').trim().toLowerCase(),
   };
 };
 

@@ -27,7 +27,7 @@ const SettingsPortal = () => {
   const [calendarName, setCalendarName] = useState('EKV Plánování');
   const [calendarId, setCalendarId] = useState('');
   const [serviceInboxEnabled, setServiceInboxEnabled] = useState(true);
-  const [serviceInboxMailbox, setServiceInboxMailbox] = useState('service@ekvproject.cz');
+  const [serviceInboxMailbox, setServiceInboxMailbox] = useState('servis@ekvproject.cz');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingCalendar, setTestingCalendar] = useState(false);
@@ -55,7 +55,7 @@ const SettingsPortal = () => {
         setCalendarName(values.planning_company_calendar_name || 'EKV Plánování');
         setCalendarId(values.planning_company_calendar_id || '');
         setServiceInboxEnabled(String(values.service_inbox_enabled || 'true').toLowerCase() === 'true');
-        setServiceInboxMailbox(values.service_inbox_mailbox || 'service@ekvproject.cz');
+        setServiceInboxMailbox(values.service_inbox_mailbox || 'servis@ekvproject.cz');
       }
       setLoading(false);
     };
@@ -178,7 +178,7 @@ const SettingsPortal = () => {
             <CardDescription>Nové zprávy se každých pět minut načtou jako tickety v modulu Servis. Z ticketu lze jedním krokem vytvořit servisní případ.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="serviceInboxMailbox">Microsoft 365 schránka</Label><Input id="serviceInboxMailbox" type="email" placeholder="service@ekvproject.cz" value={serviceInboxMailbox} onChange={(event) => setServiceInboxMailbox(event.target.value)} disabled={loading || saving} /></div>
+            <div className="space-y-2"><Label htmlFor="serviceInboxMailbox">Microsoft 365 schránka</Label><Input id="serviceInboxMailbox" type="email" placeholder="servis@ekvproject.cz" value={serviceInboxMailbox} onChange={(event) => setServiceInboxMailbox(event.target.value)} disabled={loading || saving} /></div>
             <label className="flex min-h-11 items-center gap-3 rounded-lg border p-3 text-sm font-medium"><input type="checkbox" className="h-5 w-5" checked={serviceInboxEnabled} onChange={(event) => setServiceInboxEnabled(event.target.checked)} disabled={loading || saving} />Automaticky vytvářet příchozí tickety</label>
             <p className="text-xs text-muted-foreground">Synchronizace e-maily nemaže ani neoznačuje jako přečtené. Opakované načtení nevytvoří duplicitní ticket.</p>
             <div className="flex flex-wrap gap-2"><Button onClick={handleSaveServiceInbox} disabled={loading || saving}><Save className="mr-2 h-4 w-4" />Uložit schránku</Button><Button variant="outline" onClick={handleTestServiceInbox} disabled={loading || saving || testingServiceInbox}><RefreshCw className={`mr-2 h-4 w-4 ${testingServiceInbox ? 'animate-spin' : ''}`} />Ověřit připojení</Button></div>
