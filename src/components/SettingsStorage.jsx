@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -38,6 +39,11 @@ const emptyTarget = {
   rootFolderId: '',
   rootFolderPath: '',
   structure: [],
+  projectFolderName: '',
+  organizeProjectsByYear: false,
+  activeFolderName: '',
+  completedFolderName: '',
+  completedStatuses: [],
   costInvoiceFolderPath: '',
   commercialContractFolderPath: '',
   customerInvoiceFolderPath: '',
@@ -48,6 +54,11 @@ const createDefaultTargets = () => Object.fromEntries(TARGETS.map(({ key }) => [
   {
     ...emptyTarget,
     structure: [...(DEFAULT_STRUCTURES[key] || [])],
+    projectFolderName: key === 'project' ? 'Projekty' : '',
+    organizeProjectsByYear: key === 'project',
+    activeFolderName: key === 'project' ? 'Aktivni' : '',
+    completedFolderName: key === 'project' ? 'Hotovo' : '',
+    completedStatuses: key === 'project' ? ['closed'] : [],
     costInvoiceFolderPath: key === 'project'
       ? '04_Fakturace/Nakladove faktury'
       : key === 'realizace'
@@ -86,6 +97,21 @@ const toForm = (connection) => {
       {
         ...emptyTarget,
         ...(config.targets?.[key] || {}),
+        projectFolderName: key === 'project'
+          ? (config.targets?.[key]?.projectFolderName || 'Projekty')
+          : '',
+        organizeProjectsByYear: key === 'project'
+          ? config.targets?.[key]?.organizeProjectsByYear !== false
+          : false,
+        activeFolderName: key === 'project'
+          ? (config.targets?.[key]?.activeFolderName || 'Aktivni')
+          : '',
+        completedFolderName: key === 'project'
+          ? (config.targets?.[key]?.completedFolderName || 'Hotovo')
+          : '',
+        completedStatuses: key === 'project' && Array.isArray(config.targets?.[key]?.completedStatuses) && config.targets[key].completedStatuses.length
+          ? config.targets[key].completedStatuses
+          : (key === 'project' ? ['closed'] : []),
         costInvoiceFolderPath: key === 'project'
           ? (config.targets?.[key]?.costInvoiceFolderPath || '04_Fakturace/Nakladove faktury')
           : key === 'realizace'
@@ -223,6 +249,19 @@ const SettingsStorage = () => {
       rootFolderId: form.targets[key].rootFolderId.trim(),
       rootFolderPath: form.targets[key].rootFolderPath.trim(),
       structure: form.targets[key].structure || [],
+      projectFolderName: key === 'project'
+        ? String(form.targets[key].projectFolderName || 'Projekty').trim().replace(/^\/+|\/+$/g, '')
+        : '',
+      organizeProjectsByYear: key === 'project' ? form.targets[key].organizeProjectsByYear !== false : false,
+      activeFolderName: key === 'project'
+        ? String(form.targets[key].activeFolderName || 'Aktivni').trim().replace(/^\/+|\/+$/g, '')
+        : '',
+      completedFolderName: key === 'project'
+        ? String(form.targets[key].completedFolderName || 'Hotovo').trim().replace(/^\/+|\/+$/g, '')
+        : '',
+      completedStatuses: key === 'project'
+        ? (form.targets[key].completedStatuses?.length ? form.targets[key].completedStatuses : ['closed'])
+        : [],
       costInvoiceFolderPath: key === 'project'
         ? String(form.targets[key].costInvoiceFolderPath || '04_Fakturace/Nakladove faktury').trim().replace(/^\/+|\/+$/g, '')
         : key === 'realizace'
@@ -395,6 +434,69 @@ const SettingsStorage = () => {
                         <Label htmlFor={`${target.key}-root`}>Kořenová cesta</Label>
                         <Input id={`${target.key}-root`} value={form.targets[target.key].rootFolderPath} onChange={(event) => updateTarget(target.key, 'rootFolderPath', event.target.value)} placeholder="EKVPortal" />
                       </div>
+                      {target.key === 'project' && (
+                        <div className="space-y-4 rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+                          <div>
+                            <Label>Třídění projektových složek</Label>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Nové i synchronizované projekty se zařadí podle roku a stavu. Přesun zachová obsah i odkazy na soubory.
+                            </p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`${target.key}-container`}>Hlavní složka projektů</Label>
+                            <Input
+                              id={`${target.key}-container`}
+                              value={form.targets[target.key].projectFolderName || ''}
+                              onChange={(event) => updateTarget(target.key, 'projectFolderName', event.target.value)}
+                              placeholder="Projekty"
+                            />
+                          </div>
+                          <label className="flex min-h-11 items-center justify-between gap-3 rounded-md border bg-white px-3 text-sm font-medium">
+                            Třídit projekty do složek podle roku
+                            <Switch
+                              checked={form.targets[target.key].organizeProjectsByYear !== false}
+                              onCheckedChange={(checked) => updateTarget(target.key, 'organizeProjectsByYear', checked)}
+                            />
+                          </label>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1.5">
+                              <Label htmlFor={`${target.key}-active-folder`}>Rozpracované projekty</Label>
+                              <Input
+                                id={`${target.key}-active-folder`}
+                                value={form.targets[target.key].activeFolderName || ''}
+                                onChange={(event) => updateTarget(target.key, 'activeFolderName', event.target.value)}
+                                placeholder="Aktivni"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor={`${target.key}-completed-folder`}>Dokončené projekty</Label>
+                              <Input
+                                id={`${target.key}-completed-folder`}
+                                value={form.targets[target.key].completedFolderName || ''}
+                                onChange={(event) => updateTarget(target.key, 'completedFolderName', event.target.value)}
+                                placeholder="Hotovo"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Stav pro přesun do Hotovo</Label>
+                            <Select
+                              value={form.targets[target.key].completedStatuses?.[0] || 'closed'}
+                              onValueChange={(value) => updateTarget(target.key, 'completedStatuses', [value])}
+                            >
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="ready_for_delivery">Připraveno k dodání</SelectItem>
+                                <SelectItem value="delivered">Dodáno</SelectItem>
+                                <SelectItem value="closed">Uzavřeno</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="rounded-md bg-white px-3 py-2 font-mono text-[11px] leading-5 text-slate-600">
+                            {(form.targets[target.key].rootFolderPath || 'EKVPortal')} / {(form.targets[target.key].projectFolderName || 'Projekty')} / {form.targets[target.key].organizeProjectsByYear === false ? '' : `${new Date().getFullYear()} / `}{(form.targets[target.key].activeFolderName || 'Aktivni')} / OP-26-001 - Název projektu
+                          </div>
+                        </div>
+                      )}
                       {target.key !== 'invoice' && (
                         <div className="space-y-1.5">
                           <Label htmlFor={`${target.key}-structure`}>Struktura nových složek</Label>

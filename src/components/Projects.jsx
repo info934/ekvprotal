@@ -52,6 +52,7 @@ import {
   calculateProjectProjectionStats,
   getEmptyProjectProjectionStats,
 } from '@/domain/projectProjections';
+import { initializeProjectWorkspace } from '@/lib/documentStorageService';
 
 const chartPalette = ['#64748b', '#2563eb', '#f59e0b', '#10b981', '#8b5cf6'];
 const projectListStatuses = Object.keys(projectStatusConfig);
@@ -424,6 +425,19 @@ const Projects = () => {
 
       if (error) throw error;
 
+      let storageDescription = '';
+      try {
+        const workspace = await initializeProjectWorkspace({ project: data });
+        if (workspace?.moved) storageDescription = ' Složka dokumentace byla automaticky přesunuta.';
+      } catch (storageError) {
+        console.warn('Project folder status synchronization failed', storageError);
+        toast({
+          title: 'Stav je uložený, složku se nepodařilo přesunout',
+          description: 'Přesun lze bezpečně zopakovat v detailu projektu na kartě Dokumenty.',
+          variant: 'warning',
+        });
+      }
+
       setProjects((prev) => {
         const nextProjects = prev.map((project) =>
           project.id === projectId ? { ...project, ...data } : project
@@ -434,7 +448,7 @@ const Projects = () => {
 
       toast({
         title: 'Stav projektu aktualizován',
-        description: projectStatusConfig[data?.status || nextStatus]?.label || data?.status || nextStatus,
+        description: `${projectStatusConfig[data?.status || nextStatus]?.label || data?.status || nextStatus}.${storageDescription}`.trim(),
       });
     } catch (error) {
       const msg = parseApiError(error);

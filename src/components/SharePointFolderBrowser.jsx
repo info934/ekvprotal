@@ -52,6 +52,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
   const [uploadProgress, setUploadProgress] = useState(null);
   const [folderMissing, setFolderMissing] = useState(false);
   const [mappingMetadata, setMappingMetadata] = useState({});
+  const [mappedFolderPath, setMappedFolderPath] = useState('');
   const [error, setError] = useState('');
 
   const currentFolder = breadcrumbs[breadcrumbs.length - 1] || rootFolder;
@@ -109,6 +110,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
         setBreadcrumbs([]);
         setItems([]);
         setMappingMetadata({});
+        setMappedFolderPath('');
         setFolderMissing(true);
         setLoading(false);
         return;
@@ -116,6 +118,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
 
       setConnection(activeConnection);
       setMappingMetadata(mapping.metadata || {});
+      setMappedFolderPath(mapping.folder_path || '');
       setRootFolder(folder);
       setBreadcrumbs([folder]);
       await loadFolder(folder, activeConnection);
@@ -296,6 +299,11 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
               </span>
             )}
           </div>
+          {mappedFolderPath && (
+            <p className="mt-1 max-w-3xl truncate font-mono text-[11px] text-slate-500" title={mappedFolderPath}>
+              {mappedFolderPath}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {currentFolder && (

@@ -43,7 +43,7 @@ import EkvLoader from '@/components/ui/ekv-loader';
 import FinancialHealthAlert from '@/components/FinancialHealthAlert';
 import BillingTracker from '@/components/BillingTracker';
 import BillingOverviewSummary from '@/components/finance/BillingOverviewSummary';
-import { deleteStoredFile, uploadProjectCostInvoice } from '@/lib/documentStorageService';
+import { deleteStoredFile, initializeProjectWorkspace, uploadProjectCostInvoice } from '@/lib/documentStorageService';
 import { downloadInvoiceFromStorage } from '@/lib/downloadInvoiceFromStorage';
 import PlanningBoard from '@/components/PlanningBoard';
 import { FinanceAmount, FinanceDefinitionNote, FinanceMetricStrip } from '@/components/finance/FinanceWorkspace';
@@ -208,7 +208,22 @@ const ProjectDetail = () => {
             });
             if (error) throw error;
             setProject((prev) => (prev ? { ...prev, ...data } : prev));
-            toast({ title: 'Stav projektu aktualizován', description: projectStatusConfig[data?.status || nextStatus]?.label || data?.status || nextStatus });
+            let storageDescription = '';
+            try {
+                const workspace = await initializeProjectWorkspace({ project: data });
+                if (workspace?.moved) storageDescription = ' Složka dokumentace byla automaticky přesunuta.';
+            } catch (storageError) {
+                console.warn('Project folder status synchronization failed', storageError);
+                toast({
+                    title: 'Stav je uložený, složku se nepodařilo přesunout',
+                    description: 'Přesun lze bezpečně zopakovat na kartě Dokumenty tlačítkem Synchronizovat údaje.',
+                    variant: 'warning',
+                });
+            }
+            toast({
+                title: 'Stav projektu aktualizován',
+                description: `${projectStatusConfig[data?.status || nextStatus]?.label || data?.status || nextStatus}.${storageDescription}`.trim(),
+            });
         } catch (error) {
             toast({ title: 'Chyba změny stavu', description: error.message, variant: 'destructive' });
         } finally {
