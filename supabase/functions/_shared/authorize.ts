@@ -53,20 +53,37 @@ export const authorizeFunctionRequest = async (
   }
 
   if (options.module) {
-    const { data: permission, error: permissionError } = await admin
-      .from("role_permissions")
-      .select("can_read, can_edit, can_admin")
-      .eq("role", role)
-      .eq("module", options.module)
-      .maybeSingle();
-    if (permissionError) {
+    const [roleResult, overrideResult] = await Promise.all([
+      admin
+        .from("role_permissions")
+        .select("can_read, can_edit, can_admin")
+        .eq("role", role)
+        .eq("module", options.module)
+        .maybeSingle(),
+      admin
+        .from("member_permission_overrides")
+        .select("access_level, expires_at")
+        .eq("member_id", member.id)
+        .eq("module", options.module)
+        .maybeSingle(),
+    ]);
+    if (roleResult.error || overrideResult.error) {
       throw Object.assign(new Error("Could not verify permissions."), { status: 503 });
     }
-    const allowed = options.level === "admin"
-      ? permission?.can_admin
-      : options.level === "edit"
-        ? permission?.can_edit || permission?.can_admin
-        : permission?.can_read || permission?.can_edit || permission?.can_admin;
+    const override = overrideResult.data;
+    const overrideActive = override && (!override.expires_at || new Date(override.expires_at).getTime() > Date.now());
+    const overrideRanks: Record<string, number> = { none: 0, read: 1, edit: 2, admin: 3 };
+    const rank = overrideActive
+      ? (overrideRanks[String(override.access_level)] ?? 0)
+      : roleResult.data?.can_admin
+        ? 3
+        : roleResult.data?.can_edit
+          ? 2
+          : roleResult.data?.can_read
+            ? 1
+            : 0;
+    const required = options.level === "admin" ? 3 : options.level === "edit" ? 2 : 1;
+    const allowed = rank >= required;
     if (!allowed) throw Object.assign(new Error("Permission denied."), { status: 403 });
   }
 

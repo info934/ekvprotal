@@ -144,6 +144,13 @@ serve(async (req) => {
     }
 
     const isAdmin = adminRoleData === 'admin'
+    const { data: settingsAdminPermission, error: permissionError } = await authenticatedSupabase
+      .rpc('has_permission', { p_module: 'settings', p_level: 'can_admin' })
+    if (permissionError) {
+      console.error('Permission check error:', permissionError)
+      return jsonResponse({ error: 'Could not verify user permissions.' }, 500)
+    }
+    const canManageUsers = isAdmin || settingsAdminPermission === true
     const actorEmail = authUser.email || authUser.user_metadata?.full_name || authUser.id
 
     const logAdminAction = async (adminAction: string, targetUserId: string | null, targetEmail: string | null, beforeState: unknown, afterState: unknown, details: Record<string, unknown> = {}) => {
@@ -172,7 +179,7 @@ serve(async (req) => {
     }
 
     if (action === 'list_users') {
-      if (!isAdmin) return jsonResponse({ error: 'Access denied' }, 403)
+      if (!canManageUsers) return jsonResponse({ error: 'Access denied' }, 403)
 
       const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers()
       if (listError) throw listError
@@ -223,7 +230,7 @@ serve(async (req) => {
       return jsonResponse({ users: usersWithDetails, roles: (userRoles || []).map((r) => r.role_name) })
     }
 
-    if (!isAdmin) return jsonResponse({ error: 'Access denied: Admin role required for this action.' }, 403)
+    if (!canManageUsers) return jsonResponse({ error: 'Access denied: User administration permission required for this action.' }, 403)
 
     const upsertAccountStatus = async (userId: string, status: 'active' | 'disabled', reason?: string) => {
       const payload = status === 'disabled'

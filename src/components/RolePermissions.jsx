@@ -10,23 +10,7 @@ import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
 import { createClientId } from '@/lib/id';
 import { cn } from '@/lib/utils';
-
-const modules = [
-    { key: 'dashboard', name: 'Přehled' },
-    { key: 'projects', name: 'Projekty' },
-    { key: 'tasks', name: 'Úkoly' },
-    { key: 'attendance', name: 'Docházka' },
-    { key: 'documents', name: 'Dokumenty' },
-    { key: 'crm', name: 'CRM' },
-    { key: 'subjects', name: 'Subjekty' },
-    { key: 'engineering', name: 'Inženýring' },
-    { key: 'members', name: 'Členové' },
-    { key: 'payouts', name: 'Výplaty' },
-    { key: 'reports', name: 'Reporty' },
-    { key: 'settings', name: 'Nastavení' },
-    { key: 'realizace', name: 'Realizace' },
-    { key: 'service', name: 'Servis' },
-];
+import { PERMISSION_MODULES } from '@/lib/permissionCatalog';
 
 const permissionLevels = [
     { key: 'can_read', label: 'Čtení', description: 'Vidí modul a záznamy', icon: Eye },
@@ -221,7 +205,7 @@ const RolePermissions = () => {
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {modules.map(module => {
+                                            {PERMISSION_MODULES.map(module => {
                                                 const p = permissions.find(perm => perm.role === selectedRole.role_name && perm.module === module.key) || {};
                                                 return (
                                                     <TableRow key={module.key}>

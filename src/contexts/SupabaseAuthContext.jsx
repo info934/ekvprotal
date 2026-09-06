@@ -266,36 +266,14 @@ export const AuthProvider = ({ children }) => {
         setMemberId(null);
       }
 
-      let finalPermissions = {};
+      const permsData = await retryOperation(async () => {
+        const { data, error } = await supabase.rpc('get_permissions', { p_role: role })
+          .abortSignal(requestSignal());
 
-      if (adminStatus) {
-        finalPermissions = {
-          dashboard: { can_read: true, can_edit: true, can_admin: true },
-          projects: { can_read: true, can_edit: true, can_admin: true },
-          tasks: { can_read: true, can_edit: true, can_admin: true },
-          attendance: { can_read: true, can_edit: true, can_admin: true },
-          documents: { can_read: true, can_edit: true, can_admin: true },
-          crm: { can_read: true, can_edit: true, can_admin: true },
-          subjects: { can_read: true, can_edit: true, can_admin: true },
-          engineering: { can_read: true, can_edit: true, can_admin: true },
-          members: { can_read: true, can_edit: true, can_admin: true },
-          payouts: { can_read: true, can_edit: true, can_admin: true },
-          finance: { can_read: true, can_edit: true, can_admin: true },
-          reports: { can_read: true, can_edit: true, can_admin: true },
-          settings: { can_read: true, can_edit: true, can_admin: true },
-          realizace: { can_read: true, can_edit: true, can_admin: true },
-        };
-      } else {
-        const permsData = await retryOperation(async () => {
-          const { data, error } = await supabase.rpc('get_permissions', { p_role: role })
-            .abortSignal(requestSignal());
-
-          if (error) throw error;
-          return data;
-        });
-
-        finalPermissions = permsData || {};
-      }
+        if (error) throw error;
+        return data;
+      });
+      const finalPermissions = permsData || {};
 
       assertCurrentRun();
       setPermissions(finalPermissions);
@@ -453,6 +431,28 @@ export const AuthProvider = ({ children }) => {
       subscription?.unsubscribe();
     };
   }, [clearState, loadPermissionsForUser]);
+
+  useEffect(() => {
+    if (!user?.id || !memberId) return undefined;
+
+    const channel = supabase
+      .channel(`permission-refresh-${memberId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'member_permission_overrides', filter: `member_id=eq.${memberId}` },
+        () => void loadPermissionsForUser(user, { foreground: false, invalidateCache: true })
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'members', filter: `id=eq.${memberId}` },
+        () => void loadPermissionsForUser(user, { foreground: false, invalidateCache: true })
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadPermissionsForUser, memberId, user]);
 
   const hasPermission = useCallback((module, level = 'can_read') => {
     if (isAdmin) return true;

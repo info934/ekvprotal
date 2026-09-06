@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   Shield,
+  SlidersHorizontal,
   Trash2,
   UserCheck,
   UserCog,
@@ -50,6 +51,7 @@ import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import UserPermissionDialog from '@/components/UserPermissionDialog';
 
 const STATUS_LABELS = {
   active: 'Aktivní',
@@ -77,17 +79,19 @@ const getDisplayName = (user) => user?.user_metadata?.full_name || user?.member_
 
 const UserManagement = () => {
   const { toast } = useToast();
-  const { user: currentUser, isAdmin } = useAuth();
+  const { user: currentUser, isAdmin, hasPermission } = useAuth();
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [availableMembers, setAvailableMembers] = useState([]);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [permissionUser, setPermissionUser] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(false);
+  const canManageUsers = isAdmin || hasPermission('settings', 'can_admin');
 
   const invokeFunction = useCallback(async (payload) => invokeWithTimeout(supabase, 'manage-users', { body: payload }), []);
 
@@ -187,7 +191,7 @@ const UserManagement = () => {
             <Button variant="outline" onClick={fetchUsers} disabled={loading} className="w-full sm:w-auto">
               <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} /> Obnovit
             </Button>
-            <Button onClick={() => setIsInviteOpen(true)} disabled={!isAdmin} className="w-full sm:w-auto">
+            <Button onClick={() => setIsInviteOpen(true)} disabled={!canManageUsers} className="w-full sm:w-auto">
               <UserPlus className="mr-2 h-4 w-4" /> Pozvat uživatele
             </Button>
           </>
@@ -291,7 +295,7 @@ const UserManagement = () => {
                     {user.account_status_reason && <p className="mt-1 max-w-[220px] truncate text-xs text-slate-500">{user.account_status_reason}</p>}
                   </TableCell>
                   <TableCell>
-                    <Select value={user.role || ''} onValueChange={(value) => handleRoleChange(user, value)} disabled={!isAdmin || isCurrentUser || !user.is_member || isDisabled}>
+                    <Select value={user.role || ''} onValueChange={(value) => handleRoleChange(user, value)} disabled={!canManageUsers || isCurrentUser || !user.is_member || isDisabled}>
                       <SelectTrigger className="h-9 w-44"><SelectValue placeholder="Bez role" /></SelectTrigger>
                       <SelectContent>
                         {roles.map((role) => <SelectItem key={role} value={role}>{roleLabel(role)}</SelectItem>)}
@@ -314,7 +318,7 @@ const UserManagement = () => {
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-9 w-9" disabled={!isAdmin}>
+                        <Button variant="outline" size="icon" className="h-9 w-9" disabled={!canManageUsers}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -322,6 +326,9 @@ const UserManagement = () => {
                         <DropdownMenuLabel>{user.email}</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => setSelectedUser(user)}><Eye className="mr-2 h-4 w-4" /> Detail účtu</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setPermissionUser(user)} disabled={!user.is_member}>
+                          <SlidersHorizontal className="mr-2 h-4 w-4" /> Nastavit přístupy
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => runUserAction('reset_password', { userId: user.id, email: user.email }, 'Reset hesla byl odeslán.') }><KeyRound className="mr-2 h-4 w-4" /> Poslat reset hesla</DropdownMenuItem>
                         {user.account_status === 'invited' && (
                           <DropdownMenuItem onClick={() => runUserAction('resend_invite', { userId: user.id, email: user.email }, 'Pozvánka byla znovu odeslána.') }><Mail className="mr-2 h-4 w-4" /> Znovu poslat pozvánku</DropdownMenuItem>
@@ -363,6 +370,7 @@ const UserManagement = () => {
       />
 
       <UserDetailDialog user={selectedUser} open={!!selectedUser} onOpenChange={(open) => !open && setSelectedUser(null)} />
+      <UserPermissionDialog user={permissionUser} open={!!permissionUser} onOpenChange={(open) => !open && setPermissionUser(null)} />
 
       <ConfirmUserActionDialog
         action={confirmAction}
