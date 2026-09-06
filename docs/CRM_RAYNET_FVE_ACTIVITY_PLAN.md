@@ -14,9 +14,12 @@ Převést ověřený FVE obchodní postup z Raynetu do EKV Portálu a sjednotit 
 - [x] Přidat vytváření a editaci aktivit do detailu obchodního případu.
 - [x] Přidat týmový přehled aktivit a cílů.
 - [x] Přidat odeslání pozvánky a synchronizaci události přes Microsoft Graph.
-- [ ] Po zpřístupnění Raynetu provést inventuru typů OP, vlastních polí, stavů a aktivit.
-- [ ] Doplnit přesné Raynet → EKV mapování a jednorázový import.
-- [ ] Ověřit migrace, RLS, build, UI a připravit bezpečný rollout.
+- [x] Provést inventuru vzorového FVE případu a pokrýt přes oficiální API typy OP, vlastní pole, stavy, uživatele a aktivity.
+- [x] Doplnit administrační mapování, náhled bez zápisu a transakční idempotentní import Raynet → EKV.
+- [x] Doplnit Raynet-inspirované účastníky OP a neměnný audit změn.
+- [x] Doplnit měsíční kalendář aktivit a filtrování podle obchodníka a typu.
+- [x] Ověřit migrace, RLS, build a UI.
+- [ ] Před produkčním rolloutem vytvořit a ověřit aktuální zálohu databáze.
 
 ## Raynet mapování
 
@@ -33,4 +36,4 @@ Raynet zůstane zdrojem pro počáteční převod. Do EKV se budou mapovat zejm�
 | Nabídka / objednávka | `crm_commercial_documents` a jejich verze |
 | Vlastník OP | `owner_member_id` |
 
-Přístupové údaje ani exporty se neukládají do repozitáře. Přesné mapování se uzavře až nad skutečnou konfigurací Raynetu.
+Přístupové údaje ani exporty se neukládají do repozitáře. Mapování vychází ze skutečné konfigurace instance `ekvproject` a před ostrým importem se ještě potvrdí v administračním náhledu.

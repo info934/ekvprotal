@@ -14,6 +14,7 @@ export default [
 			'fa_portal/**',
 			'backups/**',
 			'vite.config.js',
+			'vite.config.js.timestamp-*.mjs',
 		],
 	},
 	{

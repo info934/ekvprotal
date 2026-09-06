@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FileText, Plus, Save, SlidersHorizontal, Target, Trash2 } from 'lucide-react';
+import { Database, FileText, Plus, Save, SlidersHorizontal, Target, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ import {
   upsertCrmNumberingSettings,
 } from '@/lib/crmNumbering';
 import OrderTemplateManager from '@/components/OrderTemplateManager';
+import RaynetImportManager from '@/components/RaynetImportManager';
 
 const DEFAULT_STAGE_CONFIG = [
   { value: 'lead', label: 'Lead', color: 'bg-slate-100 text-slate-700 border-slate-200', probability: 10, sort_order: 10, is_active: true, is_closed: false },
@@ -188,6 +189,11 @@ const SettingsCRM = () => {
       title: 'Volitelná pole OP',
       saveLabel: 'Uložit volitelná pole',
       description: 'Uloží sekce a pole pro detail obchodního případu a dokumentové šablony.',
+    },
+    integrations: {
+      title: 'Raynet import',
+      saveLabel: '',
+      description: 'Připojení, mapování, náhled a řízený import původních CRM dat.',
     },
   }[activeSection];
 
@@ -494,6 +500,7 @@ const SettingsCRM = () => {
             ['pipeline', Target, 'Pipeline'],
             ['products', SlidersHorizontal, 'Produkty'],
             ['customFields', SlidersHorizontal, 'Volitelna pole OP'],
+            ['integrations', Database, 'Raynet import'],
           ].map(([value, Icon, label]) => (
             <TabsTrigger
               key={value}
@@ -789,8 +796,13 @@ const SettingsCRM = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="integrations" className="space-y-6">
+          <RaynetImportManager />
+        </TabsContent>
       </Tabs>
 
+      {activeSection !== 'integrations' && (
       <div className="sticky bottom-4 z-10 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-sm font-semibold text-slate-950">{activeSectionMeta.title}</div>
@@ -808,6 +820,7 @@ const SettingsCRM = () => {
         </Button>
         </div>
       </div>
+      )}
     </div>
   );
 };

@@ -28,6 +28,9 @@ const crmCommercialResponseFunction = read('supabase/functions/respond-crm-comme
 const crmCommercialReminderFunction = read('supabase/functions/send-crm-commercial-reminders/index.ts');
 const crmActivityMigration = read('supabase/migrations/20260906110000_crm_sales_activity_tracking.sql');
 const crmActivityCalendarFunction = read('supabase/functions/crm-activity-calendar/index.ts');
+const raynetImportMigration = read('supabase/migrations/20260906120000_crm_raynet_import_staging.sql');
+const raynetImportFunction = read('supabase/functions/raynet-crm-import/index.ts');
+const crmParticipantAuditMigration = read('supabase/migrations/20260906130000_crm_opportunity_participants_audit.sql');
 
 assert(/enable_signup\s*=\s*false/.test(config), 'Public signup must remain disabled.');
 for (const functionName of [
@@ -74,6 +77,17 @@ assert(crmActivityCalendarFunction.includes("authorizeFunctionRequest(req, { mod
 assert(!crmActivityCalendarFunction.includes('activity.meeting_minutes'), 'Private CRM meeting minutes must not be copied into external invitations.');
 assert(crmActivityMigration.includes("and p.can_admin"), 'Team sales performance and goal administration must require CRM admin permission.');
 assert(crmActivityMigration.includes('alter table public.crm_activity_events enable row level security'), 'CRM activity audit events must use RLS.');
+assert(/\[functions\.raynet-crm-import\]\s+verify_jwt\s*=\s*true/m.test(config), 'Raynet CRM import must require a JWT.');
+assert(raynetImportFunction.includes("authorizeFunctionRequest(req, { module: 'crm', level: 'admin' })"), 'Raynet CRM import must require CRM administrator permission.');
+assert(!/api_key\s+text|password\s+text/i.test(raynetImportMigration), 'Raynet credentials must not be persisted in import tables.');
+assert(raynetImportMigration.includes('alter table public.crm_import_rows enable row level security'), 'Raynet staging rows must use RLS.');
+assert(raynetImportMigration.includes('pg_advisory_xact_lock'), 'Raynet import apply must be serialized per batch.');
+assert(raynetImportMigration.includes('apply_raynet_crm_import'), 'Raynet import must use one server-side transactional apply function.');
+assert(raynetImportFunction.includes('/businessCase/${encodeURIComponent(clean(item.id))}/'), 'Raynet import must read opportunity details so custom FVE fields are included.');
+assert(raynetImportFunction.includes('businessCase[IN]'), 'Raynet activity import must filter activities to selected opportunities at the provider.');
+assert(crmParticipantAuditMigration.includes('alter table public.crm_opportunity_participants enable row level security'), 'CRM opportunity participants must use RLS.');
+assert(crmParticipantAuditMigration.includes('alter table public.crm_opportunity_events enable row level security'), 'CRM opportunity audit events must use RLS.');
+assert(crmParticipantAuditMigration.includes('after insert or update or delete on public.crm_opportunities'), 'CRM opportunity changes must be audited by a database trigger.');
 
 if (failures.length) {
   console.error('Security invariant checks failed:');
