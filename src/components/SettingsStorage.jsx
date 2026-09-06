@@ -98,7 +98,9 @@ const toForm = (connection) => {
         ...emptyTarget,
         ...(config.targets?.[key] || {}),
         projectFolderName: key === 'project'
-          ? (config.targets?.[key]?.projectFolderName || 'Projekty')
+          ? (Object.prototype.hasOwnProperty.call(config.targets?.[key] || {}, 'projectFolderName')
+            ? config.targets[key].projectFolderName
+            : 'Projekty')
           : '',
         organizeProjectsByYear: key === 'project'
           ? config.targets?.[key]?.organizeProjectsByYear !== false
@@ -250,7 +252,7 @@ const SettingsStorage = () => {
       rootFolderPath: form.targets[key].rootFolderPath.trim(),
       structure: form.targets[key].structure || [],
       projectFolderName: key === 'project'
-        ? String(form.targets[key].projectFolderName || 'Projekty').trim().replace(/^\/+|\/+$/g, '')
+        ? String(form.targets[key].projectFolderName ?? '').trim().replace(/^\/+|\/+$/g, '')
         : '',
       organizeProjectsByYear: key === 'project' ? form.targets[key].organizeProjectsByYear !== false : false,
       activeFolderName: key === 'project'
@@ -450,6 +452,7 @@ const SettingsStorage = () => {
                               onChange={(event) => updateTarget(target.key, 'projectFolderName', event.target.value)}
                               placeholder="Projekty"
                             />
+                            <p className="text-xs text-muted-foreground">Ponechte prázdné, pokud je připojená knihovna určená jen pro projekty.</p>
                           </div>
                           <label className="flex min-h-11 items-center justify-between gap-3 rounded-md border bg-white px-3 text-sm font-medium">
                             Třídit projekty do složek podle roku
@@ -493,7 +496,7 @@ const SettingsStorage = () => {
                             </Select>
                           </div>
                           <div className="rounded-md bg-white px-3 py-2 font-mono text-[11px] leading-5 text-slate-600">
-                            {(form.targets[target.key].rootFolderPath || 'EKVPortal')} / {(form.targets[target.key].projectFolderName || 'Projekty')} / {form.targets[target.key].organizeProjectsByYear === false ? '' : `${new Date().getFullYear()} / `}{(form.targets[target.key].activeFolderName || 'Aktivni')} / OP-26-001 - Název projektu
+                            {[form.targets[target.key].rootFolderPath, form.targets[target.key].projectFolderName, form.targets[target.key].organizeProjectsByYear === false ? '' : new Date().getFullYear(), form.targets[target.key].activeFolderName || 'Aktivni', 'OP-26-001 - Název projektu'].filter((segment) => String(segment || '').trim()).join(' / ')}
                           </div>
                         </div>
                       )}

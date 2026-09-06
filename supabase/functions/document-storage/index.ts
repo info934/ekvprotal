@@ -589,8 +589,11 @@ const getServerEntityFolderPath = async (
   const statusFolder = completedStatuses.includes(String(data.status || ''))
     ? (projectTarget.completedFolderName || 'Hotovo')
     : (projectTarget.activeFolderName || 'Aktivni');
+  const projectFolderName = Object.prototype.hasOwnProperty.call(projectTarget, 'projectFolderName')
+    ? String(projectTarget.projectFolderName || '')
+    : 'Projekty';
   return normalizePath(
-    projectTarget.projectFolderName || 'Projekty',
+    projectFolderName,
     projectTarget.organizeProjectsByYear === false ? '' : year,
     statusFolder,
     label || data.id,

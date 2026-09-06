@@ -344,6 +344,7 @@ const projectYear = (project = {}) => {
 export const buildProjectWorkspacePreview = ({ project = {}, connection, folderName = '' }) => {
   const config = connection?.config || {};
   const target = config.targets?.project || {};
+  const hasProjectFolderName = Object.prototype.hasOwnProperty.call(target, 'projectFolderName');
   const code = normalizeFolderCode(project.code) || 'KÓD-PROJEKTU';
   const name = normalizeFolderName(folderName) || normalizeFolderName(project.name) || 'Název projektu';
   const completedStatuses = Array.isArray(target.completedStatuses) && target.completedStatuses.length
@@ -354,7 +355,7 @@ export const buildProjectWorkspacePreview = ({ project = {}, connection, folderN
     : (target.activeFolderName || 'Aktivni');
   const segments = [
     target.rootFolderPath ?? config.rootFolderPath ?? 'EKVPortal',
-    target.projectFolderName || 'Projekty',
+    hasProjectFolderName ? target.projectFolderName : 'Projekty',
     target.organizeProjectsByYear === false ? '' : projectYear(project),
     statusFolder,
     [code, name].filter(Boolean).join(' - '),
