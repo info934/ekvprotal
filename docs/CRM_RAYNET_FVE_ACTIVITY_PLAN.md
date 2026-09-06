@@ -19,7 +19,11 @@ Převést ověřený FVE obchodní postup z Raynetu do EKV Portálu a sjednotit 
 - [x] Doplnit Raynet-inspirované účastníky OP a neměnný audit změn.
 - [x] Doplnit měsíční kalendář aktivit a filtrování podle obchodníka a typu.
 - [x] Ověřit migrace, RLS, build a UI.
-- [ ] Před produkčním rolloutem vytvořit a ověřit aktuální zálohu databáze.
+- [x] Před produkčním rolloutem vytvořit a ověřit aktuální zálohu databáze.
+- [x] Nasadit databázové migrace, Edge Functions a produkční frontend.
+- [x] Ověřit produkční kontejner, interní HTTP odpověď a konfiguraci Nginx.
+- [ ] Otevřít na Cloud Gateway Ultra veřejné TCP porty 80 a 443 na `192.168.1.180`, vystavit Let's Encrypt certifikát a ověřit přístup mimo LAN.
+- [ ] V administračním náhledu provést první ostrý import s dočasným Raynet API klíčem.
 
 ## Raynet mapování
 
