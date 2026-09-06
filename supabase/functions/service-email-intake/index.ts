@@ -36,13 +36,13 @@ const getGraphToken = async () => {
   return String((await response.json()).access_token || '');
 };
 
-const tokenRoles = (token: string) => {
+const tokenClaims = (token: string) => {
   try {
     const encoded = token.split('.')[1];
     const normalized = encoded.replaceAll('-', '+').replaceAll('_', '/').padEnd(Math.ceil(encoded.length / 4) * 4, '=');
     const payload = JSON.parse(atob(normalized));
-    return Array.isArray(payload.roles) ? payload.roles.map(String) : [];
-  } catch { return []; }
+    return { roles: Array.isArray(payload.roles) ? payload.roles.map(String) : [], clientId: String(payload.appid || payload.azp || '') };
+  } catch { return { roles: [], clientId: '' }; }
 };
 
 const graphJson = async (token: string, path: string) => {
@@ -211,19 +211,21 @@ Deno.serve(async (req: Request) => {
     if (!settings.enabled && body.action !== 'test') return json({ success: true, disabled: true, mailbox });
 
     const token = await getGraphToken();
-    const roles = tokenRoles(token);
+    const { roles, clientId } = tokenClaims(token);
     if (!roles.includes('Mail.Read')) {
-      throw Object.assign(new Error('Aplikaci Microsoft Graph chybí oprávnění Mail.Read (Application) se souhlasem administrátora.'), { status: 403, roles });
+      throw Object.assign(new Error('Aplikaci Microsoft Graph chybí oprávnění Mail.Read (Application) se souhlasem administrátora.'), { status: 403, roles, clientId });
     }
     const inbox = await graphJson(token, `/users/${encodeURIComponent(mailbox)}/mailFolders/inbox?$select=id,displayName,totalItemCount,unreadItemCount`);
-    if (body.action === 'test') return json({ success: true, mailbox, inbox, roles });
+    if (body.action === 'test') return json({ success: true, mailbox, inbox, roles, clientId });
     const result = await processMailbox(admin, token, mailbox);
     return json({ success: true, ...result });
   } catch (error) {
     console.error('[service-email-intake]', error);
     if (mailbox) await admin.from('service_inbox_state').upsert({
-      mailbox_address: mailbox, last_error: error?.message || 'Synchronizace selhala.', last_result: { failedAt: new Date().toISOString() },
+      mailbox_address: mailbox, last_error: error?.message || 'Synchronizace selhala.', last_result: {
+        failedAt: new Date().toISOString(), roles: error?.roles || [], clientId: error?.clientId || null,
+      },
     });
-    return json({ success: false, error: error?.message || 'Příjem servisních e-mailů selhal.', roles: error?.roles || undefined }, error?.status || 500);
+    return json({ success: false, error: error?.message || 'Příjem servisních e-mailů selhal.', roles: error?.roles || undefined, clientId: error?.clientId || undefined }, error?.status || 500);
   }
 });
