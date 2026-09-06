@@ -100,6 +100,10 @@ test('standalone Edge endpoints reject disabled users before service-role work o
       '../_shared/accountStatus.ts': { assertActiveAccount },
       '../_shared/invoiceDeletionGuard.ts': { assertInvoiceFileDetached },
       '../_shared/fetch.ts': { fetchWithTimeout: () => { throw new Error('Unexpected provider call'); } },
+      'npm:fflate@0.8.2': {
+        strToU8: () => { throw new Error('Unexpected archive encoding'); },
+        zipSync: () => { throw new Error('Unexpected archive creation'); },
+      },
       'https://deno.land/std@0.177.0/http/server.ts': { serve: (next) => { handler = next; } },
     };
     loadEdge(`supabase/functions/${functionName}/index.ts`, dependencies, {
