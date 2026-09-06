@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { format, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
@@ -59,6 +60,9 @@ const ProjectForm = () => {
             created_by_member_id: memberId,
             completion_date: '',
             start_date: '',
+            location: '',
+            client_internal_ref: '',
+            brief: '',
             investor_id: null,
             client_id: null,
             is_priority: false
@@ -183,6 +187,7 @@ const ProjectForm = () => {
                         setValue('investor_id', opportunity.subject_id || null);
                         setValue('client_id', opportunity.subject_id || null);
                         setValue('completion_date', opportunity.expected_close_date || '');
+                        setValue('brief', opportunity.description || '');
                         setInvestorIsClient(true);
                     }
                 }
@@ -474,6 +479,42 @@ const ProjectForm = () => {
                                 <Label htmlFor="is_priority" className="font-medium text-slate-800 cursor-pointer">Prioritní projekt</Label>
                                 <p className="text-xs text-slate-500">Označí projekt jako důležitý v přehledech a tabulkách.</p>
                              </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="shadow-sm border-slate-200">
+                    <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+                        <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
+                            <FileText className="w-5 h-5 text-slate-500" />Zadání a umístění
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-5 pt-6">
+                        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="location" className="text-slate-700">Místo stavby / projektu</Label>
+                                <Input id="location" {...register('location')} placeholder="Adresa nebo označení areálu" />
+                                {errors.location && <p className="text-xs text-red-500">{errors.location.message}</p>}
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label htmlFor="client_internal_ref" className="text-slate-700">Reference klienta</Label>
+                                <Input id="client_internal_ref" {...register('client_internal_ref')} placeholder="Číslo objednávky nebo interní označení" />
+                                {errors.client_internal_ref && <p className="text-xs text-red-500">{errors.client_internal_ref.message}</p>}
+                            </div>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="brief" className="text-slate-700">Stručné zadání a rozsah</Label>
+                            <Textarea
+                                id="brief"
+                                {...register('brief')}
+                                rows={5}
+                                placeholder="Co má projekt řešit, důležité požadavky investora a očekávané výstupy…"
+                            />
+                            <div className="flex items-start justify-between gap-3 text-xs text-slate-500">
+                                <span>Tento text se přenese do projektového listu na SharePointu.</span>
+                                <span>{String(watch('brief') || '').length}/5000</span>
+                            </div>
+                            {errors.brief && <p className="text-xs text-red-500">{errors.brief.message}</p>}
                         </div>
                     </CardContent>
                 </Card>
