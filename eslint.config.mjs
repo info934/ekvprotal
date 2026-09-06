@@ -10,6 +10,7 @@ export default [
 			'dist/**',
 			'build/**',
 			'output/**',
+			'tmp/**',
 			'fa_portal/**',
 			'backups/**',
 			'vite.config.js',

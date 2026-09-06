@@ -21,6 +21,7 @@ const Projects = lazy(() => import('@/components/Projects'));
 const Documents = lazy(() => import('@/components/Documents'));
 const CRM = lazy(() => import('@/components/CRM'));
 const CRMCommercialDocuments = lazy(() => import('@/components/CRMCommercialDocuments'));
+const CRMSalesActivities = lazy(() => import('@/components/CRMSalesActivities'));
 const OfferResponsePage = lazy(() => import('@/components/OfferResponsePage'));
 const Products = lazy(() => import('@/components/Products'));
 const ProductForm = lazy(() => import('@/components/ProductForm'));
@@ -200,6 +201,7 @@ function AppContent() {
                   <Route path="/crm/opportunities" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
                   <Route path="/crm/opportunities/new" element={<PrivateRoute module="crm" level="can_edit"><CRM /></PrivateRoute>} />
                   <Route path="/crm/opportunities/:opportunityId" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
+                  <Route path="/crm/activities" element={<PrivateRoute module="crm"><CRMSalesActivities /></PrivateRoute>} />
                   <Route path="/crm/offers" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
                   <Route path="/crm/offers/:documentId" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="offer" /></PrivateRoute>} />
                   <Route path="/crm/orders" element={<PrivateRoute module="crm"><CRMCommercialDocuments type="order" /></PrivateRoute>} />

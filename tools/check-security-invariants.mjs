@@ -26,6 +26,8 @@ const crmCommercialMigration = read('supabase/migrations/20260906100000_crm_comm
 const crmCommercialSendFunction = read('supabase/functions/send-crm-commercial-document/index.ts');
 const crmCommercialResponseFunction = read('supabase/functions/respond-crm-commercial-offer/index.ts');
 const crmCommercialReminderFunction = read('supabase/functions/send-crm-commercial-reminders/index.ts');
+const crmActivityMigration = read('supabase/migrations/20260906110000_crm_sales_activity_tracking.sql');
+const crmActivityCalendarFunction = read('supabase/functions/crm-activity-calendar/index.ts');
 
 assert(/enable_signup\s*=\s*false/.test(config), 'Public signup must remain disabled.');
 for (const functionName of [
@@ -67,6 +69,11 @@ assert(crmCommercialMigration.includes("if auth.uid() is null then raise excepti
 assert(crmCommercialMigration.includes('response_token_hash'), 'CRM offer response links must store token hashes only.');
 assert(!crmCommercialResponseFunction.includes('response_token: rawToken'), 'CRM offer response endpoint must not persist raw response tokens.');
 assert(crmCommercialReminderFunction.includes("req.headers.get('x-cron-secret')"), 'CRM reminder endpoint must require the cron secret.');
+assert(/\[functions\.crm-activity-calendar\]\s+verify_jwt\s*=\s*true/m.test(config), 'CRM activity calendar must require a JWT.');
+assert(crmActivityCalendarFunction.includes("authorizeFunctionRequest(req, { module: 'crm', level: 'edit' })"), 'CRM activity calendar must enforce CRM edit permission.');
+assert(!crmActivityCalendarFunction.includes('activity.meeting_minutes'), 'Private CRM meeting minutes must not be copied into external invitations.');
+assert(crmActivityMigration.includes("and p.can_admin"), 'Team sales performance and goal administration must require CRM admin permission.');
+assert(crmActivityMigration.includes('alter table public.crm_activity_events enable row level security'), 'CRM activity audit events must use RLS.');
 
 if (failures.length) {
   console.error('Security invariant checks failed:');

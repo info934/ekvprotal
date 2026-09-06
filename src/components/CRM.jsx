@@ -39,6 +39,7 @@ import SubjectSelect from '@/components/SubjectSelect';
 import { CrmCatalogProductMeta, CrmItemSnapshotBadges } from '@/components/CrmItemSnapshotBadges';
 import CrmLineItemsTable from '@/components/CrmLineItemsTable';
 import CrmProductPickerDialog from '@/components/CrmProductPickerDialog';
+import CRMActivityWorkspace from '@/components/CRMActivityWorkspace';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -126,6 +127,7 @@ const uniqueByValue = (items = []) => {
 
 const initialOpportunityForm = {
   id: null,
+  template_id: '',
   title: '',
   subject_id: '',
   project_id: '',
@@ -137,6 +139,9 @@ const initialOpportunityForm = {
   next_step: '',
   description: '',
   lost_reason: '',
+  business_type: 'general',
+  category: '',
+  custom_fields: {},
 };
 
 const isMissingCrmTableError = (error) => {
@@ -150,6 +155,7 @@ const isMissingCrmTableError = (error) => {
     message.includes('crm_priority_definitions') ||
     message.includes('crm_custom_field_sections') ||
     message.includes('crm_custom_field_definitions') ||
+    message.includes('crm_opportunity_templates') ||
     message.includes('crm_commercial_documents') ||
     message.includes('crm_commercial_document_items');
 };
@@ -262,6 +268,7 @@ const DealWorkspace = ({
   onAddNote,
   onCancelOpportunity,
   onDeleteOpportunity,
+  onActivitiesChanged,
   activities = [],
   notes = [],
   customFieldSections = [],
@@ -828,7 +835,14 @@ const DealWorkspace = ({
                 </div>
               </TabsContent>
 
-              <TabsContent value="activities"><div className="space-y-3 rounded-lg border bg-white p-4 shadow-sm"><h3 className="text-sm font-semibold text-slate-950">Aktivity obchodniho pripadu</h3>{opportunityActivities.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim neni naplanovana zadna CRM aktivita.</div>) : opportunityActivities.map((activity) => (<div key={activity.id} className="flex items-start justify-between gap-3 rounded-lg border bg-slate-50 px-3 py-2 text-sm"><div className="min-w-0"><div className="font-semibold text-slate-900">{activity.title}</div><div className="mt-1 text-xs text-muted-foreground">{activity.type} - {activity.status}</div></div><Badge variant="outline" className="shrink-0 bg-white">{formatDate(activity.due_at || activity.completed_at)}</Badge></div>))}</div></TabsContent>
+              <TabsContent value="activities">
+                <CRMActivityWorkspace
+                  opportunity={opportunity}
+                  activities={opportunityActivities}
+                  canEdit={canEdit && !hasDraft && draft.status !== 'saving'}
+                  onChanged={onActivitiesChanged}
+                />
+              </TabsContent>
               <TabsContent value="documents"><div className="rounded-lg border bg-white p-5 text-center shadow-sm"><Paperclip className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="text-sm font-medium text-muted-foreground">Prilohy budou navazane na centralni dokumentovy modul a budou dostupne i pro generovani vystupu.</p><Button className="mt-4" variant="secondary" disabled>Nahrat soubor</Button></div></TabsContent>
               <TabsContent value="history"><div className="rounded-lg border bg-white p-4 shadow-sm"><div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-950"><History className="h-4 w-4 text-primary" />Historie obchodniho pripadu</div>{timelineItems.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim neni evidovana zadna aktivita ani dokument.</div>) : (<div className="space-y-4">{timelineItems.map((item) => { const Icon = item.icon || Clock; return (<div key={item.id} className="relative grid gap-3 border-l border-slate-200 pl-5 text-sm"><span className="absolute -left-2 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-2 ring-primary/40"><span className="h-2 w-2 rounded-full bg-primary" /></span><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex items-center gap-2 font-semibold text-slate-950"><Icon className="h-4 w-4 text-slate-500" /><span>{item.kind}</span><span className="truncate text-slate-700">{item.title}</span></div>{item.detail && <p className="mt-1 line-clamp-2 text-muted-foreground">{item.detail}</p>}</div><span className="shrink-0 text-xs text-muted-foreground">{formatDate(item.date)}</span></div></div>); })}</div>)}</div></TabsContent>
               <TabsContent value="discussion"><div className="space-y-4 rounded-lg border bg-white p-4 shadow-sm"><div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><MessageSquare className="h-4 w-4 text-primary" />Interni diskuze</div><div className="space-y-3">{opportunityNotes.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim zde neni zadny komentar.</div>) : opportunityNotes.map((note) => (<div key={note.id} className="rounded-lg border bg-slate-50 p-3 text-sm"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span className="font-semibold text-slate-700">{note.author?.name || 'Interni poznamka'}</span><span>{formatDate(note.created_at)}</span></div><p className="mt-2 whitespace-pre-wrap text-slate-800">{note.body}</p></div>))}</div><div className="grid gap-2"><Textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} placeholder="Napsat komentar pro tym..." className="min-h-[100px]" /><div className="flex justify-end"><Button size="sm" disabled={!canEdit || updatingOpportunity || hasDraft || draft.status === 'saving' || !noteDraft.trim()} onClick={() => { const body = noteDraft.trim(); if (!body) return; setNoteDraft(''); onAddNote?.(opportunity.id, body); }}><MessageSquare className="mr-2 h-4 w-4" />Pridat komentar</Button></div></div></div></TabsContent>
@@ -1712,6 +1726,7 @@ const CRM = () => {
     lowStock: 0,
   });
   const [documentTemplates, setDocumentTemplates] = useState([]);
+  const [opportunityTemplates, setOpportunityTemplates] = useState([]);
   const [crmNumbering, setCrmNumbering] = useState(() => normalizeCrmNumbering(Object.values(DEFAULT_CRM_NUMBERING)));
   const [crmTablesReady, setCrmTablesReady] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -1810,7 +1825,7 @@ const CRM = () => {
       opportunitiesQuery,
       isOpportunityDetailPage ? Promise.resolve({ data: [], error: null }) : fetchAllCrmRows(() => supabase
         .from('crm_activities')
-        .select('id, opportunity_id, title, type, status, due_at, completed_at, subject:subject_id(id, name), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
+        .select('id, opportunity_id, subject_id, project_id, assigned_member_id, created_by_member_id, title, type, status, description, due_at, starts_at, ends_at, completed_at, location, attendees, outcome, meeting_minutes, next_step, calendar_sync_enabled, external_mailbox, external_event_id, external_web_link, calendar_synced_at, calendar_sync_error, created_at, subject:subject_id(id, name, email), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
         .order('due_at', { ascending: true, nullsFirst: false })
         .order('id').abortSignal(request.signal)),
       isOpportunityDetailPage ? Promise.resolve({ data: [], error: null }) : fetchAllCrmRows(() => supabase
@@ -1856,7 +1871,7 @@ const CRM = () => {
         .order('created_at', { ascending: false }).order('id')
         .abortSignal(request.signal)),
       fetchAllCrmRows(() => supabase.from('crm_activities')
-        .select('id, opportunity_id, title, type, status, due_at, completed_at, subject:subject_id(id, name), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
+        .select('id, opportunity_id, subject_id, project_id, assigned_member_id, created_by_member_id, title, type, status, description, due_at, starts_at, ends_at, completed_at, location, attendees, outcome, meeting_minutes, next_step, calendar_sync_enabled, external_mailbox, external_event_id, external_web_link, calendar_synced_at, calendar_sync_error, created_at, subject:subject_id(id, name, email), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
         .eq('opportunity_id', loadedOpportunityId)
         .order('due_at', { ascending: true, nullsFirst: false }).order('id')
         .abortSignal(request.signal)),
@@ -1919,7 +1934,7 @@ const CRM = () => {
       const extendedRes = opportunityIds.length
         ? await fetchCrmRowsByIds(opportunityIds, (ids) => supabase
           .from('crm_opportunities')
-          .select('id, category, source, business_type, currency, version_no, classification_1, classification_2, classification_3, tags, confirmation_status, confirmed_at, confirmed_by, custom_fields')
+          .select('id, template_id, category, source, business_type, currency, version_no, classification_1, classification_2, classification_3, tags, confirmation_status, confirmed_at, confirmed_by, custom_fields')
           .in('id', ids).order('id')
           .abortSignal(request.signal))
         : { data: [], error: null };
@@ -1944,6 +1959,15 @@ const CRM = () => {
       } else {
         setCustomFieldSections(DEFAULT_CRM_CUSTOM_FIELD_SECTIONS);
       }
+
+      const opportunityTemplatesRes = await supabase
+        .from('crm_opportunity_templates')
+        .select('id, name, description, business_type, default_stage, default_priority, default_probability, default_category, custom_fields, checklist, item_presets')
+        .eq('is_active', true)
+        .order('name')
+        .abortSignal(request.signal);
+      if (requestId !== crmRequestIdRef.current) return;
+      setOpportunityTemplates(opportunityTemplatesRes.error ? [] : (opportunityTemplatesRes.data || []));
 
       setCommercialDocuments((commercialDocumentsRes.data || []).map((document) => ({
         ...document,
@@ -2341,6 +2365,25 @@ const CRM = () => {
     }
   };
 
+  const applyOpportunityTemplate = (templateId) => {
+    const template = opportunityTemplates.find((item) => item.id === templateId);
+    if (!template) {
+      setOpportunityForm((current) => ({ ...current, template_id: '' }));
+      return;
+    }
+    setOpportunityForm((current) => ({
+      ...current,
+      template_id: template.id,
+      business_type: template.business_type || 'general',
+      category: template.default_category || '',
+      stage: template.default_stage || 'lead',
+      priority: template.default_priority || 'medium',
+      probability: Number(template.default_probability || 0),
+      custom_fields: template.custom_fields || {},
+      description: current.description || template.description || '',
+    }));
+  };
+
   const openOpportunityDialog = (opportunity = null) => {
     if (opportunity) {
       setOpportunityForm({
@@ -2356,6 +2399,10 @@ const CRM = () => {
         next_step: opportunity.next_step || '',
         description: opportunity.description || '',
         lost_reason: opportunity.lost_reason || '',
+        template_id: opportunity.template_id || '',
+        business_type: opportunity.business_type || 'general',
+        category: opportunity.category || '',
+        custom_fields: opportunity.custom_fields || {},
       });
     } else {
       setOpportunityForm(initialOpportunityForm);
@@ -2410,13 +2457,17 @@ const CRM = () => {
       lost_reason: opportunityForm.stage === 'lost' ? opportunityForm.lost_reason.trim() : null,
       lost_at: opportunityForm.stage === 'lost' ? new Date().toISOString() : null,
       status: getStage(opportunityForm.stage, crmStages).is_closed ? 'closed' : 'open',
+      template_id: opportunityForm.template_id || null,
+      business_type: opportunityForm.business_type || 'general',
+      category: opportunityForm.category.trim() || null,
+      custom_fields: opportunityForm.custom_fields || {},
     };
 
     const request = opportunityForm.id
-      ? supabase.from('crm_opportunities').update(payload).eq('id', opportunityForm.id)
-      : supabase.from('crm_opportunities').insert(payload);
+      ? supabase.from('crm_opportunities').update(payload).eq('id', opportunityForm.id).select('id').single()
+      : supabase.from('crm_opportunities').insert(payload).select('id').single();
 
-    const { error } = await request;
+    const { data: savedOpportunity, error } = await request;
 
     if (error) {
       setSavingOpportunity(false);
@@ -2683,6 +2734,17 @@ const CRM = () => {
                 </CardHeader>
                 <CardContent className="grid gap-4 p-5 md:grid-cols-2">
                   <div className="space-y-2 md:col-span-2">
+                    <Label>Šablona obchodního případu</Label>
+                    <Select value={opportunityForm.template_id || 'none'} onValueChange={(value) => applyOpportunityTemplate(value === 'none' ? '' : value)}>
+                      <SelectTrigger><SelectValue placeholder="Začít bez šablony" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Bez šablony</SelectItem>
+                        {opportunityTemplates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Šablona doplní typ zakázky, výchozí hodnoty a kontrolní kroky obchodníka.</p>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="opportunity-page-title">Název *</Label>
                     <Input
                       id="opportunity-page-title"
@@ -2692,6 +2754,14 @@ const CRM = () => {
                       required
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label>Typ obchodu</Label>
+                    <Select value={opportunityForm.business_type} onValueChange={(value) => handleOpportunityChange('business_type', value)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="fve">FVE</SelectItem><SelectItem value="pd">Projektová dokumentace</SelectItem><SelectItem value="hw">Hardware</SelectItem><SelectItem value="service">Servis</SelectItem><SelectItem value="general">Obecné</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2"><Label>Kategorie</Label><Input value={opportunityForm.category} onChange={(event) => handleOpportunityChange('category', event.target.value)} placeholder="Např. FVE rodinný dům" /></div>
                   <div className="space-y-2">
                     <SubjectSelect
                       label="Subjekt *"
@@ -2799,6 +2869,16 @@ const CRM = () => {
                       rows={6}
                     />
                   </div>
+                  {customFieldSections
+                    .filter((section) => ['general', opportunityForm.business_type].includes(section.business_type || 'general'))
+                    .map((section) => <div key={section.id} className="space-y-4 rounded-lg border bg-slate-50 p-4 md:col-span-2">
+                      <div><h3 className="font-semibold text-slate-950">{section.title}</h3>{section.description && <p className="mt-1 text-xs text-muted-foreground">{section.description}</p>}</div>
+                      <div className="grid gap-4 md:grid-cols-2">{(section.fields || []).map((field) => {
+                        const value = opportunityForm.custom_fields?.[field.field_key] ?? '';
+                        const setValue = (nextValue) => setOpportunityForm((current) => ({ ...current, custom_fields: { ...(current.custom_fields || {}), [field.field_key]: nextValue } }));
+                        return <div key={field.id || field.field_key} className={cn('space-y-2', field.field_type === 'textarea' && 'md:col-span-2')}><Label>{field.label}{field.is_required ? ' *' : ''}</Label>{field.field_type === 'select' ? <Select value={String(value || 'none')} onValueChange={(next) => setValue(next === 'none' ? '' : next)}><SelectTrigger><SelectValue placeholder="Vyberte" /></SelectTrigger><SelectContent><SelectItem value="none">Nevyplněno</SelectItem>{(field.options || []).map((option) => <SelectItem key={option} value={String(option)}>{option}</SelectItem>)}</SelectContent></Select> : field.field_type === 'textarea' ? <Textarea value={value} onChange={(event) => setValue(event.target.value)} placeholder={field.placeholder || ''} /> : <Input type={field.field_type === 'number' ? 'number' : 'text'} value={value} onChange={(event) => setValue(event.target.value)} placeholder={field.placeholder || ''} required={field.is_required} />}</div>;
+                      })}</div>
+                    </div>)}
                   {opportunityForm.stage === 'lost' && (
                     <div className="space-y-2 md:col-span-2">
                       <Label htmlFor="opportunity-page-lost-reason">Důvod prohry *</Label>
@@ -2871,6 +2951,7 @@ const CRM = () => {
               onReloadOpportunity={fetchCrmData}
               onUpdateOpportunityItems={handleOpportunityItemsUpdate}
               onAddNote={handleAddOpportunityNote}
+              onActivitiesChanged={fetchCrmData}
               creatingDocument={creatingDocument}
               generatingDocument={generatingDocument}
               updatingOpportunity={updatingOpportunity}

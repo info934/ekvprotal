@@ -83,6 +83,9 @@ verify_jwt = true
 [functions.planning-calendar]
 verify_jwt = true
 
+[functions.crm-activity-calendar]
+verify_jwt = true
+
 [functions.analyze-contract]
 verify_jwt = true
 

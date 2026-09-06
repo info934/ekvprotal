@@ -1,4 +1,4 @@
-import { Home, Folder, HardHat, CalendarDays, CheckSquare, Clock, Contact, Building2, Package, Wallet, FileText, BarChart3, Settings, Users, Wrench, PieChart, LayoutDashboard, Copy } from 'lucide-react';
+import { Home, Folder, HardHat, CalendarDays, CalendarCheck2, CheckSquare, Clock, Contact, Building2, Package, Wallet, FileText, BarChart3, Settings, Users, Wrench, PieChart, LayoutDashboard, Copy } from 'lucide-react';
 
 export const PORTAL_NAVIGATION = [
   { label: 'Práce', items: [
@@ -29,6 +29,7 @@ export const SETTINGS_NAV = { label: 'Nastavení', path: '/settings', icon: Sett
 export const CRM_NAVIGATION = [
   { label: 'Obchodní nástěnka', path: '/crm/board', icon: LayoutDashboard, module: 'crm' },
   { label: 'Obchodní případy', path: '/crm/opportunities', icon: Contact, module: 'crm' },
+  { label: 'Aktivity a cíle', path: '/crm/activities', icon: CalendarCheck2, module: 'crm' },
   { label: 'Nabídky', path: '/crm/offers', icon: FileText, module: 'crm' },
   { label: 'Objednávky', path: '/crm/orders', icon: Copy, module: 'crm' },
 ];
