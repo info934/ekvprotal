@@ -166,6 +166,10 @@ export const buildDocumentGenerationPayload = ({ opportunity, document }) => {
         commissionTotal: calculation.commissionAmount,
         profitAfterCommission: calculation.profitAfterCommission,
         profitAfterCommissionPercent: calculation.profitAfterCommissionPercent,
+        sectionName: item.section_name || '',
+        itemKind: item.item_kind || 'standard',
+        alternativeGroup: item.alternative_group || '',
+        includedInTotal: item.included_in_total !== false,
         customFields: item.custom_fields || item.product_fields || {},
       };
     });
@@ -795,22 +799,45 @@ const chunkCommercialItems = (items = []) => {
   return chunks;
 };
 
-const renderCorporateItemsTable = (items) => {
-  const rows = items.length > 0 ? items.map((item) => `
-    <tr>
+const renderCorporateItemsTable = (items, allItems = items) => {
+  const sectionTotals = allItems.reduce((totals, item) => {
+    const section = item.sectionName || '';
+    totals[section] = (totals[section] || 0) + Number(item.lineTotal || 0);
+    return totals;
+  }, {});
+  const lastPositionBySection = allItems.reduce((positions, item) => ({
+    ...positions, [item.sectionName || '']: item.position,
+  }), {});
+  let previousSection = null;
+  const rows = items.length > 0 ? items.map((item) => {
+    const section = item.sectionName || '';
+    const sectionHeader = section && section !== previousSection
+      ? `<tr class="section-row"><td colspan="7">${escapeHtml(section)}</td></tr>` : '';
+    previousSection = section;
+    const kindLabel = item.itemKind === 'optional'
+      ? 'Volitelná'
+      : item.itemKind === 'alternative'
+        ? `Alternativa${item.alternativeGroup ? ` - ${escapeHtml(item.alternativeGroup)}` : ''}`
+        : '';
+    const sectionSubtotal = section && lastPositionBySection[section] === item.position
+      ? `<tr class="subtotal-row"><td colspan="6">Mezisoučet ${escapeHtml(section)}</td><td class="num amount">${formatCurrency(sectionTotals[section])}</td></tr>` : '';
+    return `${sectionHeader}
+    <tr class="${item.includedInTotal === false ? 'excluded-row' : ''}">
       <td class="position">${item.position}</td>
       <td class="item-copy">
         ${item.code ? `<span class="item-code">${escapeHtml(item.code)}</span>` : ''}
         <strong>${escapeHtml(item.name || 'Položka')}</strong>
+        ${kindLabel ? `<span class="item-kind">${kindLabel}</span>` : ''}
         ${item.description ? `<span class="item-description">${escapeHtml(item.description)}</span>` : ''}
       </td>
       <td class="num">${Number(item.quantity || 0).toLocaleString('cs-CZ')} ${escapeHtml(item.unit || '')}</td>
       <td class="num">${formatCurrency(item.unitPrice)}</td>
       <td class="num">${Number(item.discountPercent || 0).toLocaleString('cs-CZ')} %</td>
       <td class="num">${Number(item.vatRate || 0).toLocaleString('cs-CZ')} %</td>
-      <td class="num amount">${formatCurrency(item.lineTotal)}</td>
+      <td class="num amount">${item.includedInTotal === false ? 'Volitelné' : formatCurrency(item.lineTotal)}</td>
     </tr>
-  `).join('') : '<tr><td colspan="7" class="empty">Dokument zatím nemá položky.</td></tr>';
+    ${sectionSubtotal}`;
+  }).join('') : '<tr><td colspan="7" class="empty">Dokument zatím nemá položky.</td></tr>';
 
   return `
     <table class="line-items">
@@ -914,7 +941,7 @@ const renderCorporateCommercialDocumentHtml = (payload) => {
           ${renderTotals()}` : `
           <section class="section">
             <div class="section-title"><h2>${itemSectionTitle}${!isFirst ? ' - pokračování' : ''}</h2><span>${items.length} ${items.length === 1 ? 'položka' : (items.length >= 2 && items.length <= 4 ? 'položky' : 'položek')}</span></div>
-            ${renderCorporateItemsTable(page.items)}
+            ${renderCorporateItemsTable(page.items, items)}
           </section>
           ${includeTotals ? renderTotals() : ''}`}
         ${renderFooter(index + 1)}
@@ -936,6 +963,7 @@ const renderCorporateCommercialDocumentHtml = (payload) => {
   .continuation-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:9px;border-bottom:1px solid var(--line)}.continuation-header div{text-align:right}.continuation-header span{display:block;color:var(--blue);font-size:9px;font-weight:800;text-transform:uppercase}.continuation-header strong{display:block;margin-top:2px;font-size:12px}
   .section{margin-top:8px}.section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;padding-bottom:6px;border-bottom:2px solid #e8edf5}.section-title h2{margin:0;font-size:13.5px}.section-title span{border-radius:999px;background:#edf4ff;color:var(--blue);padding:3px 8px;font-size:9px;font-weight:800}
   table{width:100%;border-collapse:separate;border-spacing:0}.line-items{border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:9.4px}.line-items th{padding:5px;background:#f1f5fa;color:var(--muted);font-size:7.8px;letter-spacing:.06em;text-align:left;text-transform:uppercase;border-bottom:1px solid var(--line)}.line-items td{padding:6px 5px;vertical-align:top;border-bottom:1px solid #e9eef5}.line-items tr:last-child td{border-bottom:0}.line-items .position{width:6mm;color:var(--muted)}.item-copy{width:70mm}.item-copy strong,.item-code,.item-description{display:block}.item-code{margin-bottom:2px;color:var(--blue);font-size:8.4px;font-weight:800}.item-description{margin-top:2px;color:var(--muted);font-size:8.5px}.num{text-align:right;white-space:nowrap}.amount{font-weight:800}.empty{text-align:center;color:var(--muted);padding:18px!important}
+  .item-kind{display:inline-block;margin:2px 0 0;border-radius:999px;background:#fff7ed;color:#9a3412;padding:1px 5px;font-size:7.5px;font-weight:800}.section-row td{background:#eaf1fb!important;color:var(--blue-dark);font-size:9px;font-weight:900;letter-spacing:.05em;text-transform:uppercase}.subtotal-row td{background:#f8fafc;font-weight:700}.subtotal-row td:first-child{text-align:right}.excluded-row{background:#fffbeb}.excluded-row .amount{color:#92400e}
   .closing-grid{display:grid;grid-template-columns:1fr 71mm;gap:8mm;margin-top:9px;align-items:start}.terms h3{margin:0 0 5px;font-size:12px}.terms p{margin:0;color:var(--muted)}.note{margin-top:8px;padding:7px 8px;border-left:3px solid var(--blue);background:var(--soft)}.note strong,.note span{display:block}.note span{margin-top:2px;color:#475467;white-space:pre-wrap}
   .totals{border:1px solid var(--line);border-radius:11px;overflow:hidden}.totals>div{display:grid;grid-template-columns:1fr 29mm;gap:8px;padding:6px 9px;border-bottom:1px solid #e9eef5}.totals>div:last-child{border-bottom:0}.totals strong{text-align:right}.totals .total-main{background:#ecfdf3;color:#14532d;font-size:12px;font-weight:900}
   .signature{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-top:9px}.sig-card{display:flex;min-height:47px;flex-direction:column;justify-content:space-between;border:1px solid var(--line);border-radius:10px;padding:8px}.sig-line{padding-top:5px;border-top:1px solid #98a2b3;color:var(--muted);font-size:9px}

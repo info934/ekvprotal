@@ -42,12 +42,14 @@ export const calculateCrmItem = (item = {}) => {
   const discountPercent = clampPercent(item.discount_percent);
   const vatRate = normalizeCrmVatRate(item.vat_rate ?? item.default_vat_rate, CRM_DEFAULT_VAT_RATE);
   const commissionPercent = clampPercent(item.commission_percent ?? item.commission_rate ?? CRM_DEFAULT_COMMISSION_PERCENT);
-  const grossSubtotal = roundMoney(quantity * unitPrice);
+  const includedInTotal = item.included_in_total !== false;
+  const effectiveQuantity = includedInTotal ? quantity : 0;
+  const grossSubtotal = roundMoney(effectiveQuantity * unitPrice);
   const discountAmount = roundMoney(grossSubtotal * (discountPercent / 100));
   const subtotal = roundMoney(grossSubtotal - discountAmount);
   const taxTotal = roundMoney(subtotal * (vatRate / 100));
   const totalWithTax = roundMoney(subtotal + taxTotal);
-  const costTotal = roundMoney(quantity * unitCost);
+  const costTotal = roundMoney(effectiveQuantity * unitCost);
   const marginAmount = roundMoney(subtotal - costTotal);
   const marginPercent = subtotal > 0 ? roundMoney((marginAmount / subtotal) * 100) : 0;
   const commissionAmount = roundMoney(subtotal * (commissionPercent / 100));
@@ -61,6 +63,7 @@ export const calculateCrmItem = (item = {}) => {
     discountPercent,
     vatRate,
     commissionPercent,
+    includedInTotal,
     grossSubtotal,
     discountAmount,
     subtotal,
@@ -98,6 +101,10 @@ export const normalizeCrmItem = (item = {}, index = 0) => {
     commission_total: calculation.commissionAmount,
     profit_after_commission: calculation.profitAfterCommission,
     profit_after_commission_percent: calculation.profitAfterCommissionPercent,
+    section_name: item.section_name || null,
+    item_kind: ['standard', 'optional', 'alternative'].includes(item.item_kind) ? item.item_kind : 'standard',
+    alternative_group: item.alternative_group || null,
+    included_in_total: calculation.includedInTotal,
     sort_order: item.sort_order ?? ((index + 1) * 10),
   };
 };
@@ -135,7 +142,7 @@ export const calculateCrmTotals = (items = []) => {
 };
 
 export const calculateUnitPriceForMargin = (item = {}, marginPercent = CRM_DEFAULT_MARGIN_PERCENT) => {
-  const calculation = calculateCrmItem(item);
+  const calculation = calculateCrmItem({ ...item, included_in_total: true });
   const quantity = Number(calculation.quantity || 0);
   const unitCost = Number(calculation.unitCost || 0);
   const discountFactor = 1 - (Number(calculation.discountPercent || 0) / 100);
@@ -210,6 +217,10 @@ export const buildCrmItemPayloadFields = (item = {}, index = 0) => {
     supplier_offer_id: normalized.supplier_offer_id || null,
     supplier_name: normalized.supplier_name || null,
     supplier_sku_snapshot: normalized.supplier_sku_snapshot || null,
+    section_name: normalized.section_name || null,
+    item_kind: normalized.item_kind || 'standard',
+    alternative_group: normalized.alternative_group || null,
+    included_in_total: normalized.included_in_total !== false,
   };
 };
 

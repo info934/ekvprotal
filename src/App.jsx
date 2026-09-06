@@ -21,6 +21,7 @@ const Projects = lazy(() => import('@/components/Projects'));
 const Documents = lazy(() => import('@/components/Documents'));
 const CRM = lazy(() => import('@/components/CRM'));
 const CRMCommercialDocuments = lazy(() => import('@/components/CRMCommercialDocuments'));
+const OfferResponsePage = lazy(() => import('@/components/OfferResponsePage'));
 const Products = lazy(() => import('@/components/Products'));
 const ProductForm = lazy(() => import('@/components/ProductForm'));
 const Engineering = lazy(() => import('@/components/Engineering'));
@@ -274,6 +275,7 @@ function App() {
             <Routes>
               <Route path="/order/:token" element={<OrderPage />} />
               <Route path="/sub-order/:token" element={<SubcontractorOrderPage />} />
+              <Route path="/offer-response/:token" element={<OfferResponsePage />} />
               <Route path="/update-password" element={<UpdatePassword />} />
               <Route path="/*" element={<AppContent />} />
             </Routes>

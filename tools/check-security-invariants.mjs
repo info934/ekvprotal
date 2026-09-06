@@ -22,6 +22,10 @@ const crmIntegrityMigration = read('supabase/migrations/20260721221500_crm_suppl
 const planningWriteMigration = read('supabase/migrations/20260721222000_atomic_planning_writes.sql');
 const payoutNotificationFunction = read('supabase/functions/send-payout-notification/index.ts');
 const scheduledReportsFunction = read('supabase/functions/send-scheduled-reports/index.ts');
+const crmCommercialMigration = read('supabase/migrations/20260906100000_crm_commercial_workflow_v2.sql');
+const crmCommercialSendFunction = read('supabase/functions/send-crm-commercial-document/index.ts');
+const crmCommercialResponseFunction = read('supabase/functions/respond-crm-commercial-offer/index.ts');
+const crmCommercialReminderFunction = read('supabase/functions/send-crm-commercial-reminders/index.ts');
 
 assert(/enable_signup\s*=\s*false/.test(config), 'Public signup must remain disabled.');
 for (const functionName of [
@@ -54,6 +58,15 @@ assert(crmIntegrityMigration.includes('save_crm_commercial_document_draft'), 'CR
 assert(planningWriteMigration.includes('save_planning_item_with_resources'), 'Planning items and resources must be saved atomically.');
 assert(payoutNotificationFunction.includes('{ adminOnly: true }'), 'Legacy payout email diagnostics must remain admin-only.');
 assert(scheduledReportsFunction.includes("req.headers.get('x-cron-secret')"), 'Scheduled reports must require the cron secret.');
+assert(/\[functions\.send-crm-commercial-document\]\s+verify_jwt\s*=\s*true/m.test(config), 'CRM commercial sending must require a JWT.');
+assert(crmCommercialSendFunction.includes("authorizeFunctionRequest(req, { module: 'crm', level: 'edit' })"), 'CRM commercial sending must enforce CRM edit permission.');
+assert(crmCommercialSendFunction.includes('customRecipientConfirmed'), 'CRM commercial sending must confirm alternate recipients.');
+assert(crmCommercialSendFunction.includes("pdfBytes.byteLength > 10 * 1024 * 1024"), 'CRM commercial PDFs must enforce an upload size limit.');
+assert(crmCommercialMigration.includes("'crm-commercial-documents', 'crm-commercial-documents', false"), 'CRM commercial PDFs must use private storage.');
+assert(crmCommercialMigration.includes("if auth.uid() is null then raise exception 'Authentication required'"), 'CRM item replacement wrappers must require authentication.');
+assert(crmCommercialMigration.includes('response_token_hash'), 'CRM offer response links must store token hashes only.');
+assert(!crmCommercialResponseFunction.includes('response_token: rawToken'), 'CRM offer response endpoint must not persist raw response tokens.');
+assert(crmCommercialReminderFunction.includes("req.headers.get('x-cron-secret')"), 'CRM reminder endpoint must require the cron secret.');
 
 if (failures.length) {
   console.error('Security invariant checks failed:');

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { commercialDocumentMatchesSearch, getCommercialDocumentTotals } from '../src/lib/crmCommercialDocuments.js';
+import { buildCrmItemPayloadFields, calculateCrmTotals } from '../src/lib/crmItemPayloads.js';
 
 test('commercial document lists use persisted financial totals when only item ids are loaded', () => {
   const totals = getCommercialDocumentTotals({
@@ -49,4 +50,17 @@ test('commercial document search is accent insensitive and includes company id',
   assert.equal(commercialDocumentMatchesSearch(document, '12345678'), true);
   assert.equal(commercialDocumentMatchesSearch(document, 'OP-26-041'), true);
   assert.equal(commercialDocumentMatchesSearch(document, 'skladová hala'), false);
+});
+
+test('optional and alternative rows excluded from total remain visible but do not affect finance', () => {
+  const included = { name: 'Rozvaděč', quantity: 1, unit_price: 10000, unit_cost: 7000, vat_rate: 21 };
+  const optional = { name: 'Rozšířená záruka', quantity: 2, unit_price: 2500, unit_cost: 1000, vat_rate: 21, item_kind: 'optional', included_in_total: false };
+  const totals = calculateCrmTotals([included, optional]);
+  const payload = buildCrmItemPayloadFields(optional, 1);
+
+  assert.equal(totals.total, 10000);
+  assert.equal(totals.cost_total, 7000);
+  assert.equal(payload.quantity, 2);
+  assert.equal(payload.item_kind, 'optional');
+  assert.equal(payload.included_in_total, false);
 });

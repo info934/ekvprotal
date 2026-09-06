@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Ban, Calculator, Copy, FileText, Link2, MoreHorizontal, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, Calculator, Copy, FileText, Link2, Mail, MoreHorizontal, Package, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -19,6 +19,7 @@ import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/c
 import SubjectSelect from '@/components/SubjectSelect';
 import FveOfferWizardDialog from '@/components/FveOfferWizardDialog';
 import CrmLineItemsTable from '@/components/CrmLineItemsTable';
+import CRMCommercialDocumentDelivery from '@/components/CRMCommercialDocumentDelivery';
 import CrmProductPickerDialog from '@/components/CrmProductPickerDialog';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -73,6 +74,11 @@ const documentStatuses = [
   { value: 'closed', label: 'Uzavřeno' },
 ];
 
+const getDocumentStatusLabel = (status, type) => {
+  if (status === 'sent' && type === 'offer') return 'Čeká na klienta';
+  return documentStatuses.find((item) => item.value === status)?.label || status;
+};
+
 const formatCurrency = formatMoney;
 
 const formatDate = (value) => {
@@ -112,6 +118,10 @@ const emptyItem = () => ({
   unit_price: 0,
   discount_percent: 0,
   vat_rate: 21,
+  section_name: '',
+  item_kind: 'standard',
+  alternative_group: '',
+  included_in_total: true,
   line_total: 0,
   sort_order: 0,
   isNew: true,
@@ -124,8 +134,9 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
-  const { hasPermission } = useAuth();
+  const { hasPermission, isAdmin } = useAuth();
   const canEdit = hasPermission('crm', 'can_edit');
+  const canViewFinancials = isAdmin || hasPermission('finance', 'can_read') || hasPermission('crm', 'can_admin');
   const [documents, setDocuments] = useState([]);
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [opportunities, setOpportunities] = useState([]);
@@ -153,6 +164,11 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [relationTargetOpportunityId, setRelationTargetOpportunityId] = useState('');
   const [relationAction, setRelationAction] = useState('move');
   const [relationItemMode, setRelationItemMode] = useState('target-sync');
+  const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false);
+  const [copyItemsDialogOpen, setCopyItemsDialogOpen] = useState(false);
+  const [copyItemSources, setCopyItemSources] = useState([]);
+  const [copyItemSourceId, setCopyItemSourceId] = useState('');
+  const [copyItemsLoading, setCopyItemsLoading] = useState(false);
   const fetchRequestRef = useRef({ id: 0, controller: null });
 
   const fetchData = useCallback(async () => {
@@ -163,11 +179,11 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     setLoading(true);
     try {
       const documentItemsSelect = documentId
-        ? 'id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot'
+        ? 'id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot, section_name, item_kind, alternative_group, included_in_total'
         : 'id';
       const documentsQueryFactory = () => supabase
         .from('crm_commercial_documents')
-        .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, gross_subtotal, subtotal, discount_total, tax_total, total, total_with_tax, cost_total, total_cost, margin_total, margin_value, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, notes, sync_items, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone), opportunity:opportunity_id(id, number, title, value, stage, description, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone), project:project_id(id, name, code)${documentId ? ', opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)' : ''}), items:crm_commercial_document_items(${documentItemsSelect})`)
+        .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, gross_subtotal, subtotal, discount_total, tax_total, total, total_with_tax, cost_total, total_cost, margin_total, margin_value, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, notes, sync_items, current_version, sent_at, accepted_at, rejected_at, responded_at, response_note, reminder_count, last_reminder_at, source_document_id, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone), opportunity:opportunity_id(id, number, title, value, stage, description, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone), project:project_id(id, name, code)${documentId ? ', opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot, section_name, item_kind, alternative_group, included_in_total)' : ''}), items:crm_commercial_document_items(${documentItemsSelect})`)
         .eq('type', type)
         .is('deleted_at', null)
         .order('created_at', { ascending: false }).order('id').abortSignal(request.signal);
@@ -331,11 +347,13 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     { id: 'created', label: 'Vytvo\u0159eno' },
     { id: 'status', label: 'Stav' },
     { id: 'total', label: 'Cena bez DPH' },
-    { id: 'margin', label: 'Mar\u017ee' },
-    { id: 'profitAfterCommission', label: 'Zisk po provizi' },
+    ...(canViewFinancials ? [
+      { id: 'margin', label: 'Mar\u017ee' },
+      { id: 'profitAfterCommission', label: 'Zisk po provizi' },
+    ] : []),
     { id: 'validUntil', label: 'Konec platnosti' },
     { id: 'actions', label: 'Akce', hideable: false },
-  ], []);
+  ], [canViewFinancials]);
   const managedList = useManagedColumns(`ekv-table-crm-${type}s`, listColumns);
   const visibleListColumns = managedList.visibleColumns;
   const listHeadClasses = {
@@ -381,7 +399,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       case 'status':
         return (
           <Badge variant="outline" className={cn('font-semibold', getStatusBadgeClass(document.status))}>
-            {documentStatuses.find((status) => status.value === document.status)?.label || document.status}
+            {getDocumentStatusLabel(document.status, document.type)}
           </Badge>
         );
       case 'total':
@@ -489,7 +507,49 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
   const removeItem = (itemId, rowIndex) => {
     setSelectedDocument((current) => current ? { ...current, items: current.items.filter((item, index) => item.id !== itemId && index !== rowIndex) } : current);
-  };  const applyFveOfferItems = (items) => {
+  };
+
+  const openCopyItemsDialog = async () => {
+    setCopyItemsDialogOpen(true);
+    setCopyItemsLoading(true);
+    setCopyItemSourceId('');
+    try {
+      const { data, error } = await supabase.from('crm_commercial_documents')
+        .select('id, number, title, type, created_at')
+        .neq('id', selectedDocument.id)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      setCopyItemSources(data || []);
+    } catch (error) {
+      toast({ title: 'Dokumenty se nepodařilo načíst', description: crmWorkflowErrorMessage(error), variant: 'destructive' });
+    } finally {
+      setCopyItemsLoading(false);
+    }
+  };
+
+  const copyItemsFromDocument = async () => {
+    if (!copyItemSourceId) return;
+    setCopyItemsLoading(true);
+    try {
+      const { data, error } = await supabase.from('crm_commercial_document_items')
+        .select('catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot, section_name, item_kind, alternative_group, included_in_total')
+        .eq('document_id', copyItemSourceId)
+        .order('sort_order');
+      if (error) throw error;
+      const copied = (data || []).map((item, index) => normalizeCrmItem({ ...item, id: `copy-${Date.now()}-${index}` }, index));
+      setSelectedDocument((current) => current ? { ...current, items: copied, sync_items: false } : current);
+      setCopyItemsDialogOpen(false);
+      toast({ title: 'Položky byly zkopírovány', description: `${copied.length} položek je připraveno k uložení jako vlastní snapshot.` });
+    } catch (error) {
+      toast({ title: 'Položky se nepodařilo zkopírovat', description: crmWorkflowErrorMessage(error), variant: 'destructive' });
+    } finally {
+      setCopyItemsLoading(false);
+    }
+  };
+
+  const applyFveOfferItems = (items) => {
     const nextItems = items.map((item, index) => ({ ...item, id: `fve-${Date.now()}-${index}` }));
     const totals = calculateCrmTotals(nextItems);
     setSelectedDocument((current) => current ? {
@@ -841,6 +901,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
   if (documentId) {
     const detailTotals = calculateCrmTotals(selectedDocument?.items || []);
+    const selectedTemplate = documentTemplates.find((item) => item.id === selectedTemplateId) || null;
     return (
       <div className="app-page-wide space-y-6">
         <PageHeader
@@ -882,6 +943,10 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+              <Button variant="outline" onClick={() => setDeliveryDialogOpen(true)} disabled={!canEdit || saving || !selectedDocument || selectedDocument.status === 'cancelled'}>
+                <Mail className="mr-2 h-4 w-4" />
+                Odeslat klientovi
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" disabled={!canEdit || saving || !selectedDocument}>
@@ -921,6 +986,13 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
         {renderLifecycleActionDialog()}
         {renderRelationDialog()}
+        <Dialog open={copyItemsDialogOpen} onOpenChange={(open) => !copyItemsLoading && setCopyItemsDialogOpen(open)}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader><DialogTitle>Kopírovat položky z dokumentu</DialogTitle><DialogDescription>Aktuální položky se nahradí kopií vybraného dokumentu. Změna se uloží až tlačítkem Uložit.</DialogDescription></DialogHeader>
+            <div className="space-y-2 py-2"><Label>Zdrojový dokument</Label><Select value={copyItemSourceId} onValueChange={setCopyItemSourceId} disabled={copyItemsLoading}><SelectTrigger><SelectValue placeholder={copyItemsLoading ? 'Načítám…' : 'Vyberte nabídku nebo objednávku'} /></SelectTrigger><SelectContent>{copyItemSources.map((source) => <SelectItem key={source.id} value={source.id}>{source.number || source.type} - {formatCommercialDocumentTitle(source.title)}</SelectItem>)}</SelectContent></Select></div>
+            <DialogFooter><Button variant="outline" onClick={() => setCopyItemsDialogOpen(false)} disabled={copyItemsLoading}>Zrušit</Button><Button onClick={copyItemsFromDocument} disabled={copyItemsLoading || !copyItemSourceId}>{copyItemsLoading ? 'Kopíruji…' : 'Použít položky'}</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {loading || !selectedDocument ? (
           <Card><CardContent className="p-8 text-sm text-muted-foreground">Načítám dokument...</CardContent></Card>
@@ -941,7 +1013,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                       </Link>
                     </CardDescription>
                   </div>
-                  <Badge variant="outline" className="w-fit">{documentStatuses.find((status) => status.value === selectedDocument.status)?.label || selectedDocument.status}</Badge>
+                  <Badge variant="outline" className="w-fit">{getDocumentStatusLabel(selectedDocument.status, selectedDocument.type)}</Badge>
                 </div>
               </CardHeader>
               <CardContent className="grid gap-4 bg-white p-5 md:grid-cols-2">
@@ -951,12 +1023,10 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                 </div>
                 <div className="space-y-2">
                   <Label>Stav</Label>
-                  <Select value={selectedDocument.status || 'draft'} onValueChange={(value) => updateSelectedDocument('status', value)} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'}>
-                    <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {documentStatuses.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Input value={getDocumentStatusLabel(selectedDocument.status, selectedDocument.type)} disabled className="bg-slate-50" />
+                  {selectedDocument._persisted_status === 'draft' && (
+                    <p className="text-xs text-muted-foreground">Stav se změní automaticky po odeslání nebo po odpovědi klienta.</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <SubjectSelect
@@ -994,12 +1064,12 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   <div className="flex justify-between gap-3"><span className="text-muted-foreground">Bez DPH</span><strong>{formatCurrency(detailTotals.total)}</strong></div>
                   <div className="flex justify-between gap-3"><span className="text-muted-foreground">DPH</span><strong>{formatCurrency(detailTotals.tax_total)}</strong></div>
                   <div className="flex justify-between gap-3 rounded-md bg-primary px-3 py-2 text-primary-foreground"><span>Celkem s DPH</span><strong>{formatCurrency(detailTotals.total_with_tax)}</strong></div>
-                  <div className="space-y-2 border-t pt-3">
+                  {canViewFinancials && <div className="space-y-2 border-t pt-3">
                     <div className="flex justify-between gap-3"><span className="text-muted-foreground">{'N\u00e1klady'}</span><strong>{formatCurrency(detailTotals.cost_total)}</strong></div>
                     <div className="flex justify-between gap-3"><span className="text-muted-foreground">{'Hrub\u00e1 mar\u017ee'}</span><strong>{formatCurrency(detailTotals.margin_total)} {'\u00b7'} {formatPercent(detailTotals.margin_percent)}</strong></div>
                     <div className="flex justify-between gap-3"><span className="text-muted-foreground">Provize</span><strong>{formatCurrency(detailTotals.commission_total)}</strong></div>
                     <div className="flex justify-between gap-3 rounded-md bg-emerald-50 px-3 py-2 text-emerald-900"><span>Zisk po provizi</span><strong>{formatCurrency(detailTotals.profit_after_commission)} {'\u00b7'} {formatPercent(detailTotals.profit_after_commission_percent)}</strong></div>
-                  </div>
+                  </div>}
                   <p className="text-xs text-muted-foreground">{'Souhrn se po\u010d\u00edt\u00e1 p\u0159\u00edmo z polo\u017eek: n\u00e1kupn\u00ed cena, sleva, DPH, mar\u017ee a provize.'}</p>
                 </CardContent>
               </Card>
@@ -1017,7 +1087,10 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
 
             <div className="xl:col-span-2 space-y-3">
               {type === 'offer' && (
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={openCopyItemsDialog} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'}>
+                    <Copy className="mr-2 h-4 w-4" />Kopírovat položky
+                  </Button>
                   <Button type="button" variant="outline" onClick={() => setFveWizardOpen(true)} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'}>
                     <Calculator className="mr-2 h-4 w-4" />Jednoduchá FVE
                   </Button>
@@ -1040,6 +1113,15 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                 onRemoveItem={removeItem}
                 onAddManual={addItem}
                 onOpenCatalog={() => setCatalogPickerOpen(true)}
+                showFinancials={canViewFinancials}
+              />
+              <CRMCommercialDocumentDelivery
+                document={selectedDocument}
+                template={selectedTemplate}
+                open={deliveryDialogOpen}
+                onOpenChange={setDeliveryDialogOpen}
+                canSend={canEdit}
+                onSent={fetchData}
               />
             </div>
           </div>
@@ -1173,15 +1255,17 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
           <CardTitle className="text-base">{config.summaryTitle}</CardTitle>
           <CardDescription>{config.summaryDescription}</CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 p-4 xl:grid-cols-7">
+        <CardContent className={cn('grid grid-cols-2 gap-3 p-4', canViewFinancials ? 'xl:grid-cols-7' : 'xl:grid-cols-5')}>
           {[
             { label: 'Návrhy', value: documentSummary.draft, tone: 'amber' },
             { label: 'Odesláno', value: documentSummary.sent, tone: 'blue' },
             { label: 'Po platnosti', value: documentSummary.expired, tone: documentSummary.expired > 0 ? 'rose' : 'emerald' },
             { label: 'Bez položek', value: documentSummary.withoutItems, tone: documentSummary.withoutItems > 0 ? 'rose' : 'emerald' },
             { label: 'Hodnota celkem', value: formatCurrency(documentSummary.value), tone: 'slate' },
-            { label: 'Mar\u017ee celkem', value: formatCurrency(documentSummary.margin), tone: 'emerald' },
-            { label: 'Zisk po provizi', value: formatCurrency(documentSummary.profitAfterCommission), tone: 'blue' },
+            ...(canViewFinancials ? [
+              { label: 'Mar\u017ee celkem', value: formatCurrency(documentSummary.margin), tone: 'emerald' },
+              { label: 'Zisk po provizi', value: formatCurrency(documentSummary.profitAfterCommission), tone: 'blue' },
+            ] : []),
           ].map((item) => (
             <div
               key={item.label}
@@ -1247,7 +1331,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                     </button>
                     <div className="flex shrink-0 items-center gap-1">
                       <Badge variant="outline" className={cn('font-semibold', getStatusBadgeClass(document.status))}>
-                        {documentStatuses.find((status) => status.value === document.status)?.label || document.status}
+                        {getDocumentStatusLabel(document.status, document.type)}
                       </Badge>
                       {renderListCell(document, 'actions')}
                     </div>
@@ -1256,7 +1340,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                     <span><span className="block text-xs text-muted-foreground">Klient</span><strong className="font-medium text-slate-800">{document.subject?.name || document.opportunity?.subject?.name || '-'}</strong></span>
                     <span><span className="block text-xs text-muted-foreground">Cena bez DPH</span><strong className="font-semibold text-slate-950">{formatCurrency(totals.total)}</strong></span>
                     <span><span className="block text-xs text-muted-foreground">Obchodní případ</span><strong className="font-medium text-slate-800">{document.opportunity?.number || '-'}</strong></span>
-                    <span><span className="block text-xs text-muted-foreground">Marže</span><strong className="font-semibold text-emerald-700">{formatCurrency(totals.margin_total)} · {formatPercent(totals.margin_percent)}</strong></span>
+                    {canViewFinancials && <span><span className="block text-xs text-muted-foreground">Marže</span><strong className="font-semibold text-emerald-700">{formatCurrency(totals.margin_total)} · {formatPercent(totals.margin_percent)}</strong></span>}
                     <span><span className="block text-xs text-muted-foreground">Vytvořeno</span><strong className="font-medium text-slate-800">{formatDate(document.created_at)}</strong></span>
                     <span><span className="block text-xs text-muted-foreground">Platnost do</span><strong className="font-medium text-slate-800">{formatDate(document.valid_until)}</strong></span>
                   </button>

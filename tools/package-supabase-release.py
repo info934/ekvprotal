@@ -15,7 +15,7 @@ NEW_VERSIONS = [
     "20260905130000", "20260905140000",
 ]
 EDGE_FUNCTIONS = [
-    "send-email", "send-message-to-member", "send-payout-notification",
+    "send-email", "send-crm-commercial-document", "respond-crm-commercial-offer", "send-crm-commercial-reminders", "send-message-to-member", "send-payout-notification",
     "send-admin-payout-notification", "send-attendance-notification", "send-payout-email",
     "manage-users", "google-drive-esign", "analyze-contract", "document-storage", "planning-calendar",
 ]

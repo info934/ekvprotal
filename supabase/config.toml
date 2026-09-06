@@ -95,6 +95,15 @@ verify_jwt = true
 [functions.send-email]
 verify_jwt = true
 
+[functions.send-crm-commercial-document]
+verify_jwt = true
+
+[functions.respond-crm-commercial-offer]
+verify_jwt = false
+
+[functions.send-crm-commercial-reminders]
+verify_jwt = false
+
 [functions.send-payout-email]
 verify_jwt = true
 
