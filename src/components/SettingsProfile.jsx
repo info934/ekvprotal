@@ -28,6 +28,12 @@ import { cs } from 'date-fns/locale';
 
 const languageOptions = ['Čeština', 'Angličtina', 'Němčina', 'Slovenština', 'Polština'];
 
+const formatAccountDate = (value, pattern, fallback = 'N/A') => {
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? fallback : format(parsed, pattern, { locale: cs });
+};
+
 
 const getInitials = (name) => {
   if (!name) return '?';
@@ -399,8 +405,8 @@ const SettingsProfile = () => {
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
               <ProfileSummaryItem icon={Shield} label="Přístupová role" value={userRole || 'Nenastaveno'} />
-              <ProfileSummaryItem icon={User} label="Uživatel vytvořen" value={format(new Date(user.created_at), 'd. MMMM yyyy', { locale: cs })} />
-              <ProfileSummaryItem icon={Clock} label="Poslední přihlášení" value={user.last_sign_in_at ? format(new Date(user.last_sign_in_at), "d. MMMM yyyy 'v' HH:mm", { locale: cs }) : 'N/A'} />
+              <ProfileSummaryItem icon={User} label="Uživatel vytvořen" value={formatAccountDate(user.created_at, 'd. MMMM yyyy')} />
+              <ProfileSummaryItem icon={Clock} label="Poslední přihlášení" value={formatAccountDate(user.last_sign_in_at, "d. MMMM yyyy 'v' HH:mm")} />
               <div className="rounded-lg border bg-white p-4">
                 <div className="text-sm text-muted-foreground">Dostupné moduly</div>
                 <div className="mt-2 flex flex-wrap gap-2">

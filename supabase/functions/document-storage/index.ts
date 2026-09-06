@@ -6,7 +6,7 @@ import { assertInvoiceFileDetached } from '../_shared/invoiceDeletionGuard.ts';
 import { strToU8, zipSync } from 'npm:fflate@0.8.2';
 
 type StorageAction = 'testConnection' | 'ensureFolder' | 'initializeProjectWorkspace' | 'createUploadSession' | 'registerUploadedFile' | 'uploadFile' | 'downloadUrl' | 'listFiles' | 'deleteFile';
-type EntityType = 'project' | 'realizace' | 'product' | 'invoice';
+type EntityType = 'project' | 'realizace' | 'service' | 'product' | 'invoice';
 
 type StorageTarget = {
   siteId?: string;
@@ -16,6 +16,8 @@ type StorageTarget = {
   structure?: string[];
   projectFolderName?: string;
   organizeProjectsByYear?: boolean;
+  realizationFolderName?: string;
+  organizeRealizationsByYear?: boolean;
   activeFolderName?: string;
   completedFolderName?: string;
   completedStatuses?: string[];
@@ -43,7 +45,7 @@ const GRAPH_ROOT = 'https://graph.microsoft.com/v1.0';
 const GRAPH_TOKEN_EXPIRY_BUFFER_MS = 60_000;
 let graphTokenCache: { token: string; expiresAt: number } | null = null;
 let graphTokenRequest: Promise<string> | null = null;
-const ALLOWED_ENTITY_TYPES = new Set<EntityType>(['project', 'realizace', 'product', 'invoice']);
+const ALLOWED_ENTITY_TYPES = new Set<EntityType>(['project', 'realizace', 'service', 'product', 'invoice']);
 const MAX_INVOICE_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_INVOICE_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png'];
 const ALLOWED_INVOICE_CONTENT_TYPES = new Set([
@@ -71,6 +73,7 @@ const COMMERCIAL_DOCUMENT_FOLDERS: Record<string, string> = {
 const ENTITY_PERMISSION_MODULES: Record<EntityType, string[]> = {
   project: ['projects', 'documents'],
   realizace: ['realizace', 'projects', 'documents'],
+  service: ['service'],
   product: ['crm'],
   invoice: ['payouts', 'projects'],
 };
@@ -238,7 +241,9 @@ const collectGraphPages = async (token: string, firstPath: string) => {
 
 const resolveTarget = (connection: StorageConnection, entityType: EntityType): StorageTarget => {
   const config = connection.config || {};
-  const configured = config.targets?.[entityType];
+  const configured = entityType === 'service'
+    ? (config.targets?.service || config.targets?.realizace)
+    : config.targets?.[entityType];
   const fallbackStructure = entityType === 'project'
     ? config.projectStructure
     : entityType === 'realizace'
@@ -253,6 +258,8 @@ const resolveTarget = (connection: StorageConnection, entityType: EntityType): S
     structure: configured?.structure || fallbackStructure || [],
     projectFolderName: configured?.projectFolderName,
     organizeProjectsByYear: configured?.organizeProjectsByYear,
+    realizationFolderName: configured?.realizationFolderName,
+    organizeRealizationsByYear: configured?.organizeRealizationsByYear,
     activeFolderName: configured?.activeFolderName,
     completedFolderName: configured?.completedFolderName,
     completedStatuses: configured?.completedStatuses,
@@ -543,6 +550,31 @@ const getServerEntityFolderPath = async (
   target?: StorageTarget,
 ) => {
   if (entityType === 'invoice') return '';
+  if (entityType === 'service') {
+    const { data: serviceCase, error: serviceError } = await admin
+      .from('service_cases')
+      .select('id, number, title, realizace_id, reported_at, created_at')
+      .eq('id', entityId)
+      .maybeSingle();
+    if (serviceError) throw serviceError;
+    if (!serviceCase) {
+      const notFound = new Error('Service case was not found.') as Error & { status?: number };
+      notFound.status = 404;
+      throw notFound;
+    }
+    const serviceLabel = [
+      normalizeEntityFolderCode(serviceCase.number),
+      normalizeEntityFolderName(serviceCase.title),
+    ].filter(Boolean).join(' - ') || serviceCase.id;
+    if (serviceCase.realizace_id) {
+      const realizationPath = await getServerEntityFolderPath(admin, 'realizace', String(serviceCase.realizace_id), target);
+      return normalizePath(realizationPath, 'Servis', serviceLabel);
+    }
+    const serviceYear = [serviceCase.reported_at, serviceCase.created_at]
+      .map((value) => value ? new Date(String(value)).getUTCFullYear() : NaN)
+      .find((value) => Number.isInteger(value) && value >= 2000 && value <= 2100);
+    return normalizePath('Servis', 'Samostatne', String(serviceYear || new Date().getUTCFullYear()), serviceLabel);
+  }
   const table = entityType === 'project'
     ? 'projects'
     : entityType === 'realizace'
@@ -550,7 +582,9 @@ const getServerEntityFolderPath = async (
       : 'commercial_item_catalog';
   const select = entityType === 'project'
     ? 'id, code, name, status, start_date, created_at'
-    : 'id, code, name';
+    : entityType === 'realizace'
+      ? 'id, name, status, start_date, created_at'
+      : 'id, code, name';
   const { data, error } = await admin.from(table).select(select).eq('id', entityId).maybeSingle();
   if (error) throw error;
   if (!data) {
@@ -558,7 +592,9 @@ const getServerEntityFolderPath = async (
     notFound.status = 404;
     throw notFound;
   }
-  const code = normalizeEntityFolderCode(data.code);
+  const code = entityType === 'realizace'
+    ? `R-${String(data.id).slice(0, 8)}`
+    : normalizeEntityFolderCode(data.code);
   const { data: preference, error: preferenceError } = entityType === 'project'
     ? await admin
       .from('project_workspace_preferences')
@@ -569,9 +605,29 @@ const getServerEntityFolderPath = async (
   if (preferenceError) throw preferenceError;
   const name = normalizeEntityFolderName(preference?.folder_name || data.name);
   const label = [code, name].filter(Boolean).join(' - ');
+  if (entityType === 'realizace') {
+    const realizationTarget = target || {};
+    const datedYear = [data.start_date, data.created_at]
+      .map((value) => value ? new Date(String(value)).getUTCFullYear() : NaN)
+      .find((value) => Number.isInteger(value) && value >= 2000 && value <= 2100);
+    const completedStatuses = Array.isArray(realizationTarget.completedStatuses) && realizationTarget.completedStatuses.length
+      ? realizationTarget.completedStatuses.map(String)
+      : ['Dokončeno', 'Předáno'];
+    const statusFolder = completedStatuses.includes(String(data.status || ''))
+      ? (realizationTarget.completedFolderName || 'Hotovo')
+      : (realizationTarget.activeFolderName || 'Aktivni');
+    const realizationFolderName = Object.prototype.hasOwnProperty.call(realizationTarget, 'realizationFolderName')
+      ? String(realizationTarget.realizationFolderName || '')
+      : '';
+    return normalizePath(
+      realizationFolderName,
+      realizationTarget.organizeRealizationsByYear === false ? '' : String(datedYear || new Date().getUTCFullYear()),
+      statusFolder,
+      label || data.id,
+    );
+  }
   if (entityType !== 'project') {
-    const root = entityType === 'realizace' ? 'realizace' : 'products';
-    return normalizePath(root, label || data.id);
+    return normalizePath('products', label || data.id);
   }
 
   const projectTarget = target || {};
@@ -641,13 +697,13 @@ const reconcileMappedFolderLocation = async (
   return { item: movedItem, folderPath: normalizePath(target.rootFolderPath, desiredPath), moved: true };
 };
 
-const ensureProjectStatusFolders = async (
+const ensureStatusFolders = async (
   token: string,
   target: StorageTarget,
-  desiredProjectPath: string,
+  desiredEntityPath: string,
 ) => {
-  const pathSegments = normalizePath(desiredProjectPath).split('/').filter(Boolean);
-  pathSegments.pop(); // project folder name
+  const pathSegments = normalizePath(desiredEntityPath).split('/').filter(Boolean);
+  pathSegments.pop(); // entity folder name
   pathSegments.pop(); // current status folder
   const basePath = pathSegments.join('/');
   const active = await ensurePath(token, target, normalizePath(basePath, target.activeFolderName || 'Aktivni'));
@@ -774,6 +830,9 @@ Deno.serve(async (req: Request) => {
           const { data: canViewFinance } = await userClient.rpc('can_view_realization_financials');
           canAccess = canViewFinance === true;
         }
+      } else if (accessEntityType === 'service') {
+        const { data } = await userClient.from('service_cases').select('id').eq('id', accessEntityId).maybeSingle();
+        canAccess = Boolean(data);
       } else if (accessEntityType === 'product') {
         const { data } = await userClient.from('commercial_item_catalog').select('id').eq('id', accessEntityId).maybeSingle();
         canAccess = Boolean(data);
@@ -825,12 +884,12 @@ Deno.serve(async (req: Request) => {
       }
       const existingMapping = await getEntityFolderMapping(admin, String(connection.id), entityType, entityId);
       const requestedPath = await getServerEntityFolderPath(admin, entityType, entityId, target);
-      const statusFolders = entityType === 'project'
-        ? await ensureProjectStatusFolders(graphToken, target, requestedPath)
+      const statusFolders = entityType === 'project' || entityType === 'realizace'
+        ? await ensureStatusFolders(graphToken, target, requestedPath)
         : null;
       let result: { item: Record<string, unknown>; folderPath: string; moved?: boolean };
       if (existingMapping?.external_folder_id) {
-        result = entityType === 'project'
+        result = entityType === 'project' || entityType === 'realizace' || entityType === 'service'
           ? await reconcileMappedFolderLocation(graphToken, target, existingMapping, requestedPath)
           : {
             item: await graphFetch(
@@ -871,6 +930,20 @@ Deno.serve(async (req: Request) => {
         .from('document_storage_folders')
         .upsert(mappingPayload, { onConflict: 'connection_id,entity_type,entity_id' });
       if (mappingError) throw mappingError;
+      const sharedLinkTable = entityType === 'project'
+        ? 'projects'
+        : entityType === 'realizace'
+          ? 'realizations'
+          : entityType === 'service'
+            ? 'service_cases'
+            : null;
+      if (sharedLinkTable) {
+        const { error: linkError } = await admin
+          .from(sharedLinkTable)
+          .update({ shared_drive_link: result.item.webUrl || null })
+          .eq('id', entityId);
+        if (linkError) throw linkError;
+      }
       return jsonResponse({
         success: true,
         provider,
@@ -920,7 +993,7 @@ Deno.serve(async (req: Request) => {
       let folderPath: string;
       let moved = false;
       const requestedPath = await getServerEntityFolderPath(admin, 'project', entityId, target);
-      const statusFolders = await ensureProjectStatusFolders(graphToken, target, requestedPath);
+      const statusFolders = await ensureStatusFolders(graphToken, target, requestedPath);
       if (currentMapping?.external_folder_id) {
         const reconciled = await reconcileMappedFolderLocation(graphToken, target, currentMapping, requestedPath);
         rootItem = reconciled.item;

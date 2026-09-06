@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
+import { ensureEntityFolder } from '@/lib/documentStorageService';
 import { formatServiceDate, priorityTone, serviceKindLabels, servicePriorityLabels, serviceStatusLabels, serviceTypeLabels, statusTone, warrantyLabels } from '@/lib/serviceModule';
 
 const blankCase = {
@@ -120,7 +121,12 @@ const Service = () => {
       : await supabase.rpc('create_service_case', { p_payload: payload });
     setSaving(false);
     if (error) return toast({ title: 'Případ se nepodařilo vytvořit', description: error.message, variant: 'destructive' });
-    toast({ title: sourceTicketId ? `${data.number} vznikl z e-mailového ticketu` : `${data.number} byl vytvořen` });
+    try {
+      await ensureEntityFolder({ entityType: 'service', entityId: data.id, code: data.number, name: data.title });
+      toast({ title: sourceTicketId ? `${data.number} vznikl z e-mailového ticketu` : `${data.number} byl vytvořen`, description: 'Složka servisu a její podsložky jsou připravené v Dokumenty – Realizace.' });
+    } catch (storageError) {
+      toast({ title: `${data.number} byl vytvořen`, description: `Případ je uložený, složku se nepodařilo připravit: ${storageError.message}`, variant: 'destructive' });
+    }
     setDialogOpen(false); setSourceTicketId(''); setDraft(blankCase); navigate(`/service/${data.id}`);
   };
 

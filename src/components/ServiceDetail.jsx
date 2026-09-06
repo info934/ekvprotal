@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Camera, CheckCircle2, Clock3, Download, FileSignature, ImagePlus, Mail, MapPin, Package, Paperclip, Pencil, Play, Plus, Send, ShieldCheck, User, Wrench } from 'lucide-react';
+import { ArrowLeft, Camera, CheckCircle2, Clock3, Download, ExternalLink, FileSignature, FolderOpen, ImagePlus, Mail, MapPin, Package, Paperclip, Pencil, Play, Plus, Send, ShieldCheck, User, Wrench } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { createHandoverProtocolPdfBlob } from '@/lib/documentGenerationService';
+import { ensureEntityFolder } from '@/lib/documentStorageService';
 import { blobToDataUrl, buildServiceProtocolModel, formatServiceDate, parseServiceLines, priorityTone, serviceDocumentLabels, servicePriorityLabels, serviceSafetyChecks, serviceStatusLabels, serviceTypeLabels, statusTone, warrantyLabels } from '@/lib/serviceModule';
 
 const selectClass = 'h-10 w-full rounded-md border border-input bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring';
@@ -51,6 +52,7 @@ const ServiceDetail = () => {
   const [prepared, setPrepared] = useState(null);
   const [sendDraft, setSendDraft] = useState({ recipientName: '', recipientEmail: '', message: '' });
   const [sending, setSending] = useState(false);
+  const [preparingFolder, setPreparingFolder] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,6 +85,18 @@ const ServiceDetail = () => {
     const { error } = await supabase.from('service_cases').update(patch).eq('id', serviceCaseId);
     if (error) return toast({ title: 'Změnu se nepodařilo uložit', description: error.message, variant: 'destructive' });
     await load();
+  };
+  const prepareServiceFolder = async () => {
+    setPreparingFolder(true);
+    try {
+      await ensureEntityFolder({ entityType: 'service', entityId: serviceCaseId, code: serviceCase.number, name: serviceCase.title });
+      toast({ title: 'Servisní složka je připravená', description: 'Najdete ji v Dokumenty – Realizace.' });
+      await load();
+    } catch (error) {
+      toast({ title: 'Složku se nepodařilo připravit', description: error.message, variant: 'destructive' });
+    } finally {
+      setPreparingFolder(false);
+    }
   };
   const openVisit = (visit = null) => { setVisitDraft(visit ? normalizeVisit(visit) : emptyVisit(serviceCase, (visits[0]?.visit_number || 0) + 1)); setVisitOpen(true); };
   const setVisit = (key, value) => setVisitDraft((current) => ({ ...current, [key]: value }));
@@ -175,7 +189,7 @@ const ServiceDetail = () => {
       </div>
 
       <aside className="space-y-5">
-        <Card><CardHeader><CardTitle>Práce v terénu</CardTitle></CardHeader><CardContent className="space-y-3"><div className="rounded-lg bg-slate-50 p-3 text-sm"><User className="mr-2 inline h-4 w-4" />{serviceCase.assigned?.name || 'Technik není přiřazen'}</div><div className="rounded-lg bg-slate-50 p-3 text-sm"><Clock3 className="mr-2 inline h-4 w-4" />{formatServiceDate(serviceCase.scheduled_start)}</div><div className="rounded-lg bg-slate-50 p-3 text-sm"><MapPin className="mr-2 inline h-4 w-4" />{serviceCase.installation_address || 'Bez adresy'}</div>{canEdit && <select aria-label="Stav případu" className={selectClass} value={serviceCase.status} onChange={(e) => updateCase({ status: e.target.value })}>{Object.entries(serviceStatusLabels).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select>}</CardContent></Card>
+        <Card><CardHeader><CardTitle>Práce v terénu</CardTitle></CardHeader><CardContent className="space-y-3"><div className="rounded-lg bg-slate-50 p-3 text-sm"><User className="mr-2 inline h-4 w-4" />{serviceCase.assigned?.name || 'Technik není přiřazen'}</div><div className="rounded-lg bg-slate-50 p-3 text-sm"><Clock3 className="mr-2 inline h-4 w-4" />{formatServiceDate(serviceCase.scheduled_start)}</div><div className="rounded-lg bg-slate-50 p-3 text-sm"><MapPin className="mr-2 inline h-4 w-4" />{serviceCase.installation_address || 'Bez adresy'}</div>{serviceCase.shared_drive_link ? <Button asChild variant="outline" className="w-full justify-start"><a href={serviceCase.shared_drive_link} target="_blank" rel="noreferrer"><FolderOpen className="mr-2 h-4 w-4" />Otevřít složku servisu<ExternalLink className="ml-auto h-4 w-4" /></a></Button> : canEdit ? <Button type="button" variant="outline" className="w-full justify-start" onClick={prepareServiceFolder} disabled={preparingFolder}><FolderOpen className="mr-2 h-4 w-4" />{preparingFolder ? 'Připravuji složku…' : 'Připravit složku servisu'}</Button> : null}{canEdit && <select aria-label="Stav případu" className={selectClass} value={serviceCase.status} onChange={(e) => updateCase({ status: e.target.value })}>{Object.entries(serviceStatusLabels).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select>}</CardContent></Card>
         <Card><CardHeader><CardTitle>Protokoly a podpis</CardTitle></CardHeader><CardContent className="space-y-2">{!latestVisit && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Nejdříve založte servisní výjezd. Z jeho záznamu se vytvoří protokol.</p>}<Button className="w-full justify-start" variant="outline" disabled={!latestVisit} onClick={() => prepareDocument('service_protocol', 'download')}><Download className="mr-2 h-4 w-4" />Servisní protokol PDF</Button><Button className="w-full justify-start" variant="outline" disabled={!latestVisit} onClick={() => prepareDocument('handover_protocol', 'download')}><Download className="mr-2 h-4 w-4" />Předávací protokol PDF</Button><Button className="w-full justify-start" onClick={() => prepareDocument('service_protocol', 'send')} disabled={!latestVisit || !serviceCase.client_email}><Send className="mr-2 h-4 w-4" />Odeslat servisní k podpisu</Button><Button className="w-full justify-start" onClick={() => prepareDocument('handover_protocol', 'send')} disabled={!latestVisit || !serviceCase.client_email}><FileSignature className="mr-2 h-4 w-4" />Odeslat předávací k podpisu</Button>{documents.length > 0 && <div className="mt-4 space-y-2 border-t pt-4">{documents.slice(0, 8).map((doc) => <div key={doc.id} className="flex items-center justify-between gap-2 text-sm"><div><strong>{doc.number}</strong><p className="text-xs text-slate-500">{serviceDocumentLabels[doc.document_type]}</p></div><Badge variant={doc.status === 'signed' ? 'secondary' : 'outline'}>{doc.status === 'signed' ? 'Podepsáno' : doc.status === 'sent' || doc.status === 'viewed' ? 'Odesláno' : 'Připraveno'}</Badge></div>)}</div>}</CardContent></Card>
         <Card><CardHeader><CardTitle>Historie případu</CardTitle></CardHeader><CardContent><ol className="space-y-4">{events.slice(0, 12).map((event) => <li key={event.id} className="relative border-l pl-4 text-sm before:absolute before:-left-1 before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-blue-500"><p className="font-medium text-slate-800">{event.summary}</p><p className="mt-1 text-xs text-slate-500">{formatServiceDate(event.created_at)} · {event.actor?.name || 'Systém'}</p></li>)}</ol></CardContent></Card>
       </aside>

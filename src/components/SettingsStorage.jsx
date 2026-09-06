@@ -24,12 +24,14 @@ import { invokeWithTimeout } from '@/lib/requestControl';
 const TARGETS = [
   { key: 'project', label: 'Projekty', description: 'Projektová dokumentace a předání' },
   { key: 'realizace', label: 'Realizace', description: 'Realizační dokumentace, náklady a předání' },
+  { key: 'service', label: 'Servis', description: 'Servisní případy uvnitř realizací a samostatný servis' },
   { key: 'invoice', label: 'Vedení', description: 'Obchodní smlouvy a odběratelské faktury' },
 ];
 
 const DEFAULT_STRUCTURES = {
   project: ['00_Admin', '01_Smlouvy', '02_Dokumentace', '03_Predani', '04_Fakturace'],
-  realizace: ['00_Admin', '01_Objednavky', '02_Naklady', '03_Fotodokumentace', '04_Predani', '05_Fakturace'],
+  realizace: ['00_Admin', '01_Smlouvy_a_objednavky', '02_Technicka_dokumentace', '03_Harmonogram_a_KD', '04_Naklady/Faktury', '05_Fotodokumentace', '06_Revize_a_zkousky', '07_Predani', '08_Fakturace', 'Servis'],
+  service: ['00_Admin', '01_Fotodokumentace', '02_Servisni_protokoly', '03_Predavaci_protokoly', '04_Komunikace', '05_Material_a_mereni'],
   invoice: [],
 };
 
@@ -41,6 +43,8 @@ const emptyTarget = {
   structure: [],
   projectFolderName: '',
   organizeProjectsByYear: false,
+  realizationFolderName: '',
+  organizeRealizationsByYear: false,
   activeFolderName: '',
   completedFolderName: '',
   completedStatuses: [],
@@ -56,9 +60,11 @@ const createDefaultTargets = () => Object.fromEntries(TARGETS.map(({ key }) => [
     structure: [...(DEFAULT_STRUCTURES[key] || [])],
     projectFolderName: key === 'project' ? 'Projekty' : '',
     organizeProjectsByYear: key === 'project',
-    activeFolderName: key === 'project' ? 'Aktivni' : '',
-    completedFolderName: key === 'project' ? 'Hotovo' : '',
-    completedStatuses: key === 'project' ? ['closed'] : [],
+    realizationFolderName: '',
+    organizeRealizationsByYear: key === 'realizace',
+    activeFolderName: ['project', 'realizace'].includes(key) ? 'Aktivni' : '',
+    completedFolderName: ['project', 'realizace'].includes(key) ? 'Hotovo' : '',
+    completedStatuses: key === 'project' ? ['closed'] : key === 'realizace' ? ['Dokončeno', 'Předáno'] : [],
     costInvoiceFolderPath: key === 'project'
       ? '04_Fakturace/Nakladove faktury'
       : key === 'realizace'
@@ -105,15 +111,17 @@ const toForm = (connection) => {
         organizeProjectsByYear: key === 'project'
           ? config.targets?.[key]?.organizeProjectsByYear !== false
           : false,
-        activeFolderName: key === 'project'
+        realizationFolderName: key === 'realizace' ? (config.targets?.[key]?.realizationFolderName || '') : '',
+        organizeRealizationsByYear: key === 'realizace' ? config.targets?.[key]?.organizeRealizationsByYear !== false : false,
+        activeFolderName: ['project', 'realizace'].includes(key)
           ? (config.targets?.[key]?.activeFolderName || 'Aktivni')
           : '',
-        completedFolderName: key === 'project'
+        completedFolderName: ['project', 'realizace'].includes(key)
           ? (config.targets?.[key]?.completedFolderName || 'Hotovo')
           : '',
-        completedStatuses: key === 'project' && Array.isArray(config.targets?.[key]?.completedStatuses) && config.targets[key].completedStatuses.length
+        completedStatuses: ['project', 'realizace'].includes(key) && Array.isArray(config.targets?.[key]?.completedStatuses) && config.targets[key].completedStatuses.length
           ? config.targets[key].completedStatuses
-          : (key === 'project' ? ['closed'] : []),
+          : (key === 'project' ? ['closed'] : key === 'realizace' ? ['Dokončeno', 'Předáno'] : []),
         costInvoiceFolderPath: key === 'project'
           ? (config.targets?.[key]?.costInvoiceFolderPath || '04_Fakturace/Nakladove faktury')
           : key === 'realizace'
@@ -255,14 +263,18 @@ const SettingsStorage = () => {
         ? String(form.targets[key].projectFolderName ?? '').trim().replace(/^\/+|\/+$/g, '')
         : '',
       organizeProjectsByYear: key === 'project' ? form.targets[key].organizeProjectsByYear !== false : false,
-      activeFolderName: key === 'project'
+      realizationFolderName: key === 'realizace'
+        ? String(form.targets[key].realizationFolderName ?? '').trim().replace(/^\/+|\/+$/g, '')
+        : '',
+      organizeRealizationsByYear: key === 'realizace' ? form.targets[key].organizeRealizationsByYear !== false : false,
+      activeFolderName: ['project', 'realizace'].includes(key)
         ? String(form.targets[key].activeFolderName || 'Aktivni').trim().replace(/^\/+|\/+$/g, '')
         : '',
-      completedFolderName: key === 'project'
+      completedFolderName: ['project', 'realizace'].includes(key)
         ? String(form.targets[key].completedFolderName || 'Hotovo').trim().replace(/^\/+|\/+$/g, '')
         : '',
-      completedStatuses: key === 'project'
-        ? (form.targets[key].completedStatuses?.length ? form.targets[key].completedStatuses : ['closed'])
+      completedStatuses: ['project', 'realizace'].includes(key)
+        ? (form.targets[key].completedStatuses?.length ? form.targets[key].completedStatuses : key === 'project' ? ['closed'] : ['Dokončeno', 'Předáno'])
         : [],
       costInvoiceFolderPath: key === 'project'
         ? String(form.targets[key].costInvoiceFolderPath || '04_Fakturace/Nakladove faktury').trim().replace(/^\/+|\/+$/g, '')

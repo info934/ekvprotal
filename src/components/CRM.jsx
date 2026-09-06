@@ -1165,14 +1165,14 @@ const DealWorkspace = ({
 };
 
 const OpportunityBoard = ({ stages, priorities, selectedOpportunity, crmTablesReady, onSelectOpportunity, onMoveOpportunity }) => (
-  <div className="overflow-x-auto pb-2">
-    <div className="grid min-w-[1280px] gap-3 xl:grid-cols-6">
+  <div className="pb-2 xl:overflow-x-auto">
+    <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[1280px] xl:grid-cols-6">
       {stages.map((stage) => {
         const total = stage.opportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
         return (
           <section
             key={stage.value}
-            className="min-h-[420px] rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 transition-colors"
+            className="min-h-[180px] rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 transition-colors xl:min-h-[420px]"
             onDragOver={(event) => {
               event.preventDefault();
               event.currentTarget.classList.add('ring-2', 'ring-primary/30');

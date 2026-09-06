@@ -148,8 +148,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid #1469e8; outline-offs
   .portal-inline-alert { align-items: flex-start; flex-wrap: wrap; }
   .portal-record-metrics > div { border-right: 0; border-bottom: 1px solid #e5e9ef; }
   .portal-record-metrics > div:last-child { border-bottom: 0; }
-  .portal-record-tabs { display: flex; width: 100%; min-width: 0; height: auto; gap: 0; overflow: visible; }
-  .portal-record-tabs [role=tab] { flex: 1 1 0; min-width: 0; height: 58px; flex-direction: column; gap: 5px; padding-inline: 2px; font-size: 11px; line-height: 1.2; }
+  .portal-record-tabs { display: flex; width: 100%; min-width: 0; height: auto; justify-content: flex-start; gap: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain; scrollbar-width: none; }
+  .portal-record-tabs::-webkit-scrollbar { display: none; }
+  .portal-record-tabs [role=tab] { flex: 0 0 auto; min-width: 88px; height: 52px; flex-direction: row; gap: 6px; padding-inline: 12px; font-size: 12px; line-height: 1.2; }
   input, textarea, select { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }

@@ -1,0 +1,1 @@
+-- Remote legacy migration 20260508122927 retained as a history placeholder.
