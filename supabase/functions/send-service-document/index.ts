@@ -36,7 +36,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const documentId = String(body.documentId || '');
     const recipientName = String(body.recipientName || '').trim().slice(0, 160);
-    const recipientEmail = String(body.recipientEmail || '').trim().toLowerCase();
+    const recipientEmail = String(body.recipientEmail || '').trim().toLowerCase().slice(0, 254);
     const message = String(body.message || '').trim().slice(0, 5000);
     const pdfBase64 = String(body.pdfBase64 || '');
     if (!/^[0-9a-f-]{36}$/i.test(documentId)) return json({ error: 'Neplatný dokument.' }, 400);
@@ -66,7 +66,10 @@ Deno.serve(async (req: Request) => {
     const signingUrl = `${portalUrl}/service-sign/${token}`;
     const subject = `${document.title} · ${document.service_case?.number || ''}`;
     const response = await fetchWithTimeout('https://api.resend.com/emails', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${resendApiKey}` },
+      method: 'POST', headers: {
+        'Content-Type': 'application/json', Authorization: `Bearer ${resendApiKey}`,
+        'Idempotency-Key': `service-document-${document.id}`,
+      },
       body: JSON.stringify({
         from: Deno.env.get('RESEND_FROM_EMAIL') || 'EKV Project <portal@web.ekvproject.cz>',
         to: [recipientEmail], subject,
