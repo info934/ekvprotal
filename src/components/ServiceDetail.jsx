@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Camera, CheckCircle2, Clock3, Download, FileSignature, ImagePlus, Mail, MapPin, Package, Pencil, Play, Plus, Send, ShieldCheck, User, Wrench } from 'lucide-react';
+import { ArrowLeft, Camera, CheckCircle2, Clock3, Download, FileSignature, ImagePlus, Mail, MapPin, Package, Paperclip, Pencil, Play, Plus, Send, ShieldCheck, User, Wrench } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -38,6 +38,7 @@ const ServiceDetail = () => {
   const [serviceCase, setServiceCase] = useState(null);
   const [visits, setVisits] = useState([]);
   const [attachments, setAttachments] = useState([]);
+  const [inboundAttachments, setInboundAttachments] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [events, setEvents] = useState([]);
   const [members, setMembers] = useState([]);
@@ -53,22 +54,27 @@ const ServiceDetail = () => {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [caseRes, visitRes, attachmentRes, documentRes, eventRes, memberRes] = await Promise.all([
+    const [caseRes, visitRes, attachmentRes, inboundAttachmentRes, documentRes, eventRes, memberRes] = await Promise.all([
       supabase.from('service_cases').select('*, assigned:assigned_member_id(id,name,email), subject:subject_id(id,name,email,phone,contact_person,address,ico,dic), project:project_id(id,name,code), realizace:realizace_id(id,name,status), opportunity:opportunity_id(id,number,title)').eq('id', serviceCaseId).maybeSingle(),
       supabase.from('service_visits').select('*, lead_technician:lead_technician_id(id,name)').eq('service_case_id', serviceCaseId).order('visit_number', { ascending: false }),
       supabase.from('service_attachments').select('*').eq('service_case_id', serviceCaseId).order('created_at', { ascending: false }),
+      supabase.from('service_ticket_attachments').select('*, ticket:service_ticket_id(number,subject,sender_email,received_at)').eq('service_case_id', serviceCaseId).order('created_at', { ascending: false }),
       supabase.from('service_documents').select('*').eq('service_case_id', serviceCaseId).order('created_at', { ascending: false }),
       supabase.from('service_events').select('id,event_type,summary,created_at,actor:actor_member_id(id,name)').eq('service_case_id', serviceCaseId).order('created_at', { ascending: false }).limit(100),
       supabase.from('members').select('id,name').not('auth_user_id', 'is', null).order('name'),
     ]);
-    const error = caseRes.error || visitRes.error || attachmentRes.error || documentRes.error || eventRes.error || memberRes.error;
+    const error = caseRes.error || visitRes.error || attachmentRes.error || inboundAttachmentRes.error || documentRes.error || eventRes.error || memberRes.error;
     if (error) toast({ title: 'Detail servisu se nepodařilo načíst', description: error.message, variant: 'destructive' });
     if (!caseRes.data && !caseRes.error) navigate('/service', { replace: true });
     const photos = await Promise.all((attachmentRes.data || []).map(async (item) => {
       const { data } = await supabase.storage.from('service-photos').createSignedUrl(item.storage_path, 3600);
       return { ...item, signedUrl: data?.signedUrl || '' };
     }));
-    setServiceCase(caseRes.data); setVisits(visitRes.data || []); setAttachments(photos); setDocuments(documentRes.data || []); setEvents(eventRes.data || []); setMembers(memberRes.data || []); setLoading(false);
+    const emailFiles = await Promise.all((inboundAttachmentRes.data || []).map(async (item) => {
+      const { data } = await supabase.storage.from('service-inbox').createSignedUrl(item.storage_path, 3600);
+      return { ...item, signedUrl: data?.signedUrl || '' };
+    }));
+    setServiceCase(caseRes.data); setVisits(visitRes.data || []); setAttachments(photos); setInboundAttachments(emailFiles); setDocuments(documentRes.data || []); setEvents(eventRes.data || []); setMembers(memberRes.data || []); setLoading(false);
   }, [navigate, serviceCaseId, toast]);
   useEffect(() => { load(); }, [load]);
   const latestVisit = visits[0] || null;
@@ -165,7 +171,7 @@ const ServiceDetail = () => {
           {visits.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Zatím není naplánovaný žádný výjezd.</div> : visits.map((visit) => <div key={visit.id} className="rounded-xl border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><h3 className="font-semibold">Výjezd #{visit.visit_number}</h3><Badge variant="outline">{visit.status === 'completed' ? 'Dokončen' : visit.status === 'in_progress' ? 'Probíhá' : 'Koncept'}</Badge></div><p className="mt-1 text-sm text-slate-500">{formatServiceDate(visit.scheduled_start)} · {visit.lead_technician?.name || 'Nepřiřazeno'}</p></div>{canEdit && <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => openVisit(visit)}><Pencil className="mr-2 h-4 w-4" />Upravit</Button>{visit.status === 'draft' && <Button size="sm" onClick={() => startVisit(visit)}><Play className="mr-2 h-4 w-4" />Zahájit</Button>}{visit.status === 'in_progress' && <Button size="sm" onClick={() => completeVisit(visit)}><CheckCircle2 className="mr-2 h-4 w-4" />Ukončit</Button>}</div>}</div>{visit.diagnostics && <p className="mt-4 whitespace-pre-wrap text-sm"><strong>Diagnostika:</strong> {visit.diagnostics}</p>}{visit.work_performed && <p className="mt-2 whitespace-pre-wrap text-sm"><strong>Provedené práce:</strong> {visit.work_performed}</p>}<div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500"><span><Package className="mr-1 inline h-3.5 w-3.5" />{visit.materials?.length || 0} položek</span><span><ShieldCheck className="mr-1 inline h-3.5 w-3.5" />{visit.safety_checks?.filter((item) => item.checked).length || 0}/{visit.safety_checks?.length || 0} kontrol</span><span><Camera className="mr-1 inline h-3.5 w-3.5" />{attachments.filter((item) => item.service_visit_id === visit.id).length} fotek</span></div></div>)}
         </CardContent></Card>
 
-        <Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle>Fotodokumentace</CardTitle><Button size="sm" variant="outline" onClick={() => photoInput.current?.click()}><ImagePlus className="mr-2 h-4 w-4" />Přidat</Button></CardHeader><CardContent>{attachments.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Fotografie lze pořídit přímo fotoaparátem telefonu.</div> : <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{attachments.map((item) => <a key={item.id} href={item.signedUrl} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-lg border bg-slate-50"><img src={item.signedUrl} alt={item.caption || item.file_name} className="aspect-square w-full object-cover transition group-hover:scale-105" /><p className="truncate p-2 text-xs text-slate-600">{item.caption || item.file_name}</p></a>)}</div>}</CardContent></Card>
+        <Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle>Fotodokumentace</CardTitle><Button size="sm" variant="outline" onClick={() => photoInput.current?.click()}><ImagePlus className="mr-2 h-4 w-4" />Přidat</Button></CardHeader><CardContent>{attachments.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Fotografie lze pořídit přímo fotoaparátem telefonu.</div> : <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{attachments.map((item) => <a key={item.id} href={item.signedUrl} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-lg border bg-slate-50"><img src={item.signedUrl} alt={item.caption || item.file_name} className="aspect-square w-full object-cover transition group-hover:scale-105" /><p className="truncate p-2 text-xs text-slate-600">{item.caption || item.file_name}</p></a>)}</div>}{inboundAttachments.length > 0 && <div className="mt-5 border-t pt-4"><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><Paperclip className="h-4 w-4" />Přílohy původního e-mailu</h3><div className="grid gap-2 sm:grid-cols-2">{inboundAttachments.map((item) => <a key={item.id} href={item.signedUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-lg border p-3 text-sm hover:bg-slate-50"><Paperclip className="h-4 w-4 shrink-0 text-blue-700" /><span className="min-w-0"><strong className="block truncate">{item.file_name}</strong><span className="text-xs text-slate-500">{item.ticket?.number} · {Math.ceil(item.size_bytes / 1024)} kB</span></span></a>)}</div></div>}</CardContent></Card>
       </div>
 
       <aside className="space-y-5">

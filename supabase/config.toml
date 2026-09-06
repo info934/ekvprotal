@@ -116,6 +116,9 @@ verify_jwt = true
 [functions.respond-service-document]
 verify_jwt = false
 
+[functions.service-email-intake]
+verify_jwt = false
+
 [functions.send-payout-email]
 verify_jwt = true
 
