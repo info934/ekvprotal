@@ -22,7 +22,7 @@ import MemberSelect from '@/components/MemberSelect';
 import SubjectSelect from '@/components/SubjectSelect';
 import { parseApiError } from '@/lib/apiValidation';
 import PageHeader from '@/components/ui/page-header';
-import { ensureEntityFolder } from '@/lib/documentStorageService';
+import { initializeProjectWorkspace } from '@/lib/documentStorageService';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 
 const ProjectForm = () => {
@@ -237,12 +237,22 @@ const ProjectForm = () => {
         try {
             if (isEditing) {
                 const { status: nextStatus, ...projectPayload } = dataToSave;
-                const { error } = await supabase.rpc('save_project_safe', {
+                const { data: savedProject, error } = await supabase.rpc('save_project_safe', {
                     p_project_id: projectId,
                     p_payload: projectPayload,
                     p_next_status: nextStatus || null,
                 });
                 if (error) throw error;
+                try {
+                    await initializeProjectWorkspace({ project: savedProject });
+                } catch (storageError) {
+                    console.warn('Failed to synchronize project workspace', storageError);
+                    toast({
+                        title: 'Projekt je uložený, dokumentaci se nepodařilo synchronizovat',
+                        description: 'Na kartě Dokumenty lze synchronizaci bezpečně zopakovat.',
+                        variant: 'warning',
+                    });
+                }
                 toast({ title: 'Projekt úspěšně aktualizován', variant: 'default' }); 
                 unsaved.markSaved();
                 navigate(`/projects/${projectId}`);
@@ -262,15 +272,14 @@ const ProjectForm = () => {
                 }
 
                 try {
-                    await ensureEntityFolder({
-                        entityType: 'project',
-                        entityId: newProject.id,
-                        code: newProject.code,
-                        name: newProject.name,
-                    });
+                    await initializeProjectWorkspace({ project: newProject });
                 } catch (storageError) {
                     console.warn('Failed to prepare project storage folder', storageError);
-                    toast({ title: 'Projekt vytvořen, ale složku dokumentů se nepodařilo připravit.', variant: 'warning' });
+                    toast({
+                        title: 'Projekt je uložený, dokumentaci se nepodařilo připravit',
+                        description: 'Na kartě Dokumenty ji lze bezpečně vytvořit znovu.',
+                        variant: 'warning',
+                    });
                 }
                 
                 if (selectedTemplateId && selectedTemplateId !== 'none') {

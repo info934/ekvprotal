@@ -3,8 +3,9 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { fetchWithTimeout } from '../_shared/fetch.ts';
 import { assertActiveAccount } from '../_shared/accountStatus.ts';
 import { assertInvoiceFileDetached } from '../_shared/invoiceDeletionGuard.ts';
+import { strToU8, zipSync } from 'npm:fflate@0.8.2';
 
-type StorageAction = 'testConnection' | 'ensureFolder' | 'createUploadSession' | 'registerUploadedFile' | 'uploadFile' | 'downloadUrl' | 'listFiles' | 'deleteFile';
+type StorageAction = 'testConnection' | 'ensureFolder' | 'initializeProjectWorkspace' | 'createUploadSession' | 'registerUploadedFile' | 'uploadFile' | 'downloadUrl' | 'listFiles' | 'deleteFile';
 type EntityType = 'project' | 'realizace' | 'product' | 'invoice';
 
 type StorageTarget = {
@@ -347,6 +348,96 @@ const base64ToBytes = (base64: string) => {
   return bytes;
 };
 
+const escapeXml = (value: unknown) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&apos;');
+
+const wordParagraph = (text: unknown, options: { bold?: boolean; size?: number; color?: string; spacingAfter?: number } = {}) => {
+  const runProperties = [
+    options.bold ? '<w:b/>' : '',
+    options.size ? `<w:sz w:val="${options.size}"/><w:szCs w:val="${options.size}"/>` : '',
+    options.color ? `<w:color w:val="${options.color}"/>` : '',
+  ].join('');
+  const paragraphProperties = options.spacingAfter
+    ? `<w:pPr><w:spacing w:after="${options.spacingAfter}"/></w:pPr>`
+    : '';
+  return `<w:p>${paragraphProperties}<w:r><w:rPr>${runProperties}</w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+};
+
+const wordTableRow = (label: string, value: unknown) => `<w:tr>
+  <w:tc><w:tcPr><w:tcW w:w="2600" w:type="dxa"/><w:shd w:fill="EAF0FB"/></w:tcPr>${wordParagraph(label, { bold: true, color: '244B86' })}</w:tc>
+  <w:tc><w:tcPr><w:tcW w:w="6500" w:type="dxa"/></w:tcPr>${wordParagraph(value || '—')}</w:tc>
+</w:tr>`;
+
+const formatWorkspaceDate = (value: unknown) => {
+  if (!value) return '—';
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? String(value) : new Intl.DateTimeFormat('cs-CZ').format(parsed);
+};
+
+const createProjectWorkspaceDocx = (input: {
+  project: Record<string, unknown>;
+  investor?: Record<string, unknown> | null;
+  client?: Record<string, unknown> | null;
+  manager?: Record<string, unknown> | null;
+  opportunity?: Record<string, unknown> | null;
+}) => {
+  const { project, investor, client, manager, opportunity } = input;
+  const partyLine = (party?: Record<string, unknown> | null) => [party?.name, party?.ico ? `IČO ${party.ico}` : '', party?.dic ? `DIČ ${party.dic}` : ''].filter(Boolean).join(' · ') || '—';
+  const contactLine = (party?: Record<string, unknown> | null) => [party?.contact_person, party?.email, party?.phone].filter(Boolean).join(' · ') || '—';
+  const generatedAt = new Date().toISOString();
+  const rows = [
+    ['Kód projektu', project.code],
+    ['Název projektu', project.name],
+    ['Stav', project.status],
+    ['Typ projektu', project.type],
+    ['Investor', partyLine(investor)],
+    ['Investor – kontakt', contactLine(investor)],
+    ['Investor – adresa', investor?.address],
+    ['Objednatel / klient', partyLine(client)],
+    ['Klient – kontakt', contactLine(client)],
+    ['Klient – adresa', client?.address],
+    ['Vedoucí projektu', [manager?.name, manager?.email, manager?.phone].filter(Boolean).join(' · ')],
+    ['Místo stavby', project.location],
+    ['Interní reference klienta', project.client_internal_ref],
+    ['Zahájení', formatWorkspaceDate(project.start_date)],
+    ['Termín dokončení', formatWorkspaceDate(project.completion_date)],
+    ['Zdrojová obchodní příležitost', [opportunity?.number, opportunity?.title].filter(Boolean).join(' · ')],
+  ];
+  const table = `<w:tbl><w:tblPr><w:tblW w:w="9100" w:type="dxa"/><w:tblBorders>
+    <w:top w:val="single" w:sz="4" w:color="CBD5E1"/><w:left w:val="single" w:sz="4" w:color="CBD5E1"/>
+    <w:bottom w:val="single" w:sz="4" w:color="CBD5E1"/><w:right w:val="single" w:sz="4" w:color="CBD5E1"/>
+    <w:insideH w:val="single" w:sz="4" w:color="E2E8F0"/><w:insideV w:val="single" w:sz="4" w:color="E2E8F0"/>
+  </w:tblBorders></w:tblPr>${rows.map(([label, value]) => wordTableRow(String(label), value)).join('')}</w:tbl>`;
+  const brief = String(project.brief || '').trim() || 'Rozsah a cíle projektu zatím nejsou doplněny.';
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+  ${wordParagraph('EKV PROJECT', { bold: true, size: 22, color: '2563EB', spacingAfter: 100 })}
+  ${wordParagraph('ZÁKLADNÍ ÚDAJE PROJEKTU', { bold: true, size: 36, color: '0F172A', spacingAfter: 260 })}
+  ${table}
+  ${wordParagraph('Zadání a rozsah', { bold: true, size: 26, color: '0F172A', spacingAfter: 100 })}
+  ${wordParagraph(brief, { size: 21, spacingAfter: 220 })}
+  ${wordParagraph('Kontrolní seznam vstupních podkladů', { bold: true, size: 26, color: '0F172A', spacingAfter: 100 })}
+  ${wordParagraph('☐ Smlouva nebo objednávka  ☐ Zaměření / výkresy  ☐ Technické zadání investora')}
+  ${wordParagraph('☐ Požadavky dotčených orgánů  ☐ Harmonogram  ☐ Kontaktní osoby')}
+  ${wordParagraph(`Automaticky synchronizováno z EKV portálu: ${formatWorkspaceDate(generatedAt)}`, { size: 17, color: '64748B', spacingAfter: 100 })}
+  <w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1000" w:right="1000" w:bottom="1000" w:left="1000"/></w:sectPr>
+</w:body></w:document>`;
+
+  return zipSync({
+    '[Content_Types].xml': strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>'),
+    '_rels/.rels': strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>'),
+    'word/document.xml': strToU8(documentXml),
+    'word/styles.xml': strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Aptos" w:hAnsi="Aptos"/><w:sz w:val="21"/></w:rPr></w:style></w:styles>'),
+    'word/_rels/document.xml.rels': strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'),
+    'docProps/core.xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${escapeXml(`Projektový list ${project.code || ''}`)}</dc:title><dc:creator>EKV Project</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${generatedAt}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${generatedAt}</dcterms:modified></cp:coreProperties>`),
+    'docProps/app.xml': strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>EKV Portal</Application></Properties>'),
+  }, { level: 6 });
+};
+
 const getEntityFolderMapping = async (
   admin: ReturnType<typeof createClient>,
   connectionId: string,
@@ -650,6 +741,151 @@ Deno.serve(async (req: Request) => {
         folderPath: result.folderPath,
         webUrl: result.item.webUrl,
         metadata: mappingPayload.metadata,
+      });
+    }
+
+    if (action === 'initializeProjectWorkspace') {
+      if (entityType !== 'project') {
+        return jsonResponse({ success: false, error: 'Project workspace can only be initialized for a project.' }, 400);
+      }
+
+      const { data: project, error: projectError } = await admin
+        .from('projects')
+        .select('id, code, name, status, type, start_date, completion_date, location, client_internal_ref, brief, investor_id, client_id, created_by_member_id, crm_opportunity_id')
+        .eq('id', entityId)
+        .maybeSingle();
+      if (projectError) throw projectError;
+      if (!project) return jsonResponse({ success: false, error: 'Project was not found.' }, 404);
+
+      const { data: currentMapping, error: currentMappingError } = await admin
+        .from('document_storage_folders')
+        .select('*')
+        .eq('connection_id', connection.id)
+        .eq('entity_type', 'project')
+        .eq('entity_id', entityId)
+        .maybeSingle();
+      if (currentMappingError) throw currentMappingError;
+
+      let rootItem: Record<string, unknown>;
+      let folderPath: string;
+      if (currentMapping?.external_folder_id) {
+        rootItem = await graphFetch(
+          graphToken,
+          `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(currentMapping.external_folder_id)}`,
+        );
+        folderPath = String(currentMapping.folder_path || '');
+      } else {
+        const requestedPath = await getServerEntityFolderPath(admin, 'project', entityId);
+        const ensured = await ensurePath(graphToken, target, requestedPath);
+        rootItem = ensured.item;
+        folderPath = ensured.folderPath;
+      }
+
+      const structure = await ensureStructure(graphToken, target, String(rootItem.id));
+      const projectSheetFolder = structure.find((folder) => folder.path === '00_Admin/Projektovy list')
+        || structure.find((folder) => folder.path === '00_Admin')
+        || { id: String(rootItem.id), path: '' };
+
+      const partyIds = [...new Set([project.investor_id, project.client_id].filter(Boolean))];
+      const partiesPromise = partyIds.length
+        ? admin.from('subjects').select('id, name, ico, dic, address, contact_person, email, phone').in('id', partyIds)
+        : Promise.resolve({ data: [], error: null });
+      const managerPromise = project.created_by_member_id
+        ? admin.from('members').select('id, name, email, phone').eq('id', project.created_by_member_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null });
+      const opportunityPromise = project.crm_opportunity_id
+        ? admin.from('crm_opportunities').select('id, number, title').eq('id', project.crm_opportunity_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null });
+      const [partiesResult, managerResult, opportunityResult] = await Promise.all([
+        partiesPromise,
+        managerPromise,
+        opportunityPromise,
+      ]);
+      if (partiesResult.error) throw partiesResult.error;
+      if (managerResult.error) throw managerResult.error;
+      if (opportunityResult.error) throw opportunityResult.error;
+
+      const parties = partiesResult.data || [];
+      const projectSheet = createProjectWorkspaceDocx({
+        project,
+        investor: parties.find((party) => party.id === project.investor_id) || null,
+        client: parties.find((party) => party.id === project.client_id) || null,
+        manager: managerResult.data || null,
+        opportunity: opportunityResult.data || null,
+      });
+      const projectSheetFileName = '00_Zakladni_udaje_projektu.docx';
+      const uploaded = await graphFetch(
+        graphToken,
+        `/drives/${encodeURIComponent(String(target.driveId))}/items/${encodeURIComponent(String(projectSheetFolder.id))}:/${encodeURIComponent(projectSheetFileName)}:/content?@microsoft.graph.conflictBehavior=replace`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+          body: projectSheet,
+        },
+      );
+
+      const initializedAt = new Date().toISOString();
+      const workspaceMetadata = {
+        ...(currentMapping?.metadata || {}),
+        driveId: target.driveId,
+        siteId: target.siteId,
+        structure,
+        structureVersion: 3,
+        projectWorkspace: {
+          status: 'ready',
+          templateVersion: 1,
+          initializedAt,
+          projectSheetFileId: uploaded.id,
+          projectSheetWebUrl: uploaded.webUrl,
+        },
+      };
+      const mappingPayload = {
+        connection_id: connection.id,
+        entity_type: 'project',
+        entity_id: entityId,
+        folder_path: folderPath,
+        external_folder_id: rootItem.id,
+        external_web_url: rootItem.webUrl,
+        status: 'created',
+        metadata: workspaceMetadata,
+        updated_at: initializedAt,
+      };
+      const { error: mappingError } = await admin
+        .from('document_storage_folders')
+        .upsert(mappingPayload, { onConflict: 'connection_id,entity_type,entity_id' });
+      if (mappingError) throw mappingError;
+
+      const { error: registryError } = await admin.from('document_storage_files').upsert({
+        connection_id: connection.id,
+        entity_type: 'project',
+        entity_id: entityId,
+        owner_type: 'project_workspace',
+        owner_id: entityId,
+        external_file_id: uploaded.id,
+        external_parent_id: projectSheetFolder.id,
+        file_name: projectSheetFileName,
+        external_web_url: uploaded.webUrl,
+        metadata: { documentKind: 'project_sheet', templateVersion: 1, synchronizedAt: initializedAt },
+        uploaded_by: user.id,
+      }, { onConflict: 'connection_id,external_file_id' });
+      if (registryError) throw registryError;
+
+      const { error: projectLinkError } = await admin
+        .from('projects')
+        .update({ shared_drive_link: rootItem.webUrl })
+        .eq('id', entityId);
+      if (projectLinkError) throw projectLinkError;
+
+      return jsonResponse({
+        success: true,
+        provider,
+        status: 'ready',
+        folderId: rootItem.id,
+        externalFolderId: rootItem.id,
+        folderPath,
+        webUrl: rootItem.webUrl,
+        projectSheet: { fileId: uploaded.id, fileName: projectSheetFileName, webUrl: uploaded.webUrl },
+        metadata: workspaceMetadata,
       });
     }
 

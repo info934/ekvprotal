@@ -321,6 +321,41 @@ export const ensureEntityFolder = async ({ entityType, entityId, code, name, con
   };
 };
 
+export const initializeProjectWorkspace = async ({ project, connection }) => {
+  if (!project?.id) throw new Error('Projekt není uložený.');
+  const activeConnection = connection || await getDefaultStorageConnection();
+
+  if (activeConnection.provider === 'supabase') {
+    return ensureEntityFolder({
+      entityType: 'project',
+      entityId: project.id,
+      code: project.code,
+      name: project.name,
+      connection: activeConnection,
+    });
+  }
+
+  const { data, error } = await invokeDocumentStorage({
+    body: {
+      action: 'initializeProjectWorkspace',
+      connectionId: activeConnection.id,
+      provider: activeConnection.provider,
+      entityType: 'project',
+      entityId: project.id,
+    },
+  }, 90_000);
+
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || 'Projektové prostředí se nepodařilo připravit.');
+
+  return {
+    connection: activeConnection,
+    connectionId: activeConnection.id,
+    provider: activeConnection.provider,
+    ...data,
+  };
+};
+
 export const uploadProjectDocument = async ({ file, project, documentName }) => {
   const connection = await getDefaultStorageConnection();
   const folder = await ensureEntityFolder({

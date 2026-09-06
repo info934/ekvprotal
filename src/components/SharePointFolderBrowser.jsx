@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   ensureEntityFolder,
   getEntityStorageFolder,
+  initializeProjectWorkspace,
   listEntityStorageFolder,
   uploadEntityStorageFile,
 } from '@/lib/documentStorageService';
@@ -145,16 +146,22 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
     setCreating(true);
     setError('');
     try {
-      await ensureEntityFolder({
-        entityType,
-        entityId: entity.id,
-        code: entity.code,
-        name: entity.name,
-        connection: connection || undefined,
-      });
+      if (entityType === 'project') {
+        await initializeProjectWorkspace({ project: entity, connection: connection || undefined });
+      } else {
+        await ensureEntityFolder({
+          entityType,
+          entityId: entity.id,
+          code: entity.code,
+          name: entity.name,
+          connection: connection || undefined,
+        });
+      }
       toast({
-        title: 'SharePoint složka vytvořena',
-        description: 'Byla vytvořena hlavní složka i standardní struktura podsložek.',
+        title: entityType === 'project' ? 'Projektová dokumentace připravena' : 'SharePoint složka vytvořena',
+        description: entityType === 'project'
+          ? 'Složky i vyplněný projektový list jsou aktuální.'
+          : 'Byla vytvořena hlavní složka i standardní struktura podsložek.',
       });
       await initialize();
     } catch (creationError) {
@@ -283,6 +290,11 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
                 <Link2 className="h-3 w-3" /> Původní složka
               </span>
             )}
+            {mappingMetadata.projectWorkspace?.status === 'ready' && breadcrumbs.length > 0 && (
+              <span className="ml-1 inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 font-medium text-blue-700">
+                Projektový list připraven
+              </span>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -290,6 +302,12 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
             <Button variant="outline" size="sm" onClick={() => loadFolder(currentFolder, connection, true)} disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               <span className="sr-only">Obnovit</span>
+            </Button>
+          )}
+          {canEdit && currentFolder && entityType === 'project' && (
+            <Button type="button" variant="outline" size="sm" onClick={handleCreateFolder} disabled={creating || loading}>
+              {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Synchronizovat údaje
             </Button>
           )}
           {rootFolder?.webUrl && (
