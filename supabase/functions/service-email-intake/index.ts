@@ -212,10 +212,15 @@ Deno.serve(async (req: Request) => {
 
     const token = await getGraphToken();
     const { roles, clientId } = tokenClaims(token);
-    if (!roles.includes('Mail.Read')) {
-      throw Object.assign(new Error('Aplikaci Microsoft Graph chybí oprávnění Mail.Read (Application) se souhlasem administrátora.'), { status: 403, roles, clientId });
+    let inbox;
+    try {
+      inbox = await graphJson(token, `/users/${encodeURIComponent(mailbox)}/mailFolders/inbox?$select=id,displayName,totalItemCount,unreadItemCount`);
+    } catch (graphAccessError) {
+      if (graphAccessError?.status === 403) {
+        throw Object.assign(new Error('Microsoft aplikace nemá pro tuto schránku roli Application Mail.Read. Doporučeno je omezené přidělení přes Exchange Application RBAC.'), { status: 403, roles, clientId });
+      }
+      throw Object.assign(graphAccessError, { roles, clientId });
     }
-    const inbox = await graphJson(token, `/users/${encodeURIComponent(mailbox)}/mailFolders/inbox?$select=id,displayName,totalItemCount,unreadItemCount`);
     if (body.action === 'test') return json({ success: true, mailbox, inbox, roles, clientId });
     const result = await processMailbox(admin, token, mailbox);
     return json({ success: true, ...result });
