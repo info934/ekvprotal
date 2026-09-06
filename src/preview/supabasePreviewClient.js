@@ -29,6 +29,10 @@ function hydrate(row, table, depth = 0) {
     ['actor_member_id', 'members', ['actor', 'actor_member']],
     ['subject_id', 'subjects', ['subjects', 'subject', 'customer']],
     ['realization_id', 'realizations', ['realizations', 'realization']],
+    ['realizace_id', 'realizations', ['realizace']],
+    ['opportunity_id', 'crm_opportunities', ['opportunity']],
+    ['assigned_member_id', 'members', ['assigned']],
+    ['lead_technician_id', 'members', ['lead_technician']],
   ];
   for (const [key, relation, aliases] of relations) {
     const target = tables[relation]?.find(item => item.id === row[key]);
@@ -38,6 +42,10 @@ function hydrate(row, table, depth = 0) {
   if (table === 'payout_items') result.payouts = hydrate(tables.payouts.find(item => item.id === row.payout_id), 'payouts', depth + 1);
   if (table === 'projects') result.project_members = tables.project_members.filter(item => item.project_id === row.id).map(item => hydrate(item, 'project_members', depth + 1));
   if (table === 'realizations') result.team = tables.members.filter(item => row.team_members?.includes(item.id));
+  if (table === 'service_cases') {
+    result.visits = [{ count: (tables.service_visits || []).filter(item => item.service_case_id === row.id).length }];
+    result.attachments = [{ count: (tables.service_attachments || []).filter(item => item.service_case_id === row.id).length }];
+  }
   return result;
 }
 
@@ -158,6 +166,23 @@ class PreviewQuery {
 }
 
 function rpc(name, args = {}) {
+  if (name === 'create_service_case') return new PreviewQuery(name, () => {
+    const payload = args.p_payload || {};
+    const number = `SRV-${new Date().getFullYear()}-${String((tables.service_cases?.length || 0) + 1).padStart(4, '0')}`;
+    const row = { id: uuid(nextId++), number, status: 'new', reported_at: new Date().toISOString(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...clone(payload) };
+    tables.service_cases ||= []; tables.service_cases.push(row);
+    tables.service_events ||= []; tables.service_events.push({ id: uuid(nextId++), service_case_id: row.id, event_type: 'case_created', summary: `${number} byl založen`, created_at: row.created_at });
+    queueMicrotask(() => changes.forEach(callback => callback()));
+    return clone(row);
+  }, true);
+  if (name === 'create_service_document') return new PreviewQuery(name, () => {
+    const serviceCase = tables.service_cases?.find((item) => item.id === args.p_service_case_id);
+    if (!serviceCase) return { data: null, error: { message: 'Servisní případ nebyl nalezen.' } };
+    const row = { id: uuid(nextId++), service_case_id: serviceCase.id, service_visit_id: args.p_service_visit_id || null, document_type: args.p_document_type, document_snapshot: clone(args.p_document_snapshot || {}), number: `SRV-${new Date().getFullYear()}-${String((tables.service_documents?.length || 0) + 4).padStart(4, '0')}`, title: `${args.p_document_type === 'handover_protocol' ? 'Předávací' : 'Servisní'} protokol · ${serviceCase.title}`, status: 'draft', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    tables.service_documents ||= []; tables.service_documents.push(row);
+    queueMicrotask(() => changes.forEach(callback => callback()));
+    return clone(row);
+  }, true);
   if(name==='create_meeting_point_task')return new PreviewQuery(name,()=>{
    if(getPreviewRole()!=='admin')return denied();
    const note=tables.meeting_notes?.find(n=>n.id===args.p_note_id),point=note?.points[args.p_point_index];

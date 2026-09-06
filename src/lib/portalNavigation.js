@@ -1,10 +1,11 @@
-import { Home, Folder, HardHat, CalendarDays, CalendarCheck2, CheckSquare, Clock, Contact, Building2, Package, Wallet, FileText, BarChart3, Settings, Users, Wrench, PieChart, LayoutDashboard, Copy } from 'lucide-react';
+import { Home, Folder, HardHat, CalendarDays, CalendarCheck2, CheckSquare, Clock, Contact, Building2, Package, Wallet, FileText, BarChart3, Settings, Users, Wrench, PieChart, LayoutDashboard, Copy, LifeBuoy } from 'lucide-react';
 
 export const PORTAL_NAVIGATION = [
   { label: 'Práce', items: [
     { label: 'Moje práce', path: '/', icon: Home, exact: true },
     { label: 'Projekce', path: '/projects', icon: Folder, module: 'projects' },
     { label: 'Realizace', path: '/realizace', icon: HardHat, module: 'realizace' },
+    { label: 'Servis', path: '/service', icon: LifeBuoy, module: 'service' },
     { label: 'Plánování', path: '/planning', icon: CalendarDays },
     { label: 'Úkoly', path: '/tasks', icon: CheckSquare, module: 'tasks' },
     { label: 'Docházka', path: '/attendance', icon: Clock, module: 'attendance' },

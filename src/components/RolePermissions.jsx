@@ -24,7 +24,8 @@ const modules = [
     { key: 'payouts', name: 'Výplaty' },
     { key: 'reports', name: 'Reporty' },
     { key: 'settings', name: 'Nastavení' },
-    { key: 'realizace', name: 'Realizace' }
+    { key: 'realizace', name: 'Realizace' },
+    { key: 'service', name: 'Servis' },
 ];
 
 const permissionLevels = [

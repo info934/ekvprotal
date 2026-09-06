@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Download, ExternalLink, FileSignature, Lock, Mail, Plus, RefreshCw, Save, Send, Trash2, UploadCloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -43,6 +43,7 @@ import {
   prepareProtocolForGoogleDrive,
   setGoogleDriveSignatureStatus,
 } from '@/lib/googleDriveEsignService';
+import SignaturePad from '@/components/SignaturePad';
 
 const protocolTypes = ['handover_full', 'handover_partial', 'service_protocol', 'contract'];
 const editableStatuses = ['draft', 'ready_for_signature'];
@@ -54,72 +55,6 @@ const normalizeProtocolForEdit = (protocol) => ({
   defects: [...(protocol?.defects || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
   signatures: protocol?.signatures || [],
 });
-
-const SignaturePad = ({ onChange }) => {
-  const canvasRef = useRef(null);
-  const [drawing, setDrawing] = useState(false);
-
-  const getPoint = (event) => {
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const source = event.touches?.[0] || event;
-    return { x: source.clientX - rect.left, y: source.clientY - rect.top };
-  };
-
-  const start = (event) => {
-    event.preventDefault();
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const point = getPoint(event);
-    ctx.beginPath();
-    ctx.moveTo(point.x, point.y);
-    setDrawing(true);
-  };
-
-  const move = (event) => {
-    if (!drawing) return;
-    event.preventDefault();
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const point = getPoint(event);
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineTo(point.x, point.y);
-    ctx.stroke();
-  };
-
-  const stop = () => {
-    if (!drawing) return;
-    setDrawing(false);
-    onChange?.(canvasRef.current.toDataURL('image/png'));
-  };
-
-  const clear = () => {
-    const canvas = canvasRef.current;
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-    onChange?.('');
-  };
-
-  return (
-    <div className="space-y-2">
-      <canvas
-        ref={canvasRef}
-        width={680}
-        height={180}
-        className="h-40 w-full rounded-lg border border-slate-200 bg-white"
-        onMouseDown={start}
-        onMouseMove={move}
-        onMouseUp={stop}
-        onMouseLeave={stop}
-        onTouchStart={start}
-        onTouchMove={move}
-        onTouchEnd={stop}
-      />
-      <Button type="button" variant="outline" size="sm" onClick={clear}>Vymazat podpis</Button>
-    </div>
-  );
-};
 
 const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, opportunityId, subjectId, canEdit = false }) => {
   const { toast } = useToast();

@@ -5,6 +5,7 @@ export async function fetchPortalSearch(supabase, value, hasPermission, signal) 
   const definitions = [
     ['projects', 'projects', 'id,name,code', ['name', 'code'], 'Projekce', '/projects', 'name', 'code'],
     ['realizace', 'realizations', 'id,name,code', ['name', 'code'], 'Realizace', '/realizace', 'name', 'code'],
+    ['service', 'service_cases', 'id,title,number,client_name', ['title', 'number', 'client_name'], 'Servis', '/service', 'title', 'number'],
     ['subjects', 'subjects', 'id,name,ico', ['name', 'ico'], 'Subjekt', '/subjects', 'name', 'ico'],
     ['crm', 'crm_opportunities', 'id,title,number', ['title', 'number'], 'Obchodní případ', '/crm/opportunities', 'title', 'number'],
     ['crm', 'crm_commercial_documents', 'id,title,number,type', ['title', 'number'], 'Obchodní dokument', '/crm', 'title', 'number'],

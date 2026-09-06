@@ -90,7 +90,8 @@ test('current production overview and global search run against the preview adap
   for (const [term, expectedPath] of [
     ['PR-26-024', `/projects/${uuid(301)}`],
     ['RE-26-012', `/realizace/${uuid(401)}`],
-    ['Koordinační zápis', '/documents?search='],
+    ['Koordinační zápis', `/documents?document=${uuid(1202)}`],
+    ['BESS hlásí', `/service/${uuid(92001)}`],
   ]) {
     const search = await fetchPortalSearch(supabase, term, () => true);
     assert.equal(search.error, '');

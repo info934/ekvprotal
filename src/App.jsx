@@ -49,6 +49,9 @@ const MonthlyAllocation = lazy(() => import('@/components/MonthlyAllocation'));
 const OverheadReports = lazy(() => import('@/components/OverheadReports'));
 const Realizace = lazy(() => import('@/components/Realizace'));
 const RealizaceDetail = lazy(() => import('@/components/RealizaceDetail'));
+const Service = lazy(() => import('@/components/Service'));
+const ServiceDetail = lazy(() => import('@/components/ServiceDetail'));
+const ServiceSignPage = lazy(() => import('@/components/ServiceSignPage'));
 const ProjectForm = lazy(() => import('@/components/ProjectForm'));
 const RealizaceForm = lazy(() => import('@/components/RealizaceForm'));
 const RealizaceFinancials = lazy(() => import('@/components/RealizaceFinancials'));
@@ -194,6 +197,8 @@ function AppContent() {
                   <Route path="/realizace/:realizaceId" element={<PrivateRoute module="realizace"><RealizaceDetail /></PrivateRoute>} />
                   <Route path="/realizace/:realizaceId/orders/new" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
                   <Route path="/realizace/:realizaceId/orders/:orderId/edit" element={<PrivateRoute module="realizace" level="can_edit"><RealizaceOrderForm /></PrivateRoute>} />
+                  <Route path="/service" element={<PrivateRoute module="service"><Service /></PrivateRoute>} />
+                  <Route path="/service/:serviceCaseId" element={<PrivateRoute module="service"><ServiceDetail /></PrivateRoute>} />
                   <Route path="/documents" element={<PrivateRoute module="documents"><Documents /></PrivateRoute>} />
                   <Route path="/crm" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
                   <Route path="/crm/board" element={<PrivateRoute module="crm"><CRM /></PrivateRoute>} />
@@ -278,6 +283,7 @@ function App() {
               <Route path="/order/:token" element={<OrderPage />} />
               <Route path="/sub-order/:token" element={<SubcontractorOrderPage />} />
               <Route path="/offer-response/:token" element={<OfferResponsePage />} />
+              <Route path="/service-sign/:token" element={<ServiceSignPage />} />
               <Route path="/update-password" element={<UpdatePassword />} />
               <Route path="/*" element={<AppContent />} />
             </Routes>
