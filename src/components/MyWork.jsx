@@ -9,7 +9,7 @@ import NewRecordMenu from '@/components/layout/NewRecordMenu';
 import { taskDateLabel } from '@/domain/workOverview';
 
 const defaultLoad = async args => (await import('@/lib/workOverviewService')).loadWorkOverview(args);
-const EMPTY = { tasks: [], jobs: [], approvals: [], openCount: null, overdueCount: null, approvalCount: null, error: '' };
+const EMPTY = { tasks: [], jobs: [], approvals: [], openCount: null, overdueCount: null, approvalCount: null, notificationCount: null, error: '' };
 const formatCount = value => value === null || value === undefined ? '—' : value;
 const date = value => value ? new Intl.DateTimeFormat('cs-CZ').format(new Date(`${String(value).slice(0, 10)}T12:00:00`)) : 'Bez termínu';
 const statusTone = value => /hotovo|completed|done/i.test(value) ? 'positive' : /řešení|active|progress/i.test(value) ? 'info' : 'neutral';
@@ -34,7 +34,7 @@ export function MyWorkView({ data, loading, onRefresh, hasPermission, memberId, 
     <Tabs value={tab} onValueChange={onTabChange}>
       <TabsList className="work-tabs"><TabsTrigger value="overview">Přehled</TabsTrigger><TabsTrigger value="approvals">Ke schválení</TabsTrigger></TabsList>
       <div className="work-metrics" aria-label="Souhrn práce">
-        {[['Otevřené úkoly', data.openCount], ['Po termínu', data.overdueCount], ['Ke schválení', data.approvalCount]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{loading ? '—' : formatCount(value)}</strong></div>)}
+        {[['Otevřené úkoly', data.openCount], ['Po termínu', data.overdueCount], ['Ke schválení', data.approvalCount], ['Nová oznámení', data.notificationCount]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{loading ? '—' : formatCount(value)}</strong></div>)}
       </div>
       <TabsContent value="overview" className="work-content">
         <div className="work-main-column">
@@ -52,6 +52,7 @@ export function MyWorkView({ data, loading, onRefresh, hasPermission, memberId, 
         </div>
         <aside className="work-side-column" aria-label="Rychlé akce a schvalování">
           <WorkPanel title="Rychlé akce">{actions.length ? actions.map(([module, label, path, Icon]) => <Link key={module} to={path} className="work-action-row"><Icon size={24} strokeWidth={1.6} /><span>{label}</span><ChevronRight size={17} /></Link>) : <WorkEmpty>Vaše dostupné moduly najdete v navigaci.</WorkEmpty>}</WorkPanel>
+          {data.notificationCount > 0 && <WorkPanel title="Oznámení"><Link to="/?notifications=open" className="work-action-row"><AlertCircle size={24} strokeWidth={1.6} /><span>Otevřít nová oznámení</span><span className="work-count">{data.notificationCount}</span><ChevronRight size={17} /></Link></WorkPanel>}
           <WorkPanel title="K vyřízení"><ApprovalRows items={data.approvals} loading={loading} /></WorkPanel>
         </aside>
       </TabsContent>

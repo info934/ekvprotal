@@ -42,13 +42,20 @@ const graphToken = async () => {
 };
 
 const graphFetch = async (token: string, path: string, init: RequestInit = {}) => {
-  const response = await fetchWithTimeout(`${GRAPH_ROOT}${path}`, {
-    ...init,
-    headers: { Authorization: `Bearer ${token}`, ...init.headers },
-  });
-  if (!response.ok) throw await graphError(response);
-  if (response.status === 204) return null;
-  return response.json();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetchWithTimeout(`${GRAPH_ROOT}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, ...init.headers },
+    });
+    if (response.ok) return response.status === 204 ? null : response.json();
+    if ((response.status === 429 || response.status >= 500) && attempt < 3) {
+      const retryAfter = Number(response.headers.get('retry-after'));
+      await new Promise(resolve => setTimeout(resolve, Number.isFinite(retryAfter) ? retryAfter * 1000 : 750 * (2 ** attempt)));
+      continue;
+    }
+    throw await graphError(response);
+  }
+  throw new Error('Microsoft Graph retry limit exceeded.');
 };
 
 const eventTime = (value: string) => ({
@@ -58,16 +65,19 @@ const eventTime = (value: string) => ({
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  let admin: ReturnType<typeof createClient> | null = null;
+  let requestedActivityId: string | null = null;
   try {
     if (req.method !== 'POST') return respond({ success: false, error: 'Method not allowed.' }, 405);
     const actor = await authorizeFunctionRequest(req, { module: 'crm', level: 'edit' });
     const { action = 'sync', activityId } = await req.json();
+    requestedActivityId = activityId || null;
     if (!activityId || !['sync', 'delete'].includes(action)) return respond({ success: false, error: 'Invalid request.' }, 400);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
     const siteUrl = (Deno.env.get('SITE_URL') || 'https://portal.ekvproject.cz').replace(/\/$/, '');
-    const admin = createClient(supabaseUrl, serviceRoleKey);
+    admin = createClient(supabaseUrl, serviceRoleKey);
     const { data: activity, error: activityError } = await admin.from('crm_activities')
       .select('id, opportunity_id, assigned_member_id, type, status, title, description, starts_at, ends_at, location, attendees, calendar_sync_enabled, external_mailbox, external_event_id, opportunity:opportunity_id(id, number, title)')
       .eq('id', activityId).maybeSingle();
@@ -88,6 +98,8 @@ Deno.serve(async (req: Request) => {
         external_web_link: null,
         calendar_synced_at: new Date().toISOString(),
         calendar_sync_error: null,
+        calendar_sync_attempt_count: 0,
+        calendar_next_retry_at: null,
       }).eq('id', activity.id);
     };
 
@@ -168,6 +180,8 @@ Deno.serve(async (req: Request) => {
       external_web_link: event.webLink || null,
       calendar_synced_at: syncedAt,
       calendar_sync_error: null,
+      calendar_sync_attempt_count: 0,
+      calendar_next_retry_at: null,
     }).eq('id', activity.id);
     if (updateError) throw updateError;
     await admin.from('crm_activity_events').insert({
@@ -179,7 +193,18 @@ Deno.serve(async (req: Request) => {
     return respond({ success: true, eventId: event.id, webLink: event.webLink || null, attendeeCount: attendees.length });
   } catch (error) {
     console.error('[crm-activity-calendar]', error);
+    if (admin && requestedActivityId) {
+      const { data: failed } = await admin.from('crm_activities')
+        .select('calendar_sync_attempt_count').eq('id', requestedActivityId).maybeSingle();
+      const attempts = Number(failed?.calendar_sync_attempt_count || 0) + 1;
+      const retryMinutes = Math.min(60, 2 ** Math.min(attempts, 6));
+      await admin.from('crm_activities').update({
+        calendar_sync_error: error instanceof Error ? error.message : 'Calendar synchronization failed.',
+        calendar_sync_attempt_count: attempts,
+        calendar_next_retry_at: new Date(Date.now() + retryMinutes * 60000).toISOString(),
+      }).eq('id', requestedActivityId);
+    }
     const status = Number(error?.status || 500);
-    return respond({ success: false, error: status >= 500 ? 'Calendar synchronization failed.' : error.message }, status);
+    return respond({ success: false, error: status >= 500 ? 'Calendar synchronization failed.' : (error instanceof Error ? error.message : 'Calendar synchronization failed.') }, status);
   }
 });

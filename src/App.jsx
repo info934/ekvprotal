@@ -52,6 +52,7 @@ const RealizaceDetail = lazy(() => import('@/components/RealizaceDetail'));
 const Service = lazy(() => import('@/components/Service'));
 const ServiceDetail = lazy(() => import('@/components/ServiceDetail'));
 const ServiceSignPage = lazy(() => import('@/components/ServiceSignPage'));
+const ServiceStatusPage = lazy(() => import('@/components/ServiceStatusPage'));
 const ProjectForm = lazy(() => import('@/components/ProjectForm'));
 const RealizaceForm = lazy(() => import('@/components/RealizaceForm'));
 const RealizaceFinancials = lazy(() => import('@/components/RealizaceFinancials'));
@@ -62,6 +63,7 @@ const SettingsPortal = lazy(() => import('@/components/SettingsPortal'));
 const SettingsDictionaries = lazy(() => import('@/components/SettingsDictionaries'));
 const SettingsStorage = lazy(() => import('@/components/SettingsStorage'));
 const SettingsCRM = lazy(() => import('@/components/SettingsCRM'));
+const SettingsService = lazy(() => import('@/components/SettingsService'));
 const ProjectTemplatesSettings = lazy(() => import('@/components/ProjectTemplatesSettings'));
 const ProjectTemplatesPage = lazy(() => import('@/components/ProjectTemplatesPage'));
 const BackupMaintenance = lazy(() => import('@/components/BackupMaintenance'));
@@ -72,6 +74,7 @@ const clearSupabaseSessionStorage = () => {
   Object.keys(localStorage)
     .filter((key) => key.startsWith('sb-') || key.includes('supabase.auth'))
     .forEach((key) => localStorage.removeItem(key));
+  import('@/lib/serviceOfflineQueue').then(({ clearServiceOfflineData }) => clearServiceOfflineData()).catch(() => {});
 };
 
 const PortalLoaderCard = ({
@@ -243,6 +246,7 @@ function AppContent() {
                     <Route path="order-templates" element={<PrivateRoute module="settings" level="can_admin"><OrderTemplateManager /></PrivateRoute>} />
                     <Route path="dictionaries" element={<PrivateRoute module="settings" level="can_admin"><SettingsDictionaries /></PrivateRoute>} />
                     <Route path="crm" element={<PrivateRoute module="settings" level="can_admin"><SettingsCRM /></PrivateRoute>} />
+                    <Route path="service" element={<PrivateRoute module="settings" level="can_admin"><SettingsService /></PrivateRoute>} />
                     <Route path="storage" element={<PrivateRoute module="settings" level="can_admin"><SettingsStorage /></PrivateRoute>} />
                     <Route path="project-templates" element={<PrivateRoute module="settings" level="can_admin"><ProjectTemplatesSettings /></PrivateRoute>} />
                     <Route path="backup-maintenance" element={<ProtectedRoute requiredRole="admin"><BackupMaintenance /></ProtectedRoute>} />
@@ -284,6 +288,7 @@ function App() {
               <Route path="/sub-order/:token" element={<SubcontractorOrderPage />} />
               <Route path="/offer-response/:token" element={<OfferResponsePage />} />
               <Route path="/service-sign/:token" element={<ServiceSignPage />} />
+              <Route path="/service-status/:token" element={<ServiceStatusPage />} />
               <Route path="/update-password" element={<UpdatePassword />} />
               <Route path="/*" element={<AppContent />} />
             </Routes>

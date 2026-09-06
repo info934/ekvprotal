@@ -329,6 +329,34 @@ export const ensureEntityFolder = async ({ entityType, entityId, code, name, con
   };
 };
 
+export const getEntityFolderStatus = async ({ entityType, entityId, connection }) => {
+  const activeConnection = connection || await getDefaultStorageConnection();
+  if (!activeConnection?.id) return null;
+  if (activeConnection.provider === 'supabase') {
+    const { data, error } = await supabase.from('document_storage_folders').select('*')
+      .eq('connection_id', activeConnection.id).eq('entity_type', entityType).eq('entity_id', entityId).maybeSingle();
+    if (error && !isStorageConfigMissingError(error)) throw error;
+    return data || null;
+  }
+  const { data, error } = await invokeDocumentStorage({ body: {
+    action: 'getStatus', connectionId: activeConnection.id, provider: activeConnection.provider, entityType, entityId,
+  } });
+  if (error) throw error;
+  return data?.status || null;
+};
+
+export const repairEntityFolder = async ({ entityType, entityId, connection }) => {
+  const activeConnection = connection || await getDefaultStorageConnection();
+  if (!activeConnection?.id) throw new Error('Externí úložiště není nakonfigurované.');
+  if (activeConnection.provider === 'supabase') return ensureEntityFolder({ entityType, entityId, connection: activeConnection });
+  const { data, error } = await invokeDocumentStorage({ body: {
+    action: 'repairFolder', connectionId: activeConnection.id, provider: activeConnection.provider, entityType, entityId,
+  } }, 90_000);
+  if (error) throw error;
+  if (data?.success === false) throw new Error(data.error || 'Složku se nepodařilo zkontrolovat a opravit.');
+  return data;
+};
+
 const projectYear = (project = {}) => {
   const code = String(project.code || '');
   const fourDigitYear = code.match(/(?:^|[^0-9])(20[0-9]{2})(?:[^0-9]|$)/)?.[1];

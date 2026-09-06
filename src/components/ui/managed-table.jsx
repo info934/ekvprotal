@@ -29,6 +29,13 @@ export const useManagedColumns = (storageKey, columns) => {
 
   const [order, setOrder] = useState(defaultOrder);
   const [visibility, setVisibility] = useState(defaultVisibility);
+  const [savedViewRevision, setSavedViewRevision] = useState(0);
+
+  useEffect(() => {
+    const handleSavedView = () => setSavedViewRevision(value => value + 1);
+    window.addEventListener('ekv-saved-view-applied', handleSavedView);
+    return () => window.removeEventListener('ekv-saved-view-applied', handleSavedView);
+  }, []);
 
   useEffect(() => {
     if (!storageKey) {
@@ -47,7 +54,7 @@ export const useManagedColumns = (storageKey, columns) => {
       setOrder(defaultOrder);
       setVisibility(defaultVisibility);
     }
-  }, [defaultOrder, defaultVisibility, storageKey]);
+  }, [defaultOrder, defaultVisibility, savedViewRevision, storageKey]);
 
   useEffect(() => {
     if (!storageKey) return;

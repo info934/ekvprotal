@@ -87,6 +87,16 @@ Deno.serve(async (req: Request) => {
       .eq('id', documentId).is('deleted_at', null).maybeSingle();
     if (documentError || !document) return json({ error: 'Dokument nebyl nalezen.' }, 404);
     if (document.cancelled_at || document.status === 'cancelled') return json({ error: 'Stornovaný dokument nelze odeslat.' }, 409);
+    if (document.type === 'offer') {
+      const { data: settings } = await admin.from('crm_approval_settings').select('discount_threshold_percent, margin_floor_percent').eq('singleton', true).maybeSingle();
+      const grossSubtotal = Number(document.gross_subtotal || 0);
+      const discountPercent = grossSubtotal > 0 ? Number(document.discount_total || 0) / grossSubtotal * 100 : 0;
+      const requiresApproval = discountPercent > Number(settings?.discount_threshold_percent ?? 15)
+        || Number(document.margin_percent || 0) < Number(settings?.margin_floor_percent ?? 20);
+      if (requiresApproval && document.approval_status !== 'approved') {
+        return json({ error: 'Nabídka překračuje nastavenou slevu nebo minimální marži a musí ji schválit administrátor.' }, 409);
+      }
+    }
 
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { count } = await admin.from('crm_commercial_document_deliveries').select('id', { count: 'exact', head: true })

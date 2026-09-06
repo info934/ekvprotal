@@ -95,6 +95,9 @@ export const AuthProvider = ({ children }) => {
   
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
+    import('@/lib/serviceOfflineQueue')
+      .then(({ clearServiceOfflineData }) => clearServiceOfflineData())
+      .catch(() => {});
     clearState();
 
     if (error) {

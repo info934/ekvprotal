@@ -20,6 +20,7 @@ import SubjectSelect from '@/components/SubjectSelect';
 import FveOfferWizardDialog from '@/components/FveOfferWizardDialog';
 import CrmLineItemsTable from '@/components/CrmLineItemsTable';
 import CRMCommercialDocumentDelivery from '@/components/CRMCommercialDocumentDelivery';
+import CRMOfferApprovalPanel from '@/components/CRMOfferApprovalPanel';
 import CrmProductPickerDialog from '@/components/CrmProductPickerDialog';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -169,7 +170,9 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
   const [copyItemSources, setCopyItemSources] = useState([]);
   const [copyItemSourceId, setCopyItemSourceId] = useState('');
   const [copyItemsLoading, setCopyItemsLoading] = useState(false);
+  const [approvalRequired, setApprovalRequired] = useState(false);
   const fetchRequestRef = useRef({ id: 0, controller: null });
+  useEffect(() => { setApprovalRequired(false); }, [selectedDocument?.id, type]);
 
   const fetchData = useCallback(async () => {
     fetchRequestRef.current.controller?.abort();
@@ -183,7 +186,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         : 'id';
       const documentsQueryFactory = () => supabase
         .from('crm_commercial_documents')
-        .select(`id, opportunity_id, subject_id, type, status, number, title, issue_date, valid_until, gross_subtotal, subtotal, discount_total, tax_total, total, total_with_tax, cost_total, total_cost, margin_total, margin_value, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, notes, sync_items, current_version, sent_at, accepted_at, rejected_at, responded_at, response_note, reminder_count, last_reminder_at, source_document_id, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone), opportunity:opportunity_id(id, number, title, value, stage, description, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone), project:project_id(id, name, code)${documentId ? ', opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot, section_name, item_kind, alternative_group, included_in_total)' : ''}), items:crm_commercial_document_items(${documentItemsSelect})`)
+        .select(`id, opportunity_id, subject_id, type, status, approval_status, approval_requested_at, approved_at, approved_by_member_id, number, title, issue_date, valid_until, gross_subtotal, subtotal, discount_total, tax_total, total, total_with_tax, cost_total, total_cost, margin_total, margin_value, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, notes, sync_items, current_version, sent_at, accepted_at, rejected_at, responded_at, response_note, reminder_count, last_reminder_at, source_document_id, created_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone), opportunity:opportunity_id(id, number, title, value, stage, description, subject:subject_id(id, name, ico, dic, address, contact_person, email, phone), project:project_id(id, name, code)${documentId ? ', opportunity_items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot, section_name, item_kind, alternative_group, included_in_total)' : ''}), items:crm_commercial_document_items(${documentItemsSelect})`)
         .eq('type', type)
         .is('deleted_at', null)
         .order('created_at', { ascending: false }).order('id').abortSignal(request.signal);
@@ -610,6 +613,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
     }
 
     setSaving(false);
+    if (type === 'offer') await supabase.rpc('refresh_crm_offer_approval_state', { p_document_id: selectedDocument.id });
     toast({ title: selectedDocument.sync_items ? 'Dokument uložen a položky synchronizovány' : 'Dokument uložen' });
     fetchData();
   };
@@ -943,7 +947,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              <Button variant="outline" onClick={() => setDeliveryDialogOpen(true)} disabled={!canEdit || saving || !selectedDocument || selectedDocument.status === 'cancelled'}>
+              <Button variant="outline" onClick={() => setDeliveryDialogOpen(true)} disabled={!canEdit || saving || !selectedDocument || selectedDocument.status === 'cancelled' || (type === 'offer' && approvalRequired && selectedDocument.approval_status !== 'approved')}>
                 <Mail className="mr-2 h-4 w-4" />
                 Odeslat klientovi
               </Button>
@@ -997,9 +1001,9 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
         {loading || !selectedDocument ? (
           <Card><CardContent className="p-8 text-sm text-muted-foreground">Načítám dokument...</CardContent></Card>
         ) : (
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.55fr)]">
+          <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.55fr)]">
       
-      <Card className="crm-panel">
+      <Card className="min-w-0 crm-panel">
               <CardHeader className="crm-panel-header">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
@@ -1053,7 +1057,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               </CardContent>
             </Card>
 
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               <Card className="crm-panel">
                 <CardHeader className="crm-panel-header">
                   <CardTitle className="text-base">Souhrn</CardTitle>
@@ -1085,7 +1089,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
               </Card>
             </div>
 
-            <div className="xl:col-span-2 space-y-3">
+            <div className="min-w-0 space-y-3 xl:col-span-2">
               {type === 'offer' && (
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={openCopyItemsDialog} disabled={!canEdit || saving || selectedDocument._persisted_status !== 'draft'}>
@@ -1115,6 +1119,7 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
                 onOpenCatalog={() => setCatalogPickerOpen(true)}
                 showFinancials={canViewFinancials}
               />
+              {type === 'offer' && <CRMOfferApprovalPanel document={selectedDocument} canEdit={canEdit} isAdmin={isAdmin} onChanged={fetchData} onRequirement={setApprovalRequired} />}
               <CRMCommercialDocumentDelivery
                 document={selectedDocument}
                 template={selectedTemplate}

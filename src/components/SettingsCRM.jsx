@@ -167,6 +167,7 @@ const SettingsCRM = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeSection, setActiveSection] = useState('documents');
+  const [approvalSettings, setApprovalSettings] = useState({ discount_threshold_percent: 15, margin_floor_percent: 20 });
 
   const canAdmin = hasPermission('settings', 'can_admin');
   const activeSectionMeta = {
@@ -195,6 +196,11 @@ const SettingsCRM = () => {
       saveLabel: '',
       description: 'Připojení, mapování, náhled a řízený import původních CRM dat.',
     },
+    approvals: {
+      title: 'Schvalování nabídek',
+      saveLabel: 'Uložit schvalovací limity',
+      description: 'Nabídky mimo tyto limity musí před odesláním schválit administrátor.',
+    },
   }[activeSection];
 
   const fetchCrmConfig = useCallback(async () => {
@@ -204,7 +210,7 @@ const SettingsCRM = () => {
     }
 
     setLoading(true);
-    const [stagesRes, prioritiesRes, numberingRes, productFieldsRes, customSectionsRes] = await Promise.all([
+    const [stagesRes, prioritiesRes, numberingRes, productFieldsRes, customSectionsRes, approvalRes] = await Promise.all([
       supabase
         .from('crm_stage_definitions')
         .select('value, label, color, probability, sort_order, is_active, is_closed')
@@ -226,6 +232,7 @@ const SettingsCRM = () => {
         .select('id, business_type, title, description, sort_order, is_active, fields:crm_custom_field_definitions(id, field_key, label, field_type, template_key, options, is_required, is_active, sort_order)')
         .eq('is_active', true)
         .order('sort_order', { ascending: true }),
+      supabase.from('crm_approval_settings').select('discount_threshold_percent, margin_floor_percent').eq('singleton', true).maybeSingle(),
     ]);
 
     const error = stagesRes.error || prioritiesRes.error;
@@ -244,6 +251,7 @@ const SettingsCRM = () => {
       setRemovedProductFields([]);
       setCustomSectionsReady(!customSectionsRes.error);
       setCustomSections(normalizeCustomSections(customSectionsRes.error ? DEFAULT_CRM_CUSTOM_SECTIONS : customSectionsRes.data));
+      if (!approvalRes.error && approvalRes.data) setApprovalSettings(approvalRes.data);
     }
     setLoading(false);
   }, [canAdmin, toast]);
@@ -456,9 +464,16 @@ const SettingsCRM = () => {
       .from('product_field_definitions')
       .upsert(productFieldRows, { onConflict: 'field_key' });
 
+    const { error: approvalError } = await supabase.from('crm_approval_settings').upsert({
+      singleton: true,
+      discount_threshold_percent: Math.min(100, Math.max(0, Number(approvalSettings.discount_threshold_percent || 0))),
+      margin_floor_percent: Math.min(100, Math.max(-100, Number(approvalSettings.margin_floor_percent || 0))),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'singleton' });
+
     setSaving(false);
 
-    const error = customFieldsError || stagesError || prioritiesError || numberingError || productFieldsError;
+    const error = customFieldsError || stagesError || prioritiesError || numberingError || productFieldsError || approvalError;
     if (error) {
       toast({
         title: 'CRM nastavení se nepodařilo uložit',
@@ -500,6 +515,7 @@ const SettingsCRM = () => {
             ['pipeline', Target, 'Pipeline'],
             ['products', SlidersHorizontal, 'Produkty'],
             ['customFields', SlidersHorizontal, 'Volitelna pole OP'],
+            ['approvals', Target, 'Schvalování'],
             ['integrations', Database, 'Raynet import'],
           ].map(([value, Icon, label]) => (
             <TabsTrigger
@@ -799,6 +815,10 @@ const SettingsCRM = () => {
 
         <TabsContent value="integrations" className="space-y-6">
           <RaynetImportManager />
+        </TabsContent>
+
+        <TabsContent value="approvals" className="space-y-6">
+          <Card><CardHeader className="border-b bg-slate-50/70"><CardTitle>Limity pro odeslání nabídky</CardTitle><CardDescription>Pokud nabídka překročí alespoň jeden limit, obchodník ji odešle administrátorovi ke schválení.</CardDescription></CardHeader><CardContent className="grid gap-4 p-5 sm:grid-cols-2"><div className="space-y-2"><Label>Maximální sleva bez schválení (%)</Label><Input type="number" min="0" max="100" step="0.1" value={approvalSettings.discount_threshold_percent} onChange={(event) => setApprovalSettings((current) => ({ ...current, discount_threshold_percent: event.target.value }))} disabled={loading || saving || !canAdmin} /></div><div className="space-y-2"><Label>Minimální marže bez schválení (%)</Label><Input type="number" min="-100" max="100" step="0.1" value={approvalSettings.margin_floor_percent} onChange={(event) => setApprovalSettings((current) => ({ ...current, margin_floor_percent: event.target.value }))} disabled={loading || saving || !canAdmin} /></div></CardContent></Card>
         </TabsContent>
       </Tabs>
 

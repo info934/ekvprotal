@@ -1788,6 +1788,7 @@ const CRM = () => {
     const request = createTimedAbortController(20_000);
     crmAbortRef.current = request.controller;
     setLoading(true);
+    supabase.rpc('refresh_crm_attention_alerts').then(() => {}).catch(() => {});
 
     try {
     const opportunityItemsSelect = isOpportunityDetailPage
@@ -1831,7 +1832,7 @@ const CRM = () => {
       opportunitiesQuery,
       isOpportunityDetailPage ? Promise.resolve({ data: [], error: null }) : fetchAllCrmRows(() => supabase
         .from('crm_activities')
-        .select('id, opportunity_id, subject_id, project_id, assigned_member_id, created_by_member_id, title, type, status, description, due_at, starts_at, ends_at, completed_at, location, attendees, outcome, meeting_minutes, next_step, calendar_sync_enabled, external_mailbox, external_event_id, external_web_link, calendar_synced_at, calendar_sync_error, created_at, subject:subject_id(id, name, email), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
+        .select('id, opportunity_id, subject_id, project_id, assigned_member_id, created_by_member_id, title, type, status, description, due_at, starts_at, ends_at, completed_at, location, attendees, outcome, meeting_minutes, next_step, calendar_sync_enabled, external_mailbox, external_event_id, external_web_link, calendar_synced_at, calendar_sync_error, calendar_sync_attempt_count, calendar_next_retry_at, created_at, subject:subject_id(id, name, email), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
         .order('due_at', { ascending: true, nullsFirst: false })
         .order('id').abortSignal(request.signal)),
       isOpportunityDetailPage ? Promise.resolve({ data: [], error: null }) : fetchAllCrmRows(() => supabase
@@ -1877,7 +1878,7 @@ const CRM = () => {
         .order('created_at', { ascending: false }).order('id')
         .abortSignal(request.signal)),
       fetchAllCrmRows(() => supabase.from('crm_activities')
-        .select('id, opportunity_id, subject_id, project_id, assigned_member_id, created_by_member_id, title, type, status, description, due_at, starts_at, ends_at, completed_at, location, attendees, outcome, meeting_minutes, next_step, calendar_sync_enabled, external_mailbox, external_event_id, external_web_link, calendar_synced_at, calendar_sync_error, created_at, subject:subject_id(id, name, email), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
+        .select('id, opportunity_id, subject_id, project_id, assigned_member_id, created_by_member_id, title, type, status, description, due_at, starts_at, ends_at, completed_at, location, attendees, outcome, meeting_minutes, next_step, calendar_sync_enabled, external_mailbox, external_event_id, external_web_link, calendar_synced_at, calendar_sync_error, calendar_sync_attempt_count, calendar_next_retry_at, created_at, subject:subject_id(id, name, email), opportunity:opportunity_id(id, title), assigned:assigned_member_id(id, name)')
         .eq('opportunity_id', loadedOpportunityId)
         .order('due_at', { ascending: true, nullsFirst: false }).order('id')
         .abortSignal(request.signal)),

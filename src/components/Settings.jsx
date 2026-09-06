@@ -13,6 +13,7 @@ import {
   SlidersHorizontal,
   Cloud,
   Target,
+  Wrench,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PageHeader from '@/components/ui/page-header';
@@ -39,6 +40,7 @@ const settingsNav = [
       { name: 'Šablony projektu', description: 'Výchozí struktury projektu', href: '/settings/project-templates', icon: FileText, requiredPermission: 'can_admin' },
       { name: 'Šablony dokumentů', description: 'HTML a DOCX šablony výstupů', href: '/settings/order-templates', icon: ShoppingCart, requiredPermission: 'can_admin' },
       { name: 'CRM', description: 'Stavy, priority, šablony a číslování', href: '/settings/crm', icon: Target, requiredPermission: 'can_admin' },
+      { name: 'Servis a SLA', description: 'Reakční a cílové lhůty podle priority', href: '/settings/service', icon: Wrench, requiredPermission: 'can_admin' },
       { name: 'Úložiště dokumentů', description: 'Supabase, SharePoint nebo Google Drive', href: '/settings/storage', icon: Cloud, requiredPermission: 'can_admin' },
     ],
   },

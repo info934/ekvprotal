@@ -125,7 +125,7 @@ const CrmLineItemsTable = ({
   };
 
   return (
-    <Card className="crm-panel">
+    <Card className="min-w-0 crm-panel">
       <CardHeader className="crm-panel-header">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
@@ -194,7 +194,7 @@ const CrmLineItemsTable = ({
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="crm-table-wrap">
+        <div className="crm-table-wrap min-w-0 max-w-full">
           <Table>
             <TableHeader>
               <TableRow>

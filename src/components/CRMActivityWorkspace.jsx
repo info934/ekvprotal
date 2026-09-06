@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarPlus, CheckCircle2, Clock3, ExternalLink, Mail, MapPin, Pencil, Phone, Plus, Users } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, ExternalLink, Mail, MapPin, Pencil, Phone, Plus, RefreshCw, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -72,6 +72,7 @@ const CRMActivityWorkspace = ({ opportunity, activities = [], canEdit, onChanged
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState(() => emptyDraft(opportunity, memberId));
   const [saving, setSaving] = useState(false);
+  const automaticRetries = useRef(new Set());
 
   useEffect(() => {
     let active = true;
@@ -90,6 +91,19 @@ const CRMActivityWorkspace = ({ opportunity, activities = [], canEdit, onChanged
     const right = new Date(b.starts_at || b.due_at || b.created_at || 0).getTime();
     return right - left;
   }), [activities]);
+
+  useEffect(() => {
+    if (!canEdit || !navigator.onLine) return;
+    const due = activities.filter(activity => activity.calendar_sync_error
+      && activity.calendar_sync_enabled
+      && (!activity.calendar_next_retry_at || new Date(activity.calendar_next_retry_at) <= new Date())
+      && !automaticRetries.current.has(activity.id));
+    due.forEach(activity => {
+      automaticRetries.current.add(activity.id);
+      supabase.functions.invoke('crm-activity-calendar', { body: { action: 'sync', activityId: activity.id } })
+        .finally(() => onChanged?.());
+    });
+  }, [activities, canEdit, onChanged]);
 
   const openNew = useCallback(() => {
     setDraft(emptyDraft(opportunity, memberId));
@@ -195,6 +209,18 @@ const CRMActivityWorkspace = ({ opportunity, activities = [], canEdit, onChanged
     await onChanged?.();
   };
 
+  const retryCalendar = async (activity) => {
+    setSaving(true);
+    const { error } = await supabase.functions.invoke('crm-activity-calendar', {
+      body: { action: 'sync', activityId: activity.id },
+    });
+    setSaving(false);
+    toast(error
+      ? { title: 'Synchronizace kalendáře stále neproběhla', description: error.message, variant: 'destructive' }
+      : { title: 'Kalendář byl synchronizován' });
+    await onChanged?.();
+  };
+
   return (
     <div className="space-y-4 rounded-lg border bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -232,6 +258,7 @@ const CRMActivityWorkspace = ({ opportunity, activities = [], canEdit, onChanged
                     {activity.description && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{activity.description}</p>}
                     {activity.meeting_minutes && <div className="mt-3 rounded-md border bg-white p-3 text-sm"><strong>Zápis:</strong><p className="mt-1 whitespace-pre-wrap text-slate-700">{activity.meeting_minutes}</p></div>}
                     {(activity.outcome || activity.next_step) && <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">{activity.outcome && <p><strong>Výsledek:</strong> {activity.outcome}</p>}{activity.next_step && <p><strong>Další krok:</strong> {activity.next_step}</p>}</div>}
+                    {activity.calendar_sync_error && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-4 w-4" /><span className="min-w-0 flex-1">Pozvánka čeká na synchronizaci. {activity.calendar_next_retry_at && `Další pokus ${formatWhen(activity.calendar_next_retry_at)}.`}</span>{canEdit && <Button size="sm" variant="outline" disabled={saving} onClick={() => retryCalendar(activity)}><RefreshCw className="mr-2 h-4 w-4" />Opakovat</Button>}</div>}
                   </div>
                   {canEdit && <div className="flex shrink-0 gap-1">
                     {activity.external_web_link && <Button asChild size="icon" variant="ghost" title="Otevřít v kalendáři"><a href={activity.external_web_link} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /></a></Button>}

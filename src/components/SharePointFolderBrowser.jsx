@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
   ChevronRight,
@@ -21,6 +21,7 @@ import {
   getProjectWorkspacePreference,
   initializeProjectWorkspace,
   listEntityStorageFolder,
+  repairEntityFolder,
   saveProjectWorkspacePreference,
   uploadEntityStorageFile,
 } from '@/lib/documentStorageService';
@@ -55,8 +56,10 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
   const [folderMissing, setFolderMissing] = useState(false);
   const [mappingMetadata, setMappingMetadata] = useState({});
   const [mappedFolderPath, setMappedFolderPath] = useState('');
+  const [folderStatus, setFolderStatus] = useState(null);
   const [workspacePreference, setWorkspacePreference] = useState(null);
   const [error, setError] = useState('');
+  const automaticRepairStarted = useRef(false);
 
   const currentFolder = breadcrumbs[breadcrumbs.length - 1] || rootFolder;
 
@@ -102,6 +105,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
         entityType === 'project' ? getProjectWorkspacePreference(entity.id) : Promise.resolve(null),
       ]);
       setWorkspacePreference(preference);
+      setFolderStatus(mapping || null);
       let folder;
       const activeConnection = mapping?.connection;
 
@@ -144,6 +148,30 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
     setBreadcrumbs((current) => [...current, folder]);
     await loadFolder(folder, connection);
   };
+
+  const handleRepairFolder = async () => {
+    if (!entity?.id || creating) return;
+    setCreating(true);
+    setError('');
+    try {
+      await repairEntityFolder({ entityType, entityId: entity.id, connection: connection || undefined });
+      toast({ title: 'Složka byla zkontrolována', description: 'Chybějící podsložky byly doplněny a odkaz byl ověřen.' });
+      await initialize();
+    } catch (repairError) {
+      setError(repairError.message || 'Kontrola a oprava složky se nepodařila.');
+      await initialize().catch(() => {});
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  useEffect(() => {
+    const retryIsDue = folderStatus?.status === 'error'
+      && (!folderStatus.next_retry_at || new Date(folderStatus.next_retry_at) <= new Date());
+    if (!canEdit || !navigator.onLine || !retryIsDue || automaticRepairStarted.current) return;
+    automaticRepairStarted.current = true;
+    handleRepairFolder();
+  }, [canEdit, folderStatus?.next_retry_at, folderStatus?.status]);
 
   const openBreadcrumb = async (index) => {
     const next = breadcrumbs.slice(0, index + 1);
@@ -312,6 +340,11 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
                 Projektový list připraven
               </span>
             )}
+            {folderStatus?.status && (
+              <span className={`ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium ${folderStatus.status === 'created' ? 'bg-emerald-50 text-emerald-700' : folderStatus.status === 'processing' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-800'}`}>
+                {folderStatus.status === 'created' ? 'Synchronizováno' : folderStatus.status === 'processing' ? 'Synchronizuji' : folderStatus.status === 'error' ? 'Chyba synchronizace' : 'Čeká na synchronizaci'}
+              </span>
+            )}
           </div>
           {mappedFolderPath && (
             <p className="mt-1 max-w-3xl truncate font-mono text-[11px] text-slate-500" title={mappedFolderPath}>
@@ -332,6 +365,12 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
               {workspacePreference?.create_folder === false ? 'Zapnout synchronizaci' : 'Synchronizovat údaje'}
             </Button>
           )}
+          {canEdit && currentFolder && (
+            <Button type="button" variant="outline" size="sm" onClick={handleRepairFolder} disabled={creating || loading}>
+              {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Zkontrolovat a opravit
+            </Button>
+          )}
           {rootFolder?.webUrl && (
             <Button variant="outline" size="sm" onClick={() => window.open(rootFolder.webUrl, '_blank', 'noopener,noreferrer')}>
               <ExternalLink className="mr-2 h-4 w-4" />
@@ -346,6 +385,14 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
           )}
         </div>
       </div>
+
+      {folderStatus?.status === 'error' && folderStatus?.last_error && (
+        <div className="mx-4 mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+          <strong>Poslední synchronizace se nezdařila.</strong>
+          <p className="mt-1 break-words text-amber-800">{folderStatus.last_error}</p>
+          {folderStatus.next_retry_at && <p className="mt-1 text-xs">Další automatický pokus: {formatDate(folderStatus.next_retry_at)}</p>}
+        </div>
+      )}
 
       {canEdit && currentFolder && (
         <div

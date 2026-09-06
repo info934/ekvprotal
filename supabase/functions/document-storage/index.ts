@@ -5,7 +5,7 @@ import { assertActiveAccount } from '../_shared/accountStatus.ts';
 import { assertInvoiceFileDetached } from '../_shared/invoiceDeletionGuard.ts';
 import { strToU8, zipSync } from 'npm:fflate@0.8.2';
 
-type StorageAction = 'testConnection' | 'ensureFolder' | 'initializeProjectWorkspace' | 'createUploadSession' | 'registerUploadedFile' | 'uploadFile' | 'downloadUrl' | 'listFiles' | 'deleteFile';
+type StorageAction = 'testConnection' | 'ensureFolder' | 'repairFolder' | 'getStatus' | 'initializeProjectWorkspace' | 'createUploadSession' | 'registerUploadedFile' | 'uploadFile' | 'downloadUrl' | 'listFiles' | 'deleteFile';
 type EntityType = 'project' | 'realizace' | 'service' | 'product' | 'invoice';
 
 type StorageTarget = {
@@ -200,27 +200,37 @@ const getGraphToken = async () => {
 
 type StorageFolderMapping = {
   external_folder_id: string | null;
+  external_web_url?: string | null;
   folder_path: string | null;
+  attempt_count?: number | null;
   metadata?: Record<string, unknown> | null;
 };
 
 const graphFetch = async (token: string, path: string, init: RequestInit = {}) => {
-  const response = await fetchWithTimeout(`${GRAPH_ROOT}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...init.headers,
-    },
-  });
-  if (!response.ok) throw await graphError(response);
-  if (response.status === 204) return null;
-  return response.json();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetchWithTimeout(`${GRAPH_ROOT}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, ...init.headers },
+    });
+    if (response.ok) return response.status === 204 ? null : response.json();
+    const retryable = response.status === 429 || response.status >= 500;
+    if (!retryable || attempt === 3) throw await graphError(response);
+    const retryAfter = Math.min(Number(response.headers.get('Retry-After') || 0) * 1000, 15_000);
+    await new Promise((resolve) => setTimeout(resolve, retryAfter || (500 * (2 ** attempt))));
+  }
+  throw new Error('Microsoft Graph retry limit reached.');
 };
 
 const graphFetchAbsolute = async (token: string, url: string) => {
-  const response = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!response.ok) throw await graphError(response);
-  return response.json();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (response.ok) return response.json();
+    const retryable = response.status === 429 || response.status >= 500;
+    if (!retryable || attempt === 3) throw await graphError(response);
+    const retryAfter = Math.min(Number(response.headers.get('Retry-After') || 0) * 1000, 15_000);
+    await new Promise((resolve) => setTimeout(resolve, retryAfter || (500 * (2 ** attempt))));
+  }
+  throw new Error('Microsoft Graph retry limit reached.');
 };
 
 const collectGraphPages = async (token: string, firstPath: string) => {
@@ -464,7 +474,7 @@ const getEntityFolderMapping = async (
 ) => {
   const { data, error } = await admin
     .from('document_storage_folders')
-    .select('external_folder_id, folder_path, metadata')
+    .select('external_folder_id, external_web_url, folder_path, desired_folder_path, status, attempt_count, last_error, last_attempt_at, next_retry_at, last_verified_at, metadata')
     .eq('connection_id', connectionId)
     .eq('entity_type', entityType)
     .eq('entity_id', entityId)
@@ -736,6 +746,13 @@ const resolveInvoiceFolderPath = (target: StorageTarget, body: Record<string, un
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  let folderOperation: null | {
+    admin: ReturnType<typeof createClient>;
+    connectionId: string;
+    entityType: string;
+    entityId: string;
+    desiredPath: string;
+  } = null;
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -800,7 +817,7 @@ Deno.serve(async (req: Request) => {
       .in('module', requiredModules);
     const hasPermission = isAdmin || (isPayoutInvoiceWrite && ownsApprovedPayout) || (permissionRows || []).some((permission) => {
       if (action === 'testConnection') return permission.can_admin;
-      if (action === 'downloadUrl' || action === 'listFiles') return permission.can_read || permission.can_edit || permission.can_admin;
+      if (action === 'downloadUrl' || action === 'listFiles' || action === 'getStatus') return permission.can_read || permission.can_edit || permission.can_admin;
       return permission.can_edit || permission.can_admin;
     });
     if (!hasPermission) return jsonResponse({ success: false, error: 'You do not have permission for this storage action.' }, 403);
@@ -854,7 +871,6 @@ Deno.serve(async (req: Request) => {
     if (connectionError || !connection) return jsonResponse({ success: false, error: 'Storage connection was not found.' }, 404);
     if (connection.status !== 'active' && action !== 'testConnection') return jsonResponse({ success: false, error: 'Storage connection is not active.' }, 409);
 
-    const graphToken = await getGraphToken();
     const target = resolveTarget(connection as StorageConnection, entityType);
     const requiresEntityScope = action !== 'testConnection' && action !== 'ensureFolder' && entityType !== 'invoice';
     if (requiresEntityScope && !entityId) {
@@ -864,6 +880,12 @@ Deno.serve(async (req: Request) => {
       ? await getEntityFolderMapping(admin, String(connection.id), entityType, entityId)
       : null;
 
+    if (action === 'getStatus') {
+      const mapping = await getEntityFolderMapping(admin, String(connection.id), entityType, entityId);
+      return jsonResponse({ success: true, status: mapping || null });
+    }
+
+    const graphToken = await getGraphToken();
     if (action === 'testConnection') {
       const drive = await graphFetch(graphToken, `/drives/${encodeURIComponent(String(target.driveId))}`);
       return jsonResponse({
@@ -874,7 +896,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (action === 'ensureFolder') {
+    if (action === 'ensureFolder' || action === 'repairFolder') {
       if (entityType === 'project' && !await projectWorkspaceIsEnabled(admin, entityId)) {
         return jsonResponse({
           success: false,
@@ -884,6 +906,31 @@ Deno.serve(async (req: Request) => {
       }
       const existingMapping = await getEntityFolderMapping(admin, String(connection.id), entityType, entityId);
       const requestedPath = await getServerEntityFolderPath(admin, entityType, entityId, target);
+      folderOperation = {
+        admin,
+        connectionId: String(connection.id),
+        entityType,
+        entityId,
+        desiredPath: requestedPath,
+      };
+      const attemptedAt = new Date().toISOString();
+      const { error: processingError } = await admin.from('document_storage_folders').upsert({
+        connection_id: connection.id,
+        entity_type: entityType,
+        entity_id: entityId,
+        folder_path: existingMapping?.folder_path || requestedPath,
+        desired_folder_path: requestedPath,
+        external_folder_id: existingMapping?.external_folder_id || null,
+        external_web_url: existingMapping?.external_web_url || null,
+        status: 'processing',
+        attempt_count: Number(existingMapping?.attempt_count || 0) + 1,
+        last_attempt_at: attemptedAt,
+        last_error: null,
+        next_retry_at: null,
+        metadata: existingMapping?.metadata || {},
+        updated_at: attemptedAt,
+      }, { onConflict: 'connection_id,entity_type,entity_id' });
+      if (processingError) throw processingError;
       const statusFolders = entityType === 'project' || entityType === 'realizace'
         ? await ensureStatusFolders(graphToken, target, requestedPath)
         : null;
@@ -914,6 +961,10 @@ Deno.serve(async (req: Request) => {
         external_folder_id: result.item.id,
         external_web_url: result.item.webUrl,
         status: 'created',
+        desired_folder_path: result.folderPath,
+        last_error: null,
+        next_retry_at: null,
+        last_verified_at: synchronizedAt,
         metadata: {
           ...(existingMapping?.metadata || {}),
           driveId: target.driveId,
@@ -930,6 +981,7 @@ Deno.serve(async (req: Request) => {
         .from('document_storage_folders')
         .upsert(mappingPayload, { onConflict: 'connection_id,entity_type,entity_id' });
       if (mappingError) throw mappingError;
+      folderOperation = null;
       const sharedLinkTable = entityType === 'project'
         ? 'projects'
         : entityType === 'realizace'
@@ -1354,6 +1406,18 @@ Deno.serve(async (req: Request) => {
 
     return jsonResponse({ success: false, error: 'Unsupported action.' }, 400);
   } catch (error) {
+    if (folderOperation) {
+      const retryAt = new Date(Date.now() + 5 * 60_000).toISOString();
+      await folderOperation.admin.from('document_storage_folders').update({
+        status: 'error',
+        desired_folder_path: folderOperation.desiredPath,
+        last_error: String(error?.message || error).slice(0, 2000),
+        next_retry_at: retryAt,
+        updated_at: new Date().toISOString(),
+      }).eq('connection_id', folderOperation.connectionId)
+        .eq('entity_type', folderOperation.entityType)
+        .eq('entity_id', folderOperation.entityId);
+    }
     console.error('[document-storage]', error);
     return jsonResponse({
       success: false,

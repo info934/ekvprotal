@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 
 const PageHeader = ({ icon: Icon, title, description, actions, meta, className }) => {
   return (
-    <header className={cn("portal-page-heading flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between", className)}>
+    <header className={cn("portal-page-heading flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between", className)}>
       <div className="flex min-w-0 items-start gap-3">
         {Icon && (
           <div className="sr-only" aria-hidden="true">
@@ -23,7 +23,7 @@ const PageHeader = ({ icon: Icon, title, description, actions, meta, className }
         </div>
       </div>
       {actions && (
-        <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end [&>*]:max-w-full">
+        <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center gap-2 xl:w-auto xl:justify-end [&>*]:max-w-full">
           {actions}
         </div>
       )}
