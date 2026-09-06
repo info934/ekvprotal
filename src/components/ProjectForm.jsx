@@ -18,12 +18,18 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Briefcase, Building, DollarSign, FileText, Plus, Save, Trash2, ChevronLeft, AlertCircle, Loader2, Info, Copy } from 'lucide-react';
+import { Briefcase, Building, DollarSign, FileText, Plus, Save, Trash2, ChevronLeft, AlertCircle, Loader2, Info, Copy, FolderTree, RotateCcw, CheckCircle2 } from 'lucide-react';
 import MemberSelect from '@/components/MemberSelect';
 import SubjectSelect from '@/components/SubjectSelect';
 import { parseApiError } from '@/lib/apiValidation';
 import PageHeader from '@/components/ui/page-header';
-import { initializeProjectWorkspace } from '@/lib/documentStorageService';
+import {
+    buildProjectWorkspacePreview,
+    getDefaultStorageConnection,
+    getProjectWorkspacePreference,
+    initializeProjectWorkspace,
+    saveProjectWorkspacePreference,
+} from '@/lib/documentStorageService';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 
 const ProjectForm = () => {
@@ -77,6 +83,8 @@ const ProjectForm = () => {
     const [initialInvestor, setInitialInvestor] = useState(null);
     const [initialClient, setInitialClient] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [storageConnection, setStorageConnection] = useState(null);
+    const [workspacePreference, setWorkspacePreference] = useState({ createFolder: true, folderName: '' });
     
     // Templates
     const [templates, setTemplates] = useState([]);
@@ -85,18 +93,33 @@ const ProjectForm = () => {
 
     const unsaved = useUnsavedChanges({
         draftKey: `project:${user?.id || memberId}:${projectId || `new:${sourceOpportunityId || 'standalone'}`}`,
-        snapshot: { values: watch(), investorIsClient, selectedTemplateId },
-        readSnapshot: () => ({ values: getValues(), investorIsClient, selectedTemplateId }),
+        snapshot: { values: watch(), investorIsClient, selectedTemplateId, workspacePreference },
+        readSnapshot: () => ({ values: getValues(), investorIsClient, selectedTemplateId, workspacePreference }),
         ready: !loading,
         busy: isSubmitting,
         onRestore: draft => {
             reset(draft.values);
             setInvestorIsClient(Boolean(draft.investorIsClient));
             setSelectedTemplateId(draft.selectedTemplateId || '');
+            if (draft.workspacePreference) setWorkspacePreference(draft.workspacePreference);
         },
     });
 
     const watchInvestorId = watch('investor_id');
+    const watchedProjectName = watch('name');
+    const watchedProjectCode = watch('code');
+    const watchedProjectStatus = watch('status');
+    const watchedProjectStartDate = watch('start_date');
+    const workspacePathPreview = useMemo(() => buildProjectWorkspacePreview({
+        project: {
+            name: watchedProjectName,
+            code: watchedProjectCode,
+            status: watchedProjectStatus,
+            start_date: watchedProjectStartDate,
+        },
+        connection: storageConnection,
+        folderName: workspacePreference.folderName,
+    }), [storageConnection, watchedProjectCode, watchedProjectName, watchedProjectStartDate, watchedProjectStatus, workspacePreference.folderName]);
 
     const buildProjectCodeFromOpportunity = (opportunity) => {
         const base = opportunity?.number || opportunity?.title || 'OP';
@@ -134,15 +157,17 @@ const ProjectForm = () => {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const [typesRes, stagesRes, patternRes] = await Promise.all([
+            const [typesRes, stagesRes, patternRes, connection] = await Promise.all([
                 supabase.from('project_types').select('id, name').order('name'),
                 supabase.from('project_stages').select('id, name').order('name'),
                 supabase.from('app_settings').select('value').eq('key', 'project_code_pattern').maybeSingle(),
+                getDefaultStorageConnection(),
             ]);
 
             setProjectTypes(typesRes.data || []);
             setProjectStages(stagesRes.data || []);
             setProjectCodePattern(patternRes.data?.value || '');
+            setStorageConnection(connection);
             
             if (isEditing) {
                 const { data, error } = await supabase.rpc('get_project_safe', { p_project_id: projectId });
@@ -158,6 +183,11 @@ const ProjectForm = () => {
                 });
                 setInitialInvestor(data.investor || null);
                 setInitialClient(data.client || null);
+                const preference = await getProjectWorkspacePreference(projectId);
+                setWorkspacePreference({
+                    createFolder: preference.create_folder !== false,
+                    folderName: preference.folder_name || '',
+                });
                 
                 if (data.investor_id && data.investor_id === data.client_id) {
                     setInvestorIsClient(true);
@@ -248,8 +278,13 @@ const ProjectForm = () => {
                     p_next_status: nextStatus || null,
                 });
                 if (error) throw error;
+                const savedPreference = await saveProjectWorkspacePreference({
+                    projectId,
+                    createFolder: workspacePreference.createFolder,
+                    folderName: workspacePreference.folderName,
+                });
                 try {
-                    await initializeProjectWorkspace({ project: savedProject });
+                    await initializeProjectWorkspace({ project: savedProject, preference: savedPreference });
                 } catch (storageError) {
                     console.warn('Failed to synchronize project workspace', storageError);
                     toast({
@@ -269,6 +304,12 @@ const ProjectForm = () => {
                 });
                 if (error) throw error;
 
+                const savedPreference = await saveProjectWorkspacePreference({
+                    projectId: newProject.id,
+                    createFolder: workspacePreference.createFolder,
+                    folderName: workspacePreference.folderName,
+                });
+
                 if (sourceOpportunityId) {
                     await supabase
                         .from('crm_opportunities')
@@ -277,7 +318,7 @@ const ProjectForm = () => {
                 }
 
                 try {
-                    await initializeProjectWorkspace({ project: newProject });
+                    await initializeProjectWorkspace({ project: newProject, preference: savedPreference });
                 } catch (storageError) {
                     console.warn('Failed to prepare project storage folder', storageError);
                     toast({
@@ -480,6 +521,84 @@ const ProjectForm = () => {
                                 <p className="text-xs text-slate-500">Označí projekt jako důležitý v přehledech a tabulkách.</p>
                              </div>
                         </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="overflow-hidden border-slate-200 shadow-sm">
+                    <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
+                                    <FolderTree className="h-5 w-5 text-blue-600" />Projektová složka
+                                </CardTitle>
+                                <p className="mt-1 text-sm text-slate-500">OneDrive / SharePoint dokumentace se standardní strukturou.</p>
+                            </div>
+                            <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                <Switch
+                                    id="create-project-folder"
+                                    checked={workspacePreference.createFolder}
+                                    onCheckedChange={(checked) => setWorkspacePreference((current) => ({ ...current, createFolder: checked }))}
+                                />
+                                <Label htmlFor="create-project-folder" className="cursor-pointer font-medium text-slate-800">
+                                    {workspacePreference.createFolder ? 'Složku vytvořit' : 'Projekt bez složky'}
+                                </Label>
+                            </div>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="space-y-5 pt-6">
+                        {workspacePreference.createFolder ? (
+                            <>
+                                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+                                    <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <Label htmlFor="workspace-folder-name" className="text-slate-700">Popisná část názvu složky</Label>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 px-2 text-xs text-slate-500"
+                                                onClick={() => setWorkspacePreference((current) => ({ ...current, folderName: '' }))}
+                                                disabled={!workspacePreference.folderName}
+                                            >
+                                                <RotateCcw className="mr-1 h-3.5 w-3.5" />Podle projektu
+                                            </Button>
+                                        </div>
+                                        <Input
+                                            id="workspace-folder-name"
+                                            value={workspacePreference.folderName}
+                                            maxLength={90}
+                                            onChange={(event) => setWorkspacePreference((current) => ({ ...current, folderName: event.target.value }))}
+                                            placeholder={watchedProjectName || 'Název projektu'}
+                                        />
+                                        <p className="text-xs leading-5 text-slate-500">
+                                            Kód projektu se přidá automaticky a chrání složku před záměnou. Zakázané znaky se při uložení nahradí pomlčkou.
+                                        </p>
+                                    </div>
+                                    <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-4">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Výsledná cesta</p>
+                                        <p className="mt-2 break-words font-mono text-xs leading-5 text-slate-800">{workspacePathPreview}</p>
+                                    </div>
+                                </div>
+                                <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
+                                    <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Standardní podsložky</span>
+                                    <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Vyplněný projektový list</span>
+                                    <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Třídění podle roku a stavu</span>
+                                </div>
+                                {isEditing && (
+                                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                                        Po uložení se existující složka bezpečně přejmenuje nebo přesune. Pokud cílový název už používá jiný projekt, systém změnu zastaví.
+                                    </p>
+                                )}
+                            </>
+                        ) : (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
+                                <p className="font-medium text-slate-800">Automatická složka se nevytvoří.</p>
+                                <p className="mt-1 text-sm leading-6 text-slate-600">
+                                    Projekt se uloží normálně. Složku lze kdykoliv zapnout zde při úpravě projektu nebo vytvořit na kartě Dokumenty v detailu projektu.
+                                    {isEditing ? ' Již existující složka se nevypnutím nemaže.' : ''}
+                                </p>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 

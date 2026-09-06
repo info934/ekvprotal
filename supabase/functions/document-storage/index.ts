@@ -523,6 +523,19 @@ const assertItemBelongsToEntityFolder = async (
   }
 };
 
+const projectWorkspaceIsEnabled = async (
+  admin: ReturnType<typeof createClient>,
+  projectId: string,
+) => {
+  const { data, error } = await admin
+    .from('project_workspace_preferences')
+    .select('create_folder')
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.create_folder !== false;
+};
+
 const getServerEntityFolderPath = async (
   admin: ReturnType<typeof createClient>,
   entityType: EntityType,
@@ -546,7 +559,15 @@ const getServerEntityFolderPath = async (
     throw notFound;
   }
   const code = normalizeEntityFolderCode(data.code);
-  const name = normalizeEntityFolderName(data.name);
+  const { data: preference, error: preferenceError } = entityType === 'project'
+    ? await admin
+      .from('project_workspace_preferences')
+      .select('folder_name')
+      .eq('project_id', entityId)
+      .maybeSingle()
+    : { data: null, error: null };
+  if (preferenceError) throw preferenceError;
+  const name = normalizeEntityFolderName(preference?.folder_name || data.name);
   const label = [code, name].filter(Boolean).join(' - ');
   if (entityType !== 'project') {
     const root = entityType === 'realizace' ? 'realizace' : 'products';
@@ -792,6 +813,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === 'ensureFolder') {
+      if (entityType === 'project' && !await projectWorkspaceIsEnabled(admin, entityId)) {
+        return jsonResponse({
+          success: false,
+          error: 'Vytváření složky je u tohoto projektu vypnuté.',
+          code: 'PROJECT_WORKSPACE_DISABLED',
+        }, 409);
+      }
       const existingMapping = await getEntityFolderMapping(admin, String(connection.id), entityType, entityId);
       const requestedPath = await getServerEntityFolderPath(admin, entityType, entityId, target);
       const statusFolders = entityType === 'project'
@@ -856,6 +884,16 @@ Deno.serve(async (req: Request) => {
     if (action === 'initializeProjectWorkspace') {
       if (entityType !== 'project') {
         return jsonResponse({ success: false, error: 'Project workspace can only be initialized for a project.' }, 400);
+      }
+
+      if (!await projectWorkspaceIsEnabled(admin, entityId)) {
+        return jsonResponse({
+          success: true,
+          provider,
+          status: 'disabled',
+          skipped: true,
+          message: 'Automatické vytváření složky je u projektu vypnuté.',
+        });
       }
 
       const { data: project, error: projectError } = await admin

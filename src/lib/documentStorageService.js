@@ -121,7 +121,7 @@ const sanitizePathSegment = (value) => String(value || '')
   .replace(/^-+|-+$/g, '')
   .slice(0, 90) || 'item';
 
-const normalizeFolderCode = (value) => String(value || '')
+export const normalizeFolderCode = (value) => String(value || '')
   .normalize('NFC')
   .replace(/[~"#%&*:<>?/\\{|}]+/g, '-')
   .replace(/\s+/g, '-')
@@ -129,7 +129,7 @@ const normalizeFolderCode = (value) => String(value || '')
   .replace(/^-+|-+$/g, '')
   .slice(0, 48);
 
-const normalizeFolderName = (value) => String(value || '')
+export const normalizeFolderName = (value) => String(value || '')
   .normalize('NFC')
   .replace(/[~"#%&*:<>?/\\{|}]+/g, '-')
   .replace(/\s+/g, ' ')
@@ -273,6 +273,14 @@ const persistFolderMapping = async ({
 };
 
 export const ensureEntityFolder = async ({ entityType, entityId, code, name, connection }) => {
+  if (entityType === 'project') {
+    const preference = await getProjectWorkspacePreference(entityId);
+    if (preference.create_folder === false) {
+      const error = new Error('Vytváření složky je u tohoto projektu vypnuté. Zapněte ho v úpravě projektu nebo na kartě Dokumenty.');
+      error.code = 'PROJECT_WORKSPACE_DISABLED';
+      throw error;
+    }
+  }
   const activeConnection = connection || await getDefaultStorageConnection();
   const folderPath = buildEntityFolderPath({ entityType, entityId, code, name });
 
@@ -321,8 +329,70 @@ export const ensureEntityFolder = async ({ entityType, entityId, code, name, con
   };
 };
 
-export const initializeProjectWorkspace = async ({ project, connection }) => {
+const projectYear = (project = {}) => {
+  const code = String(project.code || '');
+  const fourDigitYear = code.match(/(?:^|[^0-9])(20[0-9]{2})(?:[^0-9]|$)/)?.[1];
+  const twoDigitYear = code.match(/(?:^|[-_/ ])([0-9]{2})(?=[-_/ ])/i)?.[1];
+  if (fourDigitYear) return fourDigitYear;
+  if (twoDigitYear) return `20${twoDigitYear}`;
+  const datedYear = [project.start_date, project.created_at]
+    .map((value) => value ? new Date(String(value)).getUTCFullYear() : NaN)
+    .find((value) => Number.isInteger(value) && value >= 2000 && value <= 2100);
+  return String(datedYear || new Date().getFullYear());
+};
+
+export const buildProjectWorkspacePreview = ({ project = {}, connection, folderName = '' }) => {
+  const config = connection?.config || {};
+  const target = config.targets?.project || {};
+  const code = normalizeFolderCode(project.code) || 'KÓD-PROJEKTU';
+  const name = normalizeFolderName(folderName) || normalizeFolderName(project.name) || 'Název projektu';
+  const completedStatuses = Array.isArray(target.completedStatuses) && target.completedStatuses.length
+    ? target.completedStatuses.map(String)
+    : ['closed'];
+  const statusFolder = completedStatuses.includes(String(project.status || ''))
+    ? (target.completedFolderName || 'Hotovo')
+    : (target.activeFolderName || 'Aktivni');
+  const segments = [
+    target.rootFolderPath ?? config.rootFolderPath ?? 'EKVPortal',
+    target.projectFolderName || 'Projekty',
+    target.organizeProjectsByYear === false ? '' : projectYear(project),
+    statusFolder,
+    [code, name].filter(Boolean).join(' - '),
+  ];
+  return segments.map((segment) => String(segment || '').replace(/^\/+|\/+$/g, '')).filter(Boolean).join(' / ');
+};
+
+export const getProjectWorkspacePreference = async (projectId) => {
+  if (!projectId) return { project_id: null, create_folder: true, folder_name: null };
+  const { data, error } = await supabase
+    .from('project_workspace_preferences')
+    .select('project_id, create_folder, folder_name, updated_at')
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (error) {
+    if (isStorageConfigMissingError(error)) return { project_id: projectId, create_folder: true, folder_name: null };
+    throw error;
+  }
+  return data || { project_id: projectId, create_folder: true, folder_name: null };
+};
+
+export const saveProjectWorkspacePreference = async ({ projectId, createFolder, folderName }) => {
+  const normalizedName = normalizeFolderName(folderName) || null;
+  const { data, error } = await supabase.rpc('save_project_workspace_preference', {
+    p_project_id: projectId,
+    p_create_folder: Boolean(createFolder),
+    p_folder_name: normalizedName,
+  });
+  if (error) throw error;
+  return data;
+};
+
+export const initializeProjectWorkspace = async ({ project, connection, preference }) => {
   if (!project?.id) throw new Error('Projekt není uložený.');
+  const activePreference = preference || await getProjectWorkspacePreference(project.id);
+  if (activePreference?.create_folder === false) {
+    return { success: true, status: 'disabled', skipped: true, preference: activePreference };
+  }
   const activeConnection = connection || await getDefaultStorageConnection();
 
   if (activeConnection.provider === 'supabase') {

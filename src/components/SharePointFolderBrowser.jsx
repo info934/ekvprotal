@@ -18,8 +18,10 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   ensureEntityFolder,
   getEntityStorageFolder,
+  getProjectWorkspacePreference,
   initializeProjectWorkspace,
   listEntityStorageFolder,
+  saveProjectWorkspacePreference,
   uploadEntityStorageFile,
 } from '@/lib/documentStorageService';
 
@@ -53,6 +55,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
   const [folderMissing, setFolderMissing] = useState(false);
   const [mappingMetadata, setMappingMetadata] = useState({});
   const [mappedFolderPath, setMappedFolderPath] = useState('');
+  const [workspacePreference, setWorkspacePreference] = useState(null);
   const [error, setError] = useState('');
 
   const currentFolder = breadcrumbs[breadcrumbs.length - 1] || rootFolder;
@@ -94,7 +97,11 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
     setError('');
     setFolderMissing(false);
     try {
-      const mapping = await getEntityStorageFolder({ entityType, entityId: entity.id });
+      const [mapping, preference] = await Promise.all([
+        getEntityStorageFolder({ entityType, entityId: entity.id }),
+        entityType === 'project' ? getProjectWorkspacePreference(entity.id) : Promise.resolve(null),
+      ]);
+      setWorkspacePreference(preference);
       let folder;
       const activeConnection = mapping?.connection;
 
@@ -150,7 +157,14 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
     setError('');
     try {
       if (entityType === 'project') {
-        await initializeProjectWorkspace({ project: entity, connection: connection || undefined });
+        const preference = workspacePreference?.create_folder === false
+          ? await saveProjectWorkspacePreference({
+            projectId: entity.id,
+            createFolder: true,
+            folderName: workspacePreference.folder_name,
+          })
+          : workspacePreference;
+        await initializeProjectWorkspace({ project: entity, connection: connection || undefined, preference });
       } else {
         await ensureEntityFolder({
           entityType,
@@ -315,7 +329,7 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
           {canEdit && currentFolder && entityType === 'project' && (
             <Button type="button" variant="outline" size="sm" onClick={handleCreateFolder} disabled={creating || loading}>
               {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Synchronizovat údaje
+              {workspacePreference?.create_folder === false ? 'Zapnout synchronizaci' : 'Synchronizovat údaje'}
             </Button>
           )}
           {rootFolder?.webUrl && (
@@ -372,14 +386,16 @@ const SharePointFolderBrowser = ({ entityType, entity, canEdit = false }) => {
           <h3 className="text-sm font-semibold text-slate-900">SharePoint složka zatím neexistuje</h3>
           <p className="mt-1 max-w-xl text-sm text-slate-500">
             {canEdit
-              ? 'Vytvoří se nová složka podle kódu a názvu záznamu včetně standardních podsložek.'
+              ? workspacePreference?.create_folder === false
+                ? 'Automatické vytvoření bylo při založení projektu vypnuto. Tímto tlačítkem ho zapnete a připravíte celou dokumentaci.'
+                : 'Vytvoří se nová složka podle kódu a názvu záznamu včetně standardních podsložek.'
               : 'Složku může vytvořit uživatel s právem upravovat tento záznam.'}
           </p>
           {error && <p className="mt-2 text-sm text-rose-700">{error}</p>}
           {canEdit && (
             <Button className="mt-4" size="sm" onClick={handleCreateFolder} disabled={creating}>
               {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FolderPlus className="mr-2 h-4 w-4" />}
-              Vytvořit složku
+              {workspacePreference?.create_folder === false ? 'Zapnout a vytvořit složku' : 'Vytvořit složku'}
             </Button>
           )}
         </div>
