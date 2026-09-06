@@ -1,5 +1,7 @@
 -- Raynet-inspired opportunity participants and immutable change history.
 
+begin;
+
 create table if not exists public.crm_opportunity_participants (
   id uuid primary key default gen_random_uuid(),
   opportunity_id uuid not null references public.crm_opportunities(id) on delete cascade,
@@ -119,3 +121,5 @@ revoke all on public.crm_opportunity_participants, public.crm_opportunity_events
 grant select, insert, update, delete on public.crm_opportunity_participants to authenticated;
 grant select on public.crm_opportunity_events to authenticated;
 grant all on public.crm_opportunity_participants, public.crm_opportunity_events to service_role;
+
+commit;

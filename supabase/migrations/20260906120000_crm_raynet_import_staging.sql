@@ -1,6 +1,8 @@
 -- Auditable, idempotent Raynet -> EKV CRM import. Credentials are intentionally
 -- not stored here; the Edge Function receives them for the current request only.
 
+begin;
+
 -- Ready-to-use FVE layout derived from the active EKV Raynet opportunity model.
 insert into public.crm_custom_field_sections (business_type, title, description, sort_order, is_active)
 values
@@ -502,3 +504,5 @@ $$;
 
 revoke all on function public.apply_raynet_crm_import(uuid, uuid) from public, anon;
 grant execute on function public.apply_raynet_crm_import(uuid, uuid) to authenticated, service_role;
+
+commit;
