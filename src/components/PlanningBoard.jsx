@@ -64,7 +64,7 @@ import {
   syncPlanningPlanCalendar,
   quickUpdatePlanningItem,
 } from '@/lib/planningService';
-import { ESTIMATE_PRESETS, PRIORITY_OPTIONS, estimateMismatch } from '@/lib/planningEstimates';
+import { COMPLEXITY_OPTIONS, ESTIMATE_PRESETS, PRIORITY_OPTIONS, estimateMismatch } from '@/lib/planningEstimates';
 
 const PlanningGantt = lazy(() => import('@/components/PlanningGantt'));
 
