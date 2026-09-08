@@ -215,29 +215,8 @@ Deno.serve(async (req) => {
     const dayOfWeek = today.getDay(); // Sunday - 0, Monday - 1
     const dayOfMonth = today.getDate();
 
-    // Process Operational Report
-    const opReportFreq = settings.report_frequency || 'disabled';
-    const opReportEmail = settings.report_email;
-    let sendOperational = false;
-    if (opReportFreq === 'daily') sendOperational = true;
-    if (opReportFreq === 'weekly' && dayOfWeek === 1) sendOperational = true; // Monday
-    if (opReportFreq === 'monthly' && dayOfMonth === 1) sendOperational = true;
-
-    if (sendOperational && opReportEmail) {
-      console.log("Sending operational report...");
-      const content = await getOperationalReportContent(supabaseClient);
-      const subject = 'Týdenní provozní report';
-      const html = createEmailTemplate(
-        subject,
-        'Dobrý den,',
-        content,
-        { url: Deno.env.get('SUPABASE_URL')?.replace('/supabase', ''), text: 'Přejít do portálu' },
-        'S pozdravem,<br>Váš EKV Portál'
-      );
-      await sendEmail(supabaseClient, opReportEmail, subject, html);
-    }
-
-    // Process Financial Report
+    // This legacy scheduler intentionally processes financial reports only.
+    // Operational and employee task reports are handled by send-work-reports.
     const finReportFreq = settings.financial_report_frequency || 'disabled';
     const finReportEmail = settings.financial_report_email;
     let sendFinancial = false;

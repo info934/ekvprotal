@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { planningAvailabilityKey, planningDeletionItems } from '@/lib/operationsHelpers';
+import { supabase } from '@/lib/customSupabaseClient';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { format, parseISO } from 'date-fns';
 import { cs } from 'date-fns/locale';
@@ -20,6 +21,9 @@ import {
   RefreshCw,
   Route,
   Trash2,
+  PlayCircle,
+  ShieldAlert,
+  Check,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -58,7 +62,9 @@ import {
   checkPlanningItemAvailability,
   syncPlanningItemCalendar,
   syncPlanningPlanCalendar,
+  quickUpdatePlanningItem,
 } from '@/lib/planningService';
+import { ESTIMATE_PRESETS, PRIORITY_OPTIONS, estimateMismatch } from '@/lib/planningEstimates';
 
 const PlanningGantt = lazy(() => import('@/components/PlanningGantt'));
 
@@ -108,6 +114,8 @@ const emptyItem = () => ({
   end_at: LOCAL_DATE_TIME(17),
   progress: 0,
   status: 'planned',
+  priority: 'normal',
+  estimated_hours: 4,
   member_id: '',
   assignments: [],
   subcontractor_assignments: [],
@@ -221,7 +229,7 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
   const update = (key, nextValue) => setForm((current) => ({ ...current, [key]: nextValue }));
   const setPrimaryMember = (memberId) => setForm((current) => {
     const assignments = memberId && !current.assignments.some((assignment) => assignment.member_id === memberId)
-      ? [...current.assignments, { member_id: memberId, role: '', allocation_percent: 100, planned_hours: '' }]
+      ? [...current.assignments, { member_id: memberId, role: '', allocation_percent: 100, planned_hours: current.assignments.length ? '' : current.estimated_hours }]
       : current.assignments;
     return { ...current, member_id: memberId, assignments };
   });
@@ -248,6 +256,7 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
   const selectedMember = members.find((member) => member.id === form.member_id);
   const personalMailbox = selectedMember?.microsoft_calendar_email || selectedMember?.email;
   const calendarLink = getCalendarLink(value);
+  const hoursMismatch = estimateMismatch(form.estimated_hours, form.assignments);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -275,6 +284,17 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
             <Label>Název</Label>
             <Input value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Např. Předání dokumentace" />
           </div>
+          {form.item_type === 'task' && <>
+            <div className="space-y-2">
+              <Label>Priorita</Label>
+              <Select value={form.priority || 'normal'} onValueChange={(next) => update('priority', next)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITY_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Odhad práce</Label>
+              <div className="flex flex-wrap gap-1">{ESTIMATE_PRESETS.map((preset) => <Button key={preset.hours} type="button" size="sm" variant={Number(form.estimated_hours) === preset.hours ? 'default' : 'outline'} onClick={() => setForm((current) => ({ ...current, estimated_hours: preset.hours, assignments: current.assignments.length === 1 ? current.assignments.map((assignment) => ({ ...assignment, planned_hours: preset.hours })) : current.assignments }))}>{preset.label}</Button>)}</div>
+              <Input type="number" min="0.25" step="0.25" value={form.estimated_hours || ''} onChange={(event) => update('estimated_hours', event.target.value)} />
+            </div>
+          </>}
           <div className="space-y-2">
             <Label>Začátek</Label>
             <Input type="datetime-local" step="900" value={form.start_at} onChange={(event) => update('start_at', event.target.value)} />
@@ -314,6 +334,7 @@ const ItemDialog = ({ open, value, items, members, subcontractors, onClose, onSa
                 );
               })}
             </div>
+            {hoursMismatch && <p role="alert" className="text-xs font-medium text-amber-800">Rozděleno {hoursMismatch.assigned.toLocaleString('cs-CZ')} h z odhadu {hoursMismatch.estimate.toLocaleString('cs-CZ')} h. Upravte hodiny řešitelů.</p>}
           </div>
           {subcontractors.length > 0 && (
             <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50/60 p-3 sm:col-span-2">
@@ -500,6 +521,7 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
   const [travelDialog, setTravelDialog] = useState({ open: false, value: null });
   const [accommodationDialog, setAccommodationDialog] = useState({ open: false, value: null });
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [entityEstimate, setEntityEstimate] = useState(null);
   const availabilityRequestId = useRef(0);
   const invalidateAvailability = useCallback(() => {
     availabilityRequestId.current += 1;
@@ -550,11 +572,19 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
   useEffect(() => { loadPlans(); }, [loadPlans]);
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => {
+    if (!selectedPlan?.entity_type || !selectedPlan?.entity_id) { setEntityEstimate(null); return; }
+    supabase.rpc('get_entity_planning_estimate_safe', { p_entity_type: selectedPlan.entity_type, p_entity_id: selectedPlan.entity_id })
+      .then(({ data: estimate }) => setEntityEstimate(estimate || null));
+  }, [selectedPlan?.entity_id, selectedPlan?.entity_type]);
+  useEffect(() => {
     invalidateAvailability();
   }, [itemDialog.open, itemDialog.value?.id, invalidateAvailability]);
 
   const stats = useMemo(() => {
     const activeItems = data.items.filter((item) => !['done', 'cancelled'].includes(item.status));
+    const taskItems = data.items.filter((item) => item.item_type === 'task' && item.status !== 'cancelled');
+    const completedTasks = taskItems.filter((item) => item.status === 'done').length;
+    const nearestMilestone = data.items.filter((item) => item.item_type === 'milestone' && item.status !== 'done' && item.start_date >= TODAY()).sort((a, b) => a.start_date.localeCompare(b.start_date))[0];
     return {
       active: activeItems.length,
       milestones: data.items.filter((item) => item.item_type === 'milestone').length,
@@ -563,6 +593,8 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
       nights: data.accommodations.reduce((sum, stay) => sum + Math.max(0, Math.round((parseISO(stay.check_out) - parseISO(stay.check_in)) / 86400000)), 0),
       calendarSynced: data.items.filter((item) => getCalendarLink(item)?.sync_status === 'synced').length,
       calendarErrors: data.items.filter((item) => getCalendarLink(item)?.sync_status === 'error').length,
+      progress: taskItems.length ? Math.round((completedTasks / taskItems.length) * 100) : 0,
+      nearestMilestone,
     };
   }, [data]);
 
@@ -661,6 +693,10 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
     },
     'Termín byl aktualizován',
   ), [runMutation, syncCalendarBestEffort]);
+
+  const handleQuickItemChange = useCallback((id, changes, message) => runMutation(
+    () => quickUpdatePlanningItem(id, changes), message,
+  ), [runMutation]);
 
   const handleCalendarSync = useCallback((id) => runMutation(
     () => syncPlanningItemCalendar(id),
@@ -762,6 +798,18 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
           </div>
         </section>}
 
+        <section className="mb-4 rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-white p-4" aria-label="Souhrn plánu">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <div><div className="text-xs text-slate-500">Náročnost</div><div className="font-semibold">{COMPLEXITY_OPTIONS.find((option) => option.value === entityEstimate?.complexity_level)?.label || 'Nenastavena'}</div></div>
+            <div><div className="text-xs text-slate-500">Odhad</div><div className="font-semibold">{entityEstimate?.estimated_work_days ? `${entityEstimate.estimated_work_days} prac. dnů` : 'Nenastaven'}</div></div>
+            <div><div className="text-xs text-slate-500">Plánovaný konec</div><div className="font-semibold">{formatDate(selectedPlan?.planned_end)}</div></div>
+            <div><div className="text-xs text-slate-500">Průběh</div><div className="font-semibold">{stats.progress} %</div></div>
+            <div><div className="text-xs text-slate-500">Zbývá úkolů</div><div className="font-semibold">{data.items.filter((item) => item.item_type === 'task' && !['done','cancelled'].includes(item.status)).length}</div></div>
+            <div><div className="text-xs text-slate-500">Nejbližší milník</div><div className="truncate font-semibold">{stats.nearestMilestone?.name || '—'}</div></div>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${stats.progress}%` }} /></div>
+        </section>
+
         <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Metric icon={Clock3} label="Aktivní položky" value={stats.active} />
           <Metric icon={Milestone} label="Milníky" value={stats.milestones} tone="green" />
@@ -776,13 +824,25 @@ const PlanningBoard = ({ entityType, entityId, embedded = false, canEdit: canEdi
           />
         </div>
 
-        <Tabs defaultValue="gantt" className="min-w-0">
-          <TabsList className="mb-3 grid h-auto w-full grid-cols-2 rounded-md bg-slate-100 p-1 sm:grid-cols-4 lg:w-[820px]">
+        <Tabs defaultValue="tasks" className="min-w-0">
+          <TabsList className="mb-3 grid h-auto w-full grid-cols-2 rounded-md bg-slate-100 p-1 sm:grid-cols-5 lg:w-[980px]">
+            <TabsTrigger value="tasks"><CheckCircle2 className="mr-2 h-4 w-4" />Co je potřeba udělat</TabsTrigger>
             <TabsTrigger value="gantt"><GanttChart className="mr-2 h-4 w-4" />Gantt</TabsTrigger>
             <TabsTrigger value="milestones"><Flag className="mr-2 h-4 w-4" />Milníky</TabsTrigger>
             <TabsTrigger value="logistics"><Route className="mr-2 h-4 w-4" />Cesty a ubytování</TabsTrigger>
             <TabsTrigger value="calendar"><CalendarDays className="mr-2 h-4 w-4" />Outlook</TabsTrigger>
           </TabsList>
+          <TabsContent value="tasks" className="mt-0">
+            <div className="overflow-hidden rounded-xl border bg-white">
+              {data.items.filter((item) => item.item_type === 'task' && item.status !== 'cancelled').sort((a,b) => (a.end_date || '9999').localeCompare(b.end_date || '9999')).map((item) => <article key={item.id} className="grid gap-3 border-b p-4 last:border-0 md:grid-cols-[minmax(220px,1fr)_150px_145px_auto] md:items-center">
+                <button type="button" className="min-w-0 text-left" onClick={() => setItemDialog({ open: true, value: item })}><span className="block truncate font-semibold">{item.name}</span><span className="text-xs text-slate-500">{PRIORITY_OPTIONS.find(option => option.value === item.priority)?.label || 'Běžná'} priorita · {item.estimated_hours ? `${item.estimated_hours} h` : 'bez odhadu'}</span></button>
+                <select className="h-9 rounded-md border bg-white px-2 text-sm" aria-label={`Řešitel úkolu ${item.name}`} value={item.member_id || ''} disabled={!canEdit || saving} onChange={(event) => handleQuickItemChange(item.id,{member_id:event.target.value},'Řešitel byl změněn')}><option value="">Nepřiřazeno</option>{data.members.map(member => <option key={member.id} value={member.id}>{member.name || member.email}</option>)}</select>
+                <Input type="date" aria-label={`Termín úkolu ${item.name}`} value={item.end_date || ''} disabled={!canEdit || saving} onChange={(event) => handleQuickItemChange(item.id,{end_date:event.target.value},'Termín byl změněn')} />
+                <div className="flex items-center justify-between gap-1 md:justify-end"><StatusBadge value={item.status}/>{canEdit && !['done','cancelled'].includes(item.status) && <><Button size="icon" variant="ghost" title="Zahájit" onClick={() => handleQuickItemChange(item.id,{status:'in_progress'},'Úkol byl zahájen')}><PlayCircle className="h-4 w-4"/></Button><Button size="icon" variant="ghost" title="Blokovat" onClick={() => handleQuickItemChange(item.id,{status:'blocked'},'Úkol byl zablokován')}><ShieldAlert className="h-4 w-4"/></Button><Button size="icon" variant="ghost" title="Dokončit" onClick={() => handleQuickItemChange(item.id,{status:'done'},'Úkol byl dokončen')}><Check className="h-4 w-4"/></Button></>}</div>
+              </article>)}
+              {!data.items.some((item) => item.item_type === 'task' && item.status !== 'cancelled') && <p className="p-8 text-center text-slate-500">Žádné otevřené úkoly. Přidejte první úkol do plánu.</p>}
+            </div>
+          </TabsContent>
           <TabsContent value="gantt" className="mt-0 min-w-0">
             {loading ? <div className="flex h-[420px] items-center justify-center rounded-md border bg-white text-sm text-slate-500"><RefreshCw className="mr-2 h-4 w-4 animate-spin" />Načítám harmonogram…</div> : (
               <Suspense fallback={<div className="flex h-[420px] items-center justify-center rounded-md border bg-white text-sm text-slate-500"><RefreshCw className="mr-2 h-4 w-4 animate-spin" />Načítám časovou osu…</div>}>

@@ -9,11 +9,10 @@ import { format } from 'date-fns';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Trash2, Plus, Edit2, Calendar, User, FileText, Target, AlertTriangle } from 'lucide-react';
+import { Search, Trash2, Plus, Edit2, Calendar, User, FileText, Target, AlertTriangle, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { motion, AnimatePresence } from 'framer-motion';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ESTIMATE_PRESETS, PRIORITY_OPTIONS } from '@/lib/planningEstimates';
 
 const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
   const { toast } = useToast();
@@ -25,6 +24,8 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
     end_date: '',
     member_id: '',
     status: 'Nové',
+    priority: 'normal',
+    estimated_hours: 4,
     project_id: projectId || '',
   });
   const [projectMembers, setProjectMembers] = useState([]);
@@ -110,6 +111,8 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
             end_date: task.end_date ? format(new Date(task.end_date), 'yyyy-MM-dd') : '',
             member_id: task.member_id || '',
             status: task.status || 'Nové',
+            priority: task.priority || 'normal',
+            estimated_hours: task.estimated_hours || 4,
             project_id: task.project_id || '',
           });
         } else {
@@ -120,6 +123,8 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
             end_date: '', 
             member_id: '', 
             status: 'Nové', 
+            priority: 'normal',
+            estimated_hours: 4,
             project_id: projectId || '' 
           });
         }
@@ -166,7 +171,7 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
 
     setSaving(true);
     try {
-      await onSave({ ...formData, member_id: formData.member_id || null });
+      await onSave({ ...formData, member_id: formData.member_id || null, estimated_hours: Number(formData.estimated_hours) });
     } catch (error) {
       toast({ title: 'Úkol se nepodařilo uložit', description: error.message, variant: 'destructive' });
     } finally {
@@ -208,31 +213,8 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
         />
         
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <Tabs defaultValue="basic" className="h-full flex flex-col">
             <FormDialogBody>
-            <TabsList className="grid w-full grid-cols-3 mb-6">
-              <TabsTrigger value="basic" className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Základní
-              </TabsTrigger>
-              <TabsTrigger value="assignment" className="flex items-center gap-2">
-                <User className="h-4 w-4" />
-                Přiřazení
-              </TabsTrigger>
-              <TabsTrigger value="schedule" className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                Termíny
-              </TabsTrigger>
-            </TabsList>
-            
-            <div className="space-y-6">
-              {/* Basic Information Tab */}
-              <TabsContent value="basic" className="space-y-6">
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-4"
-                >
+            <div className="space-y-5">
                   {!projectId && (
                     <div className="space-y-2">
                       <Label htmlFor="project" className="flex items-center gap-2 text-sm font-medium">
@@ -284,32 +266,7 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
                       placeholder="Zadejte název úkolu"
                     />
                   </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="description" className="flex items-center gap-2 text-sm font-medium">
-                      <FileText className="h-4 w-4 text-muted-foreground" />
-                      Detailní popis
-                    </Label>
-                    <Textarea
-                      id="description"
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="Přidejte podrobnější informace o úkolu..."
-                      rows={4}
-                      className="resize-none"
-                    />
-                  </div>
-                </motion.div>
-              </TabsContent>
-
-              {/* Assignment Tab */}
-              <TabsContent value="assignment" className="space-y-6">
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-4"
-                >
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="member" className="flex items-center gap-2 text-sm font-medium">
                         <User className="h-4 w-4 text-muted-foreground" />
@@ -337,38 +294,30 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
                         </p>
                       )}
                     </div>
-                    
                     <div className="space-y-2">
-                      <Label htmlFor="status" className="flex items-center gap-2 text-sm font-medium">
+                      <Label className="flex items-center gap-2 text-sm font-medium">
                         <Target className="h-4 w-4 text-muted-foreground" />
-                        Stav úkolu
+                        Priorita
                       </Label>
                       <Select
-                        value={formData.status}
-                        onValueChange={(value) => setFormData({ ...formData, status: value })}
+                        value={formData.priority}
+                        onValueChange={(value) => setFormData({ ...formData, priority: value })}
                       >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {taskStatuses.map(status => (
-                            <SelectItem key={status} value={status}>{status}</SelectItem>
-                          ))}
+                          {PRIORITY_OPTIONS.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
-                </motion.div>
-              </TabsContent>
-
-              {/* Schedule Tab */}
-              <TabsContent value="schedule" className="space-y-6">
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-4"
-                >
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="estimated_hours">Odhad práce *</Label>
+                    <div className="flex flex-wrap gap-2">{ESTIMATE_PRESETS.map(preset => <Button key={preset.hours} type="button" size="sm" variant={Number(formData.estimated_hours) === preset.hours ? 'default' : 'outline'} onClick={() => setFormData({ ...formData, estimated_hours: preset.hours })}>{preset.label}</Button>)}</div>
+                    <Input id="estimated_hours" type="number" min="0.25" step="0.25" value={formData.estimated_hours} onChange={e => setFormData({ ...formData, estimated_hours: e.target.value })} className="max-w-40" />
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="startDate" className="flex items-center gap-2 text-sm font-medium">
                         <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -399,25 +348,14 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
                       />
                     </div>
                   </div>
-                  
-                  {formData.start_date && formData.end_date && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg"
-                    >
-                      <div className="text-center">
-                        <p className="text-sm text-blue-800 font-medium">Délka úkolu</p>
-                        <p className="text-lg font-bold text-blue-900">
-                          {Math.ceil((new Date(formData.end_date) - new Date(formData.start_date)) / (1000 * 60 * 60 * 24)) + 1} dní
-                        </p>
-                      </div>
-                    </motion.div>
-                  )}
-                </motion.div>
-              </TabsContent>
+                  <details className="rounded-xl border bg-slate-50 p-4">
+                    <summary className="flex cursor-pointer list-none items-center justify-between font-medium">Více možností <ChevronDown className="h-4 w-4" /></summary>
+                    <div className="mt-4 space-y-4">
+                      <div className="space-y-2"><Label>Stav úkolu</Label><Select value={formData.status} onValueChange={value => setFormData({ ...formData, status: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{taskStatuses.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
+                      <div className="space-y-2"><Label htmlFor="description">Detailní popis</Label><Textarea id="description" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Kontext, podklady nebo závislosti…" rows={4} /></div>
+                    </div>
+                  </details>
             </div>
-            
             </FormDialogBody>
             <FormDialogFooter className="flex-col sm:flex-row sm:justify-between sm:items-center">
               {task && isAdmin && onDelete && (
@@ -450,7 +388,6 @@ const TaskDialog = ({ isOpen, onClose, onSave, onDelete, task, projectId }) => {
                 </Button>
               </div>
             </FormDialogFooter>
-          </Tabs>
         </form>
       </FormDialogContent>
     </Dialog>

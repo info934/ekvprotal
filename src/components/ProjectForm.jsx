@@ -31,6 +31,7 @@ import {
     saveProjectWorkspacePreference,
 } from '@/lib/documentStorageService';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
+import { addWorkingDays, COMPLEXITY_OPTIONS, templateWorkDays } from '@/lib/planningEstimates';
 
 const ProjectForm = () => {
     const { projectId } = useParams();
@@ -66,6 +67,8 @@ const ProjectForm = () => {
             created_by_member_id: memberId,
             completion_date: '',
             start_date: '',
+            complexity_level: 'standard',
+            estimated_work_days: 10,
             location: '',
             client_internal_ref: '',
             brief: '',
@@ -110,6 +113,13 @@ const ProjectForm = () => {
     const watchedProjectCode = watch('code');
     const watchedProjectStatus = watch('status');
     const watchedProjectStartDate = watch('start_date');
+    const watchedEstimatedWorkDays = watch('estimated_work_days');
+    const [manualCompletionDate, setManualCompletionDate] = useState(false);
+
+    useEffect(() => {
+        if (manualCompletionDate || !watchedProjectStartDate || !Number(watchedEstimatedWorkDays)) return;
+        setValue('completion_date', addWorkingDays(watchedProjectStartDate, watchedEstimatedWorkDays), { shouldDirty: true });
+    }, [manualCompletionDate, watchedEstimatedWorkDays, watchedProjectStartDate, setValue]);
     const workspacePathPreview = useMemo(() => buildProjectWorkspacePreview({
         project: {
             name: watchedProjectName,
@@ -188,6 +198,7 @@ const ProjectForm = () => {
                     createFolder: preference.create_folder !== false,
                     folderName: preference.folder_name || '',
                 });
+                setManualCompletionDate(Boolean(data.completion_date));
                 
                 if (data.investor_id && data.investor_id === data.client_id) {
                     setInvestorIsClient(true);
@@ -241,6 +252,11 @@ const ProjectForm = () => {
             const tpl = templates.find(t => t.id === templateId);
             if (tpl) {
                 setValue('name', tpl.name);
+                const workDays = templateWorkDays(tpl.tasks_data);
+                if (workDays) {
+                    setValue('estimated_work_days', workDays, { shouldDirty: true });
+                    setManualCompletionDate(false);
+                }
                 toast({ title: 'Šablona aplikována', description: 'Název a předvolby byly načteny.' });
             }
         }
@@ -278,6 +294,11 @@ const ProjectForm = () => {
                     p_next_status: nextStatus || null,
                 });
                 if (error) throw error;
+                const { error: estimateError } = await supabase.rpc('update_entity_planning_estimate', {
+                    p_entity_type: 'project', p_entity_id: projectId,
+                    p_complexity_level: formData.complexity_level, p_estimated_work_days: Number(formData.estimated_work_days),
+                });
+                if (estimateError) throw estimateError;
                 const savedPreference = await saveProjectWorkspacePreference({
                     projectId,
                     createFolder: workspacePreference.createFolder,
@@ -303,6 +324,12 @@ const ProjectForm = () => {
                     p_next_status: null,
                 });
                 if (error) throw error;
+
+                const { error: estimateError } = await supabase.rpc('update_entity_planning_estimate', {
+                    p_entity_type: 'project', p_entity_id: newProject.id,
+                    p_complexity_level: formData.complexity_level, p_estimated_work_days: Number(formData.estimated_work_days),
+                });
+                if (estimateError) throw estimateError;
 
                 const savedPreference = await saveProjectWorkspacePreference({
                     projectId: newProject.id,
@@ -489,16 +516,27 @@ const ProjectForm = () => {
                                 )} />
                             </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+                          <div className="mb-3"><p className="font-semibold text-slate-900">Jednoduchý plán projektu</p><p className="text-sm text-slate-600">Zadejte náročnost, začátek a odhad. Konec dopočítáme přes pracovní dny.</p></div>
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                            <div className="space-y-1.5">
+                              <Label>Náročnost *</Label>
+                              <Controller name="complexity_level" control={control} render={({ field }) => <Select value={field.value || 'standard'} onValueChange={field.onChange}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent>{COMPLEXITY_OPTIONS.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>} />
+                            </div>
                             <div className="space-y-1.5">
                                 <Label htmlFor="start_date" className="text-slate-700">Datum zahájení</Label>
-                                <Input id="start_date" type="date" {...register('start_date')} className="bg-white" />
+                                <Input id="start_date" type="date" {...register('start_date', { onChange: () => setManualCompletionDate(false) })} className="bg-white" />
                             </div>
+                            <div className="space-y-1.5"><Label htmlFor="estimated_work_days">Odhad pracovních dnů *</Label><Input id="estimated_work_days" type="number" min="1" {...register('estimated_work_days', { valueAsNumber: true, onChange: () => setManualCompletionDate(false) })} className={errors.estimated_work_days ? 'border-red-500 bg-white' : 'bg-white'} />{errors.estimated_work_days && <p className="text-xs text-red-600">{errors.estimated_work_days.message}</p>}</div>
                             <div className="space-y-1.5">
                                 <Label htmlFor="completion_date" className="text-slate-700">Termín dokončení</Label>
-                                <Input id="completion_date" type="date" {...register('completion_date')} className={errors.completion_date ? 'border-red-500' : 'bg-white'}/>
+                                <Input id="completion_date" type="date" {...register('completion_date', { onChange: () => setManualCompletionDate(true) })} className={errors.completion_date ? 'border-red-500' : 'bg-white'}/>
                                 {errors.completion_date && <p className="text-red-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.completion_date.message}</p>}
                             </div>
+                          </div>
+                          {manualCompletionDate && <p className="mt-2 text-xs text-blue-800">Termín byl upraven ručně. Změnou začátku nebo odhadu zapnete nový automatický výpočet.</p>}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div className="space-y-1.5">
                                 <Controller 
                                     name="created_by_member_id" 

@@ -134,6 +134,8 @@ export const savePlanningItem = async (planId, item) => {
     member_id: item.member_id || null,
     calendar_sync_enabled: item.item_type !== 'phase' && Boolean(item.calendar_sync_enabled),
     sort_order: Number(item.sort_order) || 0,
+    priority: item.priority || 'normal',
+    estimated_hours: item.estimated_hours ? Number(item.estimated_hours) : null,
   };
 
   const savedId = throwIfError(await supabase.rpc('save_planning_item_with_resources', {
@@ -160,13 +162,18 @@ export const updatePlanningItemDates = async (id, values) => {
     payload.end_at = toIsoDateTime(values.end_at);
     payload.end_date = toDateOnly(values.end_at);
   }
-  return throwIfError(await supabase
-    .from('planning_items')
-    .update(payload)
-    .eq('id', id)
-    .select('*, calendar_link:planning_calendar_links(id, sync_status, mailbox_address, external_event_id, web_link, last_synced_at, last_error)')
-    .single());
+  const changes = {};
+  if (payload.start_date) changes.start_date = payload.start_date;
+  if (payload.end_date) changes.end_date = payload.end_date;
+  if (payload.status) changes.status = payload.status;
+  if (Object.keys(changes).length) return throwIfError(await supabase.rpc('quick_update_planning_item', { p_item_id: id, p_changes: changes }));
+  return throwIfError(await supabase.from('planning_items').update(payload).eq('id', id).select().single());
 };
+
+export const quickUpdatePlanningItem = async (id, changes) => throwIfError(await supabase.rpc(
+  'quick_update_planning_item',
+  { p_item_id: id, p_changes: changes },
+));
 
 const invokePlanningCalendar = async (action, itemId) => {
   const { data, error } = await invokeWithTimeout(supabase, 'planning-calendar', {

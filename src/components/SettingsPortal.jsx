@@ -17,6 +17,9 @@ const SETTING_KEYS = [
   'planning_company_calendar_id',
   'service_inbox_enabled',
   'service_inbox_mailbox',
+  'work_reports_enabled',
+  'work_report_main_email',
+  'work_report_ai_model',
 ];
 
 const SettingsPortal = () => {
@@ -32,6 +35,10 @@ const SettingsPortal = () => {
   const [saving, setSaving] = useState(false);
   const [testingCalendar, setTestingCalendar] = useState(false);
   const [testingServiceInbox, setTestingServiceInbox] = useState(false);
+  const [workReportsEnabled, setWorkReportsEnabled] = useState(true);
+  const [workReportEmail, setWorkReportEmail] = useState('info@ekvproject.cz');
+  const [workReportModel, setWorkReportModel] = useState('gemini-2.5-flash');
+  const [testingWorkReport, setTestingWorkReport] = useState(false);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -56,6 +63,9 @@ const SettingsPortal = () => {
         setCalendarId(values.planning_company_calendar_id || '');
         setServiceInboxEnabled(String(values.service_inbox_enabled || 'true').toLowerCase() === 'true');
         setServiceInboxMailbox(values.service_inbox_mailbox || 'servis@ekvproject.cz');
+        setWorkReportsEnabled(String(values.work_reports_enabled || 'true').toLowerCase() === 'true');
+        setWorkReportEmail(values.work_report_main_email || 'info@ekvproject.cz');
+        setWorkReportModel(values.work_report_ai_model || 'gemini-2.5-flash');
       }
       setLoading(false);
     };
@@ -163,6 +173,26 @@ const SettingsPortal = () => {
     } finally { setTestingServiceInbox(false); }
   };
 
+  const handleSaveWorkReports = async () => {
+    const email = workReportEmail.trim().toLowerCase();
+    if (!email.includes('@')) { toast({ title: 'Zadejte platný hlavní e-mail', variant: 'destructive' }); return; }
+    if (await saveSettings([
+      { key: 'work_reports_enabled', value: String(workReportsEnabled) },
+      { key: 'work_report_main_email', value: email },
+      { key: 'work_report_ai_model', value: workReportModel.trim() || 'gemini-2.5-flash' },
+    ], 'Pracovní reporty byly uloženy')) setWorkReportEmail(email);
+  };
+
+  const handleTestWorkReport = async () => {
+    setTestingWorkReport(true);
+    try {
+      const { data, error } = await invokeWithTimeout(supabase, 'send-work-reports', { body: { action: 'test' } });
+      if (error || !data?.success) throw new Error(data?.error || error?.message || 'Test reportu selhal.');
+      toast({ title: 'Testovací report byl odeslán', description: `Příjemce: ${data.recipient || workReportEmail}` });
+    } catch (error) { toast({ title: 'Testovací report se nepodařilo odeslat', description: error.message, variant: 'destructive' }); }
+    finally { setTestingWorkReport(false); }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -172,6 +202,16 @@ const SettingsPortal = () => {
       />
 
       <div className="grid gap-5 xl:grid-cols-2">
+        <Card className="border-blue-200">
+          <CardHeader><CardTitle className="flex items-center gap-2"><Mail className="h-5 w-5" />Pracovní reporty projektů a realizací</CardTitle><CardDescription>Pondělí 7:00 hlavní report, pondělí a středa 7:00 osobní upozornění, pátek 14:00 osobní souhrn s doporučením. Europe/Prague.</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <label className="flex min-h-11 items-center gap-3 rounded-lg border p-3 text-sm font-medium"><input type="checkbox" className="h-5 w-5" checked={workReportsEnabled} onChange={(event) => setWorkReportsEnabled(event.target.checked)} disabled={loading || saving} />Pravidelné rozesílání je aktivní</label>
+            <div className="space-y-2"><Label htmlFor="workReportEmail">Hlavní příjemce</Label><Input id="workReportEmail" type="email" value={workReportEmail} onChange={(event) => setWorkReportEmail(event.target.value)} disabled={loading || saving} /></div>
+            <div className="space-y-2"><Label htmlFor="workReportModel">AI model pátečního doporučení</Label><Input id="workReportModel" value={workReportModel} onChange={(event) => setWorkReportModel(event.target.value)} disabled={loading || saving} /></div>
+            <p className="text-xs text-muted-foreground">Reporty neobsahují finance, klientské kontakty, dokumenty ani interní zápisy.</p>
+            <div className="flex flex-wrap gap-2"><Button onClick={handleSaveWorkReports} disabled={loading || saving}><Save className="mr-2 h-4 w-4"/>Uložit reporty</Button><Button variant="outline" onClick={handleTestWorkReport} disabled={loading || saving || testingWorkReport}><RefreshCw className={`mr-2 h-4 w-4 ${testingWorkReport ? 'animate-spin' : ''}`}/>Odeslat test na hlavní e-mail</Button></div>
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Inbox className="h-5 w-5" />Příchozí servisní e-maily</CardTitle>

@@ -24,6 +24,7 @@ import PageHeader from '@/components/ui/page-header';
 import { ensureEntityFolder } from '@/lib/documentStorageService';
 import { formatMoney } from '@/lib/financePresentation';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
+import { addWorkingDays, COMPLEXITY_OPTIONS } from '@/lib/planningEstimates';
 
 const RealizaceForm = () => {
     const { realizaceId } = useParams();
@@ -82,6 +83,8 @@ const RealizaceForm = () => {
             overhead_percent: 0,
             start_date: '',
             planned_end_date: '',
+            complexity_level: 'standard',
+            estimated_work_days: 10,
             actual_end_date: '',
             location_address: ''
         }
@@ -106,6 +109,14 @@ const RealizaceForm = () => {
     const watchActual = watch('actual_costs', 0);
     const watchProfitPercent = watch('profit_margin_percent', 0);
     const watchOverheadPercent = watch('overhead_percent', 0);
+    const watchedStartDate = watch('start_date');
+    const watchedEstimatedDays = watch('estimated_work_days');
+    const [manualPlannedEnd, setManualPlannedEnd] = useState(false);
+
+    useEffect(() => {
+        if (manualPlannedEnd || !watchedStartDate || !Number(watchedEstimatedDays)) return;
+        setValue('planned_end_date', addWorkingDays(watchedStartDate, watchedEstimatedDays), { shouldDirty: true });
+    }, [manualPlannedEnd, watchedEstimatedDays, watchedStartDate, setValue]);
 
     const realizationStatuses = ['Připravuje se', 'Probíhá', 'Pozastaveno', 'Dokončeno', 'Předáno'];
     const isCompleted = ['Dokončeno', 'Předáno'].includes(watchStatus);
@@ -220,6 +231,7 @@ const RealizaceForm = () => {
                     profit_margin_percent: canViewFinance ? Number(data.profit_margin_percent || 0) : null,
                     overhead_percent: canViewFinance ? Number(data.overhead_percent || 0) : null,
                 });
+                setManualPlannedEnd(Boolean(data.planned_end_date));
                 setInitialInvestor(data.investor || null);
 
                 if (canViewFinance) {
@@ -876,24 +888,35 @@ const RealizaceForm = () => {
                         </CardContent>
                     </Card>
 
-                    <Card className="mt-6">
+                    <Card className="mt-6 border-blue-100">
                         <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><Calendar className="w-5 h-5 text-primary" />Časové údaje</CardTitle>
+                            <CardTitle className="flex items-center gap-2"><Calendar className="w-5 h-5 text-primary" />Jednoduchý plán realizace</CardTitle>
+                            <p className="text-sm text-muted-foreground">Konec dopočítáme podle pracovních dnů. Termín můžete ručně upravit.</p>
                         </CardHeader>
-                        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <div className="space-y-1">
+                                <Label>Náročnost *</Label>
+                                <Controller name="complexity_level" control={control} render={({ field }) => <Select value={field.value || 'standard'} onValueChange={field.onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{COMPLEXITY_OPTIONS.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>} />
+                            </div>
                             <div className="space-y-1">
                                 <Label>Datum zahájení</Label>
-                                <Input type="date" {...register('start_date')} />
+                                <Input type="date" {...register('start_date', { onChange: () => setManualPlannedEnd(false) })} />
+                            </div>
+                            <div className="space-y-1">
+                                <Label>Odhad pracovních dnů *</Label>
+                                <Input type="number" min="1" {...register('estimated_work_days', { valueAsNumber: true, onChange: () => setManualPlannedEnd(false) })} className={errors.estimated_work_days ? 'border-red-500' : ''} />
+                                {errors.estimated_work_days && <p className="text-xs text-red-600">{errors.estimated_work_days.message}</p>}
                             </div>
                             <div className="space-y-1">
                                 <Label>Plánované dokončení</Label>
-                                <Input type="date" {...register('planned_end_date')} className={errors.planned_end_date ? 'border-red-500' : ''}/>
+                                <Input type="date" {...register('planned_end_date', { onChange: () => setManualPlannedEnd(true) })} className={errors.planned_end_date ? 'border-red-500' : ''}/>
                                 {errors.planned_end_date && <p className="text-red-500 text-xs">{errors.planned_end_date.message}</p>}
                             </div>
                             <div className="space-y-1">
                                 <Label>Reálné dokončení</Label>
                                 <Input type="date" {...register('actual_end_date')} />
                             </div>
+                            {manualPlannedEnd && <p className="text-xs text-blue-800 md:col-span-5">Termín je upravený ručně. Změna začátku nebo odhadu jej znovu přepočítá.</p>}
                         </CardContent>
                     </Card>
 

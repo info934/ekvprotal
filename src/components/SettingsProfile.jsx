@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   Briefcase,
   Camera,
@@ -137,6 +138,11 @@ const SettingsProfile = () => {
       return { ...current, languages: next };
     });
   };
+
+  const handleNotificationPreference = (key, checked) => setProfile((current) => ({
+    ...current,
+    notification_preferences: { ...(current.notification_preferences || {}), [key]: checked },
+  }));
 
   const handlePasswordChange = (event) => {
     const { name, value } = event.target;
@@ -428,9 +434,10 @@ const SettingsProfile = () => {
               <CardDescription>Dostupná nastavení vašeho pracovního prostředí.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
-              <div className="rounded-xl border bg-muted/40 p-4">
-                <p className="font-medium">Doručování notifikací</p>
-                <p className="mt-1 text-sm text-muted-foreground">Oznámení se nyní řídí pravidly jednotlivých modulů. Individuální vypínání oznámení zatím není dostupné.</p>
+              <div className="space-y-3 rounded-xl border bg-muted/40 p-4">
+                <p className="font-medium">Pracovní e-mailové reporty</p>
+                <label className="flex items-center justify-between gap-4 rounded-lg border bg-white p-3"><span><span className="block text-sm font-medium">Průběžná upozornění</span><span className="text-xs text-muted-foreground">Pondělí a středa v 7:00 – vlastní otevřené úkoly.</span></span><Switch checked={profile.notification_preferences?.work_reminders !== false} onCheckedChange={(checked) => handleNotificationPreference('work_reminders', checked)} /></label>
+                <label className="flex items-center justify-between gap-4 rounded-lg border bg-white p-3"><span><span className="block text-sm font-medium">Páteční souhrn</span><span className="text-xs text-muted-foreground">Týdenní přehled a doporučený další postup.</span></span><Switch checked={profile.notification_preferences?.work_friday_digest !== false} onCheckedChange={(checked) => handleNotificationPreference('work_friday_digest', checked)} /></label>
               </div>
 
               <div className="space-y-1.5">

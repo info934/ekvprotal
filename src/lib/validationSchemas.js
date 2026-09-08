@@ -27,6 +27,8 @@ const ProjectSchemaFields = {
   created_by_member_id: z.string().uuid('Vyberte hlavního projektanta').optional().nullable(),
   completion_date: z.string().optional().nullable(),
   start_date: z.string().optional().nullable(),
+  complexity_level: z.enum(['simple', 'standard', 'complex', 'custom']).default('standard'),
+  estimated_work_days: z.coerce.number().int().positive('Zadejte kladný počet pracovních dnů'),
   location: z.string().max(500, 'Místo stavby je příliš dlouhé').optional().nullable(),
   client_internal_ref: z.string().max(120, 'Reference klienta je příliš dlouhá').optional().nullable(),
   brief: z.string().max(5000, 'Zadání projektu je příliš dlouhé').optional().nullable(),
@@ -66,6 +68,8 @@ const RealizationSchemaFields = {
   overhead_percent: z.coerce.number().min(0).max(100, 'Maximálně 100%').optional().nullable(),
   start_date: z.string().optional().nullable(),
   planned_end_date: z.string().optional().nullable(),
+  complexity_level: z.enum(['simple', 'standard', 'complex', 'custom']).default('standard'),
+  estimated_work_days: z.coerce.number().int().positive('Zadejte kladný počet pracovních dnů'),
   actual_end_date: z.string().optional().nullable(),
   location_address: z.string().optional().nullable(),
 };

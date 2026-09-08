@@ -45,8 +45,8 @@ export async function loadUnifiedTasks(client,{hasPermission,signal}={}) {
   const plans=(data||[]).filter(p=>['project','realization'].includes(p.entity_type)&&hasPermission(p.entity_type==='project'?'projects':'realizace','can_read'));
   // Bounded IN lists; all pages are read and errors never become misleading zero counts.
   const items=[],assignments=[];
-  for(let n=0;n<plans.length;n+=50) items.push(...await fetchReportRows(()=>client.from('planning_items').select('id,plan_id,legacy_project_task_id,name,status,end_date,member_id').in('plan_id',plans.slice(n,n+50).map(p=>p.plan_id)).eq('item_type','task').order('id'),signal));
+  for(let n=0;n<plans.length;n+=50) items.push(...await fetchReportRows(()=>client.from('planning_items').select('id,plan_id,legacy_project_task_id,name,status,end_date,start_date,member_id,priority,estimated_hours').in('plan_id',plans.slice(n,n+50).map(p=>p.plan_id)).eq('item_type','task').order('id'),signal));
   for(let n=0;n<items.length;n+=100) assignments.push(...await fetchReportRows(()=>client.from('planning_assignments').select('id,item_id,member_id').in('item_id',items.slice(n,n+100).map(i=>i.id)).order('id'),signal));
-  const legacy=hasPermission('projects','can_read')?await fetchReportRows(()=>client.from('project_tasks').select('id,name,status,project_id,end_date,member_id,project:projects(name,code)').order('id'),signal):[];
+  const legacy=hasPermission('projects','can_read')?await fetchReportRows(()=>client.from('project_tasks').select('id,name,status,project_id,end_date,start_date,member_id,priority,estimated_hours,project:projects(name,code)').order('id'),signal):[];
   return mergeWorkTasks(plans,items,legacy,assignments);
 }
