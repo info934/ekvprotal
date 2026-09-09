@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/customSupabaseClient';
 import { fetchWithTimeout } from '@/lib/http';
 import { invokeWithTimeout } from '@/lib/requestControl';
+import { resolveProjectWorkspaceYear } from '@/lib/projectWorkspacePath';
 
 const PROJECT_BUCKET = 'project-files';
 const INVOICE_BUCKET = 'invoices';
@@ -357,18 +358,6 @@ export const repairEntityFolder = async ({ entityType, entityId, connection }) =
   return data;
 };
 
-const projectYear = (project = {}) => {
-  const code = String(project.code || '');
-  const fourDigitYear = code.match(/(?:^|[^0-9])(20[0-9]{2})(?:[^0-9]|$)/)?.[1];
-  const twoDigitYear = code.match(/(?:^|[-_/ ])([0-9]{2})(?=[-_/ ])/i)?.[1];
-  if (fourDigitYear) return fourDigitYear;
-  if (twoDigitYear) return `20${twoDigitYear}`;
-  const datedYear = [project.start_date, project.created_at]
-    .map((value) => value ? new Date(String(value)).getUTCFullYear() : NaN)
-    .find((value) => Number.isInteger(value) && value >= 2000 && value <= 2100);
-  return String(datedYear || new Date().getFullYear());
-};
-
 export const buildProjectWorkspacePreview = ({ project = {}, connection, folderName = '' }) => {
   const config = connection?.config || {};
   const target = config.targets?.project || {};
@@ -384,7 +373,7 @@ export const buildProjectWorkspacePreview = ({ project = {}, connection, folderN
   const segments = [
     target.rootFolderPath ?? config.rootFolderPath ?? 'EKVPortal',
     hasProjectFolderName ? target.projectFolderName : 'Projekty',
-    target.organizeProjectsByYear === false ? '' : projectYear(project),
+    target.organizeProjectsByYear === false ? '' : resolveProjectWorkspaceYear(project),
     statusFolder,
     [code, name].filter(Boolean).join(' - '),
   ];

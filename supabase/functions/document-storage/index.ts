@@ -641,14 +641,15 @@ const getServerEntityFolderPath = async (
   }
 
   const projectTarget = target || {};
-  const codeYear = String(data.code || '').match(/(?:^|[^0-9])(20[0-9]{2})(?:[^0-9]|$)/)?.[1]
-    || String(data.code || '').match(/(?:^|[-_/ ])([0-9]{2})(?=[-_/ ])/i)?.[1];
   const datedYear = [data.start_date, data.created_at]
     .map((value) => value ? new Date(String(value)).getUTCFullYear() : NaN)
     .find((value) => Number.isInteger(value) && value >= 2000 && value <= 2100);
-  const year = codeYear
-    ? (codeYear.length === 2 ? `20${codeYear}` : codeYear)
-    : String(datedYear || new Date().getUTCFullYear());
+  const code = String(data.code || '').trim();
+  const fourDigitCodeYear = code.match(/(?:^|[^0-9])(20[0-9]{2})(?:[^0-9]|$)/)?.[1];
+  const twoDigitCodeYear = code.match(/^(?:OP|PD|NAB|OBJ)[-_/ ]([0-9]{2})(?:[-_/ ]|$)/i)?.[1];
+  const year = datedYear
+    ? String(datedYear)
+    : (fourDigitCodeYear || (twoDigitCodeYear ? `20${twoDigitCodeYear}` : String(new Date().getUTCFullYear())));
   const completedStatuses = Array.isArray(projectTarget.completedStatuses) && projectTarget.completedStatuses.length
     ? projectTarget.completedStatuses.map(String)
     : ['closed'];
