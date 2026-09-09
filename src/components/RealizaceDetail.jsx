@@ -7,7 +7,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent } from "@/components/ui/tabs";
-import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FolderOpen, GanttChart, Wallet, FileText, AlertTriangle, Users, EyeOff } from 'lucide-react';
+import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FolderOpen, GanttChart, Wallet, FileText, AlertTriangle, Users, EyeOff, Copy } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -603,9 +603,14 @@ const RealizaceDetail = () => {
         backLabel={recordReturnPath(location.state?.returnTo, '/realizace').split('?')[0] === '/tasks' ? 'Zpět na úkoly' : 'Zpět na realizace'}
         status={renderStatusMenu()}
         actions={canEdit && (
-          <Button size="sm" onClick={() => navigate(`/realizace/${realizaceId}/edit`)}>
-            <Edit2 className="mr-2 h-4 w-4" />Upravit
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate(`/realizace/new?copyFrom=${realizaceId}`)}>
+              <Copy className="mr-2 h-4 w-4" />Duplikovat
+            </Button>
+            <Button size="sm" onClick={() => navigate(`/realizace/${realizaceId}/edit`)}>
+              <Edit2 className="mr-2 h-4 w-4" />Upravit
+            </Button>
+          </div>
         )}
       />
 

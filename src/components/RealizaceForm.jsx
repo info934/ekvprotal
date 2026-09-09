@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { HardHat, Calendar, Plus, Save, Trash2, ChevronLeft, MapPin, User, Building, Users, DollarSign, TrendingUp, X, AlertCircle, Percent, Coins } from 'lucide-react';
+import { HardHat, Calendar, Plus, Save, Trash2, ChevronLeft, MapPin, User, Building, Users, DollarSign, TrendingUp, X, AlertCircle, Percent, Coins, Copy } from 'lucide-react';
 import SubjectDialog from '@/components/SubjectDialog';
 import { parseApiError } from '@/lib/apiValidation';
 import SubjectSelect from '@/components/SubjectSelect';
@@ -25,6 +25,7 @@ import { ensureEntityFolder } from '@/lib/documentStorageService';
 import { formatMoney } from '@/lib/financePresentation';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { addWorkingDays, COMPLEXITY_OPTIONS } from '@/lib/planningEstimates';
+import { realizationDuplicateDefaults } from '@/lib/entityDuplication';
 
 const RealizaceForm = () => {
     const { realizaceId } = useParams();
@@ -35,6 +36,7 @@ const RealizaceForm = () => {
 
     const isEditing = Boolean(realizaceId);
     const sourceOpportunityId = !isEditing ? searchParams.get('crmOpportunityId') : null;
+    const duplicateFromId = !isEditing ? searchParams.get('copyFrom') : null;
     // Strict role check
     const canEdit = hasPermission('realizace', 'can_edit') && userRole !== 'user';
     const canDelete = hasPermission('realizace', 'can_delete') && userRole !== 'user';
@@ -44,6 +46,7 @@ const RealizaceForm = () => {
     const [members, setMembers] = useState([]);
     const [realizationTypes, setRealizationTypes] = useState([]);
     const [sourceOpportunity, setSourceOpportunity] = useState(null);
+    const [duplicateSource, setDuplicateSource] = useState(null);
     const [loading, setLoading] = useState(true);
     const [teamEntries, setTeamEntries] = useState([{ member_id: '', share_type: '', share_value: '' }]);
     const [profitSharesLoading, setProfitSharesLoading] = useState(false);
@@ -91,7 +94,7 @@ const RealizaceForm = () => {
     });
 
     const unsaved = useUnsavedChanges({
-        draftKey: `realization:${user?.id || memberId}:${realizaceId || `new:${sourceOpportunityId || 'standalone'}`}`,
+        draftKey: `realization:${user?.id || memberId}:${realizaceId || `new:${sourceOpportunityId || (duplicateFromId ? `copy:${duplicateFromId}` : 'standalone')}`}`,
         snapshot: { values: watch(), teamEntries, profitMode, overheadMode },
         readSnapshot: () => ({ values: getValues(), teamEntries, profitMode, overheadMode }),
         ready: !loading && !profitSharesLoading && canEdit,
@@ -251,7 +254,20 @@ const RealizaceForm = () => {
             } else {
                 setValue('status', 'Připravuje se');
                 setTeamEntries([{ member_id: '', share_type: '', share_value: '' }]);
-                if (sourceOpportunityId) {
+                if (duplicateFromId) {
+                    const [{ data: source, error: sourceError }, { data: estimate, error: estimateError }] = await Promise.all([
+                        supabase.rpc('get_realization_safe', { p_realization_id: duplicateFromId }),
+                        supabase.rpc('get_entity_planning_estimate_safe', { p_entity_type: 'realization', p_entity_id: duplicateFromId }),
+                    ]);
+                    if (sourceError) throw sourceError;
+                    if (estimateError) throw estimateError;
+                    if (!source) throw new Error('Zdrojová realizace nebyla nalezena.');
+                    reset(realizationDuplicateDefaults({ ...source, ...(estimate || {}) }));
+                    setDuplicateSource(source);
+                    setInitialInvestor(source.investor || null);
+                    setTeamEntries((source.team_members || []).map(member => ({ member_id: member, share_type: '', share_value: '' })));
+                    setManualPlannedEnd(false);
+                } else if (sourceOpportunityId) {
                     const { data: opportunity, error: opportunityError } = await supabase
                         .from('crm_opportunities')
                         .select('id, number, title, value, expected_close_date, description, subject_id, subject:subject_id(id, name)')
@@ -274,7 +290,7 @@ const RealizaceForm = () => {
         } finally {
             setLoading(false);
         }
-    }, [realizaceId, isEditing, setValue, reset, toast, loadProfitShares, sourceOpportunityId, canViewFinance]);
+    }, [realizaceId, isEditing, setValue, reset, toast, loadProfitShares, sourceOpportunityId, duplicateFromId, canViewFinance]);
 
     useEffect(() => {
         fetchData();
@@ -536,7 +552,7 @@ const RealizaceForm = () => {
             {unsaved.dialogs}
             <PageHeader
                 icon={HardHat}
-                title={isEditing ? 'Upravit realizaci' : 'Nová realizace'}
+                title={isEditing ? 'Upravit realizaci' : duplicateSource ? 'Duplikovat realizaci' : 'Nová realizace'}
                 actions={
                     <Button variant="ghost" onClick={() => unsaved.requestLeave(isEditing ? `/realizace/${realizaceId}` : '/realizace')}>
                         <ChevronLeft className="w-4 h-4 mr-2" /> Zpět
@@ -556,6 +572,14 @@ const RealizaceForm = () => {
 
             {unsaved.dirty && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Máte neuložené změny. Uložte je pomocí tlačítka na konci formuláře.</p>}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+                {duplicateSource && (
+                    <Card className="border-blue-200 bg-blue-50/80 shadow-sm">
+                        <CardContent className="flex gap-3 p-4">
+                            <Copy className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+                            <div><p className="text-sm font-semibold text-blue-950">Zakládáte kopii realizace {duplicateSource.code ? `${duplicateSource.code} · ` : ''}{duplicateSource.name}</p><p className="mt-1 text-sm text-blue-800">Typ, investor, vedoucí, tým, místo a odhad jsou předvyplněné. Termíny, finance, dokumenty, historie a vykázaná práce začínají prázdné.</p></div>
+                        </CardContent>
+                    </Card>
+                )}
                 {sourceOpportunity && (
                     <Card className="border-emerald-200 bg-emerald-50/80 shadow-sm">
                         <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">

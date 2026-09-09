@@ -33,6 +33,7 @@ import {
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { addWorkingDays, COMPLEXITY_OPTIONS, templateWorkDays } from '@/lib/planningEstimates';
 import { getProjectTemplateFormValues, normalizeProjectTemplateData } from '@/lib/projectTemplates';
+import { projectDuplicateDefaults } from '@/lib/entityDuplication';
 
 const ProjectForm = () => {
     const { projectId } = useParams();
@@ -43,6 +44,7 @@ const ProjectForm = () => {
     
     const isEditing = Boolean(projectId);
     const sourceOpportunityId = !isEditing ? searchParams.get('crmOpportunityId') : null;
+    const duplicateFromId = !isEditing ? searchParams.get('copyFrom') : null;
     const canDelete = hasPermission('projects', 'can_admin');
 
     const { 
@@ -84,6 +86,7 @@ const ProjectForm = () => {
     const [projectCodePattern, setProjectCodePattern] = useState('');
     const [investorIsClient, setInvestorIsClient] = useState(false);
     const [sourceOpportunity, setSourceOpportunity] = useState(null);
+    const [duplicateSource, setDuplicateSource] = useState(null);
     const [initialInvestor, setInitialInvestor] = useState(null);
     const [initialClient, setInitialClient] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -96,7 +99,7 @@ const ProjectForm = () => {
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
 
     const unsaved = useUnsavedChanges({
-        draftKey: `project:${user?.id || memberId}:${projectId || `new:${sourceOpportunityId || 'standalone'}`}`,
+        draftKey: `project:${user?.id || memberId}:${projectId || `new:${sourceOpportunityId || (duplicateFromId ? `copy:${duplicateFromId}` : 'standalone')}`}`,
         snapshot: { values: watch(), investorIsClient, selectedTemplateId, workspacePreference },
         readSnapshot: () => ({ values: getValues(), investorIsClient, selectedTemplateId, workspacePreference }),
         ready: !loading,
@@ -218,7 +221,24 @@ const ProjectForm = () => {
                 setValue('overhead_percentage', 10);
                 setValue('created_by_member_id', memberId);
                 setInvestorIsClient(true);
-                if (sourceOpportunityId) {
+                if (duplicateFromId) {
+                    const [{ data: source, error: sourceError }, { data: estimate, error: estimateError }] = await Promise.all([
+                        supabase.rpc('get_project_safe', { p_project_id: duplicateFromId }),
+                        supabase.rpc('get_entity_planning_estimate_safe', { p_entity_type: 'project', p_entity_id: duplicateFromId }),
+                    ]);
+                    if (sourceError) throw sourceError;
+                    if (estimateError) throw estimateError;
+                    if (!source) throw new Error('Zdrojový projekt nebyl nalezen.');
+                    const sourceWithEstimate = { ...source, ...(estimate || {}) };
+                    reset(projectDuplicateDefaults(sourceWithEstimate, memberId));
+                    setDuplicateSource(source);
+                    setInitialInvestor(source.investor || null);
+                    setInitialClient(source.client || null);
+                    setInvestorIsClient(Boolean(source.investor_id && source.investor_id === source.client_id));
+                    const preference = await getProjectWorkspacePreference(duplicateFromId);
+                    setWorkspacePreference({ createFolder: preference.create_folder !== false, folderName: '' });
+                    setManualCompletionDate(false);
+                } else if (sourceOpportunityId) {
                     const { data: opportunity, error: opportunityError } = await supabase
                         .from('crm_opportunities')
                         .select('id, number, title, value, expected_close_date, description, subject_id, subject:subject_id(id, name)')
@@ -247,7 +267,7 @@ const ProjectForm = () => {
         } finally {
             setLoading(false);
         }
-    }, [projectId, isEditing, setValue, reset, toast, memberId, fetchTemplates, sourceOpportunityId, isAdmin]);
+    }, [projectId, isEditing, setValue, reset, toast, memberId, fetchTemplates, sourceOpportunityId, duplicateFromId, isAdmin]);
 
     useEffect(() => {
         fetchData();
@@ -443,7 +463,7 @@ const ProjectForm = () => {
             {unsaved.dialogs}
             <PageHeader
                 icon={Briefcase}
-                title={isEditing ? 'Upravit projekt' : 'Založit nový projekt'}
+                title={isEditing ? 'Upravit projekt' : duplicateSource ? 'Duplikovat projekt' : 'Založit nový projekt'}
                 actions={
                     <Button variant="ghost" onClick={() => unsaved.requestLeave(isEditing ? `/projects/${projectId}` : '/projects')} className="text-slate-500 hover:text-slate-800">
                         <ChevronLeft className="w-4 h-4 mr-2" /> Zpět
@@ -465,6 +485,14 @@ const ProjectForm = () => {
 
             {unsaved.dirty && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Máte neuložené změny. Uložte je pomocí tlačítka na konci formuláře.</p>}
             <form onSubmit={handleSubmit(onSubmit, onFormError)} className="space-y-6">
+                {duplicateSource && (
+                    <Card className="border-blue-200 bg-blue-50/80 shadow-sm">
+                        <CardContent className="p-4">
+                            <p className="text-sm font-semibold text-blue-950">Zakládáte kopii projektu {duplicateSource.code ? `${duplicateSource.code} · ` : ''}{duplicateSource.name}</p>
+                            <p className="mt-1 text-sm text-blue-800">Technické údaje, klient a nastavení složky jsou předvyplněné. Kód, termíny a finance jsou nové; dokumenty, historie a vykázaná práce se nekopírují.</p>
+                        </CardContent>
+                    </Card>
+                )}
                 {sourceOpportunity && (
                     <Card className="border-emerald-200 bg-emerald-50/80 shadow-sm">
                         <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">

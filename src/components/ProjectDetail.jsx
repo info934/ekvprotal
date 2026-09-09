@@ -1076,6 +1076,7 @@ const ProjectDetail = () => {
                             <DropdownMenuTrigger asChild><Button variant="outline" size="sm" aria-label="Další akce projektu"><MoreHorizontal className="mr-2 h-4 w-4" />Další</Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                                 {canViewHistory && <DropdownMenuItem onSelect={() => navigate(`/projects/${projectId}/history`)}><History className="mr-2 h-4 w-4" />Historie změn</DropdownMenuItem>}
+                                {canEdit && <DropdownMenuItem onSelect={() => navigate(`/projects/new?copyFrom=${projectId}`)}><Copy className="mr-2 h-4 w-4" />Duplikovat projekt</DropdownMenuItem>}
                                 {canEdit && <DropdownMenuItem onSelect={() => setIsTemplateModalOpen(true)}><Copy className="mr-2 h-4 w-4" />Uložit jako šablonu</DropdownMenuItem>}
                             </DropdownMenuContent>
                         </DropdownMenu>}
