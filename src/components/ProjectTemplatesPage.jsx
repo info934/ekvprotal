@@ -194,6 +194,14 @@ const ProjectTemplatesPage = () => {
                                 <span className="text-lg font-semibold">{previewTemplate?.milestones_data?.length || 0}</span>
                             </div>
                         </div>
+                        <div>
+                            <h4 className="text-sm font-semibold text-slate-700 mb-1">Výchozí údaje projektu</h4>
+                            <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-md border">
+                                {previewTemplate?.project_data && Object.keys(previewTemplate.project_data).length > 0
+                                    ? `Investor: ${previewTemplate.project_data.subjects?.investor?.name || 'není nastaven'}, zadavatel: ${previewTemplate.project_data.subjects?.client?.name || (previewTemplate.project_data.investor_is_client ? previewTemplate.project_data.subjects?.investor?.name : '') || 'není nastaven'}`
+                                    : 'Šablona neobsahuje výchozí údaje projektu.'}
+                            </p>
+                        </div>
                     </div>
                 </DialogContent>
             </Dialog>

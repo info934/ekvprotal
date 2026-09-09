@@ -2,7 +2,8 @@ import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ClipboardList, Layers, Flag } from 'lucide-react';
+import { Building2, ClipboardList, Layers, Flag, Settings2 } from 'lucide-react';
+import { normalizeProjectTemplateData } from '@/lib/projectTemplates';
 
 const ProjectTemplatePreviewModal = ({ isOpen, onClose, templateData }) => {
     if (!templateData) return null;
@@ -10,6 +11,10 @@ const ProjectTemplatePreviewModal = ({ isOpen, onClose, templateData }) => {
     const tasks = Array.isArray(templateData.tasks_data) ? templateData.tasks_data : [];
     const phases = Array.isArray(templateData.phases_data) ? templateData.phases_data : [];
     const milestones = Array.isArray(templateData.milestones_data) ? templateData.milestones_data : [];
+    const projectData = normalizeProjectTemplateData(templateData.project_data);
+    const investor = projectData.subjects?.investor?.name;
+    const client = projectData.subjects?.client?.name;
+    const hasProjectData = Object.keys(projectData).length > 0;
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -23,6 +28,23 @@ const ProjectTemplatePreviewModal = ({ isOpen, onClose, templateData }) => {
 
                 <ScrollArea className="flex-1 pr-4 -mr-4">
                     <div className="space-y-6 py-4">
+                        <div>
+                            <h3 className="text-lg font-semibold flex items-center gap-2 mb-3 border-b pb-2 text-slate-800">
+                                <Settings2 className="w-5 h-5 text-blue-500" />
+                                Výchozí údaje projektu
+                            </h3>
+                            {hasProjectData ? (
+                                <dl className="grid gap-3 rounded-md border bg-slate-50 p-3 text-sm sm:grid-cols-2">
+                                    <div><dt className="text-xs text-slate-500">Investor</dt><dd className="font-medium text-slate-900">{investor || 'Není nastaven'}</dd></div>
+                                    <div><dt className="text-xs text-slate-500">Zadavatel</dt><dd className="font-medium text-slate-900">{client || (projectData.investor_is_client ? investor : null) || 'Není nastaven'}</dd></div>
+                                    <div><dt className="text-xs text-slate-500">Druh projektu</dt><dd className="font-medium text-slate-900">{projectData.type || 'Není nastaven'}</dd></div>
+                                    <div><dt className="text-xs text-slate-500">Místo</dt><dd className="font-medium text-slate-900">{projectData.location || 'Není nastaveno'}</dd></div>
+                                </dl>
+                            ) : (
+                                <p className="flex items-center gap-2 text-sm italic text-slate-500"><Building2 className="h-4 w-4" />Šablona neobsahuje výchozí údaje projektu.</p>
+                            )}
+                        </div>
+
                         {/* Tasks Section */}
                         <div>
                             <h3 className="text-lg font-semibold flex items-center gap-2 mb-3 border-b pb-2 text-slate-800">

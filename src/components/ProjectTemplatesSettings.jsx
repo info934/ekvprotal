@@ -82,6 +82,7 @@ const ProjectTemplatesSettings = () => {
                 user_id: user.id,
                 name: `${template.name} (Kopie)`,
                 description: template.description,
+                project_data: template.project_data,
                 tasks_data: template.tasks_data,
                 phases_data: template.phases_data,
                 milestones_data: template.milestones_data
@@ -111,7 +112,9 @@ const ProjectTemplatesSettings = () => {
     const filteredTemplates = templates.filter(template => {
         const query = searchTerm.trim().toLowerCase();
         if (!query) return true;
-        return `${template.name || ''} ${template.description || ''}`.toLowerCase().includes(query);
+        const investor = template.project_data?.subjects?.investor?.name || '';
+        const client = template.project_data?.subjects?.client?.name || '';
+        return `${template.name || ''} ${template.description || ''} ${investor} ${client}`.toLowerCase().includes(query);
     });
 
     const templateStats = templates.reduce((acc, template) => {
@@ -218,6 +221,7 @@ const ProjectTemplatesSettings = () => {
                                 <TableHead className="text-center">Počet úkolů</TableHead>
                                 <TableHead className="text-center">Počet fází</TableHead>
                                 <TableHead className="text-center">Počet milníků</TableHead>
+                                <TableHead className="text-center">Výchozí údaje</TableHead>
                                 <TableHead className="text-right">Akce</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -239,6 +243,11 @@ const ProjectTemplatesSettings = () => {
                                     </TableCell>
                                     <TableCell className="text-center font-medium">
                                         {Array.isArray(template.milestones_data) ? template.milestones_data.length : 0}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                        {template.project_data && Object.keys(template.project_data).length > 0
+                                            ? <Badge variant="secondary">Ano</Badge>
+                                            : <span className="text-slate-400">Ne</span>}
                                     </TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex justify-end gap-2">

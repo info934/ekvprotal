@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Loader2, Save } from 'lucide-react';
-import { createProjectTemplate } from '@/lib/projectTemplates';
+import { buildProjectTemplateData, createProjectTemplate } from '@/lib/projectTemplates';
 
 const SaveTemplateModal = ({ isOpen, onClose, projectData }) => {
     const { toast } = useToast();
@@ -23,13 +23,15 @@ const SaveTemplateModal = ({ isOpen, onClose, projectData }) => {
             description: '',
             includeTasks: true,
             includePhases: true,
-            includeMilestones: true
+            includeMilestones: true,
+            includeProjectData: true,
         }
     });
 
     const includeTasks = watch('includeTasks');
     const includePhases = watch('includePhases');
     const includeMilestones = watch('includeMilestones');
+    const includeProjectData = watch('includeProjectData');
 
     const onSubmit = async (data) => {
         if (!user) return;
@@ -39,6 +41,7 @@ const SaveTemplateModal = ({ isOpen, onClose, projectData }) => {
                 user_id: user.id,
                 name: data.name,
                 description: data.description,
+                project_data: data.includeProjectData ? buildProjectTemplateData(projectData) : {},
                 tasks_data: data.includeTasks && projectData?.tasks ? projectData.tasks : [],
                 phases_data: data.includePhases && projectData?.phases ? projectData.phases : [],
                 milestones_data: data.includeMilestones && projectData?.milestones ? projectData.milestones : [],
@@ -90,6 +93,22 @@ const SaveTemplateModal = ({ isOpen, onClose, projectData }) => {
 
                     <div className="space-y-3 pt-2 border-t">
                         <Label className="text-sm font-semibold text-slate-700">Zahrnout do šablony:</Label>
+
+                        <div className="rounded-md border border-blue-100 bg-blue-50/60 p-3">
+                            <div className="flex items-start space-x-2">
+                                <Checkbox
+                                    id="includeProjectData"
+                                    checked={includeProjectData}
+                                    onCheckedChange={(checked) => setValue('includeProjectData', checked)}
+                                />
+                                <div className="space-y-1">
+                                    <Label htmlFor="includeProjectData" className="cursor-pointer font-normal">Výchozí údaje projektu</Label>
+                                    <p className="text-xs leading-5 text-slate-600">
+                                        Investor, zadavatel, druh a stupeň projektu, hlavní projektant, zadání, priorita a výchozí procenta budgetu. Kód, cena a termíny se nekopírují.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                         
                         <div className="flex items-center space-x-2">
                             <Checkbox 

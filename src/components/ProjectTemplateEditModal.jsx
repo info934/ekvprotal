@@ -22,13 +22,15 @@ const ProjectTemplateEditModal = ({ isOpen, onClose, templateData, onSuccess }) 
             description: '',
             includeTasks: true,
             includePhases: true,
-            includeMilestones: true
+            includeMilestones: true,
+            includeProjectData: true,
         }
     });
 
     const includeTasks = watch('includeTasks');
     const includePhases = watch('includePhases');
     const includeMilestones = watch('includeMilestones');
+    const includeProjectData = watch('includeProjectData');
 
     useEffect(() => {
         if (templateData && isOpen) {
@@ -38,6 +40,7 @@ const ProjectTemplateEditModal = ({ isOpen, onClose, templateData, onSuccess }) 
                 includeTasks: Array.isArray(templateData.tasks_data) && templateData.tasks_data.length > 0,
                 includePhases: Array.isArray(templateData.phases_data) && templateData.phases_data.length > 0,
                 includeMilestones: Array.isArray(templateData.milestones_data) && templateData.milestones_data.length > 0,
+                includeProjectData: Boolean(templateData.project_data && Object.keys(templateData.project_data).length > 0),
             });
         }
     }, [templateData, isOpen, reset]);
@@ -48,6 +51,7 @@ const ProjectTemplateEditModal = ({ isOpen, onClose, templateData, onSuccess }) 
             const payload = {
                 name: data.name,
                 description: data.description,
+                project_data: data.includeProjectData ? templateData.project_data : {},
                 tasks_data: data.includeTasks ? templateData.tasks_data : [],
                 phases_data: data.includePhases ? templateData.phases_data : [],
                 milestones_data: data.includeMilestones ? templateData.milestones_data : [],
@@ -98,6 +102,18 @@ const ProjectTemplateEditModal = ({ isOpen, onClose, templateData, onSuccess }) 
 
                     <div className="space-y-3 pt-2 border-t">
                         <Label className="text-sm font-semibold text-slate-700">Obsah šablony:</Label>
+
+                        <div className="flex items-center space-x-2">
+                            <Checkbox
+                                id="includeProjectData"
+                                checked={includeProjectData}
+                                onCheckedChange={(checked) => setValue('includeProjectData', checked)}
+                                disabled={!templateData?.project_data || Object.keys(templateData.project_data).length === 0}
+                            />
+                            <Label htmlFor="includeProjectData" className="font-normal cursor-pointer">
+                                Obsahuje výchozí údaje projektu
+                            </Label>
+                        </div>
                         
                         <div className="flex items-center space-x-2">
                             <Checkbox 

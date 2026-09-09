@@ -32,6 +32,7 @@ import {
 } from '@/lib/documentStorageService';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { addWorkingDays, COMPLEXITY_OPTIONS, templateWorkDays } from '@/lib/planningEstimates';
+import { getProjectTemplateFormValues, normalizeProjectTemplateData } from '@/lib/projectTemplates';
 
 const ProjectForm = () => {
     const { projectId } = useParams();
@@ -258,12 +259,35 @@ const ProjectForm = () => {
             const tpl = templates.find(t => t.id === templateId);
             if (tpl) {
                 setValue('name', tpl.name);
-                const workDays = templateWorkDays(tpl.tasks_data);
-                if (workDays) {
-                    setValue('estimated_work_days', workDays, { shouldDirty: true });
-                    setManualCompletionDate(false);
+                const projectData = normalizeProjectTemplateData(tpl.project_data);
+                const templateValues = getProjectTemplateFormValues(projectData, {
+                    includeFinancialDefaults: isAdmin,
+                });
+                Object.entries(templateValues).forEach(([field, value]) => {
+                    if (field !== 'investor_is_client') {
+                        setValue(field, value, { shouldDirty: true });
+                    }
+                });
+
+                const hasInvestorClientSetting = Object.prototype.hasOwnProperty.call(templateValues, 'investor_is_client');
+                const investorMatchesClient = Boolean(templateValues.investor_id && templateValues.investor_id === templateValues.client_id);
+                if (hasInvestorClientSetting || templateValues.investor_id || templateValues.client_id) {
+                    setInvestorIsClient(hasInvestorClientSetting ? templateValues.investor_is_client : investorMatchesClient);
                 }
-                toast({ title: 'Šablona aplikována', description: 'Název a předvolby byly načteny.' });
+                setInitialInvestor(projectData.subjects?.investor || null);
+                setInitialClient(projectData.subjects?.client || null);
+
+                const workDays = templateValues.estimated_work_days || templateWorkDays(tpl.tasks_data);
+                if (workDays && !templateValues.estimated_work_days) {
+                    setValue('estimated_work_days', workDays, { shouldDirty: true });
+                }
+                if (workDays) setManualCompletionDate(false);
+                toast({
+                    title: 'Šablona aplikována',
+                    description: Object.keys(projectData).length > 0
+                        ? 'Načetly se výchozí údaje projektu, subjekty a projektová struktura.'
+                        : 'Načetl se název a projektová struktura starší šablony.',
+                });
             }
         }
     };
