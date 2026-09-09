@@ -116,6 +116,9 @@ verify_jwt = false
 [functions.send-service-document]
 verify_jwt = true
 
+[functions.send-meeting-note]
+verify_jwt = true
+
 [functions.respond-service-document]
 verify_jwt = false
 

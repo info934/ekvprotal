@@ -10,10 +10,10 @@ export const parseEmailRecipients = (value) => String(value || '')
 
 export const validateEmailRecipients = (recipients) => recipients.length > 0 && recipients.every((email) => emailRegex.test(email));
 
-const toBase64Utf8 = (value) => {
-  const bytes = new TextEncoder().encode(String(value || ''));
+const toBase64 = async (blob) => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
   let binary = '';
-  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
   return window.btoa(binary);
 };
 
@@ -25,7 +25,7 @@ const buildAttachmentName = (payload) => {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9._ -]+/g, '')
     .trim()
-    .replace(/\s+/g, '_') + '.html';
+    .replace(/\s+/g, '_') + '.pdf';
 };
 
 export const buildHandoverProtocolEmailDefaults = async (protocol) => {
@@ -49,10 +49,10 @@ export const sendHandoverProtocolEmail = async ({ protocol, template, recipients
 
   const {
     buildHandoverProtocolPayload,
-    renderHandoverProtocolHtml,
+    createHandoverProtocolPdfBlob,
   } = await import('@/lib/documentGenerationService');
   const payload = buildHandoverProtocolPayload({ protocol });
-  const html = renderHandoverProtocolHtml(payload, template);
+  const { blob } = await createHandoverProtocolPdfBlob({ protocol, template });
   const attachmentName = buildAttachmentName(payload);
   const defaults = await buildHandoverProtocolEmailDefaults(protocol);
 
@@ -64,7 +64,7 @@ export const sendHandoverProtocolEmail = async ({ protocol, template, recipients
     salutation: salutation || 'S pozdravem,<br>EKV Project',
     attachments: [{
       filename: attachmentName,
-      content: toBase64Utf8(html),
+      content: await toBase64(blob),
     }],
   });
 

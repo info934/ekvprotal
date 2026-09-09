@@ -531,7 +531,7 @@ const HandoverProtocolsTab = ({ projectId, realizaceId, project, realization, op
           <DialogHeader><DialogTitle>Odeslat protokol e-mailem</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-600">
-              Dokument se odešle jako HTML příloha v aktuálně vybrané šabloně. Příjemce je předvyplněný z e-mailu subjektu/investora, další adresy oddělte čárkou nebo středníkem.
+              Dokument se odešle jako firemní PDF připravené pro A4. Příjemce je předvyplněný z e-mailu subjektu/investora, další adresy oddělte čárkou nebo středníkem.
             </div>
             <div className="space-y-1.5">
               <Label>Příjemci</Label>

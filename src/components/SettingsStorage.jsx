@@ -29,8 +29,8 @@ const TARGETS = [
 ];
 
 const DEFAULT_STRUCTURES = {
-  project: ['00_Admin', '01_Smlouvy', '02_Dokumentace', '03_Predani', '04_Fakturace'],
-  realizace: ['00_Admin', '01_Smlouvy_a_objednavky', '02_Technicka_dokumentace', '03_Harmonogram_a_KD', '04_Naklady/Faktury', '05_Fotodokumentace', '06_Revize_a_zkousky', '07_Predani', '08_Fakturace', 'Servis'],
+  project: ['00_Admin', '01_Smlouvy', '02_Dokumentace', '02_Dokumentace/03_Zapisy_KD', '03_Predani', '04_Fakturace'],
+  realizace: ['00_Admin', '01_Smlouvy_a_objednavky', '02_Technicka_dokumentace', '03_Harmonogram_a_KD', '03_Harmonogram_a_KD/01_Zapisy_KD', '04_Naklady/Faktury', '05_Fotodokumentace', '06_Revize_a_zkousky', '07_Predani', '08_Fakturace', 'Servis'],
   service: ['00_Admin', '01_Fotodokumentace', '02_Servisni_protokoly', '03_Predavaci_protokoly', '04_Komunikace', '05_Material_a_mereni'],
   invoice: [],
 };

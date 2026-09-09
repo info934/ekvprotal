@@ -729,6 +729,29 @@ export const uploadEntityStorageFile = async ({ entityType, entityId, folderId, 
   return data;
 };
 
+export const uploadGeneratedEntityDocument = async ({ entityType, entityId, code, name, relativeFolderPath, file }) => {
+  const connection = await getDefaultStorageConnection();
+  const folder = await ensureEntityFolder({ entityType, entityId, code, name, connection });
+  const relativePath = sanitizeRelativeFolderPath(relativeFolderPath, 'Dokumenty');
+  const fileName = sanitizeReadableFileName(file.name, 'dokument.pdf');
+  if (connection.provider === 'supabase') {
+    const path = `generated-documents/${sanitizePathSegment(entityType)}/${sanitizePathSegment(entityId)}/${relativePath}/${fileName}`;
+    const { error } = await supabase.storage.from(PROJECT_BUCKET).upload(path, file, { contentType: file.type || 'application/pdf', upsert: true });
+    if (error) throw error;
+    return { provider: 'supabase', connectionId: connection.id, path, folderPath: `${folder.folderPath}/${relativePath}` };
+  }
+  const folderPath = `${folder.folderPath}/${relativePath}`;
+  const { data, error } = await uploadExternalFile({ file, body: {
+    connectionId: connection.id, provider: connection.provider, entityType, entityId,
+    folderPath, fileName,
+  } });
+  if (error) throw error;
+  if (!data?.success) throw new Error(data?.error || 'Dokument se nepodařilo uložit.');
+  return { provider: connection.provider, connectionId: connection.id, folderPath,
+    path: `${folderPath}/${data.file?.name || fileName}`, fileId: data.file?.id || data.fileId,
+    webUrl: data.file?.webUrl || data.webUrl };
+};
+
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(String(reader.result).split(',')[1]);
