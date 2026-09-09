@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Loader2, Save } from 'lucide-react';
+import { createProjectTemplate, updateProjectTemplate } from '@/lib/projectTemplates';
 
 const EditTemplateModal = ({ isOpen, onClose, templateData, onSuccess }) => {
     const { toast } = useToast();
@@ -43,20 +44,15 @@ const EditTemplateModal = ({ isOpen, onClose, templateData, onSuccess }) => {
                 description: data.description,
             };
 
-            let error;
             if (isEditing) {
-                const res = await supabase.from('project_templates_custom').update(payload).eq('id', templateData.id);
-                error = res.error;
+                await updateProjectTemplate(supabase, templateData.id, user.id, payload);
             } else {
                 payload.user_id = user.id;
-                const res = await supabase.from('project_templates_custom').insert(payload);
-                error = res.error;
+                await createProjectTemplate(supabase, payload);
             }
 
-            if (error) throw error;
-
             toast({ title: isEditing ? 'Šablona aktualizována' : 'Šablona vytvořena', variant: 'default' });
-            if (onSuccess) onSuccess();
+            if (onSuccess) await onSuccess();
             onClose();
         } catch (error) {
             console.error('Error saving template:', error);

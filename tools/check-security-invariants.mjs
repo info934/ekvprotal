@@ -31,6 +31,7 @@ const crmActivityCalendarFunction = read('supabase/functions/crm-activity-calend
 const raynetImportMigration = read('supabase/migrations/20260906120000_crm_raynet_import_staging.sql');
 const raynetImportFunction = read('supabase/functions/raynet-crm-import/index.ts');
 const crmParticipantAuditMigration = read('supabase/migrations/20260906130000_crm_opportunity_participants_audit.sql');
+const projectTemplateSelectMigration = read('supabase/migrations/20260909123000_project_custom_template_select_policy.sql');
 
 assert(/enable_signup\s*=\s*false/.test(config), 'Public signup must remain disabled.');
 for (const functionName of [
@@ -88,6 +89,8 @@ assert(raynetImportFunction.includes('businessCase[IN]'), 'Raynet activity impor
 assert(crmParticipantAuditMigration.includes('alter table public.crm_opportunity_participants enable row level security'), 'CRM opportunity participants must use RLS.');
 assert(crmParticipantAuditMigration.includes('alter table public.crm_opportunity_events enable row level security'), 'CRM opportunity audit events must use RLS.');
 assert(crmParticipantAuditMigration.includes('after insert or update or delete on public.crm_opportunities'), 'CRM opportunity changes must be audited by a database trigger.');
+assert(projectTemplateSelectMigration.includes('for select'), 'Custom project templates must have an explicit permissive SELECT policy.');
+assert(projectTemplateSelectMigration.includes('user_id = (select auth.uid())'), 'Custom project templates must remain private to their owner.');
 
 if (failures.length) {
   console.error('Security invariant checks failed:');

@@ -9,9 +9,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Loader2, Save } from 'lucide-react';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { updateProjectTemplate } from '@/lib/projectTemplates';
 
 const ProjectTemplateEditModal = ({ isOpen, onClose, templateData, onSuccess }) => {
     const { toast } = useToast();
+    const { user } = useAuth();
 
     const { register, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm({
         defaultValues: {
@@ -40,7 +43,7 @@ const ProjectTemplateEditModal = ({ isOpen, onClose, templateData, onSuccess }) 
     }, [templateData, isOpen, reset]);
 
     const onSubmit = async (data) => {
-        if (!templateData) return;
+        if (!templateData || !user) return;
         try {
             const payload = {
                 name: data.name,
@@ -50,15 +53,10 @@ const ProjectTemplateEditModal = ({ isOpen, onClose, templateData, onSuccess }) 
                 milestones_data: data.includeMilestones ? templateData.milestones_data : [],
             };
 
-            const { error } = await supabase
-                .from('project_templates_custom')
-                .update(payload)
-                .eq('id', templateData.id);
-
-            if (error) throw error;
+            await updateProjectTemplate(supabase, templateData.id, user.id, payload);
 
             toast({ title: 'Šablona byla úspěšně upravena', variant: 'default' });
-            if (onSuccess) onSuccess();
+            if (onSuccess) await onSuccess();
             onClose();
         } catch (error) {
             console.error('Error updating template:', error);

@@ -12,6 +12,7 @@ import ProjectTemplateEditModal from './ProjectTemplateEditModal';
 import ProjectTemplatePreviewModal from './ProjectTemplatePreviewModal';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
+import { createProjectTemplate } from '@/lib/projectTemplates';
 
 const ProjectTemplatesSettings = () => {
     const { toast } = useToast();
@@ -86,14 +87,10 @@ const ProjectTemplatesSettings = () => {
                 milestones_data: template.milestones_data
             };
 
-            const { error } = await supabase
-                .from('project_templates_custom')
-                .insert([newTemplate]);
-
-            if (error) throw error;
+            await createProjectTemplate(supabase, newTemplate);
             
             toast({ title: 'Šablona úspěšně duplikována', variant: 'default' });
-            fetchTemplates();
+            await fetchTemplates();
         } catch (error) {
             toast({ title: 'Chyba při duplikaci', description: error.message, variant: 'destructive' });
         } finally {

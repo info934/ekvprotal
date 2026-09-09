@@ -156,13 +156,19 @@ const ProjectForm = () => {
                 .from('project_templates_custom')
                 .select('*')
                 .eq('user_id', user.id);
-            if (!error && data) setTemplates(data);
+            if (error) throw error;
+            setTemplates(data || []);
         } catch (err) {
             console.error('Failed to load templates', err);
+            toast({
+                title: 'Šablony projektu se nepodařilo načíst',
+                description: err.message,
+                variant: 'destructive',
+            });
         } finally {
             setLoadingTemplates(false);
         }
-    }, [user, isEditing]);
+    }, [user, isEditing, toast]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);

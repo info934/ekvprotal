@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Loader2, Save } from 'lucide-react';
+import { createProjectTemplate } from '@/lib/projectTemplates';
 
 const SaveTemplateModal = ({ isOpen, onClose, projectData }) => {
     const { toast } = useToast();
@@ -43,9 +44,7 @@ const SaveTemplateModal = ({ isOpen, onClose, projectData }) => {
                 milestones_data: data.includeMilestones && projectData?.milestones ? projectData.milestones : [],
             };
 
-            const { error } = await supabase.from('project_templates_custom').insert(templateData);
-
-            if (error) throw error;
+            await createProjectTemplate(supabase, templateData);
 
             toast({ title: 'Šablona byla úspěšně uložena', variant: 'default' });
             onClose();
