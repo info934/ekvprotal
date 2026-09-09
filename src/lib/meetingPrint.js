@@ -24,7 +24,7 @@ const paginatePoints = (points = []) => {
   const pages = []; let page = []; let weight = 0;
   for (const point of expanded) {
     const pointWeight = 1 + Math.ceil(String(point.text).length / 750);
-    const limit = pages.length === 0 ? 5 : 7;
+    const limit = pages.length === 0 ? 7 : 9;
     if (page.length && weight + pointWeight > limit) { pages.push(page); page = []; weight = 0; }
     page.push(point); weight += pointWeight;
   }
