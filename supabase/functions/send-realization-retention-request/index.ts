@@ -53,7 +53,7 @@ const deliver = async (admin: any, item: any, requestedBy: string | null = null)
     resendApiKey,
     from: Deno.env.get('RESEND_FROM_EMAIL') || 'EKV Project <portal@web.ekvproject.cz>',
     to: [item.recipient_email],
-    subject: `Žádost o vyplacení zádržného · ${realization.code || realization.name || 'realizace'}`.slice(0, 180),
+    subject: `Žádost o vyplacení zádržného · ${realization.code || realization.name || 'realizace'} · ${item.label}`.slice(0, 180),
     html: emailHtml(item),
     idempotencyKey: `realization-retention-request:${item.id}`,
     workflowType: 'realization_retention',
@@ -61,7 +61,7 @@ const deliver = async (admin: any, item: any, requestedBy: string | null = null)
     entityId: item.id,
     eventType: 'payment_request',
     requestedBy,
-    metadata: { realizationId: realization.id, percentage: Number(item.percentage || 0), notificationAt: item.notification_at },
+    metadata: { realizationId: realization.id, label: item.label, percentage: Number(item.percentage || 0), notificationAt: item.notification_at },
   });
   const { error } = await admin.from('realization_retentions')
     .update({ status: 'requested', requested_at: sent.sentAt || new Date().toISOString() })
