@@ -7,7 +7,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent } from "@/components/ui/tabs";
-import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FolderOpen, GanttChart, Wallet, FileText, AlertTriangle, Users, EyeOff, Copy } from 'lucide-react';
+import { Edit2, Plus, Trash2, Download, Search, LayoutDashboard, DollarSign, Clock, ShoppingCart, PieChart, ChevronDown, Loader2, FolderOpen, GanttChart, Wallet, FileText, AlertTriangle, Users, EyeOff, Copy, ShieldCheck } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -35,6 +35,7 @@ import { RecordWorkspaceHeader, RecordWorkspaceNavigation, RecordWorkspaceSectio
 import EkvLoader from '@/components/ui/ekv-loader';
 import { calculateRealizationRewardAllocation } from '@/domain/financials';
 import FinancialSettingsCard from '@/components/finance/FinancialSettingsCard';
+import RealizaceRetentions from './RealizaceRetentions';
 import {
   createTimedAbortController,
   isRequestAbortError,
@@ -107,6 +108,7 @@ const RealizaceDetail = () => {
     { value: 'summary', label: 'Souhrn', icon: PieChart },
     { value: 'billing', label: 'Fakturace', icon: FileText },
     { value: 'costs', label: 'Náklady', icon: ShoppingCart },
+    { value: 'retentions', label: 'Zádržné', icon: ShieldCheck },
     { value: 'rewards', label: 'Odměny', icon: Wallet },
   ];
   const requestedTab = location.hash.substring(1);
@@ -840,6 +842,13 @@ const RealizaceDetail = () => {
                   />
                 </section>
 
+                </RecordWorkspaceSection>
+                <RecordWorkspaceSection active={financeSection === 'retentions'} id="realization-finance-retentions" aria-label="Zádržné realizace" className="space-y-4">
+                  <RealizaceRetentions
+                    realizaceId={realizaceId}
+                    contractAmount={totalRevenue}
+                    canManage={userRole === 'admin'}
+                  />
                 </RecordWorkspaceSection>
                 {canViewProfit && (
                   <RecordWorkspaceSection active={financeSection === 'rewards'} id="realization-finance-rewards" aria-label="Odměny týmu" className="space-y-4">

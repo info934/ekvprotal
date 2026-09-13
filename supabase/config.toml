@@ -74,6 +74,9 @@ verify_jwt = false
 [functions.send-work-reports]
 verify_jwt = false
 
+[functions.send-realization-retention-request]
+verify_jwt = false
+
 [functions.send-attendance-plan-report]
 verify_jwt = false
 
