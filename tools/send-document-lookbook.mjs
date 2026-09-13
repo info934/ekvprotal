@@ -3,6 +3,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
+const lookbookDeliveryKey = String(process.argv[2] || 'document-lookbook:2026-09-13:final-v1');
+if (!/^[a-zA-Z0-9:._-]{12,160}$/.test(lookbookDeliveryKey)) throw new Error('Invalid lookbook delivery key.');
 const cli = path.join(root, 'node_modules', '@supabase', 'cli-windows-x64', 'bin', 'supabase.exe');
 const projectRef = 'yurysbxxevtuvhrbmloc';
 const query = JSON.parse(execFileSync(cli, [
@@ -30,6 +32,6 @@ const attachments = readdirSync(source).filter((name) => /^\d{2}-.*\.pdf$/i.test
   filename, content: readFileSync(path.join(source, filename)).toString('base64'),
 }));
 const lookbook = await invoke('send-document-lookbook', {
-  attachments, idempotencyKey: 'document-lookbook:2026-09-13:final-v1',
+  attachments, idempotencyKey: lookbookDeliveryKey,
 });
 console.log(JSON.stringify({ summary, lookbook }, null, 2));
