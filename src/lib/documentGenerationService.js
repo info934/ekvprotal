@@ -945,7 +945,7 @@ const renderCorporateCommercialDocumentHtml = (payload) => {
 <style>
   :root{--ink:#101828;--muted:#667085;--line:#d7e0ec;--soft:#f5f8fc;--blue:#2459c7;--blue-dark:#153b82;--green:#2f8f5b}
   *{box-sizing:border-box} body{margin:0;background:#e9edf4;color:var(--ink);font-family:"Aptos","Segoe UI",Calibri,Arial,sans-serif;font-size:10.5px;line-height:1.4}
-  .page{position:relative;width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:9mm 10mm 21mm;box-shadow:0 20px 55px rgba(15,23,42,.16);page-break-after:always;overflow:hidden}
+  .page{position:relative;width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:8mm 10mm 15mm;box-shadow:0 20px 55px rgba(15,23,42,.16);page-break-after:always;overflow:hidden}
   .page:last-child{page-break-after:auto}.topbar{height:6px;border-radius:999px;background:linear-gradient(90deg,var(--blue-dark),var(--blue),var(--green));margin-bottom:9px}
   .brand-logo{display:block;width:54mm;height:auto;margin-bottom:10px}.brand-logo.compact{width:39mm;margin:0}
   .document-header{display:grid;grid-template-columns:minmax(0,1fr) 71mm;gap:8mm;align-items:start;margin-bottom:10px}.document-label{margin:0 0 5px;color:var(--blue);font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
@@ -1792,10 +1792,10 @@ export const renderHandoverProtocolHtml = (payload, template = null) => {
   <style>
     :root { color-scheme: light; --ink:#0f172a; --muted:#64748b; --line:#dbe3ef; --soft:#f7f9fc; --blue:#1d4ed8; --green:#047857; }
     * { box-sizing: border-box; }
-    body { margin:0; background:#e9edf4; color:var(--ink); font-family:"Segoe UI", Calibri, Arial, sans-serif; font-size:12.5px; line-height:1.48; }
-    .page { width:210mm; min-height:297mm; margin:18px auto; background:#fff; padding:16mm; box-shadow:0 20px 50px rgba(15,23,42,.16); }
-    .topline { height:6px; border-radius:999px; background:linear-gradient(90deg,var(--blue),#22c55e); margin-bottom:18px; }
-    header { display:grid; grid-template-columns:minmax(0,1fr) 66mm; gap:18px; align-items:start; padding-bottom:16px; border-bottom:1px solid var(--line); }
+    body { margin:0; background:#e9edf4; color:var(--ink); font-family:"Segoe UI", Calibri, Arial, sans-serif; font-size:11.5px; line-height:1.4; }
+    .page { width:210mm; min-height:297mm; margin:18px auto; background:#fff; padding:9mm 12mm 13mm; box-shadow:0 20px 50px rgba(15,23,42,.16); }
+    .topline { height:6px; border-radius:999px; background:linear-gradient(90deg,var(--blue),#22c55e); margin-bottom:12px; }
+    header { display:grid; grid-template-columns:minmax(0,1fr) 66mm; gap:16px; align-items:start; padding-bottom:12px; border-bottom:1px solid var(--line); }
         .brand-lockup { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
     .brand-logo { width:158px; max-width:48mm; height:auto; display:block; }
     .brand-copy strong { display:block; font-size:14px; }
@@ -1809,16 +1809,16 @@ export const renderHandoverProtocolHtml = (payload, template = null) => {
     .doc-meta div:last-child { border-bottom:0; }
     .doc-meta span { color:var(--muted); }
     .doc-meta strong { text-align:right; overflow-wrap:anywhere; line-height:1.25; }
-    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0; }
-    .box { border:1px solid var(--line); border-radius:10px; padding:12px; background:linear-gradient(180deg,#fff,#fbfcff); }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:12px 0; }
+    .box { border:1px solid var(--line); border-radius:10px; padding:9px; background:linear-gradient(180deg,#fff,#fbfcff); }
     .box-title { margin:0 0 8px; color:var(--muted); font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.09em; }
     .box strong { font-size:14px; }
     .muted { color:var(--muted); }
-    .section { margin-top:18px; break-inside:avoid; }
+    .section { margin-top:12px; break-inside:avoid; }
     .notes { margin:0; white-space:pre-wrap; color:#334155; }
     table { width:100%; border-collapse:separate; border-spacing:0; margin-top:8px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-    th { background:#f1f5f9; color:#475569; font-size:10.5px; text-align:left; text-transform:uppercase; letter-spacing:.06em; padding:8px 9px; border-bottom:1px solid var(--line); }
-    td { padding:8px 9px; border-bottom:1px solid #eef2f7; vertical-align:top; }
+    th { background:#f1f5f9; color:#475569; font-size:9.5px; text-align:left; text-transform:uppercase; letter-spacing:.06em; padding:6px 7px; border-bottom:1px solid var(--line); }
+    td { padding:6px 7px; border-bottom:1px solid #eef2f7; vertical-align:top; }
     tr:last-child td { border-bottom:0; }
     tbody tr:nth-child(even) td { background:#fbfdff; }
     .num { text-align:right; white-space:nowrap; }
@@ -1826,11 +1826,12 @@ export const renderHandoverProtocolHtml = (payload, template = null) => {
     .sign-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:22px; }
     .sign-box { min-height:72px; border:1px dashed #b6c2d2; border-radius:10px; padding:10px; color:var(--muted); }
     .signature-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
-    .signature-card { min-height:92px; border:1px dashed #9aa8bc; border-radius:12px; padding:12px; background:#fbfdff; display:flex; flex-direction:column; justify-content:space-between; }
+    .signature-card { min-height:78px; border:1px dashed #9aa8bc; border-radius:12px; padding:10px; background:#fbfdff; display:flex; flex-direction:column; justify-content:space-between; }
     .signature-line { border-top:1px solid #64748b; padding-top:7px; color:var(--muted); font-size:10.5px; }
     .signature-role { color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; }
-    footer { margin-top:26px; padding-top:10px; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:16px; color:var(--muted); font-size:10.5px; }
-    @media print { body{background:#fff}.page{margin:0;box-shadow:none;width:auto;min-height:auto}.topline{border-radius:0} }
+    footer { margin-top:16px; padding-top:8px; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:16px; color:var(--muted); font-size:9.5px; }
+    @page { size:A4; margin:0; }
+    @media print { body{background:#fff}.page{margin:0;box-shadow:none;width:210mm;min-height:297mm}.topline{border-radius:0} }
   </style>
 </head>
 <body>
@@ -1880,10 +1881,10 @@ export const renderHandoverProtocolHtml = (payload, template = null) => {
       ${renderDefectsTableHtml(payload.defects)}
     </section>
 
-    <section class="section">
-      <h2>Podpisy</h2>
+    ${payload.signatures.length ? `<section class="section">
+      <h2>Elektronické podpisy</h2>
       ${renderSignaturesTableHtml(payload.signatures)}
-    </section>
+    </section>` : ''}
 
     ${payload.document.notes ? `<section class="section"><h2>Poznámky</h2><p class="notes">${escapeHtml(payload.document.notes)}</p></section>` : ''}
 

@@ -20,6 +20,8 @@ const SETTING_KEYS = [
   'work_reports_enabled',
   'work_report_main_email',
   'work_report_ai_model',
+  'realization_retention_summary_enabled',
+  'realization_retention_summary_recipient',
 ];
 
 const SettingsPortal = () => {
@@ -39,6 +41,9 @@ const SettingsPortal = () => {
   const [workReportEmail, setWorkReportEmail] = useState('info@ekvproject.cz');
   const [workReportModel, setWorkReportModel] = useState('gemini-2.5-flash');
   const [testingWorkReport, setTestingWorkReport] = useState(false);
+  const [retentionSummaryEnabled, setRetentionSummaryEnabled] = useState(true);
+  const [retentionSummaryEmail, setRetentionSummaryEmail] = useState('info@ekvproject.cz');
+  const [testingRetentionSummary, setTestingRetentionSummary] = useState(false);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -66,6 +71,8 @@ const SettingsPortal = () => {
         setWorkReportsEnabled(String(values.work_reports_enabled || 'true').toLowerCase() === 'true');
         setWorkReportEmail(values.work_report_main_email || 'info@ekvproject.cz');
         setWorkReportModel(values.work_report_ai_model || 'gemini-2.5-flash');
+        setRetentionSummaryEnabled(String(values.realization_retention_summary_enabled || 'true').toLowerCase() === 'true');
+        setRetentionSummaryEmail(values.realization_retention_summary_recipient || 'info@ekvproject.cz');
       }
       setLoading(false);
     };
@@ -193,6 +200,25 @@ const SettingsPortal = () => {
     finally { setTestingWorkReport(false); }
   };
 
+  const handleSaveRetentionSummary = async () => {
+    const email = retentionSummaryEmail.trim().toLowerCase();
+    if (!email.includes('@')) { toast({ title: 'Zadejte platný e-mail pro přehled zádržného', variant: 'destructive' }); return; }
+    if (await saveSettings([
+      { key: 'realization_retention_summary_enabled', value: String(retentionSummaryEnabled) },
+      { key: 'realization_retention_summary_recipient', value: email },
+    ], 'Měsíční přehled zádržného byl uložen')) setRetentionSummaryEmail(email);
+  };
+
+  const handleTestRetentionSummary = async () => {
+    setTestingRetentionSummary(true);
+    try {
+      const { data, error } = await invokeWithTimeout(supabase, 'send-realization-retention-summary', { body: { action: 'test' } });
+      if (error || !data?.success) throw new Error(data?.error || error?.message || 'Test přehledu selhal.');
+      toast({ title: 'Testovací přehled zádržného byl odeslán', description: `Příjemce: ${data.recipient || retentionSummaryEmail}` });
+    } catch (error) { toast({ title: 'Přehled zádržného se nepodařilo odeslat', description: error.message, variant: 'destructive' }); }
+    finally { setTestingRetentionSummary(false); }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -202,6 +228,15 @@ const SettingsPortal = () => {
       />
 
       <div className="grid gap-5 xl:grid-cols-2">
+        <Card className="border-emerald-200">
+          <CardHeader><CardTitle className="flex items-center gap-2"><Mail className="h-5 w-5" />Měsíční přehled zádržného</CardTitle><CardDescription>První den každého měsíce v 7:00 odešle soupis aktivního zádržného, částek a očekávaných termínů uvolnění. Europe/Prague.</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <label className="flex min-h-11 items-center gap-3 rounded-lg border p-3 text-sm font-medium"><input type="checkbox" className="h-5 w-5" checked={retentionSummaryEnabled} onChange={(event) => setRetentionSummaryEnabled(event.target.checked)} disabled={loading || saving} />Pravidelný měsíční přehled je aktivní</label>
+            <div className="space-y-2"><Label htmlFor="retentionSummaryEmail">Příjemce přehledu</Label><Input id="retentionSummaryEmail" type="email" value={retentionSummaryEmail} onChange={(event) => setRetentionSummaryEmail(event.target.value)} disabled={loading || saving} /></div>
+            <p className="text-xs text-muted-foreground">Přehled zahrnuje plánované i již vyžádané části zádržného, které dosud nejsou označené jako vyplacené.</p>
+            <div className="flex flex-wrap gap-2"><Button onClick={handleSaveRetentionSummary} disabled={loading || saving}><Save className="mr-2 h-4 w-4"/>Uložit přehled</Button><Button variant="outline" onClick={handleTestRetentionSummary} disabled={loading || saving || testingRetentionSummary}><RefreshCw className={`mr-2 h-4 w-4 ${testingRetentionSummary ? 'animate-spin' : ''}`}/>Odeslat test na hlavní e-mail</Button></div>
+          </CardContent>
+        </Card>
         <Card className="border-blue-200">
           <CardHeader><CardTitle className="flex items-center gap-2"><Mail className="h-5 w-5" />Pracovní reporty projektů a realizací</CardTitle><CardDescription>Pondělí 7:00 hlavní report, pondělí a středa 7:00 osobní upozornění, pátek 14:00 osobní souhrn s doporučením. Europe/Prague.</CardDescription></CardHeader>
           <CardContent className="space-y-4">

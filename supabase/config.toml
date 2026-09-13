@@ -77,6 +77,12 @@ verify_jwt = false
 [functions.send-realization-retention-request]
 verify_jwt = false
 
+[functions.send-realization-retention-summary]
+verify_jwt = false
+
+[functions.send-document-lookbook]
+verify_jwt = false
+
 [functions.send-attendance-plan-report]
 verify_jwt = false
 
