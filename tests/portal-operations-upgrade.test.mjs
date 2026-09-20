@@ -25,6 +25,27 @@ test('SharePoint and calendar operations retry throttling and transient server e
   assert.match(storage, /getStatus/);
 });
 
+test('SharePoint realization folders use the business code instead of an internal UUID fragment', async () => {
+  const storage = await read('supabase/functions/document-storage/index.ts');
+  const form = await read('src/components/RealizaceForm.jsx');
+  assert.match(storage, /entityType === 'realizace'\s*\? 'id, code, name, status, start_date, created_at'/);
+  assert.match(storage, /const code = normalizeEntityFolderCode\(data\.code\);/);
+  assert.doesNotMatch(storage, /`R-\$\{String\(data\.id\)\.slice\(0, 8\)\}`/);
+  assert.match(form, /if \(targetId\) \{[\s\S]*ensureEntityFolder\(\{[\s\S]*entityType: 'realizace'/);
+  assert.match(form, /code: savedRealization\?\.code \|\| dataToSave\.code/);
+});
+
+test('realization business code is exposed by safe reads and enforced by atomic writes', async () => {
+  const migration = await read('supabase/migrations/20260920100000_realization_business_code_workflow.sql');
+  assert.match(migration, /code = 'R-' \|\| upper\(left\(replace\(id::text, '-', ''\), 8\)\)/);
+  assert.match(migration, /where nullif\(btrim\(code\), ''\) is null/);
+  assert.match(migration, /returns table \([\s\S]*code text,[\s\S]*r\.code/);
+  assert.match(migration, /'code', r\.code/);
+  assert.match(migration, /v_code text := nullif\(btrim\(coalesce\(p_payload->>'code', ''\)\), ''\)/);
+  assert.match(migration, /where lower\(btrim\(r\.code\)\) = lower\(v_code\)/);
+  assert.match(migration, /set[\s\S]*code = v_code/);
+});
+
 test('migration keeps public service data separate and enforces offer approval', async () => {
   const migration = await read('supabase/migrations/20260906213000_portal_operations_upgrade.sql');
   assert.match(migration, /create table if not exists public\.service_public_links/i);

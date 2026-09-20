@@ -53,7 +53,7 @@ const statusConfig = {
 
 const formatDateShort = (date) => date ? format(new Date(date), 'd.M.yyyy') : 'Neuvedeno';
 const realizationListStatuses = Object.keys(statusConfig);
-const realizationListSorts = ['created_at', 'name', 'planned_end_date', 'start_date'];
+const realizationListSorts = ['created_at', 'code', 'name', 'planned_end_date', 'start_date'];
 
 const chartPalette = ['#2563eb', '#f59e0b', '#10b981', '#ef4444', '#64748b', '#8b5cf6'];
 
@@ -304,6 +304,7 @@ const Realizace = () => {
     const canEdit = hasPermission('realizace', 'can_edit') && userRole !== 'user';
     const canDelete = hasPermission('realizace', 'can_admin') && userRole !== 'user';
     const realizationTableColumns = useMemo(() => [
+        { id: 'code', label: 'Kód' },
         { id: 'name', label: 'Název', hideable: false },
         { id: 'investor', label: 'Investor' },
         { id: 'type', label: 'Typ' },
@@ -317,6 +318,7 @@ const Realizace = () => {
     const realizationManagedTable = useManagedColumns('ekv-table-realizace', realizationTableColumns);
     const realizationVisibleColumns = realizationManagedTable.visibleColumns;
     const realizationHeadClasses = {
+        code: 'min-w-[130px]',
         name: 'min-w-[280px]',
         investor: 'min-w-[220px]',
         type: 'min-w-[140px]',
@@ -327,6 +329,7 @@ const Realizace = () => {
         actions: 'w-24 text-right',
     };
     const realizationCellClasses = {
+        code: 'whitespace-nowrap font-mono text-xs font-semibold text-slate-700',
         name: 'max-w-[280px] truncate font-medium',
         contract: 'text-right font-medium',
         actions: 'text-right',
@@ -439,6 +442,8 @@ const Realizace = () => {
 
     const renderRealizationTableCell = (r, columnId) => {
         switch (columnId) {
+            case 'code':
+                return r.code || '-';
             case 'name':
                 return r.name;
             case 'investor':
@@ -591,6 +596,8 @@ const Realizace = () => {
                       <SelectContent>
                         <SelectItem value="created_at:desc">Nejnovější nejdříve</SelectItem>
                         <SelectItem value="created_at:asc">Nejstarší nejdříve</SelectItem>
+                        <SelectItem value="code:asc">Kód vzestupně</SelectItem>
+                        <SelectItem value="code:desc">Kód sestupně</SelectItem>
                         <SelectItem value="name:asc">Název A–Z</SelectItem>
                         <SelectItem value="name:desc">Název Z–A</SelectItem>
                         <SelectItem value="planned_end_date:asc">Nejbližší dokončení</SelectItem>
@@ -684,6 +691,7 @@ const Realizace = () => {
                               }}
                             >
                                 <CardHeader className="pb-2">
+                                    {r.code && <div className="mb-1 font-mono text-xs font-semibold text-slate-500">{r.code}</div>}
                                     <div className="flex justify-between items-start gap-2 min-w-0">
                                         <CardTitle className="text-base line-clamp-2 group-hover:text-primary transition-colors" title={r.name}>{r.name}</CardTitle>
                                         <div className="shrink-0">{renderStatusMenu(r, "h-6 px-1")}</div>
@@ -782,6 +790,7 @@ const Realizace = () => {
                                             >
                                                 <div className="flex items-start justify-between gap-2 min-w-0">
                                                     <div className="min-w-0">
+                                                        {item.code && <div className="font-mono text-[11px] font-semibold text-slate-500">{item.code}</div>}
                                                         <div className="text-xs text-muted-foreground">{item.type || 'Typ neuveden'}</div>
                                                         <div className="font-medium line-clamp-2" title={item.name}>{item.name}</div>
                                                     </div>

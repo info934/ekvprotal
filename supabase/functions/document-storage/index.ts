@@ -593,7 +593,7 @@ const getServerEntityFolderPath = async (
   const select = entityType === 'project'
     ? 'id, code, name, status, start_date, created_at'
     : entityType === 'realizace'
-      ? 'id, name, status, start_date, created_at'
+      ? 'id, code, name, status, start_date, created_at'
       : 'id, code, name';
   const { data, error } = await admin.from(table).select(select).eq('id', entityId).maybeSingle();
   if (error) throw error;
@@ -602,9 +602,7 @@ const getServerEntityFolderPath = async (
     notFound.status = 404;
     throw notFound;
   }
-  const code = entityType === 'realizace'
-    ? `R-${String(data.id).slice(0, 8)}`
-    : normalizeEntityFolderCode(data.code);
+  const code = normalizeEntityFolderCode(data.code);
   const { data: preference, error: preferenceError } = entityType === 'project'
     ? await admin
       .from('project_workspace_preferences')

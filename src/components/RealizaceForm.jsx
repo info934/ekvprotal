@@ -76,6 +76,7 @@ const RealizaceForm = () => {
         resolver: zodResolver(useMemo(() => createRealizationSchema({ requireFinance: canViewFinance }), [canViewFinance])),
         defaultValues: {
             name: '',
+            code: '',
             status: 'Připravuje se',
             type: '',
             investor_id: null,
@@ -278,6 +279,7 @@ const RealizaceForm = () => {
                     if (opportunity) {
                         setSourceOpportunity(opportunity);
                         setValue('name', opportunity.title || '');
+                        setValue('code', opportunity.number || '');
                         setValue('investor_id', opportunity.subject_id || null);
                         setValue('contract_amount', Number(opportunity.value || 1));
                         setValue('planned_end_date', opportunity.expected_close_date || '');
@@ -439,31 +441,28 @@ const RealizaceForm = () => {
                 if (error) throw error;
                 targetId = newRealization.id;
                 savedRealization = newRealization;
-
-                try {
-                    await ensureEntityFolder({
-                        entityType: 'realizace',
-                        entityId: newRealization.id,
-                        code: newRealization.code,
-                        name: newRealization.name,
-                    });
-                } catch (storageError) {
-                    console.warn('Failed to prepare realization storage folder', storageError);
-                    toast({ title: 'Realizace vytvořena, ale složku dokumentů se nepodařilo připravit.', variant: 'warning' });
-                }
             }
 
-            if (!isEditing && canViewFinance && targetId) {
+            if (targetId) {
                 try {
                     await ensureEntityFolder({
                         entityType: 'realizace',
                         entityId: targetId,
-                        code: savedRealization?.code,
+                        code: savedRealization?.code || dataToSave.code,
                         name: savedRealization?.name || dataToSave.name,
                     });
                 } catch (storageError) {
-                    console.warn('Failed to prepare realization storage folder', storageError);
-                    toast({ title: 'Realizace vytvořena, ale složku dokumentů se nepodařilo připravit.', variant: 'warning' });
+                    console.warn(
+                        isEditing ? 'Failed to synchronize realization storage folder' : 'Failed to prepare realization storage folder',
+                        storageError,
+                    );
+                    toast({
+                        title: isEditing
+                            ? 'Realizace je uložena, ale složku dokumentů se nepodařilo synchronizovat.'
+                            : 'Realizace vytvořena, ale složku dokumentů se nepodařilo připravit.',
+                        description: 'Na kartě Dokumenty lze synchronizaci bezpečně zopakovat.',
+                        variant: 'warning',
+                    });
                 }
             }
 
@@ -603,10 +602,17 @@ const RealizaceForm = () => {
                             <CardTitle className="flex items-center gap-2"><HardHat className="w-5 h-5 text-primary" />Základní informace</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="space-y-1">
-                                <Label htmlFor="name">Název realizace *</Label>
-                                <Input id="name" {...register('name')} className={errors.name ? 'border-red-500' : ''} />
-                                {errors.name && <p className="text-red-500 text-xs">{errors.name.message}</p>}
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <div className="space-y-1">
+                                    <Label htmlFor="name">Název realizace *</Label>
+                                    <Input id="name" {...register('name')} className={errors.name ? 'border-red-500' : ''} />
+                                    {errors.name && <p className="text-red-500 text-xs">{errors.name.message}</p>}
+                                </div>
+                                <div className="space-y-1">
+                                    <Label htmlFor="code">Kód realizace *</Label>
+                                    <Input id="code" {...register('code')} placeholder="OP-26-119" className={errors.code ? 'border-red-500' : ''} />
+                                    {errors.code && <p className="text-red-500 text-xs">{errors.code.message}</p>}
+                                </div>
                             </div>
                             <div className="grid grid-cols-1 gap-4">
                                 <div>

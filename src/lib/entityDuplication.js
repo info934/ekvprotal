@@ -27,6 +27,7 @@ export const projectDuplicateDefaults = (source, memberId) => ({
 
 export const realizationDuplicateDefaults = source => ({
   name: copyName(source?.name, 'Nová realizace'),
+  code: '',
   status: 'Připravuje se',
   type: source?.type || '',
   investor_id: source?.investor_id || null,

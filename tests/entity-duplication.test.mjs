@@ -23,12 +23,13 @@ test('project copy keeps reusable setup and clears identity, dates and finance',
 
 test('realization copy resets delivery state and finance but keeps reusable staffing setup', () => {
   const copy = realizationDuplicateDefaults({
-    name: 'Montáž FVE', status: 'Předáno', contract_amount: 500000,
+    name: 'Montáž FVE', code: 'OP-26-119', status: 'Předáno', contract_amount: 500000,
     type: 'FVE', investor_id: 'investor', lead_person_id: 'lead',
     start_date: '2026-01-01', planned_end_date: '2026-02-01', actual_end_date: '2026-02-03',
     complexity_level: 'standard', estimated_work_days: 12, location_address: 'Brno',
   });
   assert.equal(copy.name, 'Montáž FVE – kopie');
+  assert.equal(copy.code, '');
   assert.equal(copy.status, 'Připravuje se');
   assert.equal(copy.contract_amount, 0);
   assert.equal(copy.start_date, '');

@@ -58,6 +58,7 @@ export const ProjectSchema = createProjectSchema();
 // --- REALIZATION SCHEMA ---
 const RealizationSchemaFields = {
   name: z.string().min(1, 'Název realizace je povinný'),
+  code: z.string().trim().min(1, 'Kód realizace je povinný').max(80, 'Kód realizace je příliš dlouhý'),
   status: z.string().min(1, 'Stav je povinný'),
   type: z.string().optional().nullable(),
   investor_id: z.string().uuid('Vyberte investora').optional().nullable(),
