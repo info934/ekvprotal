@@ -612,10 +612,27 @@ const CRMCommercialDocuments = ({ type = 'offer' }) => {
       return;
     }
 
+    const totals = calculateCrmTotals(selectedDocument.items);
+    let approvalPatch = {};
+    if (type === 'offer') {
+      const { data: approvalState } = await supabase.rpc('refresh_crm_offer_approval_state', { p_document_id: selectedDocument.id });
+      if (approvalState?.approval_status) approvalPatch = { approval_status: approvalState.approval_status };
+    }
+    const savedDocument = {
+      ...selectedDocument,
+      ...updatedDocument,
+      ...totals,
+      ...approvalPatch,
+      items: selectedDocument.items,
+      sync_items: sourceIsOpportunity,
+      _persisted_status: updatedDocument.status || nextStatus,
+    };
+    setSelectedDocument(savedDocument);
+    setDocuments((current) => current.map((document) => (
+      document.id === savedDocument.id ? { ...document, ...savedDocument } : document
+    )));
     setSaving(false);
-    if (type === 'offer') await supabase.rpc('refresh_crm_offer_approval_state', { p_document_id: selectedDocument.id });
     toast({ title: selectedDocument.sync_items ? 'Dokument uložen a položky synchronizovány' : 'Dokument uložen' });
-    fetchData();
   };
 
   const openCreateDocumentDialog = () => {
