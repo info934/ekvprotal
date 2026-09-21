@@ -191,6 +191,10 @@ const createEmptyCrmItem = () => ({
   sort_order: 0,
 });
 
+const sortCrmItems = (items = []) => (
+  [...items].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+);
+
 const getStage = (value, stages = DEFAULT_STAGE_CONFIG) => stages.find((stage) => stage.value === value) || stages[0];
 
 const getPriority = (value, priorities = DEFAULT_PRIORITY_CONFIG) => (
@@ -284,11 +288,16 @@ const DealWorkspace = ({
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [draft, dispatchDraft] = useReducer(crmOpportunityDraftReducer, undefined, createCrmOpportunityDraft);
+  const [opportunityItemDraft, setOpportunityItemDraft] = useState(() => sortCrmItems(persistedOpportunity?.items));
+  const [opportunityItemsDirty, setOpportunityItemsDirty] = useState(false);
+  const [opportunityItemsError, setOpportunityItemsError] = useState('');
   const draftSavingRef = useRef(false);
   const hasDraft = hasCrmOpportunityDraft(draft);
+  const hasUnsavedChanges = hasDraft || opportunityItemsDirty;
   const opportunity = persistedOpportunity ? {
     ...persistedOpportunity,
     ...draft.fields,
+    items: opportunityItemDraft,
     custom_fields: {
       ...(persistedOpportunity.custom_fields || {}),
       ...Object.fromEntries(Object.entries(draft.customFields).map(([key, field]) => [key, field.value])),
@@ -319,11 +328,11 @@ const DealWorkspace = ({
   };
 
   useEffect(() => {
-    if (!hasDraft) return undefined;
+    if (!hasUnsavedChanges) return undefined;
     const preventAccidentalClose = (event) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', preventAccidentalClose);
     return () => window.removeEventListener('beforeunload', preventAccidentalClose);
-  }, [hasDraft]);
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     if (!catalogPickerOpen || catalogProducts.length) return undefined;
@@ -500,15 +509,21 @@ const DealWorkspace = ({
       const valueToStore = numericFields.includes(field) ? Number(nextValue || 0) : nextValue;
       return normalizeCrmItem({ ...item, [field]: valueToStore }, index);
     });
-    onUpdateOpportunityItems?.(opportunity.id, nextItems);
+    setOpportunityItemDraft(nextItems);
+    setOpportunityItemsDirty(true);
+    setOpportunityItemsError('');
   };
 
   const addOpportunityItem = () => {
-    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, normalizeCrmItem(createEmptyCrmItem(), opportunityItems.length)]);
+    setOpportunityItemDraft([...opportunityItems, normalizeCrmItem(createEmptyCrmItem(), opportunityItems.length)]);
+    setOpportunityItemsDirty(true);
+    setOpportunityItemsError('');
   };
 
   const removeOpportunityItem = (itemId, rowIndex) => {
-    onUpdateOpportunityItems?.(opportunity.id, getEditableOpportunityItems().filter((item, index) => item.id !== itemId && index !== rowIndex));
+    setOpportunityItemDraft(getEditableOpportunityItems().filter((item, index) => item.id !== itemId && index !== rowIndex));
+    setOpportunityItemsDirty(true);
+    setOpportunityItemsError('');
   };
 
   const addCatalogProducts = (products = []) => {
@@ -518,7 +533,27 @@ const DealWorkspace = ({
       ...createEmptyCrmItem(),
       id: `new-${timestamp}-${index}-${product.id || product.code}`,
     }));
-    onUpdateOpportunityItems?.(opportunity.id, [...opportunityItems, ...nextItems]);
+    setOpportunityItemDraft([...opportunityItems, ...nextItems]);
+    setOpportunityItemsDirty(true);
+    setOpportunityItemsError('');
+  };
+
+  const saveOpportunityItems = async () => {
+    if (!canEdit || !opportunityItemsDirty || updatingOpportunity) return;
+    setOpportunityItemsError('');
+    const result = await onUpdateOpportunityItems?.(opportunity.id, getEditableOpportunityItems());
+    if (result?.error) {
+      setOpportunityItemsError(crmWorkflowErrorMessage(result.error));
+      return;
+    }
+    setOpportunityItemsDirty(false);
+  };
+
+  const cancelOpportunityItems = () => {
+    if (updatingOpportunity) return;
+    setOpportunityItemDraft(sortCrmItems(persistedOpportunity?.items));
+    setOpportunityItemsDirty(false);
+    setOpportunityItemsError('');
   };
   return (
     <div className="space-y-5">
@@ -527,7 +562,7 @@ const DealWorkspace = ({
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               {onBack && (
-                <Button variant="ghost" className="mb-2 h-8 px-0 text-muted-foreground" onClick={onBack} disabled={hasDraft || draft.status === 'saving'}>
+                <Button variant="ghost" className="mb-2 h-8 px-0 text-muted-foreground" onClick={onBack} disabled={hasUnsavedChanges || draft.status === 'saving'}>
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Zpět na obchodní případy
                 </Button>
@@ -546,7 +581,7 @@ const DealWorkspace = ({
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="shrink-0" disabled={hasDraft || draft.status === 'saving'} title={hasDraft ? 'Nejprve uložte nebo zrušte rozpracované změny.' : undefined}>
+                <Button variant="outline" className="shrink-0" disabled={hasUnsavedChanges || draft.status === 'saving'} title={hasUnsavedChanges ? 'Nejprve uložte nebo zrušte rozpracované změny.' : undefined}>
                   <MoreHorizontal className="mr-2 h-4 w-4" />
                   Akce
                 </Button>
@@ -558,34 +593,34 @@ const DealWorkspace = ({
                     Upravit případ
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'} onSelect={() => onCreateDocument?.('offer')}>
+                <DropdownMenuItem disabled={!canEdit || creatingDocument || hasUnsavedChanges || draft.status === 'saving'} onSelect={() => onCreateDocument?.('offer')}>
                   Vytvořit nabídku
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'} onSelect={() => onCreateDocument?.('order')}>
+                <DropdownMenuItem disabled={!canEdit || creatingDocument || hasUnsavedChanges || draft.status === 'saving'} onSelect={() => onCreateDocument?.('order')}>
                   Vytvořit objednávku
                 </DropdownMenuItem>
                 {stage.value === 'won' && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel>Předat do výroby</DropdownMenuLabel>
-                    <DropdownMenuItem disabled={!canEdit || hasDraft || draft.status === 'saving'} onSelect={() => onCreateProject?.()}>
+                    <DropdownMenuItem disabled={!canEdit || hasUnsavedChanges || draft.status === 'saving'} onSelect={() => onCreateProject?.()}>
                       Vytvořit projekt z OP
                     </DropdownMenuItem>
-                    <DropdownMenuItem disabled={!canEdit || hasDraft || draft.status === 'saving'} onSelect={() => onCreateRealization?.()}>
+                    <DropdownMenuItem disabled={!canEdit || hasUnsavedChanges || draft.status === 'saving'} onSelect={() => onCreateRealization?.()}>
                       Vytvořit realizaci z OP
                     </DropdownMenuItem>
                   </>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>Generovat overview</DropdownMenuLabel>
-                <DropdownMenuItem disabled={generatingDocument || hasDraft || draft.status === 'saving'} onSelect={() => onGenerateOverview?.('docx')}>
+                <DropdownMenuItem disabled={generatingDocument || hasUnsavedChanges || draft.status === 'saving'} onSelect={() => onGenerateOverview?.('docx')}>
                   <FileText className="mr-2 h-4 w-4" />
                   DOCX
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={generatingDocument || hasDraft || draft.status === 'saving'} onSelect={() => onGenerateOverview?.('pdf')}>
+                <DropdownMenuItem disabled={generatingDocument || hasUnsavedChanges || draft.status === 'saving'} onSelect={() => onGenerateOverview?.('pdf')}>
                   PDF
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={generatingDocument || hasDraft || draft.status === 'saving'} onSelect={() => onGenerateOverview?.('html')}>
+                <DropdownMenuItem disabled={generatingDocument || hasUnsavedChanges || draft.status === 'saving'} onSelect={() => onGenerateOverview?.('html')}>
                   HTML
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -594,7 +629,7 @@ const DealWorkspace = ({
                   <Ban className="mr-2 h-4 w-4" />
                   Stornovat OP
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={!canEdit || hasDraft || draft.status === 'saving'} className="text-rose-700 focus:text-rose-700" onSelect={() => onDeleteOpportunity?.(opportunity)}>
+                <DropdownMenuItem disabled={!canEdit || hasUnsavedChanges || draft.status === 'saving'} className="text-rose-700 focus:text-rose-700" onSelect={() => onDeleteOpportunity?.(opportunity)}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   Odstranit OP
                 </DropdownMenuItem>
@@ -688,7 +723,7 @@ const DealWorkspace = ({
                     <Label>Stav</Label>
                     <Select
                       value={opportunity.stage}
-                      disabled={!canEdit || updatingOpportunity || hasDraft || draft.status === 'saving'}
+                      disabled={!canEdit || updatingOpportunity || hasUnsavedChanges || draft.status === 'saving'}
                       onValueChange={(value) => {
                         onStageChange?.(opportunity.id, value);
                       }}
@@ -842,16 +877,16 @@ const DealWorkspace = ({
                 <CRMActivityWorkspace
                   opportunity={opportunity}
                   activities={opportunityActivities}
-                  canEdit={canEdit && !hasDraft && draft.status !== 'saving'}
+                  canEdit={canEdit && !hasUnsavedChanges && draft.status !== 'saving'}
                   onChanged={onActivitiesChanged}
                 />
               </TabsContent>
               <TabsContent value="participants">
-                <CRMOpportunityParticipants opportunityId={opportunity.id} primarySubject={subject} canEdit={canEdit && !hasDraft && draft.status !== 'saving'} />
+                <CRMOpportunityParticipants opportunityId={opportunity.id} primarySubject={subject} canEdit={canEdit && !hasUnsavedChanges && draft.status !== 'saving'} />
               </TabsContent>
               <TabsContent value="documents"><div className="rounded-lg border bg-white p-5 text-center shadow-sm"><Paperclip className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="text-sm font-medium text-muted-foreground">Prilohy budou navazane na centralni dokumentovy modul a budou dostupne i pro generovani vystupu.</p><Button className="mt-4" variant="secondary" disabled>Nahrat soubor</Button></div></TabsContent>
               <TabsContent value="history"><div className="rounded-lg border bg-white p-4 shadow-sm"><div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-950"><History className="h-4 w-4 text-primary" />Historie obchodniho pripadu</div>{timelineItems.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim neni evidovana zadna aktivita ani dokument.</div>) : (<div className="space-y-4">{timelineItems.map((item) => { const Icon = item.icon || Clock; return (<div key={item.id} className="relative grid gap-3 border-l border-slate-200 pl-5 text-sm"><span className="absolute -left-2 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-2 ring-primary/40"><span className="h-2 w-2 rounded-full bg-primary" /></span><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex items-center gap-2 font-semibold text-slate-950"><Icon className="h-4 w-4 text-slate-500" /><span>{item.kind}</span><span className="truncate text-slate-700">{item.title}</span></div>{item.detail && <p className="mt-1 line-clamp-2 text-muted-foreground">{item.detail}</p>}</div><span className="shrink-0 text-xs text-muted-foreground">{formatDate(item.date)}</span></div></div>); })}</div>)}<CRMOpportunityAuditTimeline opportunityId={opportunity.id} refreshKey={opportunity.updated_at} /></div></TabsContent>
-              <TabsContent value="discussion"><div className="space-y-4 rounded-lg border bg-white p-4 shadow-sm"><div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><MessageSquare className="h-4 w-4 text-primary" />Interni diskuze</div><div className="space-y-3">{opportunityNotes.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim zde neni zadny komentar.</div>) : opportunityNotes.map((note) => (<div key={note.id} className="rounded-lg border bg-slate-50 p-3 text-sm"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span className="font-semibold text-slate-700">{note.author?.name || 'Interni poznamka'}</span><span>{formatDate(note.created_at)}</span></div><p className="mt-2 whitespace-pre-wrap text-slate-800">{note.body}</p></div>))}</div><div className="grid gap-2"><Textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} placeholder="Napsat komentar pro tym..." className="min-h-[100px]" /><div className="flex justify-end"><Button size="sm" disabled={!canEdit || updatingOpportunity || hasDraft || draft.status === 'saving' || !noteDraft.trim()} onClick={() => { const body = noteDraft.trim(); if (!body) return; setNoteDraft(''); onAddNote?.(opportunity.id, body); }}><MessageSquare className="mr-2 h-4 w-4" />Pridat komentar</Button></div></div></div></TabsContent>
+              <TabsContent value="discussion"><div className="space-y-4 rounded-lg border bg-white p-4 shadow-sm"><div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><MessageSquare className="h-4 w-4 text-primary" />Interni diskuze</div><div className="space-y-3">{opportunityNotes.length === 0 ? (<div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">Zatim zde neni zadny komentar.</div>) : opportunityNotes.map((note) => (<div key={note.id} className="rounded-lg border bg-slate-50 p-3 text-sm"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span className="font-semibold text-slate-700">{note.author?.name || 'Interni poznamka'}</span><span>{formatDate(note.created_at)}</span></div><p className="mt-2 whitespace-pre-wrap text-slate-800">{note.body}</p></div>))}</div><div className="grid gap-2"><Textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} disabled={!canEdit || updatingOpportunity || draft.status === 'saving'} placeholder="Napsat komentar pro tym..." className="min-h-[100px]" /><div className="flex justify-end"><Button size="sm" disabled={!canEdit || updatingOpportunity || hasUnsavedChanges || draft.status === 'saving' || !noteDraft.trim()} onClick={() => { const body = noteDraft.trim(); if (!body) return; setNoteDraft(''); onAddNote?.(opportunity.id, body); }}><MessageSquare className="mr-2 h-4 w-4" />Pridat komentar</Button></div></div></div></TabsContent>
 
             </Tabs>
           </div>
@@ -921,11 +956,11 @@ const DealWorkspace = ({
                       </Button>
                     )}
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <Button size="sm" onClick={() => onCreateProject?.()} disabled={!canEdit || hasDraft || draft.status === 'saving'}>
+                      <Button size="sm" onClick={() => onCreateProject?.()} disabled={!canEdit || hasUnsavedChanges || draft.status === 'saving'}>
                         <Building2 className="mr-2 h-4 w-4" />
                         Vytvořit projekt
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => onCreateRealization?.()} disabled={!canEdit || hasDraft || draft.status === 'saving'}>
+                      <Button size="sm" variant="outline" onClick={() => onCreateRealization?.()} disabled={!canEdit || hasUnsavedChanges || draft.status === 'saving'}>
                         <CheckCircle2 className="mr-2 h-4 w-4" />
                         Vytvořit realizaci
                       </Button>
@@ -971,6 +1006,20 @@ const DealWorkspace = ({
         loading={catalogLoading}
         onApply={addCatalogProducts}
       />
+      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm">
+          <div className="font-medium text-slate-900">
+            {updatingOpportunity ? 'Ukládám položky…' : opportunityItemsDirty ? 'Máte neuložené změny položek.' : 'Položky jsou uložené.'}
+          </div>
+          <div className={opportunityItemsError ? 'text-xs text-rose-700' : 'text-xs text-muted-foreground'}>
+            {opportunityItemsError || 'Čísla můžete psát s desetinnou čárkou. Uložení proběhne až po potvrzení.'}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={cancelOpportunityItems} disabled={!opportunityItemsDirty || updatingOpportunity}>Zrušit změny</Button>
+          <Button type="button" size="sm" onClick={saveOpportunityItems} disabled={!opportunityItemsDirty || updatingOpportunity}>Uložit položky</Button>
+        </div>
+      </div>
       <CrmLineItemsTable
         title={`Produkty (${productRows.length})`}
         description="Položky OP jsou hlavní zdroj pro synchronizované nabídky a objednávky. CRM položky neodečítají sklad."
@@ -991,7 +1040,7 @@ const DealWorkspace = ({
             </CardTitle>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'}>
+                <Button variant="outline" size="sm" disabled={!canEdit || creatingDocument || hasUnsavedChanges || draft.status === 'saving'}>
                   <Plus className="mr-2 h-4 w-4" />
                   Přidat dokument
                 </Button>
@@ -1033,11 +1082,11 @@ const DealWorkspace = ({
               <h3 className="text-base font-semibold text-slate-900">Zatím zde není žádná nabídka ani objednávka</h3>
               <p className="mx-auto mt-1 max-w-md">Vytvořte první dokument z položek obchodního případu. Šablonu lze zvolit před vytvořením nebo před generováním výstupu.</p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <Button size="sm" onClick={() => onCreateDocument?.('offer')} disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'}>
+                <Button size="sm" onClick={() => onCreateDocument?.('offer')} disabled={!canEdit || creatingDocument || hasUnsavedChanges || draft.status === 'saving'}>
                   <Package className="mr-2 h-4 w-4" />
                   Vytvořit nabídku
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => onCreateDocument?.('order')} disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'}>
+                <Button size="sm" variant="outline" onClick={() => onCreateDocument?.('order')} disabled={!canEdit || creatingDocument || hasUnsavedChanges || draft.status === 'saving'}>
                   <ShoppingCart className="mr-2 h-4 w-4" />
                   Vytvořit objednávku
                 </Button>
@@ -1085,7 +1134,7 @@ const DealWorkspace = ({
                           size="sm"
                           variant="outline"
                           onClick={() => onCreateDocument?.(module.type)}
-                          disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'}
+                          disabled={!canEdit || creatingDocument || hasUnsavedChanges || draft.status === 'saving'}
                         >
                           <Plus className="mr-2 h-4 w-4" />
                           {module.cta}
@@ -1097,7 +1146,7 @@ const DealWorkspace = ({
                     <div className="flex min-h-[150px] flex-col items-center justify-center p-6 text-center text-sm text-muted-foreground">
                       <module.icon className="mb-3 h-9 w-9 text-slate-300" />
                       <p className="font-medium text-slate-700">{module.empty}</p>
-                      <Button className="mt-4" size="sm" variant="outline" onClick={() => onCreateDocument?.(module.type)} disabled={!canEdit || creatingDocument || hasDraft || draft.status === 'saving'}>
+                      <Button className="mt-4" size="sm" variant="outline" onClick={() => onCreateDocument?.(module.type)} disabled={!canEdit || creatingDocument || hasUnsavedChanges || draft.status === 'saving'}>
                         <Plus className="mr-2 h-4 w-4" />
                         {module.cta}
                       </Button>
@@ -1132,7 +1181,7 @@ const DealWorkspace = ({
                             </div>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button size="sm" variant="outline" disabled={generatingDocument || hasDraft || draft.status === 'saving'}>
+                                <Button size="sm" variant="outline" disabled={generatingDocument || hasUnsavedChanges || draft.status === 'saving'}>
                                   <FileText className="mr-2 h-4 w-4" />
                                   Generovat
                                 </Button>
@@ -1792,10 +1841,10 @@ const CRM = () => {
 
     try {
     const opportunityItemsSelect = isOpportunityDetailPage
-      ? ', items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)'
+      ? ', items:crm_opportunity_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot, section_name, item_kind, alternative_group, included_in_total)'
       : '';
     const documentItemsSelect = isOpportunityDetailPage
-      ? ', items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot)'
+      ? ', items:crm_commercial_document_items(id, catalog_item_id, code, name, description, quantity, unit, unit_price, unit_cost, purchase_price_snapshot, discount_percent, vat_rate, commission_percent, line_total, margin_total, margin_percent, commission_total, profit_after_commission, profit_after_commission_percent, sort_order, product_sku, product_type, stock_available_snapshot, catalog_price_snapshot, supplier_offer_id, supplier_name, supplier_sku_snapshot, section_name, item_kind, alternative_group, included_in_total)'
       : '';
 
     const opportunitiesQueryFactory = () => supabase
@@ -2205,7 +2254,7 @@ const CRM = () => {
   }, [canEditCrm, updateOpportunityState]);
 
   const handleOpportunityItemsUpdate = useCallback(async (opportunityId, nextItems) => {
-    if (!canEditCrm || !opportunityId) return;
+    if (!canEditCrm || !opportunityId) return { error: new Error('Nemáte oprávnění upravit položky obchodního případu.') };
 
     const normalizedItems = nextItems.map((item, index) => ({
       ...item,
@@ -2214,10 +2263,6 @@ const CRM = () => {
     }));
     const totals = calculateCrmTotals(normalizedItems);
 
-    updateOpportunityState(opportunityId, {
-      items: normalizedItems,
-      value: totals.total,
-    });
     setUpdatingOpportunity(true);
 
     const opportunityItemRows = normalizedItems.map((item, index) => buildCrmOpportunityItemPayload(item, opportunityId, index));
@@ -2229,18 +2274,23 @@ const CRM = () => {
     });
 
     if (!replaceError) {
+      updateOpportunityState(opportunityId, {
+        items: normalizedItems,
+        value: totals.total,
+      });
       setCommercialDocuments((current) => current.map((document) => (
         document.opportunity_id === opportunityId && (document.sync_items ?? true)
           ? { ...document, ...totals, items: normalizedItems.map((item, index) => ({ ...item, sort_order: (index + 1) * 10 })) }
           : document
       )));
       setUpdatingOpportunity(false);
-      return;
+      return { data: true, error: null };
     }
 
     setUpdatingOpportunity(false);
     toast({ title: 'Položky OP se nepodařilo uložit', description: crmWorkflowErrorMessage(replaceError), variant: 'destructive' });
     // Keep the draft in the editor so users can retry without losing their work.
+    return { data: null, error: replaceError };
   }, [canEditCrm, toast, updateOpportunityState]);
 
   const handleAddOpportunityNote = useCallback(async (opportunityId, body) => {

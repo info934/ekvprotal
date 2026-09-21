@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, PackageSearch, Plus, Target, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -19,6 +19,7 @@ import {
   calculateCrmItem,
   calculateCrmItemTotals,
   calculateUnitPriceForMargin,
+  parseCrmNumber,
 } from '@/lib/crmItemPayloads';
 import { formatMoney } from '@/lib/financePresentation';
 
@@ -71,8 +72,75 @@ const numericFields = new Set([
 
 const getRowKey = (item, index) => item.id || item.catalog_item_id || `${item.code || 'item'}-${index}`;
 
-const normalizePercent = (value) => Math.min(95, Math.max(-100, Number(value || 0)));
-const normalizeCommissionPercent = (value) => Math.min(100, Math.max(0, Number(value || 0)));
+const normalizePercent = (value) => Math.min(95, Math.max(-100, parseCrmNumber(value, 0)));
+const normalizeCommissionPercent = (value) => Math.min(100, Math.max(0, parseCrmNumber(value, 0)));
+
+const NumericDraftInput = ({ value, onValueChange, onCommit, ...props }) => {
+  const [draftValue, setDraftValue] = useState(() => String(value ?? ''));
+  const [isInvalid, setIsInvalid] = useState(false);
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) setDraftValue(String(value ?? ''));
+  }, [value]);
+
+  const commit = (rawValue = draftValue) => {
+    const normalized = rawValue.trim();
+    const parsedValue = parseCrmNumber(normalized, Number.NaN);
+    if (!normalized) {
+      setDraftValue('0');
+      setIsInvalid(false);
+      onValueChange?.(0);
+      onCommit?.(0);
+      return;
+    }
+    if (!Number.isFinite(parsedValue)) {
+      setDraftValue(String(value ?? ''));
+      setIsInvalid(false);
+      return;
+    }
+    setDraftValue(normalized);
+    setIsInvalid(false);
+    onValueChange?.(parsedValue);
+    onCommit?.(parsedValue);
+  };
+
+  return (
+    <Input
+      {...props}
+      type="text"
+      inputMode="decimal"
+      value={draftValue}
+      aria-invalid={isInvalid || undefined}
+      onFocus={(event) => {
+        focusedRef.current = true;
+        event.currentTarget.select();
+        props.onFocus?.(event);
+      }}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        const parsedValue = parseCrmNumber(nextValue, Number.NaN);
+        setDraftValue(nextValue);
+        setIsInvalid(Boolean(nextValue.trim()) && !Number.isFinite(parsedValue));
+        if (Number.isFinite(parsedValue)) onValueChange?.(parsedValue);
+      }}
+      onBlur={(event) => {
+        focusedRef.current = false;
+        commit(event.target.value);
+        props.onBlur?.(event);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur();
+        if (event.key === 'Escape') {
+          setDraftValue(String(value ?? ''));
+          setIsInvalid(false);
+          event.currentTarget.blur();
+        }
+        props.onKeyDown?.(event);
+      }}
+    />
+  );
+};
 
 const CrmLineItemsTable = ({
   title = text.defaultTitle,
@@ -150,12 +218,10 @@ const CrmLineItemsTable = ({
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold uppercase text-slate-500">{text.globalMargin}</Label>
                 <div className="flex items-center gap-2">
-                  <Input
+                  <NumericDraftInput
                     className="h-8 w-24 text-right text-sm"
-                    type="number"
-                    step="0.1"
                     value={globalMargin}
-                    onChange={(event) => setGlobalMargin(event.target.value)}
+                    onValueChange={setGlobalMargin}
                     disabled={isDisabled || items.length === 0}
                     aria-label={text.targetMargin}
                   />
@@ -168,14 +234,10 @@ const CrmLineItemsTable = ({
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold uppercase text-slate-500">{text.globalCommission}</Label>
                 <div className="flex items-center gap-2">
-                  <Input
+                  <NumericDraftInput
                     className="h-8 w-24 text-right text-sm"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
                     value={globalCommission}
-                    onChange={(event) => setGlobalCommission(event.target.value)}
+                    onValueChange={setGlobalCommission}
                     disabled={isDisabled || items.length === 0}
                     aria-label={text.targetCommission}
                   />
@@ -246,22 +308,22 @@ const CrmLineItemsTable = ({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Input className="text-right" type="number" value={item.quantity ?? 0} onChange={(event) => handleChange(item, index, 'quantity', event.target.value)} disabled={isDisabled} />
+                      <NumericDraftInput className="text-right" value={item.quantity ?? 0} onValueChange={(value) => handleChange(item, index, 'quantity', value)} disabled={isDisabled} aria-label={`${text.quantity} – ${item.name || index + 1}`} />
                     </TableCell>
                     <TableCell>
                       <Input value={item.unit || 'ks'} onChange={(event) => handleChange(item, index, 'unit', event.target.value)} disabled={isDisabled} />
                     </TableCell>
                     {showFinancials && <TableCell>
-                      <Input className="text-right" type="number" value={item.unit_cost ?? item.purchase_price_snapshot ?? 0} onChange={(event) => handleChange(item, index, 'unit_cost', event.target.value)} disabled={isDisabled} />
+                      <NumericDraftInput className="text-right" value={item.unit_cost ?? item.purchase_price_snapshot ?? 0} onValueChange={(value) => handleChange(item, index, 'unit_cost', value)} disabled={isDisabled} aria-label={`${text.purchase} – ${item.name || index + 1}`} />
                     </TableCell>}
                     <TableCell>
-                      <Input className="text-right" type="number" value={item.unit_price ?? 0} onChange={(event) => handleChange(item, index, 'unit_price', event.target.value)} disabled={isDisabled} />
+                      <NumericDraftInput className="text-right" value={item.unit_price ?? 0} onValueChange={(value) => handleChange(item, index, 'unit_price', value)} disabled={isDisabled} aria-label={`${text.sale} – ${item.name || index + 1}`} />
                     </TableCell>
                     {showFinancials && <TableCell>
-                      <Input className="text-right" type="number" step="0.1" value={calculation.marginPercent.toFixed(1)} onChange={(event) => handleItemMarginChange(item, index, event.target.value)} disabled={isDisabled} />
+                      <NumericDraftInput className="text-right" value={calculation.marginPercent.toFixed(1)} onValueChange={(value) => handleItemMarginChange(item, index, value)} disabled={isDisabled} aria-label={`${text.itemMargin} – ${item.name || index + 1}`} />
                     </TableCell>}
                     <TableCell>
-                      <Input className="text-right" type="number" value={item.discount_percent ?? 0} onChange={(event) => handleChange(item, index, 'discount_percent', event.target.value)} disabled={isDisabled} />
+                      <NumericDraftInput className="text-right" value={item.discount_percent ?? 0} onValueChange={(value) => handleChange(item, index, 'discount_percent', value)} disabled={isDisabled} aria-label={`${text.discount} – ${item.name || index + 1}`} />
                     </TableCell>
                     <TableCell>
                       <Select value={String(item.vat_rate ?? 21)} onValueChange={(value) => handleChange(item, index, 'vat_rate', value)} disabled={isDisabled}>
@@ -281,7 +343,7 @@ const CrmLineItemsTable = ({
                       <div className="text-xs text-muted-foreground">{calculation.marginPercent.toFixed(1)} %</div>
                     </TableCell>}
                     {showFinancials && <TableCell>
-                      <Input className="text-right" type="number" min="0" max="100" step="0.1" value={item.commission_percent ?? 0} onChange={(event) => handleChange(item, index, 'commission_percent', event.target.value)} disabled={isDisabled} />
+                      <NumericDraftInput className="text-right" value={item.commission_percent ?? 0} onValueChange={(value) => handleChange(item, index, 'commission_percent', value)} disabled={isDisabled} aria-label={`${text.commission} – ${item.name || index + 1}`} />
                     </TableCell>}
                     {showFinancials && <TableCell className="text-right">
                       <div className={calculation.profitAfterCommission >= 0 ? 'font-semibold text-emerald-700' : 'font-semibold text-rose-700'}>

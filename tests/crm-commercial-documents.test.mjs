@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { commercialDocumentMatchesSearch, getCommercialDocumentTotals } from '../src/lib/crmCommercialDocuments.js';
-import { buildCrmItemPayloadFields, calculateCrmTotals } from '../src/lib/crmItemPayloads.js';
+import { buildCrmItemPayloadFields, calculateCrmTotals, parseCrmNumber } from '../src/lib/crmItemPayloads.js';
+
+test('CRM numeric input accepts Czech decimal commas and spaces', () => {
+  assert.equal(parseCrmNumber('12,5', Number.NaN), 12.5);
+  assert.equal(parseCrmNumber('1 250,75', Number.NaN), 1250.75);
+  assert.equal(Number.isNaN(parseCrmNumber('rozepsáno', Number.NaN)), true);
+});
 
 test('commercial document lists use persisted financial totals when only item ids are loaded', () => {
   const totals = getCommercialDocumentTotals({

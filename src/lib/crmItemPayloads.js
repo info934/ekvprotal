@@ -8,10 +8,15 @@ export const CRM_VAT_RATE_OPTIONS = [
   { value: 0, label: '0 %', description: 'Bez DPH / přenesená povinnost' },
 ];
 
-const toNumber = (value, fallback = 0) => {
-  const number = Number(value);
+export const parseCrmNumber = (value, fallback = 0) => {
+  const normalizedValue = typeof value === 'string'
+    ? value.trim().replace(/[\s\u00a0]/g, '').replace(',', '.')
+    : value;
+  const number = Number(normalizedValue);
   return Number.isFinite(number) ? number : fallback;
 };
+
+const toNumber = parseCrmNumber;
 
 const clampPercent = (value) => Math.min(100, Math.max(0, toNumber(value)));
 const clampMarginPercent = (value) => Math.min(95, Math.max(-100, toNumber(value)));
