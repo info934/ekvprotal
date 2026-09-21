@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, PackageSearch, Plus, Target, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, PackageSearch, Plus, Target, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -71,6 +71,12 @@ const numericFields = new Set([
 ]);
 
 const getRowKey = (item, index) => item.id || item.catalog_item_id || `${item.code || 'item'}-${index}`;
+
+const itemKindLabels = {
+  standard: 'Standardní',
+  optional: 'Volitelná',
+  alternative: 'Alternativa',
+};
 
 const normalizePercent = (value) => Math.min(95, Math.max(-100, parseCrmNumber(value, 0)));
 const normalizeCommissionPercent = (value) => Math.min(100, Math.max(0, parseCrmNumber(value, 0)));
@@ -267,7 +273,7 @@ const CrmLineItemsTable = ({
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[105px]">{text.code}</TableHead>
-                <TableHead className="min-w-[260px] max-w-[340px]">{text.nameDescription}</TableHead>
+                <TableHead className="min-w-[340px] max-w-[420px]">{text.nameDescription}</TableHead>
                 <TableHead className="min-w-[90px] text-right">{text.quantity}</TableHead>
                 <TableHead className="min-w-[70px]">{text.unit}</TableHead>
                 {showFinancials && <TableHead className="min-w-[105px] text-right">{text.purchase}</TableHead>}
@@ -298,19 +304,50 @@ const CrmLineItemsTable = ({
                         {item.code || 'bez kódu'}
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <Input value={item.name || ''} onChange={(event) => handleChange(item, index, 'name', event.target.value)} disabled={isDisabled} />
-                        <Input value={item.description || ''} onChange={(event) => handleChange(item, index, 'description', event.target.value)} placeholder={text.itemDescription} className="h-8 text-xs" disabled={isDisabled} />
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <Input value={item.section_name || ''} onChange={(event) => handleChange(item, index, 'section_name', event.target.value)} placeholder="Sekce / etapa" className="h-8 text-xs" disabled={isDisabled} />
-                          <Select value={item.item_kind || 'standard'} onValueChange={(value) => handleChange(item, index, 'item_kind', value)} disabled={isDisabled}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent><SelectItem value="standard">Standardní</SelectItem><SelectItem value="optional">Volitelná</SelectItem><SelectItem value="alternative">Alternativa</SelectItem></SelectContent>
-                          </Select>
+                    <TableCell className="align-top py-3">
+                      <div className="space-y-2">
+                        <div className="space-y-1.5">
+                          <Input
+                            value={item.name || ''}
+                            onChange={(event) => handleChange(item, index, 'name', event.target.value)}
+                            placeholder="Název položky"
+                            className="h-9 border-slate-300 bg-white font-medium text-slate-950"
+                            disabled={isDisabled}
+                            aria-label={`Název – ${item.code || index + 1}`}
+                          />
+                          <Input
+                            value={item.description || ''}
+                            onChange={(event) => handleChange(item, index, 'description', event.target.value)}
+                            placeholder="Doplnit popis položky…"
+                            className="h-8 border-slate-200 bg-slate-50/80 text-xs text-slate-700 placeholder:text-slate-400 focus:bg-white"
+                            disabled={isDisabled}
+                            aria-label={`Popis – ${item.name || item.code || index + 1}`}
+                          />
                         </div>
-                        {item.item_kind === 'alternative' && <Input value={item.alternative_group || ''} onChange={(event) => handleChange(item, index, 'alternative_group', event.target.value)} placeholder="Skupina alternativ" className="h-8 text-xs" disabled={isDisabled} />}
-                        {item.item_kind !== 'standard' && <label className="flex items-center gap-2 text-xs text-slate-600"><Checkbox checked={item.included_in_total !== false} onCheckedChange={(value) => handleChange(item, index, 'included_in_total', value === true)} disabled={isDisabled} />Zahrnout do výsledné ceny</label>}
+                        <details className="group rounded-md border border-slate-200 bg-slate-50/70 open:bg-white">
+                          <summary className="flex h-8 cursor-pointer list-none items-center gap-2 px-2.5 text-xs text-slate-600 outline-none transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-primary/30 [&::-webkit-details-marker]:hidden">
+                            <span className="font-medium text-slate-700">Další údaje</span>
+                            <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
+                              {item.section_name || 'Bez sekce'} · {itemKindLabels[item.item_kind || 'standard']}
+                            </span>
+                            <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
+                          </summary>
+                          <div className="grid gap-2 border-t border-slate-200 p-2.5 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Sekce / etapa</Label>
+                              <Input value={item.section_name || ''} onChange={(event) => handleChange(item, index, 'section_name', event.target.value)} placeholder="Bez sekce" className="h-8 bg-white text-xs" disabled={isDisabled} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Typ položky</Label>
+                              <Select value={item.item_kind || 'standard'} onValueChange={(value) => handleChange(item, index, 'item_kind', value)} disabled={isDisabled}>
+                                <SelectTrigger className="h-8 bg-white text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent><SelectItem value="standard">Standardní</SelectItem><SelectItem value="optional">Volitelná</SelectItem><SelectItem value="alternative">Alternativa</SelectItem></SelectContent>
+                              </Select>
+                            </div>
+                            {item.item_kind === 'alternative' && <div className="space-y-1 sm:col-span-2"><Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Skupina alternativ</Label><Input value={item.alternative_group || ''} onChange={(event) => handleChange(item, index, 'alternative_group', event.target.value)} placeholder="Např. varianta střídače" className="h-8 bg-white text-xs" disabled={isDisabled} /></div>}
+                            {item.item_kind !== 'standard' && <label className="flex items-center gap-2 text-xs text-slate-600 sm:col-span-2"><Checkbox checked={item.included_in_total !== false} onCheckedChange={(value) => handleChange(item, index, 'included_in_total', value === true)} disabled={isDisabled} />Zahrnout do výsledné ceny</label>}
+                          </div>
+                        </details>
                       </div>
                     </TableCell>
                     <TableCell>

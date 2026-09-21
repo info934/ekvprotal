@@ -17,3 +17,16 @@ test('CRM numeric input keeps keystrokes local and commits only after editing', 
   assert.doesNotMatch(componentSource.slice(onChangeStart, onBlurStart), /onValueChange/);
   assert.match(componentSource.slice(onBlurStart, onKeyDownStart), /commit\(event\.target\.value\)/);
 });
+
+test('CRM item editor keeps secondary metadata in a compact disclosure', () => {
+  const detailsStart = componentSource.indexOf('<details className="group');
+  const detailsEnd = componentSource.indexOf('</details>', detailsStart);
+  const detailsSource = componentSource.slice(detailsStart, detailsEnd);
+
+  assert.ok(detailsStart >= 0);
+  assert.ok(detailsEnd > detailsStart);
+  assert.match(detailsSource, /Další údaje/);
+  assert.match(detailsSource, /Sekce \/ etapa/);
+  assert.match(detailsSource, /Typ položky/);
+  assert.match(detailsSource, /group-open:rotate-180/);
+});
