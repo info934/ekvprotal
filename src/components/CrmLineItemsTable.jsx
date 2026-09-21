@@ -79,6 +79,7 @@ const NumericDraftInput = ({ value, onValueChange, onCommit, ...props }) => {
   const [draftValue, setDraftValue] = useState(() => String(value ?? ''));
   const [isInvalid, setIsInvalid] = useState(false);
   const focusedRef = useRef(false);
+  const skipNextBlurCommitRef = useRef(false);
 
   useEffect(() => {
     if (!focusedRef.current) setDraftValue(String(value ?? ''));
@@ -122,16 +123,21 @@ const NumericDraftInput = ({ value, onValueChange, onCommit, ...props }) => {
         const parsedValue = parseCrmNumber(nextValue, Number.NaN);
         setDraftValue(nextValue);
         setIsInvalid(Boolean(nextValue.trim()) && !Number.isFinite(parsedValue));
-        if (Number.isFinite(parsedValue)) onValueChange?.(parsedValue);
       }}
       onBlur={(event) => {
         focusedRef.current = false;
+        if (skipNextBlurCommitRef.current) {
+          skipNextBlurCommitRef.current = false;
+          props.onBlur?.(event);
+          return;
+        }
         commit(event.target.value);
         props.onBlur?.(event);
       }}
       onKeyDown={(event) => {
         if (event.key === 'Enter') event.currentTarget.blur();
         if (event.key === 'Escape') {
+          skipNextBlurCommitRef.current = true;
           setDraftValue(String(value ?? ''));
           setIsInvalid(false);
           event.currentTarget.blur();
