@@ -40,8 +40,13 @@ const processData = (rawData = [], config = {}) => {
   };
 };
 
-const ProjectStatusChart = ({ tasks, activities, projects }) => {
+const ProjectStatusChart = ({ tasks, activities, projects, statusCounts }) => {
   const chartInfo = useMemo(() => {
+    if (statusCounts) return {
+      total: statusCounts.reduce((sum, row) => sum + Number(row.count), 0),
+      data: statusCounts.map(row => ({ label: taskStatusConfig[row.status]?.label || row.status || 'Neznámý', count: Number(row.count), color: taskStatusConfig[row.status]?.color })),
+      emptyLabel: 'Žádné úkoly k zobrazení.',
+    };
     if (tasks) {
       return { ...processData(tasks, taskStatusConfig), emptyLabel: 'Žádné úkoly k zobrazení.' };
     }
@@ -49,7 +54,7 @@ const ProjectStatusChart = ({ tasks, activities, projects }) => {
       return { ...processData(activities, engineeringStatusConfig), emptyLabel: 'Žádné aktivity k zobrazení.' };
     }
     return { ...processData(projects, projectStatusConfig), emptyLabel: 'Žádné projekty k zobrazení.' };
-  }, [activities, projects, tasks]);
+  }, [activities, projects, tasks, statusCounts]);
 
   return <StatusDonutChart data={chartInfo.data} total={chartInfo.total} emptyLabel={chartInfo.emptyLabel} />;
 };

@@ -47,8 +47,8 @@ const processData = (rawData = [], config = {}) => {
   };
 };
 
-const PortalStatusChart = ({ projects, engineering, tasks }) => {
-  const hasProvidedData = Array.isArray(projects) && Array.isArray(engineering) && Array.isArray(tasks);
+const PortalStatusChart = ({ projects, engineering, tasks, statusCounts }) => {
+  const hasProvidedData = Boolean(statusCounts) || (Array.isArray(projects) && Array.isArray(engineering) && Array.isArray(tasks));
   const [rawData, setRawData] = useState(() => ({
     projects: projects || [],
     engineering: engineering || [],
@@ -84,12 +84,15 @@ const PortalStatusChart = ({ projects, engineering, tasks }) => {
   }, [engineering, hasProvidedData, projects, tasks]);
 
   const chartData = useMemo(
-    () => ({
+    () => statusCounts ? Object.fromEntries(Object.entries({ projects: projectStatusConfig, engineering: engineeringStatusConfig, tasks: taskStatusConfig }).map(([kind, config]) => {
+      const rows = statusCounts.filter(row => row.kind === kind);
+      return [kind, { total: rows.reduce((sum, row) => sum + Number(row.count), 0), data: rows.map(row => ({ label: config[row.status]?.label || row.status || 'Neznámý', color: config[row.status]?.color, count: Number(row.count) })) }];
+    })) : ({
       projects: processData(rawData.projects, projectStatusConfig),
       engineering: processData(rawData.engineering, engineeringStatusConfig),
       tasks: processData(rawData.tasks, taskStatusConfig),
     }),
-    [rawData]
+    [rawData, statusCounts]
   );
 
   if (loading) {

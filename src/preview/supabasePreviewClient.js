@@ -5,6 +5,7 @@ import { canReadEmployeeRow, employeeTables, employeeRpcs, runEmployeeRpc } from
 import { billingFinancialPreview, memberFinancialPreview, projectFinancialPreview, realizationFinancialPreview } from './financialPreview.js';
 import { payoutRpcs, runPayoutRpc } from './payoutPreview.js';
 import { attendanceRpcs, runAttendanceRpc } from './attendancePreview.js';
+import { overviewPreview } from './overviewPreview.js';
 
 let tables = createFixtures();
 let nextId = 50000;
@@ -166,6 +167,9 @@ class PreviewQuery {
 }
 
 function rpc(name, args = {}) {
+  if (['get_my_work_overview_v2', 'get_company_dashboard_v2', 'get_company_dashboard_finance_v2'].includes(name)) {
+    return new PreviewQuery(name, () => overviewPreview(name, args, { tables, member: getPreviewMember(), user: getPreviewUser(), isAdmin: getPreviewRole() === 'admin', hydrate }), true);
+  }
   if (name === 'create_service_case') return new PreviewQuery(name, () => {
     const payload = args.p_payload || {};
     const number = `SRV-${new Date().getFullYear()}-${String((tables.service_cases?.length || 0) + 1).padStart(4, '0')}`;

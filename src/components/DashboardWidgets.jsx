@@ -11,7 +11,7 @@ import { cs } from 'date-fns/locale';
 import { formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
-export const PendingApprovalsWidget = ({ payouts: providedPayouts, attendance: providedAttendance }) => {
+export const PendingApprovalsWidget = ({ payouts: providedPayouts, attendance: providedAttendance, totalCount }) => {
     const hasProvidedData = Array.isArray(providedPayouts) && Array.isArray(providedAttendance);
     const [activeTab, setActiveTab] = useState('payouts');
     const [payouts, setPayouts] = useState(providedPayouts || []);
@@ -84,7 +84,7 @@ export const PendingApprovalsWidget = ({ payouts: providedPayouts, attendance: p
                     </CardTitle>
                     {(payouts.length > 0 || attendance.length > 0) && (
                         <Badge variant="destructive" className="ml-2">
-                            {payouts.length + attendance.length}
+                            {totalCount ?? payouts.length + attendance.length}
                         </Badge>
                     )}
                 </div>

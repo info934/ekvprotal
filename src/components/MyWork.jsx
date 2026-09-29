@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, ChevronRight, Circle, Clock, CheckSquare, FolderPlus, Wallet, RefreshCw, CheckCircle2, AlertCircle, User } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,6 +7,8 @@ import PageHeader from '@/components/ui/page-header';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import NewRecordMenu from '@/components/layout/NewRecordMenu';
 import { taskDateLabel } from '@/domain/workOverview';
+import { overviewScope } from '@/lib/overviewCache';
+import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 
 const defaultLoad = async args => (await import('@/lib/workOverviewService')).loadWorkOverview(args);
 const EMPTY = { tasks: [], jobs: [], approvals: [], openCount: null, overdueCount: null, approvalCount: null, notificationCount: null, error: '' };
@@ -28,7 +30,7 @@ export function MyWorkView({ data, loading, onRefresh, hasPermission, memberId, 
     ['employee', 'Moje karta', memberId ? `/members/${memberId}` : '/members', User],
   ].filter(([module,,,, level]) => module === 'employee' || hasPermission(module, level || 'can_read'));
   return <div className="app-page work-home" aria-busy={loading}>
-    <PageHeader title="Moje práce" description="Vše důležité pro váš pracovní den." actions={<NewRecordMenu />} />
+    <PageHeader title="Moje práce" description="Vše důležité pro váš pracovní den." actions={<><Button variant="outline" size="icon" title="Obnovit přehled" aria-label="Obnovit přehled" disabled={loading} onClick={onRefresh}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></Button><NewRecordMenu /></>} />
     {data.error && <div role="alert" className="portal-inline-alert"><AlertCircle size={20} /><div className="flex-1">{data.error}</div><Button variant="outline" size="sm" onClick={onRefresh}><RefreshCw size={16} />Zkusit znovu</Button></div>}
     {data.reminders?.map(item => <Link key={item.path} to={item.path} className="portal-inline-alert"><Clock size={20}/><span>{item.label}</span><ChevronRight size={16}/></Link>)}
     <Tabs value={tab} onValueChange={onTabChange}>
@@ -69,22 +71,11 @@ function ApprovalRows({ items, loading }) {
   });
 }
 export default function MyWork({ loadWork = defaultLoad }) {
-  const { hasPermission, memberId, isAdmin, userRole } = useAuth();
-  const [data, setData] = useState(EMPTY);
-  const [loading, setLoading] = useState(true);
-  const [revision, setRevision] = useState(0);
+  const { hasPermission, memberId, user, userRole, permissions, isPrivateMode } = useAuth();
   const [params, setParams] = useSearchParams();
-  const requestId = useRef(0);
-  useEffect(() => {
-    const id = ++requestId.current;
-    const controller = new AbortController();
-    setLoading(true); setData(EMPTY);
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    loadWork({ hasPermission, memberId, isAdmin, userRole, signal: controller.signal })
-      .then(result => { if (id === requestId.current) setData(result); })
-      .catch(() => { if (id === requestId.current) setData({ ...EMPTY, error: 'Pracovní přehled se nepodařilo načíst. Zkontrolujte připojení a zkuste to znovu.' }); })
-      .finally(() => { clearTimeout(timeout); if (id === requestId.current) setLoading(false); });
-    return () => { requestId.current++; clearTimeout(timeout); controller.abort(); };
-  }, [hasPermission, memberId, isAdmin, userRole, revision, loadWork]);
-  return <MyWorkView memberId={memberId} data={data} loading={loading} hasPermission={hasPermission} onRefresh={() => setRevision(value => value + 1)} tab={params.get('tab') === 'approvals' ? 'approvals' : 'overview'} onTabChange={value => setParams(value === 'overview' ? {} : { tab: value }, { replace: true })} />;
+  const scope = overviewScope({ userId: user?.id, memberId, userRole, permissions, isPrivateMode });
+  const load = useCallback(signal => loadWork({ signal }), [loadWork]);
+  const query = useOverviewQuery({ name: 'my-work', scope, load });
+  const data = query.error ? { ...EMPTY, error: query.error } : query.data || EMPTY;
+  return <MyWorkView memberId={memberId} data={data} loading={query.loading} hasPermission={hasPermission} onRefresh={query.refresh} tab={params.get('tab') === 'approvals' ? 'approvals' : 'overview'} onTabChange={value => setParams(value === 'overview' ? {} : { tab: value }, { replace: true })} />;
 }

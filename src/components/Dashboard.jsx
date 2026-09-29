@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Activity,
@@ -50,18 +50,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getActivityStatusConfig } from '@/components/engineering/engineeringConfig';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
+
 import { supabase } from '@/lib/customSupabaseClient';
-import { fetchAllCrmRows, fetchCrmRowsByIds } from '@/lib/crmDataAccess';
-import { isOpenDashboardStatus, isCancelledDashboardRecord, isOpenDashboardOpportunity } from '@/lib/crmDashboardMetrics';
+
+
 import { crmOpportunityPath } from '@/lib/crmRoutes';
 import { cn, formatCurrency } from '@/lib/utils';
 import { DataVizMetricCard } from '@/components/ui/data-viz';
-import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
+import { useOverviewQuery } from '@/hooks/useOverviewQuery';
+import { overviewScope } from '@/lib/overviewCache';
+import { fetchOverviewRpc } from '@/lib/overviewRpc';
+import { localDateKey } from '@/domain/workOverview';
 
 const PortalStatusChart = React.lazy(() => import('@/components/PortalStatusChart'));
 const ProjectStatusChart = React.lazy(() => import('@/components/ProjectStatusChart'));
-const ProjectGanttChart = React.lazy(() => import('@/components/ProjectGanttChart'));
-const RealizationGanttChart = React.lazy(() => import('@/components/RealizationGanttChart'));
+const DashboardSchedules = React.lazy(() => import('@/components/DashboardSchedules'));
 const PendingApprovalsWidget = React.lazy(() => import('@/components/DashboardWidgets').then((module) => ({ default: module.PendingApprovalsWidget })));
 
 const DashboardModuleFallback = () => (
@@ -114,7 +117,6 @@ const emptyCompanyFinance = {
   overheadAccounted: 0,
 };
 
-const isOpenStatus = isOpenDashboardStatus;
 
 const isOverdue = (date) => {
   if (!date) return false;
@@ -122,6 +124,8 @@ const isOverdue = (date) => {
   value.setHours(0, 0, 0, 0);
   return value < today;
 };
+
+const displayFinance = value => value == null ? '—' : formatCurrency(value);
 
 const formatDate = (date) => {
   if (!date) return 'Bez termínu';
@@ -133,21 +137,6 @@ const pluralizeCs = (count, one, few, many) => {
   if (value === 1) return one;
   if (value >= 2 && value <= 4) return few;
   return many;
-};
-
-const resultArray = (result, label, errors = null) => {
-  if (result?.error) {
-    console.warn(`${label}: ${result.error.message}`);
-    errors?.push(`${label}: ${result.error.message}`);
-    return [];
-  }
-  return result?.data || [];
-};
-
-const withoutKeys = (value, keys) => {
-  const next = { ...value };
-  keys.forEach((key) => delete next[key]);
-  return next;
 };
 
 const stageLabels = {
@@ -333,7 +322,7 @@ const StatusLine = ({ icon: Icon, label, value, tone = 'slate' }) => {
 };
 
 const ExecutiveDashboard = ({ canViewCompanyFinance, chartData, summary, data, attentionItems }) => (
-  <div className="grid gap-4 xl:grid-cols-[310px_minmax(0,1fr)_360px]">
+  <div className="grid gap-4 2xl:grid-cols-[310px_minmax(0,1fr)_360px]">
     <Card className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       <CardHeader className="border-b border-slate-200 bg-slate-50/70 px-4 py-3">
         <SectionHeader icon={ShieldAlert} title="Zdraví portálu" description="Aktuální provozní tlak a rizika." />
@@ -341,9 +330,9 @@ const ExecutiveDashboard = ({ canViewCompanyFinance, chartData, summary, data, a
       <CardContent className="space-y-4 p-4">
         <HealthRadial score={chartData.healthScore} />
         <div className="space-y-2">
-          <StatusLine icon={Briefcase} label="Aktivní projekce" value={summary.activeProjects.length} tone="blue" />
-          <StatusLine icon={Wrench} label="Aktivní realizace" value={summary.activeRealizations.length} tone="amber" />
-          <StatusLine icon={ClipboardList} label="Úkoly po termínu" value={summary.overdueTasks.length} tone={summary.overdueTasks.length ? 'rose' : 'emerald'} />
+          <StatusLine icon={Briefcase} label="Aktivní projekce" value={summary.activeProjectCount} tone="blue" />
+          <StatusLine icon={Wrench} label="Aktivní realizace" value={summary.activeRealizationCount} tone="amber" />
+          <StatusLine icon={ClipboardList} label="Úkoly po termínu" value={summary.overdueTaskCount} tone={summary.overdueTaskCount ? 'rose' : 'emerald'} />
           <StatusLine icon={CheckCircle} label="Ke schválení" value={summary.pendingApprovals} tone={summary.pendingApprovals ? 'amber' : 'emerald'} />
         </div>
       </CardContent>
@@ -357,13 +346,13 @@ const ExecutiveDashboard = ({ canViewCompanyFinance, chartData, summary, data, a
           description={canViewCompanyFinance ? 'CRM, projekce a realizace v jedné provozní křivce.' : 'Počty práce bez finančních částek.'}
           action={
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="rounded-md bg-blue-50 px-2.5 py-1 text-blue-700">{summary.openOpportunities.length} otevřených OP</Badge>
-              {canViewCompanyFinance && <Badge variant="outline" className="rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700">Zisk {formatCurrency(data.companyFinance.realizedProfit)}</Badge>}
+              <Badge variant="outline" className="rounded-md bg-blue-50 px-2.5 py-1 text-blue-700">{summary.openOpportunityCount} otevřených OP</Badge>
+              {canViewCompanyFinance && <Badge variant="outline" className="rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700">Zisk {displayFinance(data.companyFinance.realizedProfit)}</Badge>}
             </div>
           }
         />
       </CardHeader>
-      <CardContent className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+      <CardContent className="grid gap-4 p-4 xl:grid-cols-2 2xl:grid-cols-1">
         <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/40 p-3">
           {canViewCompanyFinance ? (
             <MiniAreaChart data={chartData.pipelineTrend} />
@@ -376,15 +365,15 @@ const ExecutiveDashboard = ({ canViewCompanyFinance, chartData, summary, data, a
             <p className="text-xs font-semibold uppercase tracking-[0.04em] text-slate-500">Dnešní stav</p>
             <div className="mt-3 grid grid-cols-3 gap-2 text-center">
               <div className="rounded-md bg-slate-50 px-2 py-2">
-                <div className="font-bold text-slate-950">{summary.activeProjects.length}</div>
+                <div className="font-bold text-slate-950">{summary.activeProjectCount}</div>
                 <div className="text-[11px] text-slate-500">projekty</div>
               </div>
               <div className="rounded-md bg-slate-50 px-2 py-2">
-                <div className="font-bold text-slate-950">{summary.openTasks.length}</div>
+                <div className="font-bold text-slate-950">{summary.openTaskCount}</div>
                 <div className="text-[11px] text-slate-500">úkoly</div>
               </div>
               <div className="rounded-md bg-slate-50 px-2 py-2">
-                <div className="font-bold text-slate-950">{summary.activeEngineering.length}</div>
+                <div className="font-bold text-slate-950">{summary.activeEngineeringCount}</div>
                 <div className="text-[11px] text-slate-500">inž.</div>
               </div>
             </div>
@@ -557,14 +546,14 @@ const AdminFinancials = ({ companyFinance, approvals }) => {
   const { isPrivateMode } = useAuth();
   if (isPrivateMode) return null;
 
-  const overheadDifference = companyFinance.overheadAllocated - companyFinance.overheadAccounted;
+  const overheadDifference = companyFinance.overheadAllocated == null || companyFinance.overheadAccounted == null ? null : companyFinance.overheadAllocated - companyFinance.overheadAccounted;
 
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-      <DashboardMetric icon={CircleDollarSign} label="Realizovaný zisk" value={formatCurrency(companyFinance.realizedProfit)} tone="emerald" to="/reports" />
-      <DashboardMetric icon={TrendingIcon} label="Potenciální zisk" value={formatCurrency(companyFinance.potentialProfit)} tone="blue" to="/reports" />
-      <DashboardMetric icon={Briefcase} label="Hodnota projektů" value={formatCurrency(companyFinance.totalProjectValue)} tone="slate" to="/projects" />
-      <DashboardMetric icon={FileText} label="Režie bilance" value={formatCurrency(overheadDifference)} tone={overheadDifference < 0 ? 'rose' : 'amber'} to="/overhead-costs" />
+      <DashboardMetric icon={CircleDollarSign} label="Realizovaný zisk" value={displayFinance(companyFinance.realizedProfit)} tone="emerald" to="/reports" />
+      <DashboardMetric icon={TrendingIcon} label="Potenciální zisk" value={displayFinance(companyFinance.potentialProfit)} tone="blue" to="/reports" />
+      <DashboardMetric icon={Briefcase} label="Hodnota projektů" value={displayFinance(companyFinance.totalProjectValue)} tone="slate" to="/projects" />
+      <DashboardMetric icon={FileText} label="Režie bilance" value={displayFinance(overheadDifference)} tone={overheadDifference < 0 ? 'rose' : 'amber'} to="/overhead-costs" />
       <DashboardMetric icon={AlertTriangle} label="Ke schválení" value={approvals} detail="výplaty a docházka" tone={approvals > 0 ? 'rose' : 'emerald'} to="/payouts" />
     </div>
   );
@@ -573,276 +562,34 @@ const AdminFinancials = ({ companyFinance, approvals }) => {
 const TrendingIcon = (props) => <BarChart3 {...props} />;
 
 const Dashboard = () => {
-  const { isSuperUser, isAdmin, memberId, isPrivateMode } = useAuth();
-  const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [zoom, setZoom] = useState('month');
-  const dashboardRequestIdRef = useRef(0);
-  const dashboardAbortRef = useRef(null);
-  const [data, setData] = useState({
-    userProjects: [],
-    projects: [],
-    realizations: [],
-    tasks: [],
-    engineering: [],
-    payouts: [],
-    attendanceSubmissions: [],
-    opportunities: [],
-    commercialDocuments: [],
-    productCount: 0,
-    documents: [],
-    companyFinance: emptyCompanyFinance,
-  });
-
-  const fetchDashboardData = async () => {
-    dashboardAbortRef.current?.abort();
-    const requestId = ++dashboardRequestIdRef.current;
-    const request = createTimedAbortController(20_000);
-    dashboardAbortRef.current = request.controller;
-    setLoading(true);
-    setLoadError('');
-    try {
-      const canViewCompanyFinance = isAdmin && !isPrivateMode;
-      const next = {
-        userProjects: [],
-        projects: [],
-        realizations: [],
-        tasks: [],
-        engineering: [],
-        payouts: [],
-        attendanceSubmissions: [],
-        opportunities: [],
-        commercialDocuments: [],
-        productCount: 0,
-        documents: [],
-        companyFinance: emptyCompanyFinance,
-      };
-      const sectionErrors = [];
-
-      const allRows = (factory) => fetchAllCrmRows(() => factory().abortSignal(request.signal));
-      const memberActivities = async () => {
-        const memberships = await allRows(() => supabase.from('project_members').select('project_id').eq('member_id', memberId).order('project_id'));
-        if (memberships.error) return memberships;
-        const projectIds = [...new Set((memberships.data || []).map((row) => row.project_id))];
-        return fetchCrmRowsByIds(projectIds, (ids) => supabase.from('engineering_activities')
-          .select('id, subject, status, project_id, end_date, projects(name)')
-          .in('project_id', ids).order('end_date', { ascending: true, nullsFirst: false }).order('id')
-          .abortSignal(request.signal));
-      };
-      const commonQueries = [
-        allRows(() => supabase.from('payouts')
-          .select(canViewCompanyFinance
-            ? 'id, amount, status, request_date, member:members!payouts_member_id_fkey(name)'
-            : 'id, status, request_date, member:members!payouts_member_id_fkey(name)')
-          .eq('status', 'pending').order('request_date', { ascending: true }).order('id')),
-        allRows(() => supabase.from('attendance_submissions')
-          .select('id, total_hours, status, month_date, member:members!attendance_submissions_member_id_fkey(name)')
-          .eq('status', 'submitted').order('submitted_at', { ascending: true }).order('id')),
-        allRows(() => supabase.from('crm_opportunities')
-          .select(canViewCompanyFinance
-            ? 'id, number, title, value, probability, stage, status, expected_close_date, created_at, deleted_at, archived_at, cancelled_at, subject:subject_id(name)'
-            : 'id, number, title, stage, status, expected_close_date, created_at, deleted_at, archived_at, cancelled_at, subject:subject_id(name)')
-          .is('deleted_at', null).is('archived_at', null).is('cancelled_at', null)
-          .order('created_at', { ascending: false }).order('id')),
-        allRows(() => supabase.from('crm_commercial_documents')
-          .select(canViewCompanyFinance
-            ? 'id, type, status, title, number, total, valid_until, created_at, deleted_at, archived_at, cancelled_at'
-            : 'id, type, status, title, number, valid_until, created_at, deleted_at, archived_at, cancelled_at')
-          .is('deleted_at', null).is('archived_at', null).is('cancelled_at', null)
-          .order('created_at', { ascending: false }).order('id')),
-        supabase.from('commercial_item_catalog').select('id', { count: 'exact', head: true }).eq('is_active', true).is('archived_at', null).abortSignal(request.signal),
-        allRows(() => supabase.from('documents').select('id, name, created_at').order('created_at', { ascending: false }).order('id')),
-      ];
-
-      const memberQueries = memberId && !isSuperUser ? [
-        allRows(() => supabase.from('projects').select('id, name, code, status, start_date, completion_date, created_at').order('created_at', { ascending: false }).order('id')),
-        allRows(() => supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').eq('member_id', memberId).order('end_date', { ascending: true }).order('id')),
-        memberActivities(),
-        allRows(() => supabase.from('realizations').select('id, name, status, start_date, planned_end_date, actual_end_date, created_at, team_members').contains('team_members', [memberId]).order('created_at', { ascending: false }).order('id')),
-      ] : null;
-
-      const companyQueries = canViewCompanyFinance ? [
-        allRows(() => supabase.rpc('list_projects_safe').order('id')),
-        allRows(() => supabase.rpc('list_realizations_safe').order('id')),
-        allRows(() => supabase.from('project_tasks').select('id, name, status, start_date, end_date, project:projects(name)').order('end_date', { ascending: true }).order('id')),
-        allRows(() => supabase.from('engineering_activities').select('id, subject, status, project_id, end_date, projects(name)').order('end_date', { ascending: true }).order('id')),
-        supabase.rpc('get_company_financials').abortSignal(request.signal),
-        supabase.rpc('get_overhead_summary').abortSignal(request.signal),
-      ] : null;
-
-      const [
-        commonResults,
-        memberResults,
-        companyResults,
-      ] = await Promise.all([
-        Promise.all(commonQueries),
-        memberQueries ? Promise.all(memberQueries) : Promise.resolve(null),
-        companyQueries ? Promise.all(companyQueries) : Promise.resolve(null),
-      ]);
-
-      const [
-        payoutsRes,
-        attendanceRes,
-        opportunitiesRes,
-        commercialDocumentsRes,
-        productsRes,
-        documentsRes,
-      ] = commonResults;
-
-      next.payouts = resultArray(payoutsRes, 'Výplaty', sectionErrors);
-      next.attendanceSubmissions = resultArray(attendanceRes, 'Docházka', sectionErrors);
-      next.opportunities = resultArray(opportunitiesRes, 'CRM příležitosti', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
-      next.commercialDocuments = resultArray(commercialDocumentsRes, 'CRM dokumenty', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
-      if (productsRes.error) {
-        console.warn(`Produkty: ${productsRes.error.message}`);
-        sectionErrors.push(`Produkty: ${productsRes.error.message}`);
-      } else {
-        next.productCount = productsRes.count || 0;
-      }
-      next.documents = resultArray(documentsRes, 'Dokumenty', sectionErrors);
-
-      if (memberResults) {
-        const [userProjectsRes, userTasksRes, userActivitiesRes, userRealizationsRes] = memberResults;
-        next.userProjects = resultArray(userProjectsRes, 'Moje projekty', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
-        next.tasks = resultArray(userTasksRes, 'Moje úkoly', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
-        next.engineering = resultArray(userActivitiesRes, 'Moje aktivity', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
-        next.realizations = resultArray(userRealizationsRes, 'Moje realizace', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
-      }
-
-      if (companyResults) {
-        const [
-          projectsRes,
-          realizationsRes,
-          tasksRes,
-          engineeringRes,
-          companyFinanceRes,
-          overheadRes,
-        ] = companyResults;
-
-        next.projects = resultArray(projectsRes, 'Projekty', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
-        next.realizations = resultArray(realizationsRes, 'Realizace', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
-        next.tasks = resultArray(tasksRes, 'Úkoly', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
-        next.engineering = resultArray(engineeringRes, 'Inženýring', sectionErrors).filter((record) => !isCancelledDashboardRecord(record));
-
-        if (companyFinanceRes.error) throw new Error(`Firemní finance: ${companyFinanceRes.error.message}`);
-        if (overheadRes.error) throw new Error(`Režie: ${overheadRes.error.message}`);
-        const finance = companyFinanceRes.data?.[0] || {};
-        const overhead = overheadRes.data?.[0] || {};
-        next.companyFinance = {
-          realizedProfit: Math.round(finance.realized_profit || 0),
-          potentialProfit: Math.round(finance.potential_profit || 0),
-          totalProjectValue: Math.round(finance.total_project_value || 0),
-          unallocatedBudget: Math.round(finance.unallocated_budget || 0),
-          overheadAllocated: Math.round(overhead.total_allocated_overhead || 0),
-          overheadAccounted: Math.round(overhead.total_accounted_overhead || 0),
-        };
-      }
-
-      if (requestId !== dashboardRequestIdRef.current) return;
-      setData(next);
-      setLoadError(sectionErrors.join(' · '));
-    } catch (error) {
-      if (requestId !== dashboardRequestIdRef.current) return;
-      if (request.signal.aborted && isRequestAbortError(error)) {
-        setLoadError('Načítání překročilo časový limit. Zkuste přehled obnovit.');
-      } else {
-        setLoadError(error.message || 'Data dashboardu nejsou momentálně dostupná.');
-      }
-      setData((current) => ({
-        ...current,
-        projects: [],
-        realizations: [],
-        payouts: [],
-        opportunities: [],
-        commercialDocuments: [],
-        companyFinance: emptyCompanyFinance,
-      }));
-      if (!isRequestAbortError(error)) {
-        toast({ title: 'Dashboard se nepodařilo načíst', description: error.message, variant: 'destructive' });
-      }
-    } finally {
-      request.dispose();
-      if (requestId === dashboardRequestIdRef.current) {
-        setLoading(false);
-      }
-    }
+  const { isSuperUser, isAdmin, memberId, isPrivateMode, user, userRole, permissions } = useAuth();
+  const scope = overviewScope({ userId: user?.id, memberId, userRole, permissions, isPrivateMode });
+  const canViewCompanyFinance = isAdmin && !isPrivateMode;
+  const loadOverview = useCallback(signal => fetchOverviewRpc(supabase, 'get_company_dashboard_v2',
+    { p_private: isPrivateMode, p_today: localDateKey() }, signal), [isPrivateMode]);
+  const loadFinance = useCallback(signal => fetchOverviewRpc(supabase, 'get_company_dashboard_finance_v2', {}, signal), []);
+  const overview = useOverviewQuery({ name: 'company-dashboard', scope, load: loadOverview });
+  const finance = useOverviewQuery({ name: 'company-finance', scope, load: loadFinance, enabled: canViewCompanyFinance });
+  const [scheduleRefresh, setScheduleRefresh] = useState(0);
+  const fetchDashboardData = () => { overview.refresh(); finance.refresh(); setScheduleRefresh(value => value + 1); };
+  const loading = overview.loading && !overview.data;
+  const loadError = [overview.error, finance.error].filter(Boolean).join(' · ');
+  const data = {
+    payouts: [], attendanceSubmissions: [], overdueTasks: [], overdueEngineering: [],
+    activeEngineering: [], topOpportunities: [], upcomingOpportunities: [], stageSummary: [], statusCounts: [],
+    ...overview.data,
+    companyFinance: finance.data || Object.fromEntries(Object.keys(emptyCompanyFinance).map(key => [key, null])),
   };
-
-  useEffect(() => {
-    fetchDashboardData();
-    return () => {
-      dashboardRequestIdRef.current += 1;
-      dashboardAbortRef.current?.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, isSuperUser, memberId, isPrivateMode]);
-
-  useEffect(() => {
-    if (!isPrivateMode) return;
-    setData((current) => ({
-      ...current,
-      payouts: current.payouts.map((item) => withoutKeys(item, ['amount'])),
-      opportunities: current.opportunities.map((item) => withoutKeys(item, ['value'])),
-      commercialDocuments: current.commercialDocuments.map((item) => withoutKeys(item, ['total'])),
-      projects: current.projects.map((item) => withoutKeys(item, ['price'])),
-      realizations: current.realizations.map((item) => withoutKeys(item, ['contract_amount'])),
-      companyFinance: emptyCompanyFinance,
-    }));
-  }, [isPrivateMode]);
-
-  const summary = useMemo(() => {
-    const visibleProjects = isSuperUser ? data.projects : data.userProjects;
-    const activeProjects = visibleProjects.filter((project) => isOpenStatus(project.status));
-    const activeRealizations = data.realizations.filter((realization) => isOpenStatus(realization.status));
-    const openTasks = data.tasks.filter((task) => isOpenStatus(task.status));
-    const overdueTasks = openTasks.filter((task) => isOverdue(task.end_date));
-    const activeEngineering = data.engineering.filter((item) => isOpenStatus(item.status));
-    const overdueEngineering = activeEngineering.filter((item) => isOverdue(item.end_date));
-    const openOpportunities = data.opportunities.filter(isOpenDashboardOpportunity);
-    const pipelineValue = openOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
-    const weightedPipeline = openOpportunities.reduce((sum, opportunity) => {
-      const probability = Number(opportunity.probability ?? 0) / 100;
-      return sum + Number(opportunity.value || 0) * probability;
-    }, 0);
-    const offers = data.commercialDocuments.filter((document) => document.type === 'offer');
-    const orders = data.commercialDocuments.filter((document) => document.type === 'order');
-    const offersValue = offers.reduce((sum, document) => sum + Number(document.total || 0), 0);
-    const ordersValue = orders.reduce((sum, document) => sum + Number(document.total || 0), 0);
-    const activeProjectsValue = activeProjects.reduce((sum, project) => sum + Number(project.price || 0), 0);
-    const activeRealizationsValue = activeRealizations.reduce((sum, realization) => sum + Number(realization.contract_amount || 0), 0);
-    const allRealizationsValue = data.realizations.reduce((sum, realization) => sum + Number(realization.contract_amount || 0), 0);
-    const closedOpportunities = data.opportunities.filter((opportunity) => ['won', 'lost'].includes(String(opportunity.stage || '').toLowerCase()));
-    const wonOpportunities = data.opportunities.filter((opportunity) => String(opportunity.stage || '').toLowerCase() === 'won');
-    const wonValue = wonOpportunities.reduce((sum, opportunity) => sum + Number(opportunity.value || 0), 0);
-    const pendingApprovals = data.payouts.length + data.attendanceSubmissions.length;
-
-    return {
-      visibleProjects,
-      activeProjects,
-      activeRealizations,
-      openTasks,
-      overdueTasks,
-      activeEngineering,
-      overdueEngineering,
-      openOpportunities,
-      pipelineValue,
-      weightedPipeline,
-      offers,
-      orders,
-      offersValue,
-      ordersValue,
-      activeProjectsValue,
-      activeRealizationsValue,
-      allRealizationsValue,
-      closedOpportunities,
-      wonOpportunities,
-      wonValue,
-      pendingApprovals,
-      attentionCount: pendingApprovals + overdueTasks.length + overdueEngineering.length + openOpportunities.filter((opportunity) => isOverdue(opportunity.expected_close_date)).length,
-      activeProductCount: data.productCount,
-    };
-  }, [data, isSuperUser]);
+  const summary = {
+    projectCount: 0, activeProjectCount: 0, activeRealizationCount: 0,
+    openTaskCount: 0, overdueTaskCount: 0, activeEngineeringCount: 0, overdueEngineeringCount: 0,
+    openOpportunityCount: 0, pipelineValue: 0, weightedPipeline: 0, offerCount: 0, orderCount: 0,
+    offersValue: 0, ordersValue: 0, activeProjectsValue: 0, activeRealizationsValue: 0,
+    allRealizationsValue: 0, wonValue: 0, pendingApprovals: 0, attentionCount: 0, activeProductCount: 0, documentCount: 0,
+    ...data.summary,
+    overdueTasks: data.overdueTasks, overdueEngineering: data.overdueEngineering,
+    activeEngineering: data.activeEngineering,
+  };
 
   const attentionItems = useMemo(() => {
     const items = [];
@@ -887,7 +634,7 @@ const Dashboard = () => {
       });
     });
 
-    summary.openOpportunities
+    data.upcomingOpportunities
       .filter((opportunity) => opportunity.expected_close_date)
       .sort((a, b) => new Date(a.expected_close_date) - new Date(b.expected_close_date))
       .slice(0, 2)
@@ -902,28 +649,10 @@ const Dashboard = () => {
       });
 
     return items.slice(0, 8);
-  }, [data.attendanceSubmissions, data.payouts, isAdmin, isPrivateMode, summary.openOpportunities, summary.overdueEngineering, summary.overdueTasks]);
+  }, [data.attendanceSubmissions, data.payouts, isAdmin, isPrivateMode, data.upcomingOpportunities, summary.overdueEngineering, summary.overdueTasks]);
 
-  const stageSummary = useMemo(() => {
-    const counts = summary.openOpportunities.reduce((acc, opportunity) => {
-      const stage = String(opportunity.stage || 'lead').toLowerCase();
-      acc[stage] = {
-        stage,
-        count: (acc[stage]?.count || 0) + 1,
-        value: (acc[stage]?.value || 0) + Number(opportunity.value || 0),
-      };
-      return acc;
-    }, {});
-
-    return Object.values(counts).sort((a, b) => b.value - a.value);
-  }, [summary.openOpportunities]);
-
-  const topOpportunities = useMemo(
-    () => [...summary.openOpportunities]
-      .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
-      .slice(0, 10),
-    [summary.openOpportunities],
-  );
+  const stageSummary = data.stageSummary;
+  const topOpportunities = data.topOpportunities;
 
   const chartData = useMemo(() => {
     const canViewCompanyFinance = isAdmin && !isPrivateMode;
@@ -935,10 +664,10 @@ const Dashboard = () => {
     ];
 
     const workload = [
-      { name: 'Projekty', count: summary.activeProjects.length },
-      { name: 'Realizace', count: summary.activeRealizations.length },
-      { name: 'Úkoly', count: summary.openTasks.length },
-      { name: 'Inženýring', count: summary.activeEngineering.length },
+      { name: 'Projekty', count: summary.activeProjectCount },
+      { name: 'Realizace', count: summary.activeRealizationCount },
+      { name: 'Úkoly', count: summary.openTaskCount },
+      { name: 'Inženýring', count: summary.activeEngineeringCount },
       { name: 'Schválení', count: summary.pendingApprovals },
     ];
 
@@ -948,56 +677,55 @@ const Dashboard = () => {
     }));
 
     const riskPenalty =
-      Math.min(35, summary.overdueTasks.length * 5)
-      + Math.min(20, summary.overdueEngineering.length * 5)
+      Math.min(35, summary.overdueTaskCount * 5)
+      + Math.min(20, summary.overdueEngineeringCount * 5)
       + Math.min(20, summary.pendingApprovals * 3);
     const healthScore = Math.max(0, Math.min(100, 100 - riskPenalty));
 
     return { healthScore, pipelineTrend: canViewCompanyFinance ? pipelineTrend : [], stageCounts, workload };
   }, [data.companyFinance.potentialProfit, data.companyFinance.realizedProfit, isAdmin, isPrivateMode, stageSummary, summary]);
 
-  const canViewCompanyFinance = isAdmin && !isPrivateMode;
   const moduleTiles = [
     {
       title: 'CRM',
       description: canViewCompanyFinance
-        ? `${summary.openOpportunities.length} otevřených OP, váženě ${formatCurrency(summary.weightedPipeline)}`
-        : `${summary.openOpportunities.length} otevřených OP`,
+        ? `${summary.openOpportunityCount} otevřených OP, váženě ${formatCurrency(summary.weightedPipeline)}`
+        : `${summary.openOpportunityCount} otevřených OP`,
       icon: Target,
       to: '/crm',
       tone: 'blue',
     },
     {
       title: 'Projekce',
-      description: `${summary.activeProjects.length} aktivních projektů`,
+      description: `${summary.activeProjectCount} aktivních projektů`,
       icon: Briefcase,
       to: '/projects',
       tone: 'slate',
     },
     {
       title: 'Realizace',
-      description: `${summary.activeRealizations.length} aktivních realizací`,
+      description: `${summary.activeRealizationCount} aktivních realizací`,
       icon: Wrench,
       to: '/realizace',
       tone: 'amber',
     },
     {
       title: 'Úkoly',
-      description: `${summary.openTasks.length} otevřených, ${summary.overdueTasks.length} po termínu`,
+      description: `${summary.openTaskCount} otevřených, ${summary.overdueTaskCount} po termínu`,
       icon: ClipboardList,
       to: '/tasks',
-      tone: summary.overdueTasks.length ? 'rose' : 'emerald',
+      tone: summary.overdueTaskCount ? 'rose' : 'emerald',
     },
     {
       title: 'Nabídky',
-      description: `${summary.offers.length} ${pluralizeCs(summary.offers.length, 'záznam', 'záznamy', 'záznamů')} v CRM`,
+      description: `${summary.offerCount} ${pluralizeCs(summary.offerCount, 'záznam', 'záznamy', 'záznamů')} v CRM`,
       icon: FileText,
       to: '/crm/offers',
       tone: 'blue',
     },
     {
       title: 'Objednávky',
-      description: `${summary.orders.length} ${pluralizeCs(summary.orders.length, 'záznam', 'záznamy', 'záznamů')} v CRM`,
+      description: `${summary.orderCount} ${pluralizeCs(summary.orderCount, 'záznam', 'záznamy', 'záznamů')} v CRM`,
       icon: ShoppingCart,
       to: '/crm/orders',
       tone: 'emerald',
@@ -1011,7 +739,7 @@ const Dashboard = () => {
     },
     {
       title: 'Dokumenty',
-      description: `${data.documents.length} posledních dokumentů v přehledu`,
+      description: `${summary.documentCount} dokumentů celkem`,
       icon: FileText,
       to: '/documents',
       tone: 'slate',
@@ -1032,6 +760,12 @@ const Dashboard = () => {
       </div>
     );
   }
+
+  if (!overview.data && overview.error) return (
+    <div className="app-page"><PageHeader title="Přehled portálu" />
+      <div role="alert" className="portal-inline-alert">{overview.error}<Button onClick={fetchDashboardData}>Obnovit</Button></div>
+    </div>
+  );
 
   return (
     <div className="app-page-wide animate-in fade-in duration-500">
@@ -1080,7 +814,7 @@ const Dashboard = () => {
           </div>
         )}
 
-        {!loadError && <>
+        {!overview.error && <>
         <ExecutiveDashboard
           canViewCompanyFinance={canViewCompanyFinance}
           attentionItems={attentionItems}
@@ -1093,19 +827,19 @@ const Dashboard = () => {
           <DashboardMetric
             icon={Target}
             label={canViewCompanyFinance ? 'CRM pipeline' : 'CRM případy'}
-            value={canViewCompanyFinance ? formatCurrency(summary.pipelineValue) : summary.openOpportunities.length}
-            detail={canViewCompanyFinance ? `${summary.openOpportunities.length} otevřených OP` : 'otevřené obchodní případy'}
+            value={canViewCompanyFinance ? formatCurrency(summary.pipelineValue) : summary.openOpportunityCount}
+            detail={canViewCompanyFinance ? `${summary.openOpportunityCount} otevřených OP` : 'otevřené obchodní případy'}
             tone="blue"
             to="/crm"
           />
-          <DashboardMetric icon={Briefcase} label="Aktivní projekce" value={summary.activeProjects.length} detail={`${summary.visibleProjects.length} projektů celkem`} tone="slate" to="/projects" />
-          <DashboardMetric icon={Wrench} label="Aktivní realizace" value={summary.activeRealizations.length} detail="stav realizací a harmonogram" tone="amber" to="/realizace" />
-          <DashboardMetric icon={AlertTriangle} label="Vyžaduje pozornost" value={summary.attentionCount} detail={`${summary.pendingApprovals} schválení, ${summary.overdueTasks.length} úkolů po termínu`} tone={summary.attentionCount ? 'rose' : 'emerald'} />
+          <DashboardMetric icon={Briefcase} label="Aktivní projekce" value={summary.activeProjectCount} detail={`${summary.projectCount} projektů celkem`} tone="slate" to="/projects" />
+          <DashboardMetric icon={Wrench} label="Aktivní realizace" value={summary.activeRealizationCount} detail="stav realizací a harmonogram" tone="amber" to="/realizace" />
+          <DashboardMetric icon={AlertTriangle} label="Vyžaduje pozornost" value={summary.attentionCount} detail={`${summary.pendingApprovals} schválení, ${summary.overdueTaskCount} úkolů po termínu`} tone={summary.attentionCount ? 'rose' : 'emerald'} />
           {canViewCompanyFinance && (
-            <DashboardMetric icon={CircleDollarSign} label="Realizovaný zisk" value={formatCurrency(data.companyFinance.realizedProfit)} tone="emerald" to="/reports" />
+            <DashboardMetric icon={CircleDollarSign} label="Realizovaný zisk" value={displayFinance(data.companyFinance.realizedProfit)} tone="emerald" to="/reports" />
           )}
           {canViewCompanyFinance && (
-            <DashboardMetric icon={FileText} label="Režie bilance" value={formatCurrency(data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted)} tone={(data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted) < 0 ? 'rose' : 'amber'} to="/overhead-costs" />
+            <DashboardMetric icon={FileText} label="Režie bilance" value={displayFinance(data.companyFinance.overheadAllocated == null || data.companyFinance.overheadAccounted == null ? null : data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted)} tone={(data.companyFinance.overheadAllocated - data.companyFinance.overheadAccounted) < 0 ? 'rose' : 'amber'} to="/overhead-costs" />
           )}
         </div>
 
@@ -1197,10 +931,10 @@ const Dashboard = () => {
               />
             </CardHeader>
             <CardContent className="space-y-3 p-4">
-              <StatusLine icon={ClipboardList} label="Otevřené úkoly" value={summary.openTasks.length} tone={summary.overdueTasks.length ? 'amber' : 'blue'} />
-              <StatusLine icon={AlertTriangle} label="Po termínu" value={summary.overdueTasks.length + summary.overdueEngineering.length} tone={(summary.overdueTasks.length + summary.overdueEngineering.length) ? 'rose' : 'emerald'} />
+              <StatusLine icon={ClipboardList} label="Otevřené úkoly" value={summary.openTaskCount} tone={summary.overdueTaskCount ? 'amber' : 'blue'} />
+              <StatusLine icon={AlertTriangle} label="Po termínu" value={summary.overdueTaskCount + summary.overdueEngineeringCount} tone={(summary.overdueTaskCount + summary.overdueEngineeringCount) ? 'rose' : 'emerald'} />
               <StatusLine icon={CheckCircle} label="Schválení" value={summary.pendingApprovals} tone={summary.pendingApprovals ? 'amber' : 'emerald'} />
-              <StatusLine icon={FileText} label="Dokumenty" value={data.documents.length} tone="slate" />
+              <StatusLine icon={FileText} label="Dokumenty" value={summary.documentCount} tone="slate" />
               <Button asChild className="w-full justify-between" variant={summary.pendingApprovals ? 'default' : 'outline'}>
                 <Link to="/payouts">
                   Otevřít schvalování
@@ -1232,7 +966,7 @@ const Dashboard = () => {
                 </CardHeader>
                 <CardContent className="p-4">
                   <DashboardLazySection>
-                    <ProjectStatusChart projects={summary.visibleProjects} tasks={data.tasks} />
+                    <ProjectStatusChart statusCounts={data.statusCounts.filter(row => row.kind === 'tasks')} />
                   </DashboardLazySection>
                 </CardContent>
               </Card>
@@ -1247,7 +981,7 @@ const Dashboard = () => {
                   />
                 </CardHeader>
                 <CardContent className="space-y-2 p-4">
-                  {summary.activeEngineering.length > 0 ? (
+                  {summary.activeEngineeringCount > 0 ? (
                     summary.activeEngineering.slice(0, 6).map((activity) => (
                       <WorkItem
                         key={activity.id}
@@ -1276,13 +1010,13 @@ const Dashboard = () => {
                 </CardHeader>
                 <CardContent className="p-4">
                   <DashboardLazySection>
-                    <PortalStatusChart projects={summary.visibleProjects} engineering={data.engineering} tasks={data.tasks} />
+                    <PortalStatusChart statusCounts={data.statusCounts} />
                   </DashboardLazySection>
                 </CardContent>
               </Card>
 
               <DashboardLazySection>
-                <PendingApprovalsWidget payouts={data.payouts} attendance={data.attendanceSubmissions} />
+                <PendingApprovalsWidget payouts={data.payouts} attendance={data.attendanceSubmissions} totalCount={summary.pendingApprovals} />
               </DashboardLazySection>
             </div>
           </TabsContent>
@@ -1304,12 +1038,12 @@ const Dashboard = () => {
                       <div className="grid gap-3 md:grid-cols-3">
                         <DashboardMetric icon={Target} label="Pipeline celkem" value={formatCurrency(summary.pipelineValue)} detail="otevřené obchodní případy" tone="blue" to="/crm" />
                         <DashboardMetric icon={BarChart3} label="Vážená pipeline" value={formatCurrency(summary.weightedPipeline)} detail="hodnota dle pravděpodobnosti" tone="emerald" to="/crm" />
-                        <DashboardMetric icon={ShoppingCart} label="Nabídky / objednávky" value={`${summary.offers.length} / ${summary.orders.length}`} detail="CRM dokumenty" tone="slate" to="/crm/offers" />
+                        <DashboardMetric icon={ShoppingCart} label="Nabídky / objednávky" value={`${summary.offerCount} / ${summary.orderCount}`} detail="CRM dokumenty" tone="slate" to="/crm/offers" />
                       </div>
                     </CardContent>
                   </Card>
                   <DashboardLazySection>
-                    <PendingApprovalsWidget payouts={data.payouts} attendance={data.attendanceSubmissions} />
+                    <PendingApprovalsWidget payouts={data.payouts} attendance={data.attendanceSubmissions} totalCount={summary.pendingApprovals} />
                   </DashboardLazySection>
                 </div>
               ) : (
@@ -1326,37 +1060,7 @@ const Dashboard = () => {
           )}
 
           <TabsContent value="schedules" className="space-y-5">
-            <div className="grid gap-5">
-              <Card className="crm-panel">
-                <CardHeader className="crm-panel-header">
-                  <SectionHeader
-                    icon={GanttChartSquare}
-                    title="Harmonogram projektů"
-                    description="Časová osa projekční práce."
-                  />
-                </CardHeader>
-                <CardContent className="p-4">
-                  <DashboardLazySection>
-                    <ProjectGanttChart projects={summary.visibleProjects} zoom={zoom} onZoomChange={setZoom} />
-                  </DashboardLazySection>
-                </CardContent>
-              </Card>
-
-              <Card className="crm-panel">
-                <CardHeader className="crm-panel-header">
-                  <SectionHeader
-                    icon={CalendarClock}
-                    title="Harmonogram realizací"
-                    description="Aktivní realizace a jejich plánované termíny."
-                  />
-                </CardHeader>
-                <CardContent className="p-4">
-                  <DashboardLazySection>
-                    <RealizationGanttChart realizations={data.realizations} zoom={zoom} onZoomChange={setZoom} />
-                  </DashboardLazySection>
-                </CardContent>
-              </Card>
-            </div>
+            <DashboardLazySection><DashboardSchedules refreshToken={scheduleRefresh} /></DashboardLazySection>
           </TabsContent>
         </Tabs>
         </>}
