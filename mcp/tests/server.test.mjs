@@ -43,12 +43,18 @@ test("stdio server dokončí MCP handshake, zveřejní nástroje a obslouží wo
     await client.connect(transport);
     const result = await client.listTools();
     assert.deepEqual(result.tools.map(tool => tool.name).sort(), [
+      "ekv_portal_get_crm_config",
+      "ekv_portal_get_crm_document",
+      "ekv_portal_get_crm_opportunity",
+      "ekv_portal_get_crm_sales_performance",
       "ekv_portal_get_finance_overview",
       "ekv_portal_get_gantt_plan",
       "ekv_portal_get_project_finances",
       "ekv_portal_get_project_workspace",
       "ekv_portal_get_realization_finances",
       "ekv_portal_health",
+      "ekv_portal_list_crm_activities",
+      "ekv_portal_list_crm_documents",
       "ekv_portal_list_crm_opportunities",
       "ekv_portal_list_meeting_notes",
       "ekv_portal_list_planning_tasks",

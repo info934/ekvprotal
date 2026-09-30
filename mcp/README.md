@@ -1,6 +1,6 @@
 # EKV Portal MCP Server
 
-Lokální MCP server zpřístupňuje AI asistentům EKV Portál přes existující Supabase REST/RPC rozhraní. Umí číst projekty, realizace, CRM, servis, Gantt, zápisy z kontrolních dnů a finance. Po výslovném zapnutí umí pod oprávněním přihlášeného uživatele také zapisovat do Ganttu, vytvářet úkoly a spravovat zápisy z KD.
+Lokální MCP server zpřístupňuje AI asistentům EKV Portál přes existující Supabase REST/RPC rozhraní. Umí číst projekty, realizace, CRM, servis, Gantt, zápisy z kontrolních dnů a finance. Po výslovném zapnutí umí pod oprávněním přihlášeného uživatele také zapisovat do CRM, Ganttu, vytvářet úkoly a spravovat zápisy z KD.
 
 ## Rozsah nástrojů
 
@@ -13,6 +13,22 @@ Lokální MCP server zpřístupňuje AI asistentům EKV Portál přes existujíc
 - `ekv_portal_list_crm_opportunities` – obchodní případy
 - `ekv_portal_list_planning_tasks` – plánovací úkoly
 - `ekv_portal_list_service_cases` – servisní případy
+
+### CRM
+
+- `ekv_portal_get_crm_config` – aktivní fáze, priority, šablony a definice vlastních polí
+- `ekv_portal_get_crm_opportunity` – detail případu, položky, účastníci, poznámky, poslední aktivity, dokumenty a audit
+- `ekv_portal_list_crm_activities` – stránkované hovory, schůzky, e-maily, úkoly a poznámky
+- `ekv_portal_list_crm_documents` / `ekv_portal_get_crm_document` – nabídky a objednávky včetně položek, verzí, doručení a historie
+- `ekv_portal_get_crm_sales_performance` – obchodní aktivity, cíle a přijaté tržby za období; vyžaduje CRM admin právo
+- `ekv_portal_create_crm_opportunity` / `ekv_portal_update_crm_opportunity` – založení a změna případu; změna vyžaduje aktuální `updated_at`
+- `ekv_portal_replace_crm_opportunity_items` – atomické nahrazení celého rozpočtu s potvrzením
+- `ekv_portal_save_crm_activity` / `ekv_portal_add_crm_note` – plánování a evidence obchodních aktivit
+- `ekv_portal_add_crm_participant` / `ekv_portal_remove_crm_participant` – účastníci případu
+- `ekv_portal_create_crm_document_draft` / `ekv_portal_save_crm_document_draft` – koncepty nabídek a objednávek, atomicky včetně položek
+- `ekv_portal_accept_crm_offer` – po potvrzeném souhlasu zákazníka přijme odeslanou nabídku a vytvoří objednávku; požaduje číslo nabídky a `confirm_acceptance: true`
+
+Doporučený postup agenta: načíst nastavení a detail případu, připravit konkrétní změny, u celoplošného nahrazení položek potvrdit kompletní výsledný seznam a teprve pak zapsat. CRM nástroje samy neodesílají e-maily, nabídky ani kalendářové pozvánky a nespouštějí externí kalendářovou synchronizaci. U vytvoření případu se číslo přiděluje samostatným RPC před vložením; při selhání vložení může v číselné řadě zůstat mezera. Po timeoutu nejprve ověřte aktuální stav, než zápis zopakujete.
 
 ### Kompletní plánování a Gantt
 
@@ -116,6 +132,7 @@ Po připojení zavolejte `ekv_portal_health`. Neobnovitelná relace vrátí poky
 - heslo technického uživatele se neukládá a tokeny se nevypisují do stdout, logů ani odpovědí MCP;
 - uložená relace je na Windows šifrovaná pomocí DPAPI a použitelná jen pod stejným Windows účtem;
 - atomické databázové funkce chrání zápisy KD, tvorbu úkolů, zdroje a kapacity;
+- CRM používá existující RLS a atomická RPC portálu; přímé změny případu a aktivity navíc vyžadují aktuální `updated_at`;
 - destruktivní nástroje vyžadují `confirm: true`; odstranění položky Ganttu navíc přesný aktuální název;
 - aktualizace a mazání bez filtru klient odmítne;
 - finance jsou pouze ke čtení a service role je pro ně defaultně blokovaná;

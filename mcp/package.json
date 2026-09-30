@@ -2,7 +2,7 @@
   "name": "ekv-portal-mcp-server",
   "version": "1.0.0",
   "private": true,
-  "description": "MCP server for EKV Portal planning, meeting notes, tasks and finance monitoring",
+  "description": "MCP server for EKV Portal CRM, planning, meeting notes, tasks and finance monitoring",
   "type": "module",
   "main": "dist/index.js",
   "bin": {

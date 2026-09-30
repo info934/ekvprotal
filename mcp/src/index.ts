@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { SERVER_NAME, SERVER_VERSION } from "./constants.js";
 import { loadSupabaseConfig, SupabaseRestClient } from "./services/supabaseRest.js";
 import { registerFinanceTools } from "./tools/financeTools.js";
+import { registerCrmTools } from "./tools/crmTools.js";
 import { registerGanttReadTools } from "./tools/ganttReadTools.js";
 import { registerPortalTools } from "./tools/registerTools.js";
 import { registerWriteTools } from "./tools/writeTools.js";
@@ -15,6 +16,7 @@ async function main(): Promise<void> {
   const client = new SupabaseRestClient(config);
   await client.initialize();
   registerPortalTools(server, client);
+  registerCrmTools(server, client);
   registerGanttReadTools(server, client);
   registerFinanceTools(server, client);
   registerWriteTools(server, client);
