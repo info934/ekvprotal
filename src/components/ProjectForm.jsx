@@ -34,6 +34,8 @@ import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { addWorkingDays, COMPLEXITY_OPTIONS, templateWorkDays } from '@/lib/planningEstimates';
 import { getProjectTemplateFormValues, normalizeProjectTemplateData } from '@/lib/projectTemplates';
 import { projectDuplicateDefaults } from '@/lib/entityDuplication';
+import ProjectTypeField from '@/components/ProjectTypeField';
+import { useProjectCodePreview } from '@/hooks/useProjectCodePreview';
 
 const ProjectForm = () => {
     const { projectId } = useParams();
@@ -57,7 +59,7 @@ const ProjectForm = () => {
         getValues,
         formState: { errors, isSubmitting } 
     } = useForm({
-        resolver: zodResolver(useMemo(() => createProjectSchema({ requireFinance: isAdmin }), [isAdmin])),
+        resolver: zodResolver(useMemo(() => createProjectSchema({ requireFinance: isAdmin, requireCode: isEditing }), [isAdmin, isEditing])),
         defaultValues: {
             name: '',
             code: '',
@@ -81,9 +83,9 @@ const ProjectForm = () => {
         }
     });
 
-    const [projectTypes, setProjectTypes] = useState([]);
     const [projectStages, setProjectStages] = useState([]);
-    const [projectCodePattern, setProjectCodePattern] = useState('');
+    const [automaticCode, setAutomaticCode] = useState(!isEditing);
+    const [numberingRevision, setNumberingRevision] = useState(0);
     const [investorIsClient, setInvestorIsClient] = useState(false);
     const [sourceOpportunity, setSourceOpportunity] = useState(null);
     const [duplicateSource, setDuplicateSource] = useState(null);
@@ -100,14 +102,15 @@ const ProjectForm = () => {
 
     const unsaved = useUnsavedChanges({
         draftKey: `project:${user?.id || memberId}:${projectId || `new:${sourceOpportunityId || (duplicateFromId ? `copy:${duplicateFromId}` : 'standalone')}`}`,
-        snapshot: { values: watch(), investorIsClient, selectedTemplateId, workspacePreference },
-        readSnapshot: () => ({ values: getValues(), investorIsClient, selectedTemplateId, workspacePreference }),
+        snapshot: { values: watch(), investorIsClient, selectedTemplateId, workspacePreference, automaticCode },
+        readSnapshot: () => ({ values: getValues(), investorIsClient, selectedTemplateId, workspacePreference, automaticCode }),
         ready: !loading,
         busy: isSubmitting,
         onRestore: draft => {
             reset(draft.values);
             setInvestorIsClient(Boolean(draft.investorIsClient));
             setSelectedTemplateId(draft.selectedTemplateId || '');
+            setAutomaticCode(isEditing ? false : draft.automaticCode !== false);
             if (draft.workspacePreference) setWorkspacePreference(draft.workspacePreference);
         },
     });
@@ -115,6 +118,8 @@ const ProjectForm = () => {
     const watchInvestorId = watch('investor_id');
     const watchedProjectName = watch('name');
     const watchedProjectCode = watch('code');
+    const watchedProjectType = watch('type');
+    const numberPreview = useProjectCodePreview(watchedProjectType, !isEditing && automaticCode, numberingRevision);
     const watchedProjectStatus = watch('status');
     const watchedProjectStartDate = watch('start_date');
     const watchedEstimatedWorkDays = watch('estimated_work_days');
@@ -127,24 +132,13 @@ const ProjectForm = () => {
     const workspacePathPreview = useMemo(() => buildProjectWorkspacePreview({
         project: {
             name: watchedProjectName,
-            code: watchedProjectCode,
+            code: automaticCode ? numberPreview.code : watchedProjectCode,
             status: watchedProjectStatus,
             start_date: watchedProjectStartDate,
         },
         connection: storageConnection,
         folderName: workspacePreference.folderName,
-    }), [storageConnection, watchedProjectCode, watchedProjectName, watchedProjectStartDate, watchedProjectStatus, workspacePreference.folderName]);
-
-    const buildProjectCodeFromOpportunity = (opportunity) => {
-        const base = opportunity?.number || opportunity?.title || 'OP';
-        return String(base)
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^a-zA-Z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '')
-            .toUpperCase()
-            .slice(0, 24) || `OP-${new Date().getFullYear()}`;
-    };
+    }), [storageConnection, watchedProjectCode, automaticCode, numberPreview.code, watchedProjectName, watchedProjectStartDate, watchedProjectStatus, workspacePreference.folderName]);
 
     useEffect(() => {
         if (investorIsClient) {
@@ -177,16 +171,12 @@ const ProjectForm = () => {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const [typesRes, stagesRes, patternRes, connection] = await Promise.all([
-                supabase.from('project_types').select('id, name').order('name'),
+            const [stagesRes, connection] = await Promise.all([
                 supabase.from('project_stages').select('id, name').order('name'),
-                supabase.from('app_settings').select('value').eq('key', 'project_code_pattern').maybeSingle(),
                 getDefaultStorageConnection(),
             ]);
 
-            setProjectTypes(typesRes.data || []);
             setProjectStages(stagesRes.data || []);
-            setProjectCodePattern(patternRes.data?.value || '');
             setStorageConnection(connection);
             
             if (isEditing) {
@@ -241,7 +231,7 @@ const ProjectForm = () => {
                 } else if (sourceOpportunityId) {
                     const { data: opportunity, error: opportunityError } = await supabase
                         .from('crm_opportunities')
-                        .select('id, number, title, value, expected_close_date, description, subject_id, subject:subject_id(id, name)')
+                        .select('id, number, title, value, expected_close_date, description, subject_id, project_type, subject:subject_id(id, name)')
                         .eq('id', sourceOpportunityId)
                         .maybeSingle();
 
@@ -249,9 +239,9 @@ const ProjectForm = () => {
                     if (opportunity) {
                         setSourceOpportunity(opportunity);
                         setValue('name', opportunity.title || '');
-                        setValue('code', buildProjectCodeFromOpportunity(opportunity));
+                        setValue('type', opportunity.project_type || '');
                         setValue('status', 'active');
-                        setValue('price', Math.max(1, Number(opportunity.value || 0)));
+                        setValue('price', Math.max(0, Number(opportunity.value || 0)));
                         setValue('investor_id', opportunity.subject_id || null);
                         setValue('client_id', opportunity.subject_id || null);
                         setValue('completion_date', opportunity.expected_close_date || '');
@@ -315,6 +305,13 @@ const ProjectForm = () => {
 
     const onSubmit = async (formData) => {
         let dataToSave = { ...formData };
+        // The displayed number is only a preview. Allocate inside the database
+        // transaction so two open forms never submit the same reserved number.
+        if (!isEditing && automaticCode) dataToSave.code = null;
+        if (!isEditing && !automaticCode && !formData.code?.trim()) {
+            toast({ title: 'Doplňte vlastní kód nebo zapněte automatické číslování', variant: 'destructive' });
+            return;
+        }
         // Financial settings are edited only through the audited RPC on the
         // Finance tab. Never let hidden form defaults overwrite them here.
         if (!isAdmin || isEditing) {
@@ -335,6 +332,7 @@ const ProjectForm = () => {
         if (!dataToSave.start_date) dataToSave.start_date = null;
         if (sourceOpportunityId) dataToSave.crm_opportunity_id = sourceOpportunityId;
 
+        let savedProjectId = null;
         try {
             if (isEditing) {
                 const { status: nextStatus, ...projectPayload } = dataToSave;
@@ -344,6 +342,9 @@ const ProjectForm = () => {
                     p_next_status: nextStatus || null,
                 });
                 if (error) throw error;
+                if (!savedProject?.id) throw new Error('Server nepotvrdil uložení projektu.');
+                savedProjectId = savedProject.id;
+                unsaved.markSaved();
                 const { error: estimateError } = await supabase.rpc('update_entity_planning_estimate', {
                     p_entity_type: 'project', p_entity_id: projectId,
                     p_complexity_level: formData.complexity_level, p_estimated_work_days: Number(formData.estimated_work_days),
@@ -374,6 +375,9 @@ const ProjectForm = () => {
                     p_next_status: null,
                 });
                 if (error) throw error;
+                if (!newProject?.id) throw new Error('Server nepotvrdil vytvoření projektu.');
+                savedProjectId = newProject.id;
+                unsaved.markSaved();
 
                 const { error: estimateError } = await supabase.rpc('update_entity_planning_estimate', {
                     p_entity_type: 'project', p_entity_id: newProject.id,
@@ -388,10 +392,11 @@ const ProjectForm = () => {
                 });
 
                 if (sourceOpportunityId) {
-                    await supabase
+                    const { error: linkError } = await supabase
                         .from('crm_opportunities')
                         .update({ project_id: newProject.id, updated_at: new Date().toISOString() })
                         .eq('id', sourceOpportunityId);
+                    if (linkError) throw linkError;
                 }
 
                 try {
@@ -428,6 +433,11 @@ const ProjectForm = () => {
         } catch (error) {
             console.error("Submit error:", error);
             const msg = parseApiError(error);
+            if (savedProjectId) {
+                toast({ title: 'Projekt je uložený, následné nastavení se nepodařilo dokončit', description: `${msg} Údaje lze doplnit v detailu projektu.`, variant: 'warning' });
+                navigate(`/projects/${savedProjectId}`);
+                return;
+            }
             toast({ 
                 title: 'Chyba při ukládání', 
                 variant: 'destructive', 
@@ -512,6 +522,8 @@ const ProjectForm = () => {
                 )}
                 
                 {!isEditing && (
+                    <details className="rounded-lg border border-slate-200 bg-white p-4">
+                      <summary className="cursor-pointer text-sm font-semibold text-slate-700">Šablona projektu (volitelné)</summary>
                     <Card className="shadow-sm border-slate-200 bg-blue-50/30">
                         <CardContent className="pt-6">
                             <div className="flex items-center gap-4">
@@ -533,6 +545,7 @@ const ProjectForm = () => {
                             </div>
                         </CardContent>
                     </Card>
+                    </details>
                 )}
 
                 <Card className="shadow-sm border-slate-200">
@@ -549,21 +562,20 @@ const ProjectForm = () => {
                                 {errors.name && <p className="text-red-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.name.message}</p>}
                             </div>
                             <div className="space-y-1.5">
-                                <Label htmlFor="code" className="text-slate-700">Kód projektu <span className="text-red-500">*</span></Label>
-                                <Input id="code" {...register('code')} placeholder={projectCodePattern || 'PRJ-2026-001'} className={errors.code ? 'border-red-500 focus-visible:ring-red-500' : ''} />
+                                <Label htmlFor="code" className="text-slate-700">Číslo projektu{isEditing ? ' *' : ''}</Label>
+                                {automaticCode && !isEditing ? <Input id="code" value={numberPreview.code} readOnly placeholder={numberPreview.loading ? 'Načítání čísla…' : 'Přidělí se při uložení'} className="bg-slate-50 font-mono" /> : <Input id="code" {...register('code')} placeholder="Vlastní kód projektu" className={errors.code ? 'border-red-500 focus-visible:ring-red-500' : 'font-mono'} />}
+                                {!isEditing && <><div className="flex items-center gap-2 pt-1"><Checkbox id="automatic-project-code" checked={automaticCode} onCheckedChange={checked => setAutomaticCode(Boolean(checked))} /><Label htmlFor="automatic-project-code" className="text-xs text-slate-600">Automaticky podle typu projektu</Label></div><p className="text-xs text-slate-500">Finální číslo se přidělí při uložení. Řada začíná každý rok od 001.</p></>}
+                                {automaticCode && numberPreview.error && <p role="alert" className="text-xs text-red-600">Náhled čísla není dostupný: {numberPreview.error}</p>}
                                 {errors.code && <p className="text-red-500 text-xs flex items-center mt-1"><AlertCircle className="w-3 h-3 mr-1"/>{errors.code.message}</p>}
                             </div>
                          </div>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-1.5">
-                                <Label className="text-slate-700">Druh projektu</Label>
-                                <Controller name="type" control={control} render={({ field }) => (
-                                    <Select onValueChange={field.onChange} value={field.value || ''}>
-                                        <SelectTrigger className="bg-white"><SelectValue placeholder="Vyberte druh" /></SelectTrigger>
-                                        <SelectContent>{projectTypes.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}</SelectContent>
-                                    </Select>
-                                )} />
-                            </div>
+                            <Controller name="type" control={control} render={({ field }) => <ProjectTypeField value={field.value} onChange={field.onChange} canManage={hasPermission('projects', 'can_edit')} disabled={isSubmitting} onTypesChanged={() => setNumberingRevision(current => current + 1)} />} />
+                            <p className="self-center text-sm text-slate-500">Pro založení stačí název. Klienta, cenu a plán můžete doplnit později.</p>
+                        </div>
+                        <details open={isEditing || undefined} className="space-y-4 rounded-lg border border-slate-200 p-4">
+                          <summary className="cursor-pointer text-sm font-semibold text-slate-700">Plánování a odpovědnost (volitelné)</summary>
+                          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                             <div className="space-y-1.5">
                                 <Label className="text-slate-700">Stupeň dokumentace</Label>
                                  <Controller name="stage_id" control={control} render={({ field }) => (
@@ -578,14 +590,14 @@ const ProjectForm = () => {
                           <div className="mb-3"><p className="font-semibold text-slate-900">Jednoduchý plán projektu</p><p className="text-sm text-slate-600">Zadejte náročnost, začátek a odhad. Konec dopočítáme přes pracovní dny.</p></div>
                           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                             <div className="space-y-1.5">
-                              <Label>Náročnost *</Label>
+                              <Label>Náročnost</Label>
                               <Controller name="complexity_level" control={control} render={({ field }) => <Select value={field.value || 'standard'} onValueChange={field.onChange}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent>{COMPLEXITY_OPTIONS.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>} />
                             </div>
                             <div className="space-y-1.5">
                                 <Label htmlFor="start_date" className="text-slate-700">Datum zahájení</Label>
                                 <Input id="start_date" type="date" {...register('start_date', { onChange: () => setManualCompletionDate(false) })} className="bg-white" />
                             </div>
-                            <div className="space-y-1.5"><Label htmlFor="estimated_work_days">Odhad pracovních dnů *</Label><Input id="estimated_work_days" type="number" min="1" {...register('estimated_work_days', { valueAsNumber: true, onChange: () => setManualCompletionDate(false) })} className={errors.estimated_work_days ? 'border-red-500 bg-white' : 'bg-white'} />{errors.estimated_work_days && <p className="text-xs text-red-600">{errors.estimated_work_days.message}</p>}</div>
+                            <div className="space-y-1.5"><Label htmlFor="estimated_work_days">Odhad pracovních dnů</Label><Input id="estimated_work_days" type="number" min="1" {...register('estimated_work_days', { valueAsNumber: true, onChange: () => setManualCompletionDate(false) })} className={errors.estimated_work_days ? 'border-red-500 bg-white' : 'bg-white'} />{errors.estimated_work_days && <p className="text-xs text-red-600">{errors.estimated_work_days.message}</p>}</div>
                             <div className="space-y-1.5">
                                 <Label htmlFor="completion_date" className="text-slate-700">Termín dokončení</Label>
                                 <Input id="completion_date" type="date" {...register('completion_date', { onChange: () => setManualCompletionDate(true) })} className={errors.completion_date ? 'border-red-500' : 'bg-white'}/>
@@ -617,9 +629,12 @@ const ProjectForm = () => {
                                 <p className="text-xs text-slate-500">Označí projekt jako důležitý v přehledech a tabulkách.</p>
                              </div>
                         </div>
+                        </details>
                     </CardContent>
                 </Card>
 
+                <details open={isEditing || undefined} className="space-y-5 rounded-xl border border-slate-200 bg-white p-4">
+                  <summary className="cursor-pointer font-semibold text-slate-700">Další údaje, klient a finance (volitelné)</summary>
                 <Card className="overflow-hidden border-slate-200 shadow-sm">
                     <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -842,6 +857,7 @@ const ProjectForm = () => {
                      </CardContent>
                 </Card>}
 
+                </details>
                 <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4 pt-4">
                     <div>
                     {isEditing && canDelete && (

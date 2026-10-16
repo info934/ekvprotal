@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, LogOut, Eye, EyeOff, Star } from 'lucide-rea
 import { useAuth } from '@/contexts/AuthContext';
 import { PORTAL_NAVIGATION, SETTINGS_NAV, CRM_NAVIGATION, ALL_PORTAL_NAVIGATION, canNavigate } from '@/lib/portalNavigation';
 import { cn } from '@/lib/utils';
+import BrandLogo from '@/components/BrandLogo';
 
 export default function Sidebar({ collapsed = false, onCollapse, onNavigate, mobile = false }) {
   const { user, userRole, hasPermission, signOut, isAdmin, isPrivateMode, togglePrivateMode } = useAuth();
@@ -26,7 +27,7 @@ export default function Sidebar({ collapsed = false, onCollapse, onNavigate, mob
   );
   return (
     <aside className={cn('portal-sidebar', collapsed && 'is-collapsed', mobile && 'is-mobile')} aria-label="Hlavní navigace">
-      <NavLink to="/" className="portal-brand" onClick={onNavigate} aria-label="EKV Portal – Moje práce"><strong>EKV</strong>{!collapsed && <span>PORTAL</span>}</NavLink>
+      <NavLink to="/" className="portal-brand" onClick={onNavigate} aria-label="EKV Portal – Moje práce"><BrandLogo compact={collapsed} className="portal-brand-logo" /></NavLink>
       <nav className="portal-nav">{!collapsed && favoriteItems.length > 0 && <div className="portal-nav-group portal-favorites"><p className="portal-nav-label">Oblíbené</p>{favoriteItems.map(renderLink)}</div>}{PORTAL_NAVIGATION.map(group => {
         const items = group.items.filter(item => canNavigate(item, hasPermission));
         return items.length ? <div key={group.label} className="portal-nav-group"><p className={collapsed ? 'sr-only' : 'portal-nav-label'}>{group.label}</p>{items.map(item => <React.Fragment key={item.path}>{renderLink(item)}{item.path === '/crm' && pathname.startsWith('/crm') && !collapsed && <div className="portal-nav-children">{CRM_NAVIGATION.filter(child => canNavigate(child, hasPermission)).map(renderLink)}</div>}</React.Fragment>)}</div> : null;

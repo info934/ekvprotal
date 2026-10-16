@@ -59,7 +59,9 @@ import { ManagedTableSection, ManagedTableToolbar, useManagedColumns } from '@/c
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { createTimedAbortController, isRequestAbortError } from '@/lib/requestControl';
-import { allocateCrmNumber, DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
+import { DEFAULT_CRM_NUMBERING, formatCrmNumber, normalizeCrmNumbering, selectCrmNumberingSettings } from '@/lib/crmNumbering';
+import ProjectTypeField from '@/components/ProjectTypeField';
+import { useOpportunityNumberPreview } from '@/hooks/useProjectCodePreview';
 import { crmCommercialDocumentPath, crmOpportunityPath, findCrmRecordByRef, filterCrmRecordByRef } from '@/lib/crmRoutes';
 import { fetchAllCrmRows, fetchCrmRowsByIds, crmWorkflowErrorMessage } from '@/lib/crmDataAccess';
 import { createCrmOpportunityDraft, crmOpportunityDraftReducer, hasCrmOpportunityDraft, submitCrmOpportunityDraft } from '@/lib/crmOpportunityDraft';
@@ -133,6 +135,7 @@ const initialOpportunityForm = {
   title: '',
   subject_id: '',
   project_id: '',
+  project_type: '',
   stage: 'lead',
   priority: 'medium',
   value: '',
@@ -1791,6 +1794,8 @@ const CRM = () => {
   const [generatingDocument, setGeneratingDocument] = useState(false);
   const [opportunityDialogOpen, setOpportunityDialogOpen] = useState(false);
   const [opportunityForm, setOpportunityForm] = useState(initialOpportunityForm);
+  const [numberingRevision, setNumberingRevision] = useState(0);
+  const opportunityNumberPreview = useOpportunityNumberPreview(opportunityForm.project_type, !opportunityForm.id && (location.pathname.endsWith('/new') || opportunityDialogOpen), numberingRevision);
   const [crmStages, setCrmStages] = useState(() => normalizeStages(loadCrmConfig().stages));
   const [crmPriorities, setCrmPriorities] = useState(() => normalizePriorities(loadCrmConfig().priorities));
   const [selectedOpportunityId, setSelectedOpportunityId] = useState(null);
@@ -1849,7 +1854,7 @@ const CRM = () => {
 
     const opportunitiesQueryFactory = () => supabase
       .from('crm_opportunities')
-      .select(`id, number, title, stage, status, priority, value, probability, created_at, updated_at, expected_close_date, next_step, description, lost_reason, lost_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject_id, project_id, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name)${opportunityItemsSelect}`)
+      .select(`id, number, title, stage, status, priority, value, probability, created_at, updated_at, expected_close_date, next_step, description, lost_reason, lost_at, cancelled_at, cancelled_reason, archived_at, archived_reason, deleted_at, deleted_reason, subject_id, project_id, project_type, subject:subject_id(id, name, email, phone, contact_person, ico), project:project_id(id, name, code), owner:owner_member_id(id, name)${opportunityItemsSelect}`)
       .is('deleted_at', null)
       .order('updated_at', { ascending: false }).order('id').abortSignal(request.signal);
     const opportunitiesQuery = isOpportunityDetailPage
@@ -2448,6 +2453,7 @@ const CRM = () => {
         title: opportunity.title || '',
         subject_id: opportunity.subject_id || opportunity.subject?.id || '',
         project_id: opportunity.project_id || opportunity.project?.id || '',
+        project_type: opportunity.project_type || '',
         stage: opportunity.stage || 'lead',
         priority: opportunity.priority || 'medium',
         value: opportunity.value ?? '',
@@ -2469,6 +2475,7 @@ const CRM = () => {
 
   const handleSaveOpportunity = async (event) => {
     event.preventDefault();
+    if (savingOpportunity || !canEditCrm) return;
 
     if (!crmTablesReady) {
       toast({
@@ -2479,9 +2486,9 @@ const CRM = () => {
       return;
     }
 
-    if (!opportunityForm.title.trim() || !opportunityForm.subject_id) {
+    if (!opportunityForm.title.trim()) {
       toast({
-        title: 'Doplňte název a subjekt',
+        title: 'Doplňte název obchodního případu',
         variant: 'destructive',
       });
       return;
@@ -2496,13 +2503,13 @@ const CRM = () => {
     }
 
     setSavingOpportunity(true);
+    try {
     const isNewOpportunity = !opportunityForm.id;
-    const opportunityNumber = isNewOpportunity ? await allocateCrmNumber(supabase, 'opportunity') : null;
     const payload = {
-      ...(opportunityNumber ? { number: opportunityNumber } : {}),
       title: opportunityForm.title.trim(),
-      subject_id: opportunityForm.subject_id,
+      subject_id: opportunityForm.subject_id || null,
       project_id: opportunityForm.project_id || null,
+      project_type: opportunityForm.project_type || null,
       owner_member_id: memberId || null,
       stage: opportunityForm.stage,
       priority: opportunityForm.priority,
@@ -2522,28 +2529,24 @@ const CRM = () => {
 
     const request = opportunityForm.id
       ? supabase.from('crm_opportunities').update(payload).eq('id', opportunityForm.id).select('id').single()
-      : supabase.from('crm_opportunities').insert(payload).select('id').single();
+      : supabase.rpc('create_crm_opportunity_simple', { p_payload: payload });
 
     const { data: savedOpportunity, error } = await request;
 
-    if (error) {
-      setSavingOpportunity(false);
-      toast({
-        title: 'Obchodní případ se nepodařilo uložit',
-        description: error.message,
-        variant: 'destructive',
-      });
-      return;
-    }
+    if (error) throw error;
+    if (!savedOpportunity?.id) throw new Error('Server nepotvrdil uložení obchodního případu.');
 
-    setSavingOpportunity(false);
     toast({ title: opportunityForm.id ? 'Obchodní případ aktualizován' : 'Obchodní případ uložen' });
     setOpportunityDialogOpen(false);
     if (isCreatingOpportunityPage && isNewOpportunity) {
       navigate('/crm/opportunities');
-      return;
     }
-    fetchCrmData();
+    await fetchCrmData();
+    } catch (error) {
+      toast({ title: 'Obchodní případ se nepodařilo uložit', description: error.message, variant: 'destructive' });
+    } finally {
+      setSavingOpportunity(false);
+    }
   };
 
   const handleCreateCommercialDocument = async (type) => {
@@ -2770,7 +2773,7 @@ const CRM = () => {
                 </Button>
                 <h2 className="text-2xl font-semibold text-slate-950">Nový obchodní případ</h2>
                 <p className="text-sm text-muted-foreground">
-                  Založení OP ve stejné full-width stránce jako nový projekt. Po uložení se vrátíte na CRM přehled.
+                  Stačí název. Číslo se přidělí automaticky podle typu; klienta a další údaje doplníte později.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -2787,10 +2790,11 @@ const CRM = () => {
               <Card className="crm-panel">
                 <CardHeader className="crm-panel-header">
                   <CardTitle>Základní údaje</CardTitle>
-                  <CardDescription>Klient, fáze, hodnota a další obchodní parametry.</CardDescription>
+                  <CardDescription>Název a číselná řada obchodního případu.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 p-5 md:grid-cols-2">
-                  <div className="space-y-2 md:col-span-2">
+                  <details className="space-y-2 rounded-lg border p-3 md:col-span-2">
+                    <summary className="cursor-pointer text-sm font-medium">Šablona (volitelné)</summary>
                     <Label>Šablona obchodního případu</Label>
                     <Select value={opportunityForm.template_id || 'none'} onValueChange={(value) => applyOpportunityTemplate(value === 'none' ? '' : value)}>
                       <SelectTrigger><SelectValue placeholder="Začít bez šablony" /></SelectTrigger>
@@ -2800,7 +2804,7 @@ const CRM = () => {
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">Šablona doplní typ zakázky, výchozí hodnoty a kontrolní kroky obchodníka.</p>
-                  </div>
+                  </details>
                   <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="opportunity-page-title">Název *</Label>
                     <Input
@@ -2811,6 +2815,11 @@ const CRM = () => {
                       required
                     />
                   </div>
+                  <ProjectTypeField value={opportunityForm.project_type} onChange={value => handleOpportunityChange('project_type', value)} canManage={canEditCrm} disabled={savingOpportunity} onTypesChanged={() => setNumberingRevision(current => current + 1)} />
+                  <div className="space-y-2"><Label htmlFor="opportunity-page-number">Číslo OP</Label><Input id="opportunity-page-number" value={opportunityNumberPreview.code} readOnly className="bg-slate-50 font-mono" placeholder="Přidělí se při uložení" /><p className="text-xs text-muted-foreground">Náhled; finální číslo přidělí server při uložení.</p>{opportunityNumberPreview.error && <p role="alert" className="text-xs text-red-600">{opportunityNumberPreview.error}</p>}</div>
+                  <details className="space-y-4 rounded-lg border p-4 md:col-span-2">
+                    <summary className="cursor-pointer text-sm font-semibold">Klient a obchodní údaje (volitelné)</summary>
+                    <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Typ obchodu</Label>
                     <Select value={opportunityForm.business_type} onValueChange={(value) => handleOpportunityChange('business_type', value)}>
@@ -2821,7 +2830,7 @@ const CRM = () => {
                   <div className="space-y-2"><Label>Kategorie</Label><Input value={opportunityForm.category} onChange={(event) => handleOpportunityChange('category', event.target.value)} placeholder="Např. FVE rodinný dům" /></div>
                   <div className="space-y-2">
                     <SubjectSelect
-                      label="Subjekt *"
+                      label="Subjekt (volitelné)"
                       value={opportunityForm.subject_id}
                       onChange={(value) => handleOpportunityChange('subject_id', value || '')}
                       onCreated={(subject) => {
@@ -2949,6 +2958,8 @@ const CRM = () => {
                       />
                     </div>
                   )}
+                    </div>
+                  </details>
                 </CardContent>
               </Card>
 
@@ -3376,9 +3387,11 @@ const CRM = () => {
                     required
                   />
                 </div>
+                <ProjectTypeField value={opportunityForm.project_type} onChange={value => handleOpportunityChange('project_type', value)} canManage={canEditCrm} disabled={savingOpportunity} onTypesChanged={() => setNumberingRevision(current => current + 1)} />
+                {!opportunityForm.id && <div className="space-y-2"><Label htmlFor="opportunity-dialog-number">Číslo OP</Label><Input id="opportunity-dialog-number" value={opportunityNumberPreview.code} readOnly placeholder="Přidělí se při uložení" className="bg-slate-50 font-mono" />{opportunityNumberPreview.error && <p role="alert" className="text-xs text-red-600">{opportunityNumberPreview.error}</p>}</div>}
                 <div className="space-y-2">
                   <SubjectSelect
-                    label="Subjekt *"
+                    label="Subjekt (volitelné)"
                     value={opportunityForm.subject_id}
                     onChange={(value) => handleOpportunityChange('subject_id', value || '')}
                     onCreated={(subject) => {

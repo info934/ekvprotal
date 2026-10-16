@@ -99,6 +99,8 @@ export function createFixtures() {
     attendance_submissions: [{ id: uuid(1901), member_id: ADMIN_ID, month_date: `${previewDate(-8).slice(0, 7)}-01`, total_hours: 12, status: 'submitted', submitted_at: timestamp(-3), created_at: timestamp(-3) }],
     hourly_payout_requests: [{ id: uuid(2001), member_id: MEMBER_ID, project_id: projects[0].id, month_date: '2026-07-01', payout_year: 2026, payout_month: 7, total_hours: 24, hours: 24, hourly_rate: 450, amount: 10800, total_amount: 10800, status: 'pending', created_at: timestamp(-1), request_date: timestamp(-1), invoice_url: null }],
     project_statuses: ['nabidka', 'active', 'ready_for_delivery', 'delivered', 'closed'].map((name, index) => ({ id: uuid(2101 + index), name })),
+    project_types: [{ id: uuid(2111), name: 'Projektová dokumentace', code_prefix: 'PR' }, { id: uuid(2112), name: 'FVE', code_prefix: 'FVE' }],
+    job_number_sequences: [],
     task_statuses: ['Nové', 'V řešení', 'Hotovo', 'Zrušeno'].map((name, index) => ({ id: uuid(2201 + index), name })),
     roles: [{ id: uuid(801), name: 'Vedoucí projektu' }, { id: uuid(802), name: 'Projektant' }],
     user_roles: [{ role_name: 'admin' }, { role_name: 'user' }],

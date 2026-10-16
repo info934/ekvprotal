@@ -1,5 +1,12 @@
 # Deploy EKVPortal na VM 108
 
+> Historický návod pro první instalaci. Produkce nyní používá self-hosted
+> Supabase na `https://portal.ekvproject.cz/supabase`, port frontendu `18080`
+> a adresáře vydání pod `/opt/ekvportal-releases`. Původní cloudový projekt
+> je pozastavený. Pro aktuální aktualizaci použijte
+> [předání migrace a číslování](PROJECT_NUMBERING_HANDOFF_2026-10-16.md);
+> níže uvedené staré prostředí ani instalaci serveru znovu neprovádějte.
+
 Target:
 
 - VM: `192.168.1.180`

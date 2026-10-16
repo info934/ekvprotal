@@ -5,6 +5,7 @@ import { canReadEmployeeRow, employeeTables, employeeRpcs, runEmployeeRpc } from
 import { billingFinancialPreview, memberFinancialPreview, projectFinancialPreview, realizationFinancialPreview } from './financialPreview.js';
 import { payoutRpcs, runPayoutRpc } from './payoutPreview.js';
 import { attendanceRpcs, runAttendanceRpc } from './attendancePreview.js';
+import { jobCreationRpcs, runJobCreationRpc } from './jobCreationPreview.js';
 
 let tables = createFixtures();
 let nextId = 50000;
@@ -211,6 +212,9 @@ function rpc(name, args = {}) {
   const realizationId = args.p_realization_id || args.p_realizace_id;
   const one = source => new PreviewQuery(name, source, true);
   const list = (table, predicate = () => true) => new PreviewQuery(table, () => (tables[table] || []).filter(predicate));
+  if (jobCreationRpcs.has(name)) return one(() => runJobCreationRpc(name, args, {
+    tables, memberId: getPreviewMember().id, isAdmin: getPreviewRole() === 'admin', newId: () => uuid(nextId++),
+  }));
   if (attendanceRpcs.has(name)) return one(() => runAttendanceRpc(name, args, {
     tables, memberId: getPreviewMember().id, isAdmin: getPreviewRole() === 'admin', newId: () => uuid(nextId++),
     changed: () => queueMicrotask(() => changes.forEach(callback => callback())),

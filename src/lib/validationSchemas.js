@@ -16,10 +16,10 @@ export const MemberSchema = z.object({
 
 // --- PROJECT SCHEMA ---
 const ProjectSchemaFields = {
-  name: z.string().min(1, 'Název projektu je povinný'),
-  code: z.string().min(1, 'Kód projektu je povinný'),
+  name: z.string().trim().min(1, 'Název projektu je povinný'),
+  code: z.string().trim().max(80, 'Kód projektu je příliš dlouhý').optional().nullable(),
   status: z.enum(['nabidka', 'active', 'ready_for_delivery', 'delivered', 'closed']),
-  price: z.coerce.number().positive('Cena musí být kladná'),
+  price: z.preprocess(value => value === '' || value == null ? 0 : value, z.coerce.number().nonnegative('Cena nesmí být záporná')),
   budget_percentage: z.coerce.number().min(0, 'Minimálně 0%').max(100, 'Maximálně 100%'),
   overhead_percentage: z.coerce.number().min(0, 'Minimálně 0%').max(100, 'Maximálně 100%'),
   type: z.string().optional().nullable(),
@@ -28,17 +28,18 @@ const ProjectSchemaFields = {
   completion_date: z.string().optional().nullable(),
   start_date: z.string().optional().nullable(),
   complexity_level: z.enum(['simple', 'standard', 'complex', 'custom']).default('standard'),
-  estimated_work_days: z.coerce.number().int().positive('Zadejte kladný počet pracovních dnů'),
+  estimated_work_days: z.preprocess(value => value === '' || value == null || Number.isNaN(value) ? 10 : value, z.coerce.number().int().positive('Zadejte kladný počet pracovních dnů')),
   location: z.string().max(500, 'Místo stavby je příliš dlouhé').optional().nullable(),
   client_internal_ref: z.string().max(120, 'Reference klienta je příliš dlouhá').optional().nullable(),
   brief: z.string().max(5000, 'Zadání projektu je příliš dlouhé').optional().nullable(),
-  investor_id: z.string().uuid('Investor je povinný'),
-  client_id: z.string().uuid('Zadavatel je povinný'),
+  investor_id: z.preprocess(emptyToNull, z.string().uuid('Vyberte platného investora').optional().nullable()),
+  client_id: z.preprocess(emptyToNull, z.string().uuid('Vyberte platného zadavatele').optional().nullable()),
   is_priority: z.boolean().optional(),
 };
 
-export const createProjectSchema = ({ requireFinance = true } = {}) => z.object({
+export const createProjectSchema = ({ requireFinance = true, requireCode = false } = {}) => z.object({
   ...ProjectSchemaFields,
+  code: requireCode ? z.string().trim().min(1, 'Kód projektu je povinný').max(80) : ProjectSchemaFields.code,
   price: requireFinance ? ProjectSchemaFields.price : ProjectSchemaFields.price.optional().nullable(),
   budget_percentage: requireFinance ? ProjectSchemaFields.budget_percentage : ProjectSchemaFields.budget_percentage.optional().nullable(),
   overhead_percentage: requireFinance ? ProjectSchemaFields.overhead_percentage : ProjectSchemaFields.overhead_percentage.optional().nullable(),

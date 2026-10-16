@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import BrandLogo from '@/components/BrandLogo';
 
 const getPasswordStrength = (password) => {
   let score = 0;
@@ -174,8 +175,8 @@ const UpdatePassword = () => {
       >
         <div className="mb-7 flex items-start gap-4">
           <div className="relative shrink-0">
-            <div className="grid h-14 w-14 place-items-center rounded-[22px] bg-gradient-to-br from-blue-600 to-blue-500 text-white shadow-xl shadow-blue-600/20">
-              <span className="text-xl font-black tracking-tight">E</span>
+            <div className="grid h-14 w-14 place-items-center rounded-[22px] border border-slate-100 bg-white shadow-xl shadow-blue-600/10">
+              <BrandLogo compact className="w-11" />
             </div>
             <div className="absolute -bottom-1.5 -right-1.5 grid h-7 w-7 place-items-center rounded-xl border-2 border-white bg-white text-blue-700 shadow-md ring-1 ring-blue-100">
               <KeyRound className="h-4 w-4" />

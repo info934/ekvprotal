@@ -1,4 +1,5 @@
 import React from 'react';
+import BrandLogo from '@/components/BrandLogo';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
@@ -101,12 +102,7 @@ const WorkspaceLanding = () => {
         <header className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <img
-                src="https://horizons-cdn.hostinger.com/71f822ff-0858-4714-9f59-dcfbecb55c00/2f93fb620df7a7540852c9ec9f499aee.png"
-                alt="EKV Group Logo"
-                className="h-8 w-auto"
-                loading="lazy"
-              />
+              <BrandLogo className="w-40 sm:w-48" />
               <div>
                 <p className="text-sm font-semibold uppercase tracking-normal text-slate-500">EKV Group</p>
                 <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Rozcestník</h1>

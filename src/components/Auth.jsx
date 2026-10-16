@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { cn } from '@/lib/utils';
+import BrandLogo from '@/components/BrandLogo';
 
 const formVariants = {
   initial: { opacity: 0, y: 16 },
@@ -52,20 +53,6 @@ const MicrosoftIcon = () => (
     <path fill="#7fba00" d="M11 1h9v9h-9z" />
     <path fill="#ffb900" d="M11 11h9v9h-9z" />
   </svg>
-);
-
-const BrandMark = ({ compact = false }) => (
-  <div className="flex items-center gap-3">
-    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
-      <span className="text-lg font-black tracking-tight">E</span>
-    </div>
-    {!compact && (
-      <div className="min-w-0">
-        <div className="text-lg font-semibold tracking-tight text-slate-950">EKV Portal</div>
-        <div className="text-xs font-medium text-slate-500">Project operating system</div>
-      </div>
-    )}
-  </div>
 );
 
 const Field = ({ icon: Icon, label, id, children, action }) => (
@@ -457,7 +444,7 @@ const Auth = () => {
         <section className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">
           <div className="w-full max-w-[460px]">
             <div className="mb-8 flex items-center justify-between">
-              <BrandMark />
+              <BrandLogo className="w-[240px] max-w-full sm:w-[280px]" />
               <div className="hidden rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm sm:block">
                 Online
               </div>

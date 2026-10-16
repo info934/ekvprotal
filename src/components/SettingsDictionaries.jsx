@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import PageHeader from '@/components/ui/page-header';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { normalizeProjectPrefix, PROJECT_PREFIX_PATTERN } from '@/lib/projectNumbering';
 
 const DictionaryTable = ({ dictionary }) => {
     const { toast } = useToast();
@@ -57,6 +58,14 @@ const DictionaryTable = ({ dictionary }) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const itemData = Object.fromEntries(formData.entries());
+        if (tableName === 'project_types') {
+            itemData.name = itemData.name.trim();
+            itemData.code_prefix = normalizeProjectPrefix(itemData.code_prefix);
+            if (!itemData.name || !PROJECT_PREFIX_PATTERN.test(itemData.code_prefix)) {
+                toast({ title: 'Zkontrolujte název a prefix', description: 'Prefix: 1–20 písmen A–Z, číslic, pomlček nebo podtržítek.', variant: 'destructive' });
+                return;
+            }
+        }
         
         const query = editingItem?.id
             ? supabase.from(tableName).update(itemData).eq('id', editingItem.id)
@@ -206,7 +215,7 @@ const dictionaries = [
     { category: 'Realizace', name: 'Stavy realizací', description: 'Stavový workflow realizací včetně barev.', tableName: 'realization_statuses', columns: [{key: 'name', label: 'Název'}, {key: 'color', label: 'Barva'}, {key: 'description', label: 'Popis', type: 'textarea'}] },
     { category: 'Objednávky', name: 'Stavy objednávek', description: 'Stavy objednávek a jejich barevné odlišení.', tableName: 'order_statuses', columns: [{key: 'name', label: 'Název'}, {key: 'color', label: 'Barva'}, {key: 'description', label: 'Popis', type: 'textarea'}] },
     { category: 'Objednávky', name: 'Jednotky', description: 'Měrné jednotky používané v položkách.', tableName: 'units', columns: [{key: 'name', label: 'Název'}, {key: 'abbreviation', label: 'Zkratka'}] },
-    { category: 'Projekce', name: 'Typy projekce', description: 'Typy projektů v projekční části.', tableName: 'project_types', columns: [{key: 'name', label: 'Název'}] },
+    { category: 'Projekce', name: 'Typy projekce', description: 'Typy projektů a prefixy pro automatická čísla projektů i OP.', tableName: 'project_types', columns: [{key: 'name', label: 'Název'}, {key: 'code_prefix', label: 'Prefix'}] },
     { category: 'Projekce', name: 'Stavy projekce', description: 'Stavy projekčního workflow včetně barev.', tableName: 'projection_statuses', columns: [{key: 'name', label: 'Název'}, {key: 'color', label: 'Barva'}, {key: 'description', label: 'Popis', type: 'textarea'}] },
     { category: 'Projekce', name: 'Fáze projektu', description: 'Fáze používané při členění projektů.', tableName: 'project_stages', columns: [{key: 'name', label: 'Název'}] },
     { category: 'Úkoly', name: 'Stavy úkolů', description: 'Hodnoty stavů pro úkoly.', tableName: 'task_statuses', columns: [{key: 'name', label: 'Název'}] },

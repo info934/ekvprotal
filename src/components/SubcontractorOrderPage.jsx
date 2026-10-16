@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import BrandLogo from '@/components/BrandLogo';
     import { useParams, useNavigate } from 'react-router-dom';
     import { supabase } from '@/lib/customSupabaseClient';
     import { Button } from '@/components/ui/button';
@@ -26,11 +27,7 @@ import React, { useState, useEffect } from 'react';
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <div className="relative">
-                        <img 
-                            src="https://horizons-cdn.hostinger.com/71f822ff-0858-4714-9f59-dcfbecb55c00/2f93fb620df7a7540852c9ec9f499aee.png" 
-                            alt="EKV Project Logo" 
-                            className="h-16 w-auto" 
-                        />
+                        <BrandLogo className="w-48 max-w-full" />
                         <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
                     </div>
                     <div>

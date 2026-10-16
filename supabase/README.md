@@ -1,6 +1,9 @@
 # Supabase Development And Migrations
 
-The online Supabase project is the production database. This repository keeps a
+Production uses self-hosted Supabase behind `https://portal.ekvproject.cz/supabase`.
+The former cloud project is paused; do not use a historical CLI link for production.
+See [the project numbering deployment handoff](../docs/PROJECT_NUMBERING_HANDOFF_2026-10-16.md)
+for the current backend and the exact migration to apply. This repository keeps a
 schema baseline, timestamped forward migrations, Edge Functions, and optional
 local seed data.
 
@@ -45,7 +48,12 @@ marking every local migration as applied. Some historical files contain schema
 or seed operations that production already received through older manual
 rollouts.
 
-For a production change:
+For a production change, use an explicitly verified connection to the current
+database. The `--linked` examples below apply only when the CLI link actually
+targets that database; the old cloud link does not. For the self-hosted deployment,
+use the `psql` procedure in the handoff above.
+
+General migration workflow:
 
 1. Back up `supabase_migrations.schema_migrations`.
 2. Run `supabase migration list --linked`.
